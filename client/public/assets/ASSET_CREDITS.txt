@@ -1,0 +1,51 @@
+﻿Third-party art used by this game. All packs are CC0 (public domain
+equivalent); no attribution is legally required, but it is recorded here
+so the provenance of every asset stays traceable.
+
+RUNTIME ASSETS (what the game actually loads)
+
+grass.png    Baked offline from tiles.png: a 16x16-tile mosaic of four
+             Kenney grass variants, each randomly flipped, under a gentle
+             wrapping brightness field. Tiled as the world floor.
+
+props.png    Baked offline. One flat 32x32 grid, index 0..14:
+               0-2  trees   - Kenney, two sheet tiles stacked per tree
+               3-4  bushes  - Kenney
+               5-6  rocks   - drawn for this project
+               7-8  crafting station (forge + anvil) - Kenney, 2 fire frames
+               9-14 ground clutter (tufts, flowers, pebbles) - drawn for
+                    this project; the sheet's own flower tiles bleed in a
+                    stone-path fragment and its white flowers are grey, so
+                    no colour key could separate artwork from artifact.
+
+actors.png   Baked offline. Uniform 32x36 grid, 8 frames per row
+             (idle f0-3, run f0-3), one row per actor:
+               player / other players / goblin / troll
+                 - 0x72 "16x16 DungeonTileset II"
+                   https://0x72.itch.io/dungeontileset-ii  (CC0)
+                   frames: knight_m, elf_m, orc_warrior, ogre
+               slime / wolf
+                 - drawn for this project. The pack has no slime, and no
+                   quadruped that reads as a wolf.
+
+SOURCE ASSET (not loaded at runtime)
+
+tiles.png    Kenney "Roguelike/RPG Pack"
+             https://kenney.nl/assets/roguelike-rpg-pack  (CC0)
+             Kept because grass.png and props.png are generated from it.
+
+weapons.png  Baked offline. 16x40 cells, bottom-aligned so the sprite
+             pivots on the grip. 0 rusty sword (common), 1 knight sword
+             (rare), 2 lavish sword (epic), 3 axe (goblin), 4 big hammer
+             (troll). All from 0x72 "16x16 DungeonTileset II" (CC0).
+
+fx.png       Drawn for this project. Effect library: 8 effects x 4 frames
+             on a 32x32 grid, index = row * 4 + frame.
+               0 slash  1 impact  2 bolt      3 heal
+               4 fire   5 frost   6 lightning 7 buff
+             Rows 2,4,5,6 have no caller yet - they exist for the
+             spells/skills system.
+
+sfx/*.wav    Synthesised for this project (16-bit mono, 22050Hz):
+             swing, hit, crit, miss, hurt, die, gather, levelup,
+             plus cast and heal reserved for spells.

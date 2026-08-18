@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+
+# The SQLite "database" is local runtime state — characters, items, positions.
+# It is also 4MB of WAL most of the time. Everyone who clones gets a fresh
+# one created on first server start (see server/src/db.ts).
+server/data/
+
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,7 @@
+{
+  "name": "shared",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "protocol-types.ts"
+}

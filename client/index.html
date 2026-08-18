@@ -1,0 +1,895 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Idlekin Clone</title>
+    <style>
+      :root {
+        --gold: #e2b04f;
+        --gold-bright: #ffd873;
+        --gold-dim: #8a6a30;
+        --parchment: #f2e2bd;
+        --muted: #b9a06e;
+        --panel-grad: linear-gradient(180deg, #4a3620, #2b1f12);
+        --panel-grad-dark: linear-gradient(180deg, #2e2214, #1c150c);
+        --slot-grad: linear-gradient(160deg, #3c2c1a, #22180e);
+        --page-bg: radial-gradient(ellipse at top, #2b2013, #14100a 70%);
+      }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: var(--page-bg);
+        font-family: Georgia, "Times New Roman", serif;
+      }
+      #game-root { display: none; align-items: center; justify-content: center; height: 100vh; }
+      #game-frame { position: relative; }
+      #login-root { display: flex; align-items: center; justify-content: center; height: 100vh; }
+      .login-card {
+        background: var(--panel-grad);
+        border: 2px solid var(--gold-dim);
+        border-radius: 10px;
+        padding: 32px 40px;
+        text-align: center;
+        color: var(--parchment);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 220, 150, 0.08);
+      }
+      .login-card h1 { margin: 0 0 20px; font-size: 22px; color: var(--gold-bright); text-shadow: 0 1px 2px #000; }
+      .login-card input {
+        display: block;
+        width: 220px;
+        padding: 8px 10px;
+        margin-bottom: 12px;
+        background: #1c150c;
+        border: 1px solid var(--gold-dim);
+        border-radius: 4px;
+        color: var(--parchment);
+        font-size: 14px;
+        font-family: Georgia, serif;
+      }
+      .login-card button {
+        width: 100%;
+        padding: 8px 10px;
+        background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+        border: 1px solid var(--gold-dim);
+        border-radius: 4px;
+        color: #2b1f12;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      .login-card button:hover { filter: brightness(1.1); }
+
+      #character-overlay,
+      #inventory-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(10, 6, 2, 0.65);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-family: Georgia, "Times New Roman", serif;
+        z-index: 10;
+      }
+      #character-overlay.open,
+      #inventory-overlay.open { display: flex; }
+      #character-panel,
+      #inventory-panel {
+        background: var(--panel-grad);
+        border: 2px solid var(--gold-dim);
+        border-radius: 10px;
+        width: 380px;
+        max-height: 520px;
+        display: flex;
+        flex-direction: column;
+        color: var(--parchment);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      }
+      #inventory-panel { width: 460px; }
+      .inv-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--gold-dim);
+        background: var(--panel-grad-dark);
+        border-radius: 8px 8px 0 0;
+      }
+      .inv-header h2 { margin: 0; font-size: 16px; color: var(--gold-bright); }
+      .inv-capacity { font-size: 11px; color: var(--muted); font-weight: normal; }
+      .inv-capacity.inv-capacity-full { color: #ef5350; }
+      #character-close,
+      #inventory-close {
+        background: none;
+        border: none;
+        color: var(--muted);
+        font-size: 20px;
+        cursor: pointer;
+        line-height: 1;
+      }
+      #character-close:hover,
+      #inventory-close:hover { color: var(--gold-bright); }
+      .char-banner {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--gold-dim);
+        background: var(--panel-grad-dark);
+        border-radius: 8px 8px 0 0;
+      }
+      .char-banner-flag { color: var(--gold); font-size: 14px; }
+      #char-name-label { font-weight: bold; font-size: 15px; flex: 1; color: var(--gold-bright); }
+      .char-banner-level {
+        font-size: 11px;
+        color: #2b1f12;
+        background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+        border: 1px solid var(--gold-dim);
+        border-radius: 10px;
+        padding: 2px 8px;
+        font-weight: bold;
+      }
+      .char-body {
+        position: relative;
+        height: 190px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-bottom: 1px solid var(--gold-dim);
+        background: radial-gradient(ellipse at center, #3c2c1a 0%, #1c150c 100%);
+      }
+      .char-silhouette {
+        font-size: 96px;
+        line-height: 1;
+        opacity: 0.55;
+        filter: grayscale(1) sepia(0.3);
+      }
+      .equip-slot {
+        border: 2px solid var(--gold-dim);
+        border-radius: 6px;
+        padding: 8px;
+        text-align: center;
+        background: var(--slot-grad);
+        transition: border-color 0.15s;
+        width: 64px;
+        box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.06);
+      }
+      .char-body .equip-slot {
+        position: absolute;
+      }
+      /* Six slots in two symmetric columns around the figure: what you hold
+         and wear on the left, what covers you on the right. */
+      .equip-helm { left: 16px; top: 16px; }
+      .equip-weapon { left: 16px; top: 50%; transform: translateY(-50%); }
+      .equip-ring { left: 16px; bottom: 16px; }
+      .equip-cape { right: 16px; top: 16px; }
+      .equip-armor { right: 16px; top: 50%; transform: translateY(-50%); }
+      .equip-boots { right: 16px; bottom: 16px; }
+      .equip-slot .equip-icon { font-size: 22px; line-height: 1; }
+      .equip-slot .equip-slot-name {
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-top: 2px;
+      }
+      .equip-slot .equip-rarity { font-size: 12px; margin-top: 2px; text-transform: capitalize; }
+      .inv-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--gold-dim);
+        font-size: 12px;
+      }
+      .inv-stats .stat-label { color: var(--muted); margin-right: 6px; }
+      .inv-attrs {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--gold-dim);
+      }
+      .attr-points {
+        font-size: 12px;
+        color: var(--gold-bright);
+        margin-bottom: 8px;
+      }
+      .attr-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 13px;
+        padding: 3px 0;
+      }
+      .attr-row .attr-name { color: var(--muted); }
+      .attr-row .attr-value { min-width: 20px; text-align: right; margin-right: 8px; color: var(--parchment); }
+      .attr-plus {
+        background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+        border: 1px solid var(--gold-dim);
+        color: #2b1f12;
+        border-radius: 4px;
+        width: 22px;
+        height: 22px;
+        line-height: 1;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+      }
+      .attr-plus:hover { filter: brightness(1.1); }
+      .attr-plus:disabled {
+        opacity: 0.3;
+        cursor: default;
+        border-color: #444;
+        color: #888;
+        background: #2a2418;
+        filter: none;
+      }
+      .inv-section-title {
+        margin: 0;
+        padding: 10px 16px 4px;
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .inv-tabs {
+        display: flex;
+        gap: 6px;
+        padding: 10px 16px 0;
+      }
+      .inv-tab {
+        flex: 1;
+        background: var(--slot-grad);
+        border: 2px solid var(--gold-dim);
+        border-radius: 6px;
+        color: var(--muted);
+        padding: 8px 6px;
+        font-size: 14px;
+        font-family: Georgia, serif;
+        cursor: pointer;
+      }
+      .inv-tab:hover { border-color: var(--gold); }
+      .inv-tab.active {
+        border-color: var(--gold-bright);
+        background: linear-gradient(180deg, #5a4420, #3a2c16);
+        color: var(--gold-bright);
+      }
+      #inventory-grid {
+        overflow-y: auto;
+        padding: 12px 16px 16px;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+      }
+      .inv-item {
+        position: relative;
+        aspect-ratio: 1;
+        border: 2px solid var(--gold-dim);
+        border-radius: 6px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 12px;
+        background: var(--slot-grad);
+        transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+        box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.06);
+      }
+      .inv-item:hover { border-color: var(--gold-bright); transform: translateY(-2px); }
+      .inv-item.equipped { cursor: default; }
+      .inv-item.equipped::after {
+        content: "✓";
+        position: absolute;
+        top: 2px;
+        right: 4px;
+        font-size: 10px;
+        color: #7ed957;
+      }
+      .inv-item.rarity-common { border-color: #8a7a5e; }
+      .inv-item.rarity-common:hover { box-shadow: 0 0 6px rgba(158, 158, 158, 0.5); }
+      .inv-item.rarity-rare { border-color: #5aa8f0; }
+      .inv-item.rarity-rare:hover { box-shadow: 0 0 8px rgba(66, 165, 245, 0.6); }
+      .inv-item.rarity-epic { border-color: #c968e0; box-shadow: 0 0 5px rgba(171, 71, 188, 0.4); }
+      .inv-item.rarity-epic:hover { box-shadow: 0 0 10px rgba(171, 71, 188, 0.8); }
+      .inv-item .inv-item-icon { font-size: 26px; line-height: 1; }
+      .inv-item .inv-item-slot {
+        color: var(--muted);
+        font-size: 9px;
+        text-transform: uppercase;
+        margin-top: 2px;
+      }
+      .inv-empty { color: var(--muted); font-size: 12px; padding: 8px 16px 16px; }
+      .inv-item-sell {
+        position: absolute;
+        bottom: 2px;
+        left: 2px;
+        right: 2px;
+        font-size: 9px;
+        font-family: Georgia, serif;
+        background: rgba(20, 14, 6, 0.85);
+        border: 1px solid var(--gold-dim);
+        border-radius: 4px;
+        color: var(--gold-bright);
+        padding: 1px 0;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      .inv-item:hover .inv-item-sell { opacity: 1; }
+      .inv-item-sell:hover { background: #3a2c16; }
+      .inv-item.rarity-material { border-color: #7a9a5c; cursor: default; }
+      .inv-item.rarity-material:hover { box-shadow: 0 0 6px rgba(126, 217, 87, 0.4); transform: none; }
+      .inv-item-qty {
+        position: absolute;
+        bottom: 2px;
+        right: 4px;
+        font-size: 10px;
+        font-weight: bold;
+        color: var(--gold-bright);
+        text-shadow: 0 1px 1px #000;
+      }
+
+      #item-tooltip {
+        position: fixed;
+        display: none;
+        background: var(--panel-grad-dark);
+        border: 1px solid var(--gold-dim);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-family: Georgia, serif;
+        font-size: 12px;
+        color: var(--parchment);
+        pointer-events: none;
+        z-index: 20;
+        max-width: 200px;
+        line-height: 1.5;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      }
+      #item-tooltip .tt-title { font-weight: bold; margin-bottom: 2px; text-transform: capitalize; }
+      #item-tooltip .tt-line { color: var(--muted); }
+
+      #craft-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(10, 6, 2, 0.65);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-family: Georgia, "Times New Roman", serif;
+        z-index: 10;
+      }
+      #craft-overlay.open { display: flex; }
+      #craft-panel {
+        background: var(--panel-grad);
+        border: 2px solid var(--gold-dim);
+        border-radius: 10px;
+        width: 340px;
+        max-height: 480px;
+        display: flex;
+        flex-direction: column;
+        color: var(--parchment);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      }
+      #craft-grid { overflow-y: auto; }
+      #craft-close {
+        background: none;
+        border: none;
+        color: var(--muted);
+        font-size: 20px;
+        cursor: pointer;
+        line-height: 1;
+      }
+      #craft-close:hover { color: var(--gold-bright); }
+      #craft-grid { padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 6px; }
+      .craft-section-title {
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      /* Weapon family picker: choosing one of these is choosing a class, so
+         it gets its own row above the tiers rather than hiding in a select. */
+      .craft-weapon-picker {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin: 4px 0;
+      }
+      .craft-weapon-btn {
+        flex: 1 1 auto;
+        min-width: 58px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        padding: 5px 4px;
+        border: 1px solid var(--gold-dim);
+        border-radius: 5px;
+        background: var(--slot-grad);
+        color: var(--parchment);
+        font-family: inherit;
+        cursor: pointer;
+      }
+      .craft-weapon-btn:hover { border-color: var(--gold); }
+      .craft-weapon-btn.active {
+        border-color: var(--gold-bright);
+        box-shadow: 0 0 6px rgba(255, 205, 120, 0.35);
+      }
+      .craft-weapon-btn .cw-icon { font-size: 16px; line-height: 1; }
+      .craft-weapon-btn .cw-name { font-size: 10px; color: var(--muted); }
+      .craft-weapon-note {
+        font-size: 11px;
+        color: var(--gold);
+        margin-bottom: 4px;
+      }
+      .craft-row-family { color: var(--muted); font-size: 11px; }
+      .craft-section-title:first-child { margin-top: 0; }
+      .craft-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border: 1px solid var(--gold-dim);
+        border-radius: 6px;
+        padding: 10px 12px;
+        background: var(--slot-grad);
+      }
+      .craft-row-name { font-size: 13px; text-transform: capitalize; color: var(--parchment); }
+      .craft-row-cost { font-size: 11px; color: var(--muted); margin-top: 2px; }
+      .craft-row button {
+        background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+        border: 1px solid var(--gold-dim);
+        color: #2b1f12;
+        border-radius: 4px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        font-family: Georgia, serif;
+      }
+      .craft-row button:hover { filter: brightness(1.1); }
+      .craft-row button:disabled {
+        opacity: 0.4;
+        cursor: default;
+        border-color: #444;
+        color: #888;
+        background: #2a2418;
+        filter: none;
+      }
+
+      #leaderboard-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(10, 6, 2, 0.65);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-family: Georgia, "Times New Roman", serif;
+        z-index: 10;
+      }
+      #leaderboard-overlay.open { display: flex; }
+      #leaderboard-panel {
+        background: var(--panel-grad);
+        border: 2px solid var(--gold-dim);
+        border-radius: 10px;
+        width: 340px;
+        max-height: 480px;
+        display: flex;
+        flex-direction: column;
+        color: var(--parchment);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      }
+      #leaderboard-close {
+        background: none;
+        border: none;
+        color: var(--muted);
+        font-size: 20px;
+        cursor: pointer;
+        line-height: 1;
+      }
+      #leaderboard-close:hover { color: var(--gold-bright); }
+      #leaderboard-list { overflow-y: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 4px; }
+      .lb-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--gold-dim);
+        border-radius: 6px;
+        padding: 8px 12px;
+        background: var(--slot-grad);
+        font-size: 13px;
+      }
+      .lb-row.lb-self { border-color: var(--gold-bright); background: linear-gradient(180deg, #5a4420, #3a2c16); }
+      .lb-rank { width: 28px; text-align: center; font-size: 15px; }
+      .lb-name { flex: 1; color: var(--parchment); }
+      .lb-level { color: var(--gold-bright); font-size: 12px; }
+
+      #combat-log {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        width: 320px;
+        max-height: 160px;
+        overflow-y: auto;
+        background: rgba(28, 21, 12, 0.8);
+        border: 1px solid var(--gold-dim);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-family: Georgia, serif;
+        font-size: 12px;
+        line-height: 1.5;
+        pointer-events: none;
+        z-index: 5;
+        color: var(--parchment);
+      }
+      #combat-log .log-entry { white-space: pre-wrap; }
+      #combat-log .log-entry.log-fade { opacity: 0.45; }
+
+      #ui-dock {
+        position: absolute;
+        left: 50%;
+        bottom: 12px;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 10px;
+        z-index: 6;
+      }
+      #login-hint {
+        margin: 2px 0 10px;
+        font: 12px Georgia, serif;
+        color: var(--gold);
+        opacity: 0.85;
+        line-height: 1.5;
+      }
+      /* Skill tree: one column per tier, locked entries dimmed. */
+      #skills-overlay {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.55);
+        z-index: 8;
+      }
+      #skills-overlay.open { display: flex; }
+      #skills-panel {
+        width: min(760px, 92%);
+        max-height: 84%;
+        overflow-y: auto;
+        background: var(--panel-grad, rgba(43, 31, 18, 0.97));
+        border: 2px solid var(--gold-dim);
+        border-radius: 10px;
+        padding: 0 0 14px;
+      }
+      #skills-list { padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+      .skill-row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 8px 10px;
+        border: 1px solid var(--gold-dim);
+        border-radius: 8px;
+        background: rgba(28, 21, 12, 0.6);
+      }
+      .skill-row.locked { opacity: 0.42; }
+      .skill-row .sk-icon { font-size: 26px; line-height: 1.1; width: 34px; text-align: center; }
+      .skill-row .sk-main { flex: 1; }
+      .skill-row .sk-name { font: bold 14px Georgia, serif; color: var(--parchment); }
+      .skill-row .sk-desc { font: 12px Georgia, serif; color: var(--gold); opacity: 0.85; }
+      .skill-row .sk-meta { font: 11px Georgia, serif; color: #b9a06e; margin-top: 2px; }
+      .sk-tag {
+        display: inline-block;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font: 10px Georgia, serif;
+        margin-right: 5px;
+      }
+      .sk-tag.active { background: #4a6b2f; color: #e8f7d8; }
+      .sk-tag.passive { background: #3f4a6b; color: #dbe4f7; }
+      .sk-tag.locked { background: #5a3a2a; color: #f3d9cf; }
+      /* Mana bar under the HP/XP pair in the unit frame. */
+      /* Skill hotbar sits above the panel dock, the usual MMO arrangement:
+         actions you press mid-fight on the action row, windows below. */
+      #hotbar {
+        position: absolute;
+        left: 50%;
+        bottom: 84px;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        z-index: 6;
+      }
+      .skill-btn {
+        position: relative;
+        width: 54px;
+        height: 54px;
+        background: var(--slot-grad);
+        border: 2px solid var(--gold-dim);
+        border-radius: 8px;
+        font-size: 24px;
+        line-height: 1;
+        cursor: pointer;
+        overflow: hidden;
+        color: var(--parchment);
+      }
+      .skill-btn:hover { border-color: var(--gold); }
+      .skill-key {
+        position: absolute;
+        top: 2px;
+        left: 4px;
+        font: 11px Georgia, serif;
+        color: var(--gold);
+      }
+      /* Cooldown is a dark curtain whose height is driven from JS, so the
+         slot reads as "filling back up" without a canvas or an SVG arc. */
+      .skill-cd {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 0%;
+        background: rgba(8, 6, 3, 0.72);
+        pointer-events: none;
+      }
+      .skill-cd-text {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font: bold 15px Georgia, serif;
+        color: var(--parchment);
+        text-shadow: 0 1px 2px #000;
+        pointer-events: none;
+      }
+      .skill-btn.ready .skill-cd-text { display: none; }
+      /* Target frame, mirroring the player's own unit frame top-left. */
+      #target-frame {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 220px;
+        padding: 6px 10px 8px;
+        background: rgba(43, 31, 18, 0.85);
+        border: 1px solid var(--gold-dim);
+        border-radius: 6px;
+        z-index: 6;
+        display: none;
+      }
+      #target-frame.shown { display: block; }
+      #target-name {
+        font: 13px Georgia, serif;
+        color: var(--parchment);
+        margin-bottom: 4px;
+      }
+      #target-hp-track {
+        height: 12px;
+        background: #1c150c;
+        border: 1px solid var(--gold-dim);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      #target-hp-fill {
+        height: 100%;
+        width: 100%;
+        background: #c0392b;
+      }
+      .dock-btn {
+        position: relative;
+        width: 60px;
+        height: 60px;
+        background: var(--slot-grad);
+        border: 2px solid var(--gold-dim);
+        border-radius: 8px;
+        font-size: 28px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--parchment);
+        box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.08);
+      }
+      .dock-btn:hover { border-color: var(--gold); }
+      .dock-btn.active {
+        border-color: var(--gold-bright);
+        background: linear-gradient(180deg, #5a4420, #3a2c16);
+        box-shadow: 0 0 10px rgba(255, 216, 115, 0.4);
+      }
+      .dock-btn .dock-key {
+        position: absolute;
+        top: 2px;
+        left: 4px;
+        font-size: 9px;
+        font-family: Georgia, serif;
+        color: var(--muted);
+      }
+      .dock-btn .dock-badge {
+        position: absolute;
+        bottom: -4px;
+        right: -4px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 3px;
+        border-radius: 8px;
+        background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+        color: #2b1f12;
+        font-size: 10px;
+        font-family: Georgia, serif;
+        font-weight: bold;
+        line-height: 16px;
+        text-align: center;
+        display: none;
+      }
+      .dock-btn .dock-badge.show { display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="login-root">
+      <div class="login-card">
+        <h1>Idlekin Clone</h1>
+        <input id="name-input" type="text" placeholder="Character name" maxlength="16" autocomplete="off" />
+        <div id="login-hint">
+          No class to pick — you are whatever you are holding. Bare-handed
+          you're an Adventurer; find a sword to fight as a Warrior, a bow for a
+          Ranger, a staff for a Mage. Swap weapons and you swap class.
+        </div>
+        <button id="play-button">Play</button>
+      </div>
+    </div>
+    <div id="game-root">
+     <div id="game-frame">
+      <div id="character-overlay">
+        <div id="character-panel">
+          <div class="char-banner">
+            <span class="char-banner-flag">⚑</span>
+            <span id="char-name-label">Adventurer</span>
+            <span class="char-banner-level">Lv <span id="char-level-label">1</span></span>
+            <button id="character-close">&times;</button>
+          </div>
+          <div class="char-body">
+            <div class="equip-slot equip-helm" data-slot="helm">
+              <div class="equip-icon">⛑️</div>
+              <div class="equip-slot-name">Helm</div>
+              <div class="equip-rarity">None</div>
+            </div>
+            <div class="equip-slot equip-weapon" data-slot="weapon">
+              <div class="equip-icon">⚔️</div>
+              <div class="equip-slot-name">Weapon</div>
+              <div class="equip-rarity">None</div>
+            </div>
+            <div class="equip-slot equip-ring" data-slot="ring">
+              <div class="equip-icon">💍</div>
+              <div class="equip-slot-name">Ring</div>
+              <div class="equip-rarity">None</div>
+            </div>
+            <div class="char-silhouette">🧍</div>
+            <div class="equip-slot equip-cape" data-slot="cape">
+              <div class="equip-icon">🧣</div>
+              <div class="equip-slot-name">Cape</div>
+              <div class="equip-rarity">None</div>
+            </div>
+            <div class="equip-slot equip-armor" data-slot="armor">
+              <div class="equip-icon">🛡️</div>
+              <div class="equip-slot-name">Armor</div>
+              <div class="equip-rarity">None</div>
+            </div>
+            <div class="equip-slot equip-boots" data-slot="boots">
+              <div class="equip-icon">👢</div>
+              <div class="equip-slot-name">Boots</div>
+              <div class="equip-rarity">None</div>
+            </div>
+          </div>
+          <div class="inv-attrs">
+            <div class="attr-points">Points to spend: <span id="attr-points">0</span></div>
+            <div class="attr-row" data-stat="strength">
+              <span class="attr-name">Strength</span>
+              <span class="attr-value" id="attr-strength">0</span>
+              <button class="attr-plus" data-stat="strength">+</button>
+            </div>
+            <div class="attr-row" data-stat="agility">
+              <span class="attr-name">Agility</span>
+              <span class="attr-value" id="attr-agility">0</span>
+              <button class="attr-plus" data-stat="agility">+</button>
+            </div>
+            <div class="attr-row" data-stat="vitality">
+              <span class="attr-name">Vitality</span>
+              <span class="attr-value" id="attr-vitality">0</span>
+              <button class="attr-plus" data-stat="vitality">+</button>
+            </div>
+            <div class="attr-row" data-stat="intelligence">
+              <span class="attr-name">Intelligence</span>
+              <span class="attr-value" id="attr-intelligence">0</span>
+              <button class="attr-plus" data-stat="intelligence">+</button>
+            </div>
+          </div>
+          <div class="inv-stats">
+            <div><span class="stat-label">Move Speed</span><span id="stat-move"></span></div>
+            <div><span class="stat-label">XP Bonus</span><span id="stat-xpbonus"></span></div>
+            <div><span class="stat-label">Gather Time</span><span id="stat-gather"></span></div>
+            <div><span class="stat-label">Attack Speed</span><span id="stat-battle"></span></div>
+            <div><span class="stat-label">Hit Damage</span><span id="stat-hit"></span></div>
+            <div><span class="stat-label">Accuracy</span><span id="stat-accuracy"></span></div>
+            <div><span class="stat-label">Crit Chance</span><span id="stat-crit-chance"></span></div>
+            <div><span class="stat-label">Crit Damage</span><span id="stat-crit-damage"></span></div>
+            <div><span class="stat-label">Armor</span><span id="stat-armor"></span></div>
+            <div><span class="stat-label">Evasion</span><span id="stat-evasion"></span></div>
+            <div><span class="stat-label">Double Attack</span><span id="stat-double-attack"></span></div>
+            <div><span class="stat-label">HP Regen</span><span id="stat-hp-regen"></span></div>
+          </div>
+        </div>
+      </div>
+      <div id="inventory-overlay">
+        <div id="inventory-panel">
+          <div class="inv-header">
+            <h2>Inventory <span id="inv-capacity" class="inv-capacity"></span></h2>
+            <button id="inventory-close">&times;</button>
+          </div>
+          <div class="inv-tabs">
+            <button class="inv-tab active" data-filter="all">All</button>
+            <button class="inv-tab" data-filter="weapon">⚔️</button>
+            <button class="inv-tab" data-filter="helm">⛑️</button>
+            <button class="inv-tab" data-filter="armor">🛡️</button>
+            <button class="inv-tab" data-filter="cape">🧣</button>
+            <button class="inv-tab" data-filter="boots">👢</button>
+            <button class="inv-tab" data-filter="ring">💍</button>
+            <button class="inv-tab" data-filter="material">🪵</button>
+            <button class="inv-tab" data-filter="potion">🧪</button>
+          </div>
+          <div id="inventory-grid"></div>
+        </div>
+      </div>
+      <div id="craft-overlay">
+        <div id="craft-panel">
+          <div class="inv-header">
+            <h2>Workbench</h2>
+            <button id="craft-close">&times;</button>
+          </div>
+          <div id="craft-grid"></div>
+        </div>
+      </div>
+      <div id="leaderboard-overlay">
+        <div id="leaderboard-panel">
+          <div class="inv-header">
+            <h2>Leaderboard</h2>
+            <button id="leaderboard-close">&times;</button>
+          </div>
+          <div id="leaderboard-list"></div>
+        </div>
+      </div>
+      <div id="skills-overlay">
+        <div id="skills-panel">
+          <div class="char-banner">
+            <span class="char-banner-flag">📖</span>
+            <span id="skills-title">Skills</span>
+            <button id="skills-close">&times;</button>
+          </div>
+          <div id="skills-list"></div>
+        </div>
+      </div>
+      <div id="combat-log"></div>
+      <div id="target-frame">
+        <div id="target-name"></div>
+        <div id="target-hp-track"><div id="target-hp-fill"></div></div>
+      </div>
+      <div id="hotbar"></div>
+      <div id="ui-dock">
+        <button id="dock-character" class="dock-btn" title="Character (C)">
+          🧙<span class="dock-key">C</span><span class="dock-badge" id="dock-character-badge"></span>
+        </button>
+        <button id="dock-inventory" class="dock-btn" title="Inventory (I)">
+          🎒<span class="dock-key">I</span>
+        </button>
+        <button id="dock-skills" class="dock-btn" title="Skills (K)">
+          📖<span class="dock-key">K</span>
+        </button>
+        <button id="dock-leaderboard" class="dock-btn" title="Leaderboard (L)">
+          🏆<span class="dock-key">L</span>
+        </button>
+      </div>
+      <div id="item-tooltip"></div>
+     </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

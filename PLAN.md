@@ -1,0 +1,1819 @@
+# Idlekin-clone MVP — Build Plan
+
+Reference: modeled after app.playidlekin.com (Phaser 3 client, WebSocket real-time
+sync, server-authoritative state). This plan is the source of truth for progress —
+update checkboxes as steps complete, add notes under a step if decisions are made
+that future-us needs to remember.
+
+Everything runs 100% local: Node process on localhost = "server", SQLite file = "database".
+No hosting/cloud DB until we explicitly decide to go live.
+
+## Phase 0 — Scaffolding
+- [x] Root workspace: `package.json` with npm workspaces (`client`, `server`, `shared`)
+- [x] `client/`: Vite + TypeScript + Phaser 3 installed, blank scene renders in browser
+- [x] `server/`: Node + TypeScript + `ws` installed, server boots and logs "listening"
+- [x] `shared/`: protocol-types.ts with message type placeholders
+- [x] Confirm `npm run dev` (or equivalent) starts both client and server together
+
+## Phase 1 — Movement + sync (prove multiplayer loop works)
+- [x] One Phaser scene with a placeholder tilemap (can be a colored grid before real art)
+- [x] Player sprite moves via WASD/arrow keys, client-side
+- [x] WebSocket client connects to server, sends HELLO + position updates
+- [x] Server holds authoritative player list, broadcasts snapshots to all connected clients
+- [x] Open two browser tabs — each sees the other's player move
+- [x] Basic reconnect handling (don't need full backoff yet, just don't crash on drop)
+
+## Phase 2 — Persistence (SQLite)
+- [x] `server/src/db.ts`: SQLite file created on first run, schema for `characters`
+- [x] Simple name-entry "login" (no real auth yet) creates/loads a character row
+- [x] Character position persists across server restart
+
+## Phase 3 — Idle gathering loop
+- [x] Resource nodes placed in the world (e.g. trees) as simple sprites
+- [x] Walking into / clicking a node starts a gather timer, fills a progress bar
+- [x] On completion, resource count increments, syncs to server, persists to SQLite
+- [x] Nodes respawn after a cooldown
+
+## Phase 4 — Inventory + first progression hook
+- [x] Inventory UI (simple DOM/HUD overlay) shows resource counts, updates live
+- [x] One spendable upgrade (e.g. increase gather speed) using collected resources
+- [x] Upgrade persists per character
+
+## Phase 5 — Monsters + XP/levels (PvE-lite, mirrors Idlekin's `xp_pve_rate`)
+- [x] Monster mobs in the world (reuse the node interaction pattern: channel-in-range to defeat)
+- [x] Player level + XP, persisted per character
+- [x] Monsters respawn after a cooldown, like resource nodes
+- [x] Generalize the client's "active action" (gather vs. battle) so both share one progress bar
+
+## Phase 6 — Equipment + rarity (Idlekin's weapon/head/armor/gloves/boots/rings/earrings, common→mythic)
+- [x] Start with a single slot (weapon), a couple of rarity tiers
+- [x] Gear drops from monsters or is craftable from wood, affects gather/battle speed
+- [x] Equip/unequip UI, persists per character
+
+## Phase 7 — Second resource + crafting/lifeskills taste
+- [x] A second gatherable (e.g. ore, mirrors Idlekin's separate collection types)
+- [x] A simple recipe: spend resources to craft something (gear, or a consumable)
+
+## Phase 8 — Offline progress (mirrors Idlekin's offline-summary popup)
+- [x] Track `lastSeenAt` per character
+- [x] On reconnect, grant passive wood for elapsed time away, capped at a max duration
+- [x] Show an "away for X, earned Y wood" toast on login
+- [x] (Course-corrected mid-phase) Gathering/battling redesigned as a standing,
+      auto-repeating intent instead of one-shot-per-click, after user flagged that
+      real Idlekin doesn't require re-clicking after every respawn — this also
+      made offline continuation actually make sense
+
+## Phase 9 — Monster variety + armor slot
+- [x] Second monster kind (goblin: tougher/slower, more XP) alongside slimes
+- [x] Armor slot (rarity-tiered like weapon), drops split 50/50 with weapon on kill
+- [x] Armor grants an XP bonus on monster kills (mirrors Idlekin's `xp_pve_rate` bonus type)
+- [x] UI: Armor HUD line, goblin visually distinct from slime (color + size)
+
+## Phase 10 — Boots slot (third equipment slot)
+- [x] Boots slot, rarity-tiered like weapon/armor, drops split evenly across all 3 slots
+- [x] Rarity grants a movement-speed bonus — the one gear effect that's immediately
+      visible rather than a subtle timing change
+- [x] UI: Boots HUD line
+
+## Phase 11 — Boss monster (troll)
+- [x] Third monster kind, much tougher (4x base duration) and slower to respawn (3x)
+- [x] Guaranteed loot drop on kill, floored at rare rarity — a boss kill never whiffs
+- [x] UI: visually distinct (larger, purple) from slime/goblin
+- [x] Generalized via `MonsterStats.guaranteedDrop` + `respawnMultiplier`, not a
+      one-off special case, so a 4th monster kind is just another table row
+
+## Phase 12 — Player HP / combat risk
+- [x] Player has HP (`maxHpForLevel`), persisted per character
+- [x] Monsters have a per-kind chance to counter-hit during battle (slime 15%/4dmg,
+      goblin 30%/8dmg, troll 50%/18dmg) — rolled once per battle cycle completion,
+      same cadence as XP/loot, not a separate tick loop
+- [x] Defeat (HP ≤ 0): teleport to spawn, HP restored to half max, battle intent
+      cancelled — a setback, not a punishment
+- [x] UI: HP HUD line (color shifts green→yellow→red), damage/defeat toasts
+- [x] Confirmed damage lands and persists (`hp: 46` on a level-12, max-160 character);
+      defeat path not observed live (character's HP pool too large to drain in a
+      test session) but shares the exact `applyDamage` code path as confirmed damage
+
+## Phase 13 — Real inventory + Character panel UI
+- [x] Items are real DB rows (`items` table), not just "best rarity per slot" —
+      picking up loot no longer auto-equips, it sits in your bag
+- [x] DOM character panel (press `I`): equipped-slot summary (weapon/armor/boots)
+      + a clickable grid of every item you own, click an unequipped item to equip it
+- [x] Server validates equip ownership, unequips the slot's old item, keeps the
+      old item in inventory rather than deleting it
+- [x] Confirmed via DB: multiple items coexist per character, e.g. a common boots
+      item sitting unequipped right alongside an equipped rare boots item
+
+## Phase 14 — Primary attributes (Strength/Agility/Vitality) + real combat resolution
+- [x] Strength/Agility/Vitality attributes, 3 points per level-up, spent freely via
+      the character panel; persisted per character
+- [x] Real hit/miss/crit/damage combat resolution (`resolveHit`) replacing the old
+      "roll a flat chance, instant kill" model — monsters now have actual HP and
+      take multiple attack exchanges to defeat, with a visible HP bar
+- [x] Strength → damage range (min/max hit), Agility → accuracy + crit chance,
+      Vitality → max HP (unchanged from Phase 12)
+- [x] Items now roll a real numeric `statValue` on drop (rarity-ranged): weapon →
+      bonus damage, armor → flat damage reduction, boots → evasion%
+- [x] Weapon rarity also grants a crit-damage multiplier bonus (on top of its
+      existing attack-speed bonus)
+- [x] Monsters have their own combat stats (accuracy/evasion/armor/crit) per kind,
+      not just a flat "hitChance/hitDamage" pair
+- [x] UI: monster HP bars, floating combat-log text (damage numbers/MISS/CRIT) on
+      both sides of the exchange, full stat breakdown in the character panel
+- [x] Confirmed live: HP bar depletes over multiple hits, floating text appears,
+      stats panel shows the new combat numbers
+
+## Phase 15 — Passive HP regeneration
+- [x] 1 HP every 5s while below max HP, for every connected player regardless of
+      what they're doing (not just idle) — checked once per server tick, throttled
+      so it only sends an `HP_UPDATE` (and touches the DB) once per interval, not
+      every 100ms tick
+- [x] Confirmed live and persisted: HP climbed from 85 → 104 while standing idle
+
+## Phase 16 — World expansion, object titles, crafting
+- [x] World grown from 800x600 to 1600x1200 (`WORLD_WIDTH`/`WORLD_HEIGHT` in
+      shared, `PLAYER_SPAWN` derived as world center instead of hardcoded)
+- [x] Populated layout: 12 resource nodes (8 trees, 4 rocks), 10 monsters
+      (4 slime, 4 goblin, 2 troll) spread across the map instead of clustered
+      near spawn
+- [x] Camera follows the player (`cameras.main.startFollow`), all HUD
+      elements (HP/wood/ore/xp text, upgrade buttons) pinned to the screen
+      via `setScrollFactor(0)` now that the world is bigger than the canvas
+- [x] Name/title labels rendered above every node, monster, and station
+      (`NODE_LABELS`/`MONSTER_LABELS`/`STATION_LABEL` in shared)
+- [x] Crafting station ("Workbench") at map center: `CRAFT_ITEM` message,
+      `CRAFT_COSTS` per slot (wood+ore), spends resources and mints a new
+      common-rarity item via the existing `addItem`/loot-update pipeline
+- [x] Client `CraftPanel` (DOM overlay, same pattern as the inventory panel):
+      click the workbench in range to open, shows cost per slot, disables
+      unaffordable crafts
+- [x] Confirmed live: camera scroll, titles visible, crafted item received
+      and resources deducted
+- [x] Crafting extended to all 3 rarity tiers (not just common): `craftCostFor`
+      scales the base wood/ore cost by a per-rarity multiplier (1x/4x/12x for
+      common/rare/epic) rather than needing a full slot x rarity cost table —
+      panel shows 9 rows (3 slots x 3 rarities), each independently
+      affordability-gated
+
+## Phase 17 — Independent monster attack cadence
+- [x] Monsters now counter-attack on their own clock (`MonsterStats.attackIntervalMs`
+      — slime 2.2s, goblin 1.8s, troll 3s) instead of being forced to trade
+      blows 1-for-1 with the player's own attack cycle
+- [x] Upgrading battle power / equipping a faster weapon now purely increases
+      your own attack rate — it no longer incidentally makes the monster hit
+      you more often too, which is what happened when both sides shared one
+      timer
+- [x] New `MONSTER_ATTACK` message carries the monster's counter-attack
+      combat-log entry (hit/crit/damage) separately from `BATTLE_RESULT`
+      (now player-attack-only); player HP changes still arrive via the
+      existing `HP_UPDATE`
+- [x] Client floating combat text unchanged in appearance (still shows
+      CRIT/-N/MISS above the monster for your swing and above you for the
+      monster's), just re-wired to the new message split
+
+## Phase 18 — Persistent combat log
+- [x] New always-visible DOM panel (bottom-left, `#combat-log`) instead of
+      relying solely on floating text that vanishes after ~2s — every hit,
+      miss, crit, loot drop, level-up, and defeat gets a text-log line
+- [x] Older entries fade (dim after the most recent 8) rather than
+      disappearing, capped at 40 lines total, auto-scrolls to newest
+- [x] Client-only addition — reuses existing message payloads
+      (`BATTLE_RESULT`, `MONSTER_ATTACK`, `XP_UPDATE`, `LOOT_UPDATE`,
+      `HP_UPDATE`), no protocol changes
+
+## Phase 19 — True auto-battler (monster packs, auto-retarget, offline combat)
+- [x] World grown again, 1600x1200 → 2200x1600, to make room for spread-out
+      monster camps without them crowding into each other or the spawn/
+      workbench area
+- [x] Monsters regrouped from individually-scattered spawns into tight packs
+      (`spawnPack` helper + diamond/triangle offset patterns): 2 slime packs
+      of 4, 2 goblin packs of 4, 1 troll pack of 3 — 19 monsters total, up
+      from 10
+- [x] New `BATTLE_RANGE_PX` (110, vs. gathering's 40) — battle's own
+      interaction/leash range, sized so adjacent pack members stay in range
+      of each other from one spot, used for `BATTLE_START`, the ongoing
+      battle-intent tick check, and the monster's own counter-attack tick
+      check (gathering keeps the tighter `INTERACTION_RANGE_PX`)
+- [x] True auto-battler behavior: on kill, the server automatically
+      retargets the player's battle intent to the nearest still-alive
+      monster of the *same kind* within `BATTLE_RANGE_PX`
+      (`findNearestAliveMonsterOfKind`) — the player mows through an entire
+      pack without re-clicking, only stopping when the whole pack is dead
+      (falls back to the old "wait for this one to respawn" behavior if nothing
+      else in range)
+- [x] Offline progress extended to battling, mirroring gathering's model:
+      disconnecting mid-battle now records `offlineBattleMonsterKind`
+      (new character column, mutually exclusive with `offlineGatherResource`)
+      and reconnecting simulates `awayMs / battleDurationMs(...)` kills
+      (capped at the same 8h `OFFLINE_CAP_MS`), granting full XP per kill but
+      loot at a heavily reduced rate (`OFFLINE_COMBAT_LOOT_MULTIPLIER` = 0.2x
+      the normal drop chance, capped at 5 items) — "idle while offline, but
+      much less loot than actually playing," per explicit direction
+- [x] New `OFFLINE_COMBAT_SUMMARY` message (sibling of the existing
+      gather-only `OFFLINE_SUMMARY`) — client shows a toast + combat-log line
+      on reconnect: "Auto-battled Goblins while away 2h 14m: 41 kills,
+      +410 XP, +2 items."
+- [x] `db.applyOfflineProgress` signature changed to take weapon/armor
+      rarity + battle-power level (needed for the battle-duration/XP-bonus
+      formulas) and now returns a discriminated result (`resourceKind`+
+      `amount` for gather, `battle` object for combat) instead of
+      gather-only fields
+
+## Phase 20 — MMO-style UI dock
+- [x] Split the old single "Character" overlay (equip slots + attrs + stats
+      + item grid all in one panel) into two separate panels, matching how
+      real MMOs separate the character sheet from the bag: `CharacterPanel`
+      (equip summary, attribute allocation, derived combat stats) and a
+      slimmed-down `InventoryPanel` (item grid only)
+- [x] New bottom-right icon dock (`#ui-dock`) with two square icon buttons
+      (🧙 Character, 🎒 Inventory) — click or keyboard shortcut (`C`/`I`)
+      opens the matching panel, active panel's icon gets a highlighted
+      border so it's clear which one (if any) is open
+- [x] Character icon shows a small badge with the number of unspent
+      attribute points whenever you have any — a passive nudge, mirrors the
+      "you have upgrades available" indicator most MMO UIs put on the
+      relevant menu icon
+- [x] Crafting panel/workbench interaction unchanged (still opens by
+      walking up to the station and clicking it, not from the dock) — it's
+      a location-gated action, not a character-state panel, so it doesn't
+      belong in the same icon row
+- [x] **Bug fix**: the dock/combat-log were positioned relative to
+      `#game-root`, which spans the *full browser viewport* (it flex-centers
+      the canvas but has no size of its own) — so `right/bottom`-anchored
+      elements landed at the true corner of the browser window, not the
+      corner of the 800x600 game canvas, which is what the user actually
+      saw ("it's at the very bottom right of the screen"). Fixed by adding
+      a `#game-frame` wrapper and moving every DOM overlay (character/
+      inventory/craft panels, combat log, dock, tooltip) inside it instead
+      of the full-viewport `#game-root`
+- [x] Canvas changed from a fixed 800x600 box to filling the whole browser
+      window: Phaser `scale.mode: Phaser.Scale.RESIZE` against a
+      `#game-frame` sized to 100%/100%, with a `resize` listener that keeps
+      the camera and the two right-anchored HUD buttons (gather/battle
+      upgrade) repositioned against `this.scale.width` live — the game
+      window is now genuinely "bigger" (the whole tab) rather than a larger
+      fixed box
+- [x] Inventory/equipment visuals overhauled from plain text-in-a-box to a
+      real item-grid look: square slots, rarity-colored border (with a
+      glow on rare/epic), a slot-type icon (⚔️/🛡️/🎒/👢) instead of a
+      text label, and a hover tooltip (`ItemTooltip.ts`, a small
+      cursor-following DOM box) showing full stat details instead of
+      cramming a stat line onto every card
+- [x] Dock re-centered from bottom-right to bottom-center and enlarged
+      (48px → 60px icons) per follow-up feedback once the user could
+      actually see it in the right place
+
+## Phase 21 — Fantasy-RPG-inspired panel redesign
+User shared a reference screenshot (mobile RPG inventory: character
+silhouette with equip slots arranged around it, category tabs, item grid,
+name/level banner) and asked for something similar. Confirmed via
+AskUserQuestion to keep the Character/Inventory split from Phase 20 (not
+merge back into one screen) and restyle each to match the reference's
+structural ideas while staying in the game's existing dark palette (not a
+full brown/gold parchment reskin).
+- [x] Character panel: new name+level banner header (`char-name-label`/
+      `char-level-label`, fed by a new `CharacterPanel.setIdentity()`
+      called on WELCOME and on level-up), equip slots repositioned around
+      a centered placeholder character silhouette (dimmed 🧍 emoji — no
+      real sprite art yet, consistent with the Phase 0 decision to keep
+      placeholder visuals until real assets are worth adding) instead of
+      a plain horizontal row
+- [x] Inventory panel: widened (380px → 460px), 4 → 5 column grid, and new
+      category tabs (All / ⚔️ / 🛡️ / 👢) that filter the grid client-side
+      by `item.slot` — mirrors the reference's tab row, scoped to our 3
+      actual slot types instead of the reference's weapon/armor/potion mix
+- [x] **Follow-up**: user clarified the actual gap was the *visual style*
+      (warm gold/leather fantasy skin, glossy depth) not the layout —
+      confirmed via AskUserQuestion to extend the reskin to the whole game
+      UI, not just these two panels. Added a CSS custom-property theme
+      (`--gold`/`--gold-bright`/`--gold-dim`/`--parchment`/`--muted`/
+      `--panel-grad`/`--slot-grad`) applied across every DOM surface: login
+      screen, character/inventory/craft panels and headers, item/equip
+      slots, buttons, combat log, tooltip, and the icon dock. Serif
+      (Georgia) replaced monospace as the UI font throughout. Also
+      restyled the Phaser-rendered HUD to match: added a background panel
+      behind the top-left HP/Wood/Ore/XP text block (previously floated
+      bare over the world), recolored that text and the gather/battle
+      upgrade buttons to the same gold/parchment palette. Deliberately
+      left functional signal colors alone (HP bar green/yellow/red by
+      threshold, combat floating-text colors, item rarity border colors)
+      since those carry gameplay meaning, not just decoration — rarity
+      colors already read fine against the new warmer backgrounds.
+
+## Phase 22 — Materials as inventory items
+User asked whether wood/ore should also be items rather than plain HUD
+counters. Confirmed via AskUserQuestion: move fully into the inventory,
+dropping the separate HUD text entirely (not "also show them in both
+places").
+- [x] Removed the `woodText`/`oreText` Phaser HUD lines — the HP/HUD
+      background panel shrunk from 5 lines to 3 (HP, XP, hint) accordingly
+- [x] Wood/ore now render as stackable material slots in the Inventory
+      grid (🪵/🪨 icons, `xN` quantity badge, distinct warm-green
+      `rarity-material` border since they're not equippable and shouldn't
+      be confused with a rarity tier) via new `InventoryPanel.setMaterials()`
+- [x] New "Materials" tab (🪵) alongside the existing weapon/armor/boots
+      filters — `Filter` type extended to `ItemSlot | "material" | "all"`
+- [x] `ItemTooltip.ts` generalized: extracted a shared `attachTooltip()`
+      helper so both the existing equipment tooltip and a new
+      `attachMaterialTooltip()` (name + quantity, no rarity/stat line)
+      reuse the same hover/position/hide logic instead of duplicating it
+- [x] `this.wood`/`this.ore` still tracked internally in `WorldScene` (used
+      by the craft-panel and upgrade-button affordability checks) — only
+      the *display* moved into the inventory, the underlying values are
+      unchanged and still arrive via the same `WELCOME`/`INVENTORY_UPDATE`/
+      `ORE_UPDATE` messages as before
+
+## Phase 23 — Item selling (a real sink for the bag)
+Proceeding autonomously (standing "keep improving it, use Idlekin/other
+MMOs as reference" direction) — the bag could only ever grow (loot +
+crafting, no way back out), which stops being sustainable now that
+crafting can mint items on demand. Sell is the standard MMO fix.
+- [x] Unequipped items can be sold for wood, scaled by rarity
+      (`sellValueFor`: common 5 / rare 20 / epic 60) — a shared formula
+      function, not a table duplicated per call site
+- [x] New `SELL_ITEM` message; server validates ownership and that the
+      item isn't currently equipped (`db.sellItem`: select-check-delete-
+      credit, mirrors the existing `equipItem`/`craftItem` validation shape)
+      before deleting the row and crediting wood
+- [x] Client: a small "Sell for N🪵" button fades in on hover over any
+      unequipped item card (`opacity: 0` → `1` on `:hover`, doesn't compete
+      for space when not hovering), `stopPropagation()` so clicking it
+      doesn't also trigger the equip click handler on the same card
+- [x] Confirmed via combat-log entry on sell ("Sold rare weapon for 20
+      wood."), looked up client-side from the still-cached item before the
+      server round-trip confirms it
+
+## Phase 24 — Consumables: craftable Health Potions
+Proceeding autonomously (standing "keep improving it" direction) — picked
+the "more crafting recipes (consumables)" candidate from Phase 23+, since
+crafting so far only ever produced equipment and combat had no player-side
+recovery tool besides passive regen.
+- [x] Consumables modeled as a plain stack count on the character (new
+      `potions` column, mirrors `wood`/`ore`) rather than `items` table
+      rows — nothing to equip or roll a stat on, just a quantity
+- [x] Workbench gained a 4th recipe row (Health Potion, +30 HP, costs 8
+      wood + 6 ore) alongside the existing weapon/armor/boots rows
+- [x] New `USE_POTION` message: consumes one potion, heals
+      `POTION_HEAL_AMOUNT` HP (capped at max via the existing `addHp`),
+      resets the regen timer so it doesn't stack awkwardly with passive
+      regen's next tick
+- [x] Inventory: potions render as a stack card (🧪, xN badge) — clicking
+      the card itself uses one (no separate button, unlike sell/equip,
+      since "use" is the only thing you'd ever do with a potion card) —
+      plus a new "potion" filter tab
+- [x] `POTIONS_UPDATE` message reused for both craft and use (both mutate
+      the same stack + possibly wood/ore), keeping the message count down
+      rather than a separate message per mutation source
+
+## Phase 25 — Second stat roll per item
+Proceeding autonomously — picked "more item stats (2nd roll per item)"
+from the candidates list, since gear so far only ever had one number worth
+checking (the primary roll), and this session already built a proper
+tooltip for exactly this kind of extra detail.
+- [x] Every item now rolls two independent stats on drop/craft: the
+      existing primary (weapon dmg / armor reduction / boots evasion) plus
+      a new secondary of a *different* flavor per slot — weapon → bonus
+      crit chance%, armor → bonus evasion% (stacks with boots), boots →
+      bonus move speed. Smaller ranges than the primary (`SECONDARY_STAT_
+      ROLL_RANGES`), since it's a bonus, not the main reason to equip
+      something
+- [x] New `bonusStatValue` column on `items` (mirrors how `statValue` was
+      added originally — an `ALTER TABLE` migration, not a schema rewrite)
+- [x] Wired into live combat and movement: player crit chance now adds
+      the equipped weapon's bonus, defender evasion (both in the player's
+      own attack resolution as attacker-side irrelevant, and in the
+      monster's counter-attack as defender-side) now sums boots' primary
+      *and* armor's secondary, move speed now takes a third
+      `bootsBonusSpeed` parameter
+- [x] Tooltip shows the secondary line only when non-zero (a common item
+      can roll as low as 0 on some slots) — avoids "Crit chance: +0"
+      noise on the common end of the roll table
+- [x] Stats panel (Character sheet) reflects the same combined totals as
+      combat actually uses, not just the primary — no separate "what you
+      see" vs. "what the server computes" formula
+
+## Phase 26 — HUD unit frame (HP/XP bars replace plain text)
+Proceeding autonomously — picked "character portrait with HP/XP bars for a
+full MMO-style unit frame" from the candidates list.
+- [x] Top-left HUD replaced plain "HP: 50/50" / "Lv1 XP: 0/20" text with a
+      real unit frame: a portrait circle (🧙 placeholder, no sprite art
+      yet) beside two stacked bars — HP (color-shifts green/yellow/red by
+      threshold, same thresholds as before) and XP (gold fill), both with
+      the numbers overlaid on the bar itself rather than as separate text
+- [x] Bars are plain rectangles (`hpBarBg`/`hpBarFill` + text, same for xp)
+      with fill width scaled by ratio each refresh — same pattern already
+      used for the in-world gather/battle progress bar and monster HP
+      bars, just applied to the corner HUD instead of a new mechanism
+- [x] HUD background panel grew slightly (268x70 → 300x84) to fit the
+      portrait + bars; hint text shifted down accordingly
+
+## Phase 27 — Agility double-attack chance
+Proceeding autonomously — picked "agility-based double-attack chance" from
+the candidates list, the last of Agility's originally-promised effects
+(accuracy, crit chance, move speed already existed) not yet built.
+- [x] `doubleAttackChance(agility)` = agility%, capped at 25% — a 4th thing
+      Agility buys, alongside accuracy/crit/move-speed
+- [x] Implemented as an independent extra swing, not a damage multiplier:
+      the player's attack-cycle handler now loops up to 2 times (capped by
+      `!monsterDefeated` so a kill on the first swing skips the second),
+      each swing rolling its own hit/miss/crit via `resolveHit` and
+      sending its own `BATTLE_RESULT` — so a double attack shows as two
+      separate combat-log lines/floating-text hits, not one bigger number
+- [x] Character sheet gained a "Double Attack" stat row showing the
+      current %, computed the same way client-side as the server actually
+      rolls it
+
+## Phase 28 — New monster kind: Wolf
+Proceeding autonomously — picked "more monster/item variety" from the
+candidates list. Added a 4th monster kind rather than reusing an existing
+one for a new pack, since the design already generalizes cleanly to that
+(per the Phase 9 decision: adding a kind is one `MONSTER_STATS` row, not
+new branching logic).
+- [x] Wolf: fast/evasive glass-cannon profile distinct from all 3 existing
+      kinds — lowest HP after slime (22), highest evasion for its tier
+      (20), and the fastest attack cadence of any monster (1.4s, faster
+      even than goblin) — a "death by a thousand cuts" pack fight,
+      deliberately the opposite feel from the troll's slow-heavy-hits
+- [x] New wolf den (4-wolf pack, reuses the existing `DIAMOND_OFFSETS`
+      pack shape) placed at (1100, 1500) — the one remaining open spot in
+      the world layout, symmetric with the troll lair at (1100, 100)
+- [x] Client: distinct color (slate gray, mid-sized radius between slime
+      and goblin) so it's visually identifiable at a glance in its pack
+
+## Phase 29 — Fourth equipment slot: Ring
+Proceeding autonomously — picked "more item variety" from the candidates
+list. The equipment system was explicitly built to make this cheap (Phase
+10 decision: "adding a 4th slot later is a one-line addition to each
+table") — this phase confirms that held up: `tsc` found every touch point
+via exhaustiveness errors on `Record<ItemSlot, ...>` once `ITEM_SLOTS`
+grew a 4th entry, nothing missed silently.
+- [x] Ring: primary = bonus damage (stacks additively with weapon's, a
+      pure-offense slot with no defensive/utility side effect — the other
+      3 slots each already do one of those), secondary = bonus accuracy%
+- [x] No new equipped-rarity tracking needed server-side beyond extending
+      the existing `EquippedItems`/`computeEquipped` — unlike weapon/
+      armor/boots, nothing needed a *cached* "ringRarity" column on the
+      character row, since ring's effects only ever come from the
+      equipped item's own `statValue`/`bonusStatValue`, consumed directly
+      via the `equippedItems` map already built for combat. Client mirrors
+      this: no `ringRarity` field over the wire, `equippedRingRarity()`
+      just scans the already-synced `items` array instead
+- [x] Silhouette layout: ring placed bottom-left, mirroring boots at
+      bottom-right — weapon left-middle, armor top-right unchanged
+- [x] Fully wired through crafting (workbench got a 4th recipe row for
+      free — `CraftPanel`'s `SLOTS` list is the only thing that needed
+      updating), loot drops (`rollItemSlot` already picks uniformly from
+      `ITEM_SLOTS`), inventory tabs, and tooltips
+
+## Phase 30 — Leaderboard
+Proceeding autonomously — picked "leaderboards" from the candidates list,
+a natural fit given this is already a real multiplayer server with
+persisted characters, not just single-player-with-a-server.
+- [x] New 🏆 dock icon / `L` shortcut opens a ranked list (top 10 by
+      level, xp as tiebreaker) — top 3 get medal emoji instead of a `#N`
+      rank number
+- [x] Pull-based, not pushed: client sends `REQUEST_LEADERBOARD` when the
+      panel opens rather than the server broadcasting it continuously to
+      everyone every tick — nobody needs a live-updating leaderboard
+      second-to-second, and this avoids adding leaderboard computation to
+      the already-busy 100ms tick loop
+- [x] Reads straight from SQLite (`ORDER BY level DESC, xp DESC LIMIT 10`)
+      rather than from in-memory `playerLevels`, so offline characters
+      still rank (in-memory maps only exist for currently-connected
+      players) — this is also why it "just works" without needing to be
+      told about disconnects/reconnects
+- [x] Own row highlighted (gold border) by matching character name client-
+      side — no server-side "is this you" flag needed since the client
+      already knows its own name
+
+## Phase 31 — Third material: Herb, potions rebalanced, HP Regen stat
+User asked for a new gatherable ("herb") used for potions and "maybe some
+other things," plus more stats — improvised the specifics.
+- [x] Herb: 3rd gatherable resource alongside wood/ore, gathered from a new
+      `bush` node kind (green, distinct from tree/rock). `GatherableResource`
+      and `ResourceNodeKind` both extended; a new `resourceForNodeKind()`
+      helper replaced the old inline `kind === "tree" ? wood : ore`
+      ternary (which had no room for a 3rd branch) everywhere a node's
+      harvested resource needs to be known, including offline-gather
+      resumption on reconnect
+- [x] 4 herb bushes placed as a small cluster right next to the workbench/
+      spawn (950–1250, 680–920) — convenient since potions (the thing herb
+      is for) are crafted at that same station
+- [x] Health Potion recipe reworked from wood+ore to mostly herb (8 herb +
+      2 wood, dropped the ore requirement entirely) — thematically potions
+      should come from herbs, not lumber and stone
+- [x] New `HERB_UPDATE` message (parallel to `INVENTORY_UPDATE`/
+      `ORE_UPDATE`) rather than overloading an existing message shape;
+      `POTIONS_UPDATE` and `WELCOME` extended to carry herb too since both
+      already carry wood/ore for the same "affordability" purpose
+- [x] More stats (the open-ended half of the ask): Vitality now also
+      governs passive HP regen amount (`regenAmountForVitality`, 1 hp/5s
+      base up to 5 hp/5s at high vitality) instead of a flat 1 hp/5s for
+      everyone — a second payoff for the stat beyond max HP, shown as a
+      new "HP Regen" row on the character sheet
+
+## Phase 32 — Daily login bonus
+Proceeding autonomously — picked "daily bonuses" from the candidates list.
+- [x] Claimable once per 20h (not calendar-day, so timezone/midnight
+      rollover isn't a concern — just elapsed time since last claim,
+      gated server-side in `claimDailyBonus`) — grants a flat 20 wood /
+      20 ore / 15 herb / 1 potion
+- [x] Checked on every `HELLO` (i.e. every connect/reconnect), same place
+      offline-progress is resolved — stacks additively on top of whatever
+      offline gathering/battling already granted this session, using the
+      DB's post-offline-update values as the base so the two don't race
+- [x] New `DAILY_BONUS` message carries the character's post-grant totals
+      (not the delta) — client applies them as an absolute assignment to
+      wood/ore/herb/potions rather than an increment, avoiding any
+      double-counting if a client reconnect briefly overlaps with a
+      pending balance update
+- [x] No new UI panel — reuses the existing toast + combat-log pattern
+      already used for offline-summary/level-up/combat events, consistent
+      with how every other "something happened while you weren't looking"
+      moment in this game is communicated
+
+## Phase 33 — Second consumable: XP Tonic
+Proceeding autonomously — picked "more crafting recipes (other consumables
+using herb)" from the candidates list, delivering on the "herb used for
+potions and maybe some other things" ask from a couple phases back.
+- [x] XP Tonic: same stack-count consumable model as potions (craft at
+      workbench, stored as a plain counter, click the inventory card to
+      use), but grants flat XP (+25) instead of HP — costs 12 herb + 4 ore
+      (no wood), a different resource mix than the potion's herb+wood so
+      the two recipes don't feel identical
+- [x] `CraftPanel`/`InventoryPanel` refactored to share a small
+      `renderConsumableRow`/`renderConsumableCard` helper between potion
+      and tonic instead of duplicating the DOM-building code a second
+      time — paid off immediately by making the tonic addition mostly a
+      one-line call rather than a copy-paste block
+- [x] Tonic and potion share the same inventory filter tab (🧪) rather than
+      getting a dedicated 8th tab — both are "consumables," and the tab
+      row was already getting crowded (weapon/armor/boots/ring/material/
+      potion = 6 tabs plus All)
+- [x] Using a tonic reuses the exact same `addXp`/level-up/stat-point
+      plumbing as a monster kill (`XP_UPDATE`, and `STATS_UPDATE` if it
+      crosses a level) — no special-cased "tonic XP" path, it's the same
+      XP pipe with a different trigger
+
+## Phase 34 — Inventory cap
+Proceeding autonomously — picked "inventory cap" from the candidates list.
+The bag could only ever grow (loot + crafting, no cap) even after selling
+was added, so selling was purely optional busywork rather than something
+the bag ever actually needed.
+- [x] 30-item cap (equipment only — materials/potions/tonics are plain
+      counters, not affected) enforced in all three places items get
+      added: monster loot drops, workbench crafting, and offline-battle
+      loot simulation
+- [x] New generic `INFO` message (`{text, color}`) rather than a dedicated
+      "bag full" message type — a reusable server-initiated toast for any
+      future one-off notification, not just this one
+- [x] Crafting checks the cap *before* spending resources — a blocked
+      craft costs nothing, rather than charging wood/ore/herb and then
+      failing to deliver the item
+- [x] Inventory panel header shows a live "(N/30)" counter (turns red at
+      cap) so the constraint is visible before you hit it, not just when
+      a drop silently fails
+
+## Phase 35 — Real terrain/environment sprites
+Proceeding autonomously — picked "real sprite art" from the candidates
+list, scoped to terrain/environment only (world background + resource
+nodes); monsters and players stay as-is since no matching creature
+sprites were found in the chosen pack.
+- [x] Downloaded Kenney's "Roguelike/RPG Pack" (CC0, kenney.nl) — a single
+      16x16-tile spritesheet with a 1px gap between frames
+      (`client/public/assets/tiles.png` + `TILES_LICENSE.txt`)
+- [x] World background switched from a plain colored `Grid` to a grass
+      `TileSprite` covering the full world bounds
+- [x] Resource nodes (tree/rock/bush) render as real cropped tile sprites
+      (`Phaser.GameObjects.Image` + frame index) instead of plain colored
+      circles; depleted state now uses `setTint`/`clearTint` instead of
+      `setFillStyle` (not available on `Image`)
+
+## Phase 36 — Sprite visibility fixes + character/monster art
+User feedback on Phase 35: nodes were "barely visible" against the grass
+TileSprite, and the rock frame borrowed from the Roguelike/RPG Pack "does
+not look like rock at all." Also asked to find character/NPC packs for
+"everything we need" — i.e. players and monsters too, not just terrain.
+- [x] Every ground-standing sprite (nodes, monsters, local + remote
+      players) now gets a soft dark ellipse drawn just before it (shares
+      insertion-order-based depth with no explicit `setDepth`) — grounds
+      it visually and adds contrast against the busy grass texture, which
+      was the real cause of "barely visible," not sprite size
+- [x] `NODE_SPRITE_SCALE` bumped 2.5 → 3 for a bit more presence
+- [x] Rock replaced with a hand-drawn 16x16 transparent-background boulder
+      (`client/public/assets/rock.png`) after confirming the Roguelike/RPG
+      Pack has no standalone rock prop at all — its gray "rock" tiles are
+      cave-floor pieces with an opaque dirt-color background baked into
+      every tile, which would've rendered as a visible dirt-colored square
+      over grass, not a floating rock
+- [x] Downloaded Kenney's "Tiny Dungeon" (CC0, kenney.nl) for character/
+      monster art (`client/public/assets/characters.png` +
+      `CHARACTERS_LICENSE.txt`) — its bust-style icons (unlike the terrain
+      pack) sit on a genuinely transparent background, confirmed by
+      checking corner-pixel alpha before committing to the pack
+- [x] Local player, remote players, and all 4 monster kinds now render as
+      real bust sprites instead of colored circles: villager bust for the
+      player, a second bust for other players, slime/wolf busts used
+      as-is, goblin reskinned via `setTint` on a barbarian bust (no green
+      humanoid bust exists in the pack), troll using the pack's
+      ogre-like bust. Dead/depleted state still reads via tint
+      (`MONSTER_COLOR_DEAD`), same mechanism as Phase 35's node depletion
+- [x] No walk-cycle frames exist in either pack, so movement stays a
+      static bust sliding to its new position rather than an animated
+      sprite — treated as acceptable for an idle game where most
+      "motion" is auto-battling in place, not deliberate exploration
+
+## Phase 37 — Full art pass: animated actors, custom sprites, Y-sorting
+User asked to upgrade every model/sprite, give everything animations where
+needed, and make or download proper animated character art — "improvise,
+just make the game look good."
+- [x] `pixelArt: true` on the Phaser config. Everything in this game is
+      16px-grid art drawn at 2-4x, and the default bilinear filtering was
+      quietly blurring all of it; this alone sharpened the whole screen
+- [x] New source pack: 0x72's "16x16 DungeonTileset II" (CC0), which unlike
+      either Kenney pack ships real 4-frame idle **and** run animations for
+      25 creatures. Found via a GitHub mirror that also publishes the
+      per-frame PNGs, so individual frames could be pulled without
+      scraping itch.io's download flow
+- [x] Built `client/public/assets/actors.png` offline: source frames are
+      wildly irregular (16x16 to 32x36), which Phaser's fixed-cell
+      `load.spritesheet` cannot express, so they are composed into one
+      uniform 32x36 grid — 8 columns per actor (idle f0-3, run f0-3), one
+      row per actor. Cells are centre-aligned horizontally and
+      bottom-aligned vertically, so `setOrigin(0.5, 1)` makes every actor
+      stand feet-on-position and ground shadows need no per-actor nudging
+- [x] Hand-drew the two creatures the pack has no equivalent for — slime
+      (squash-and-stretch bob) and wolf (4-leg walk cycle, side profile) —
+      via a shape-mask → auto-outline → shade pipeline rather than
+      hand-typed pixel maps, so they stay symmetric and iterable
+- [x] Player, other players and all 4 monsters are now animated `Sprite`s:
+      idle loop at rest, run loop while moving, `flipX` for facing.
+      Monsters keep an idle loop; a corpse stops animating *and* tints
+      dark, since a bobbing dark silhouette still read as alive
+- [x] Landing a hit now flashes the monster white (yellow on crit) and
+      recoils it — combat was previously only legible in floating text
+- [x] Crafting station is an animated forge (the pack's two lit fire
+      frames on a loop) instead of a plain yellow rectangle — the last
+      object in the game with no real sprite
+- [x] Trees and bushes sway on a randomised tween, rotating about their
+      base so it reads as wind rather than a mid-air pivot; rock doesn't
+- [x] ~320 flower/detail tiles scattered on the grass lattice from a fixed
+      seed (identical every reload). These decorated tiles are full-bleed,
+      but their base green is byte-identical to the plain grass tile, so
+      on the 32px lattice they blend instead of reading as pasted squares
+- [x] Real Y-depth sorting (`setDepth(y)`), forced by the origin change:
+      draw order had been creation order, which would have left the
+      player — created before any snapshot arrives — permanently behind
+      every tree and monster. Background/scatter/FX/HUD are pinned outside
+      the Y range. This also fixed a latent bug where world objects could
+      draw over the HUD
+- [x] Floating combat text now drifts up while fading, and all world
+      labels gained a dark stroke so they stay readable over any sprite
+- [x] Dropped the Tiny Dungeon pack and its static busts entirely;
+      consolidated provenance into `client/public/assets/ASSET_CREDITS.txt`
+
+## Phase 38 — Visual bug fixes + world art quality
+First look at Phase 37 running. User reported the workbench rendering as a
+"blinking flower", asked for other visual bugs fixed and the graphics
+improved / "more HD", and separately that the grass looked "very bland and
+low quality".
+- [x] **Workbench bug**: `STATION_FRAMES` was written `13 * TILESET_COLS + 0`
+      — row 13, column 0 — when the forge is at column 13, **row 0**. Row
+      and column swapped, which silently resolves to a real but wrong tile:
+      a blue flower. Nothing can catch this, which is why the fix is
+      structural (below) rather than just corrected numbers
+- [x] **`props.png`**: every non-actor object baked offline into one flat
+      32x32 grid indexed 0..14, so world objects are addressed by a single
+      meaningful index and the row/col class of bug cannot recur. It also
+      unlocks two-tile-tall trees, which a single sheet frame index simply
+      cannot express
+- [x] **Washed-out trees/bushes**: the tree at (13,9) and bush at (19,9)
+      are almost exactly the grass hue, which is why they read as flat
+      ghost outlines in-game. Switched to the teal and autumn variants,
+      and to the two-tile trees, which have real trunks and contrast
+- [x] **Bland grass**: was one 16px tile repeated, so the field was flat
+      and visibly gridded. `grass.png` now bakes a 16x16-tile mosaic of
+      four grass variants, each randomly flipped (16 distinct-looking
+      cells from 4 sources), under a wrapping value-noise brightness field
+      for broad light/dark patches. On-screen repeat period goes 32px → 512px
+- [x] **Cluttered ground**: the scatter tiles were dense 5-blossom
+      bouquets on a locked 32px lattice. Replaced with hand-drawn tufts,
+      small flowers and pebbles — mostly tufts, weighted — and because
+      they are transparent they now sit at arbitrary positions instead of
+      snapping to a grid. Drawing them was necessary, not preference: the
+      sheet's flower tiles bleed a stone-path fragment in from the
+      neighbouring tile, and its white flowers are themselves grey, so no
+      colour key can separate artwork from artifact
+- [x] **Broken HUD portrait**: was the 🧙 emoji, which the canvas renderer
+      drew as fallback tofu glyphs. Now the player's own idle animation
+      plays in the portrait circle
+- [x] Node art varies per node (3 trees, 2 bushes, 2 rocks), picked by
+      hashing the server-assigned node id — stable across reloads and
+      identical for every player looking at the same object
+- [x] Redrawn rocks with proper faceting, a specular chip and moss, plus a
+      second smaller variant
+- [x] `ACTOR_SCALE` 2 → 3; actors were noticeably undersized against the
+      world once the trees gained real height
+
+## Phase 39 — Combat animation, held weapons, effect + sound systems
+User asked for "good combat with good animations", for an equipped weapon
+to actually be held in hand with animations, and — mid-phase — for the
+effect and sound work to be built so future spells/skills can use it.
+- [x] **Held weapons**: `weapons.png`, bottom-aligned so `setOrigin(0.5, 1)`
+      puts the pivot on the grip — the source art is all drawn point-up /
+      hilt-down, so one rotation tween reads as a real swing around the
+      hand. Rarity picks the art (worn iron → clean steel → ornate gold),
+      since rarity is the only thing distinguishing one weapon item from
+      another, and it makes an upgrade visible in the world
+- [x] Monsters wield too, reusing the same code: goblin an axe, troll a
+      big hammer; slime and wolf have no hand to put one in
+- [x] Other players' weapons are visible as well — needed a new
+      `weaponRarity` on `PlayerState`. The server merges it in at
+      broadcast time from the existing `weaponRarities` map rather than
+      storing a second copy on the player record, so it cannot drift
+- [x] **Position/render split**: the player's position used to live on
+      `localSprite.x/y`, i.e. the render object doubled as game state. An
+      attack lunge would then have corrupted the position sent to the
+      server, so `playerX/playerY` are now authoritative and sprite,
+      shadow, label and weapon are all views onto them plus a `lunge`
+      offset. Depth still keys off the true position, so a lunge can't pop
+      the player in front of something they haven't walked past
+- [x] Attack beat: face target → wind up → swing → lunge → impact effect
+      on the near side of the monster → flash + recoil → floating damage.
+      Crits swing wider, tint gold, add a burst and shake the camera. The
+      swing plays on a miss too — a miss is attacking and failing, not
+      standing still
+- [x] Monster attacks got the mirror treatment: monster lunges and swings,
+      player flashes and is knocked back
+- [x] Defeat is now a beat rather than a tint swap: burst, topple, then
+      settle into the dark idle corpse. Respawn undoes it
+- [x] **Effect library** (`fx.png`), built as a system rather than the one
+      slash today's combat needs: 8 effects x 4 frames on a uniform 32x32
+      grid — slash, impact, bolt, heal, fire, frost, lightning, buff —
+      behind one `playEffect(name, x, y, {scale, tint, angle})` call. A
+      future spell picks a row and a tint instead of needing new art
+- [x] **Sound**: the game had no audio at all. 10 cues synthesised offline
+      as 16-bit WAVs (swing/hit/crit/miss/hurt/die/gather/levelup, plus
+      `cast` and `heal` which exist ahead of the spell system that will
+      want them), behind `playSfx(name, volume)` with a per-cue rate limit
+      — auto-battle fires several results a second and would otherwise
+      turn the mix into a buzz. `[M]` toggles sound
+- [x] Level-up and healing now have their own effect + cue, already using
+      the shared library
+
+## Phase 40 — Idle model removed; proximity combat + monster AI; armour art
+User: drop the idle framing and build a real auto-battler that "makes
+sense"; weapon placement looked wrong; how would armour be shown at all;
+and (mid-phase) monsters should move and aggro like any normal RPG.
+- [x] **Idle model deleted.** No GATHER_START / BATTLE_START / STOP_ACTION,
+      no standing intents, no cycle progress bars, no offline progress
+      simulation (~120 lines out of `db.ts`, plus its shared helpers).
+      `MOVE` is now the only action input in the game
+- [x] **Combat is proximity-driven**: each tick the server finds the nearest
+      alive monster within `ENGAGE_RANGE_PX` and swings on the player's own
+      attack interval. Fighting pre-empts gathering — you can't calmly chop
+      a tree while something is biting you. The first tick in range only
+      starts the clock, so stepping in and out can't rush swings
+- [x] **Attack speed is now a property of the attacker**, not the target.
+      `battleDurationMs(weapon, power, monsterKind)` became
+      `playerAttackIntervalMs(weapon, power, agility)` — a troll used to
+      make your arms slower, which never made sense; a tough monster should
+      be tough through HP/armour/evasion, which it already is
+- [x] **Monster AI state machine** (idle → chase → return): sticky aggro on
+      one target rather than re-picking the nearest each tick (which makes
+      packs flip-flop), gives up when the target dies/logs out/outruns the
+      radius with slack so boundary-walking doesn't blink aggro, leashes
+      when dragged too far from home, and heals to full on arriving back —
+      the standard MMO reset. Corpses return to their post before respawn
+      so a chased pack doesn't permanently relocate
+- [x] Monster counter-attacks are keyed by monster instead of by player,
+      since any number of players can now stand in one monster's reach
+- [x] Client follows moving monsters (position/shadow/label/HP bar/weapon),
+      and skips repositioning while a lunge tween owns the sprite
+- [x] **Armour is visible**: four player rows in the atlas, the same knight
+      with its two armour tones repainted — leather / bronze / steel / gold.
+      See the decisions log for why this beat the alternatives. Other
+      players' armour and weapons show too (`armorRarity` added to
+      `PlayerState` alongside `weaponRarity`)
+- [x] **Weapon placement fixed.** Two real bugs, not just bad offsets:
+      rare/epic used the 29-30px long swords, which are as tall as the
+      wielder; and starting a swing kills the previous tween, skipping its
+      onComplete and stranding the weapon mid-arc — which is why goblins
+      stood around holding axes diagonally. Now short blades throughout,
+      grips read off the sprites' actual gauntlet pixels, and the rest
+      angle is re-asserted (and mirrored with facing) whenever no swing is
+      running. The troll lost its weapon: the ogre art already holds a club
+- [x] Verified with a scripted WebSocket client rather than by eye: walked
+      a bot into a slime camp and confirmed monsters closed 29px on their
+      own, 5 auto-attacks and 16 counter-attacks landed with no input, and
+      gear rarity is present on the wire
+
+## Phase 41 — Targeting, skills, positioning, feedback, balance
+The five improvements identified at the end of Phase 40, plus mouse
+targeting and a skills system, all requested together.
+- [x] **Click to target** (1): left-click an enemy to select it, click empty
+      ground to clear, `Tab` cycles the pack by distance. The server
+      prefers your selected target and falls back to nearest when unset —
+      so walking into a camp still fights back, but selecting something
+      lets you focus it. Server validates the id rather than trusting it
+- [x] **Skills system** (2): five cooldown-gated actives on keys 1-5 and
+      clickable, each answering a different problem rather than being five
+      damage buttons — Cleave (pack damage), Firebolt (reach, 320px vs
+      your 62px melee), Frost Nova (escape, slows), Mend (sustain), War
+      Cry (burst, +35% damage). Server-authoritative: it checks cooldown,
+      range and target, and the client starts its cooldown sweep from the
+      server's reply rather than optimistically on keypress, so rejected
+      attempts don't punish the player. Skills scale off the same
+      attributes as auto-attacks, so gear choices carry over
+- [x] Deliberately **no mana**: a resource bar means a second economy
+      (regen, HUD bar, a stat feeding it) for the same decision cooldowns
+      already create. Noted as the natural next addition, not a
+      prerequisite
+- [x] **Positioning now matters** (3): per-kind reach and chase speed.
+      Wolves run at 200px/s against your 220 and cannot be shaken off;
+      trolls lumber at 92 but swing from 82px away; slimes must physically
+      touch you at 42px. Kiting works or doesn't per monster, by design.
+      Frost Nova cuts speed to 40% for 3.5s, which is what makes escape a
+      real option rather than a stat
+- [x] **Feedback** (4): target ring on the ground, a target frame with the
+      enemy's name and health, chilled enemies tinted blue, cooldown
+      curtains on the hotbar, and an "in combat" indicator inferred from
+      recent combat traffic rather than a protocol flag
+- [x] **Balance** (5): monster speeds were 42px/s against a player's 220 —
+      nothing could ever catch you, which made the whole chase system
+      inert. Retuned per kind against the player's actual speed
+- [x] One timed-modifier mechanism serves both the monster slow and the
+      player buff, rather than two bespoke systems
+- [x] Verified with a second scripted client: all five skills fired
+      (Cleave hit 4 in a pack, Firebolt hit the selected target at range,
+      Frost Nova applied its 3.5s slow, War Cry its 8s buff, Mend healed
+      22), a sixth cast was correctly refused as "cooling down", 5
+      auto-attacks landed on the *selected* target, and the wolf moved
+      exactly 20px/tick = 200px/s, matching its stat
+
+## Phase 42 — Combat depth: threat, kill credit, crowding, GCD, telegraphs
+The five gaps found by auditing Phase 41's code. Two were corrections to
+things that were arguably broken; three add depth.
+- [x] **Shared kill credit** (was broken): `addXp`/`maybeDropLoot` fired only
+      for whoever landed the last blow, so two players on one monster meant
+      one got *nothing* — which made co-op pointless. A per-monster damage
+      table now splits XP proportionally, with a `MIN_XP_SHARE` floor so a
+      small contribution doesn't round to zero. Loot isn't divisible, so it
+      goes to the largest contributor rather than being duplicated
+- [x] **Threat table** (was broken): monsters attacked whoever was
+      *nearest*, so a player merely walking past stole a monster off the
+      person fighting it, and no group role could exist. The same
+      accumulated-damage table now decides who it turns on. Using damage as
+      threat means one structure answers both questions, and clearing it on
+      death/leash is what gives threat its decay — no separate decay pass
+- [x] **Melee crowding**: chasing alone converged a whole pack onto one
+      point, so four wolves rendered as one silhouette and all hit you from
+      zero distance. Added separation steering (bodies push apart) plus a
+      melee-slot cap — only `MAX_MELEE_ATTACKERS` press into contact, the
+      rest hold at successively wider rings and rotate in
+- [x] **AoE cap**: `monsters.filter(...)` was unbounded, so one Cleave in a
+      big camp hit everything at full damage. Capped at 5, nearest first
+- [x] **Global cooldown**: only per-skill cooldowns existed, so all five
+      skills could be dumped in a single frame. A 900ms GCD makes the bar a
+      rotation rather than one alpha strike
+- [x] **Skills now roll to hit and crit** (was an inconsistency): they
+      applied flat `power − armor`, bypassing accuracy, evasion and crit
+      entirely — so Agility silently stopped mattering the moment you
+      pressed a hotbar key, which nothing in the UI hinted at. They now go
+      through `resolveHit` like any swing. Control effects still land on a
+      miss, since a nova that both misses *and* fails to slow would be
+      miserable on an 11s cooldown
+- [x] **Telegraphed troll slam**: the first enemy answered with your feet
+      rather than your stats. It winds up visibly for 900ms, then hits
+      everything within 120px of wherever it is standing *at that moment* —
+      deliberately not re-checking range at wind-up time, because walking
+      out is the whole mechanic. Carried on the snapshot as `windingUp`
+      rather than a new message: the client only needs to know a wind-up is
+      in progress, and the radius is a static per-kind stat it can look up.
+      The danger circle growing to full size *is* the countdown
+- [x] Verified by script with three concurrent clients: the second skill in
+      a frame was refused ("not ready") and the same skill succeeded after
+      the GCD; a skill genuinely **missed** (`hit: false`), impossible
+      before; the slime pack's closest pair held 39.6px apart (above the
+      34px separation threshold) instead of stacking; **both** players on
+      one camp earned XP; and the troll's wind-up was observed
+
+## Phase 43 — Stakes, monster abilities, co-op support, mobility
+Third audit pass. Three findings were things that made combat unlosable or
+un-cooperative; the rest add verbs.
+- [x] **Potion cooldown** (was exploitable): `USE_POTION` had no gate at
+      all, so a stocked player could drink their whole stack in one frame
+      and could not be killed. 9s cooldown, with an INFO on refusal
+- [x] **Regen no longer ticks in combat** (was a hole): healing ran while
+      you were being hit, so disengaging to recover was never necessary and
+      Mend had no job. Gated behind 6s since the last damage either way
+- [x] **Death now costs something** (was backwards): respawn was free *and*
+      teleported you home *and* reset the monster to full, so suiciding beat
+      retreating. Now: lose 15% of progress toward the current level (never
+      a level, never below zero) plus a 20s Weakened debuff that bites into
+      the same damage number War Cry inflates, so the two are comparable
+- [x] **One ability per monster**, so kinds differ by verb and not just by
+      stat block:
+      - **Wolf** — leap gap-closer at 3.4x speed. Only front-rank wolves
+        leap, so a pack doesn't all pounce at once
+      - **Goblin** — call for help: the first hit wakes packmates within
+        210px, turning pulling into something you plan
+      - **Slime** — death burst, so wading into a swarm and cleaving it
+        down is not entirely free
+      - **Troll** — telegraphed slam (Phase 42)
+- [x] **Co-op support skills**: Mend and War Cry now prefer a selected ally
+      and fall back to self. One selection covers both — the server looks
+      the id up in monsters *and* players and stores it as whichever it is,
+      so clicking an enemy gives you something to attack and clicking a
+      player gives you someone to help, with no second message or click.
+      This is the first mechanical reason to play together rather than
+      merely alongside
+- [x] **Dash** (6th skill, 5s cooldown): surges you 170px in your movement
+      direction, or directly away from the nearest enemy when standing
+      still. Resolved client-side once the server confirms the cooldown,
+      consistent with movement already being client-authoritative — the
+      server owns the part that needed trusting. Without it, disengaging
+      from a wolf (200px/s vs your 220) was effectively impossible
+- [x] **Range indicators**: faint melee-reach ring under the player while
+      fighting, and the target ring doubles as a readout — gold in reach,
+      grey out of it, with the target frame saying "out of reach"
+- [x] **Skills scale with level**: `skillPower` read only strength/vitality,
+      so the hotbar quietly fell behind as auto-attacks kept scaling
+      through gear
+- [x] Verified by script with four concurrent clients. First run *failed*
+      and was right to: it stood the bots inside the camps, where nothing
+      ever has to approach, so leap and call-for-help could not trigger —
+      and Mend's "refused" was correct, the ally was at full HP. Re-run
+      with the bots outside: wolf leapt at 68px/tick against a 20px walk
+      (its exact 3.4x), 3 of 4 goblins engaged from a single pull, potions
+      refused 4 of 5 rapid uses, Dash accepted, and Mend healed an ally for
+      27 with the ally receiving the notification
+
+## Phase 44 — Class system: warrior / ranger / mage
+Classes with their own art, weapons, stats, spells and skill trees; a new
+Intelligence attribute driving a mana pool; and higher-fidelity effect art.
+- [x] **Three classes**, differing in more than numbers. Each has its own
+      body art, its own weapon family it alone may equip, its own primary
+      attribute driving damage, and its own **auto-attack range** — the
+      single number that most changes how they play: a warrior must close
+      to 62px, a ranger opens fire at 300, a mage sits at 250
+- [x] **Class art**: 12 player rows (3 classes x 4 armour tiers), built by
+      palette-swapping each source sprite's two garment tones. Each class
+      tiers through its *own* ramp — a warrior through metals, a ranger
+      through leathers and greens, a mage through robe dyes — so tier stays
+      readable without every class converging on the same gold at the top
+- [x] **Weapon families**: swords / bows / staffs, three tiers each. A class
+      may equip only its own, enforced server-side, and weapon drops roll
+      the finder's family — loot is per-player anyway, and handing someone a
+      weapon they are forbidden to use is a non-reward, not a decision
+- [x] Fixed a latent bug the new weapons exposed: bows are gripped at their
+      *middle* and staffs a third up, but everything pivoted at the sword's
+      pommel, so bows and staffs floated over the wielder's head. The sprite
+      origin is now per weapon family
+- [x] **Intelligence + mana**: a fourth attribute driving mana pool, mana
+      regen and mage damage. Mana answers "how many in a row" where
+      cooldowns answer "how often". It regenerates *during* combat, unlike
+      health, because a caster who runs dry mid-pull has nothing to do but
+      auto-attack — the opposite of playing a mage
+- [x] **21 skills — 7 per class, 5 active + 2 passive** — unlocked by level
+      (1/1/4/8/12/16/20) and shown in a skill-tree panel (`K`). Level gating
+      rather than spendable points on purpose: the game already has a point
+      economy in attributes, and a second one competing with it would make
+      both feel thin. Passives fold into the stat maths at their level
+- [x] Hotbar rebuilds per class and level, and dims what you cannot afford
+- [x] **Effects rebuilt at higher fidelity**: 32→48px cells, 4→6 frames,
+      8→14 effects, and the primitives gained soft alpha falloff. The old
+      ones read as flat shapes because every pixel in a disc had identical
+      alpha; ramping alpha by radius is what makes a glow look like light
+      rather than a sticker
+- [x] Skills with no target now auto-pick the nearest in range, as
+      auto-attack already did — refusing to cast at something you are
+      visibly standing in front of, purely because you never clicked it, is
+      friction nobody would defend
+- [x] Failure reasons reordered so permanent facts precede transient ones:
+      being told "not ready" when the real answer is "your class will never
+      have this" is actively misleading
+- [x] Verified by script, three classes in separate camps: distinct
+      stat/HP/mana profiles, class-gated skills refused with correct
+      reasons, mana actually spent, a ranger engaging from 250px where a
+      warrior cannot. Two real bugs were caught this way — an infinite
+      recursion in `maxHpOf` (a bulk find-and-replace had rewritten the
+      function's own body, crashing the server on connect) and the
+      mis-ordered failure reasons
+
+## Phase 45 — Class from your weapon; naked body + layered gear
+User: drop picking a class at login, let the equipped weapon decide it (like
+Path of Exile); make characters naked by default and show armour and
+accessories only when equipped; add a lot more weapon/armour variety with
+their own art. Started in the previous session (shared + server + art
+finished, client mid-refactor and not compiling), completed here.
+- [x] **Class is derived, never stored.** `classForWeapon` is the single
+      function that answers "what am I", and skills, auto-attack range,
+      damage attribute and mana pool all route through it. `HELLO` no longer
+      carries a class and the login screen has no picker — it explains the
+      rule instead. `fist` is a real weapon family, so an unarmed character
+      is an Adventurer rather than a broken state with no skills and no reach
+- [x] Eight weapon families (fist/sword/axe/mace/dagger/bow/staff/wand), each
+      tuning its archetype's baseline with range/speed/damage multipliers —
+      so two warrior weapons play differently (a fast sword against a slow
+      axe that hits far harder), with the damage multiplier as roughly the
+      inverse of the speed one so the choice is burst-vs-steady rather than
+      one family simply winning
+- [x] `weapons.png` rebuilt: 7 families x 3 rarities plus the goblin's axe,
+      every cell bottom-aligned so one rotation tween reads as a swing. Each
+      family declares where the hand closes on it
+      (`WEAPON_GRIP_FROM_BOTTOM`) — the bow is gripped at its middle and the
+      staff a third up, which is what stops them floating over the head
+- [x] **Paperdoll rendering.** Players are no longer a baked sprite row per
+      class per armour tier — they are `body.png` (naked, 8 frames) plus one
+      `gear.png` layer per equipped visible slot. Layers do not run their own
+      animations: they read whichever frame the body is currently on, so they
+      cannot drift by a frame and detach. The body and every layer are
+      generated from the same parametric skeleton at build time, so alignment
+      is correct by construction rather than by hand-matched offsets
+- [x] Six equipment slots (weapon/helm/armor/cape/boots/ring), four of them
+      visible on the character. Style names which art a layer draws; rarity
+      only tints it — so "plate vs robe" and "common vs epic" are independent,
+      which the old baked rows could not express
+- [x] The local player is a `Paperdoll` like everyone else, so there is one
+      drawing path instead of a self-case and an others-case. Appearance goes
+      over the wire on every snapshot, so equipping something is visible to
+      other players with no dedicated message
+- [x] `actors.png` rebuilt as monsters only (4 rows). Its 12 player rows were
+      dead once the paperdoll existed, and leaving them would have left
+      `ACTOR_ROW` computing monster rows from a class list it no longer has
+      any business reading
+- [x] **Helm and cape were rolling stats nothing read.** Both slots existed
+      with roll tables, but no combat formula consumed them — equipping a helm
+      did nothing. Fixed at the root: `gearArmor`/`gearEvasion`/
+      `gearCritChance`/`gearMoveBonus`/`gearDamageBonus` in shared are now the
+      only places contributions are summed, and the server's four combat sites
+      plus the client's stat sheet all call them. Adding a slot is one line,
+      once, instead of four edits nobody gets reminded about
+- [x] Character sheet corrected while wiring it to those helpers: it computed
+      the hit band from `strength` regardless of class (wrong for a ranger or
+      mage, whose damage scales off agility/intelligence) and ignored the
+      weapon's own speed and damage multipliers, so it quoted numbers the
+      fight did not use
+- [x] **Crafting is where changing class is deliberate.** The workbench gained
+      a weapon-family picker, each button labelled with the class it would
+      make you; the tier rows craft the selected family. Omitting the family
+      means "the one I already wield", so upgrading never re-classes you by
+      accident — the reason the server takes an explicit family rather than
+      rolling one
+- [x] **Bug fix (server, would not boot):** `insertCharacter` had 23
+      placeholders for 22 columns after `characterClass` was dropped from the
+      insert — every fresh start crashed on `db.prepare` before the socket
+      opened
+- [x] **Bug fix (client):** Intelligence was missing from the character
+      panel's attribute list, so the mage's own primary attribute was the one
+      stat no one could spend a point on
+- [x] Verified by script over a real socket: crafted and equipped all five of
+      sword/bow/staff/dagger/axe and watched the class follow the weapon
+      (warrior/ranger/mage/ranger/warrior) with the mana pool tracking it
+      (48/68/138), and equipped helm/cape/armor/boots to confirm each reaches
+      the appearance layers other clients draw from. Both workspaces
+      typecheck; all seven atlases serve 200. Paperdoll alignment and every
+      weapon grip checked against a rendered composite of the real atlases —
+      which is how the bow grip was caught planting the bottom limb below the
+      character's feet. Not yet confirmed in-browser
+
+## Phase 46+ — Revisit and pick from here
+Candidates, in no fixed order: mana as a resource on top of skill
+cooldowns, telegraphed boss attacks you can step out of, more skills
+(the `lightning` and `bolt` effect rows are still unused), guilds,
+real auth (password), going live (VPS + hosted DB), directional (4-way)
+character art so facing reads on the Y axis too, ambient world audio and
+music, player-facing damage-type/resistances, more crafting recipes
+(higher rarities), multiple crafting stations. Not committing to order yet.
+
+---
+
+## Decisions log
+(append here as we make non-obvious calls, so we don't relitigate them)
+
+- Class is derived from the equipped weapon on every read rather than cached
+  anywhere on the client. A cached copy would have to be invalidated on
+  equip, and the failure mode of missing one is the hotbar showing a mage's
+  spells while the body swings as a warrior. Reading it back out of the
+  weapon makes that state unrepresentable.
+- Gear layers are slaved to the body's current frame instead of each playing
+  its own copy of the same animation. Four independent animations of the
+  same length will stay in step almost always, and the "almost" is a shirt
+  visibly detached from its wearer. Reading the body's frame is exact by
+  construction, and costs one frame lookup per layer per tick.
+- The naked body and every gear layer are generated from one parametric
+  skeleton at build time. Authoring gear against borrowed sprites means
+  matching their irregular per-frame bob by hand for every piece — fragile,
+  and wrong the moment any frame changes. Generating both from the same
+  description of where the body is leaves nothing to keep in sync.
+- Rarity tints a gear layer rather than selecting different art, and style
+  selects the art rather than being implied by rarity. Keeping them
+  independent is the whole reason for the paperdoll: baking would need
+  styles x rarities x slots rows, and could never tint armour without also
+  staining skin.
+- `actors.png` was rebuilt monsters-only rather than left with 12 dead player
+  rows. Row indices in that sheet are computed, and the old computation read
+  the class list — which now has four entries instead of three, so the sheet
+  and the code would have disagreed about where the slime is. Deliberately
+  a separate build script: the original also rebuilds `weapons.png` from the
+  superseded three-family layout and would have clobbered the new sheet.
+- Gear contributions are summed by one shared function per stat rather than
+  inline at each call site. This is not tidiness — helm and cape shipped
+  with roll tables that no combat formula ever read, because adding a slot
+  silently required four separate edits. One function per number means the
+  server and the character sheet cannot disagree either.
+- Crafting takes an explicit weapon family and treats "omitted" as "the one I
+  already wield". Rolling a random family at the workbench would mean an
+  upgrade could change your class behind your back, which is the one thing
+  the whole system needs to stay deliberate.
+
+- Server tsconfig uses `module: ESNext` / `moduleResolution: Bundler` (not NodeNext),
+  so relative imports of shared/*.ts don't need explicit .js extensions. Dev runs via
+  `tsx` (esbuild-based) so this is fine; revisit if/when we do a real `node dist/`
+  production build.
+- `shared/` is a plain folder imported via relative paths, not wired as a real npm
+  workspace dependency between client/server yet — fine at this scale, revisit if
+  it gets unwieldy.
+- Server sends a `WELCOME { id }` message right after connect so the client knows
+  which player in future snapshots is "itself" (needed since the server assigns
+  ids, not the client).
+- No sprite art yet — players render as plain Phaser circles (green = local,
+  gray = remote) with a name label. Real tilesets/atlases come once we're happy
+  with the loop (see Idlekin's asset-catalog for the kind of tileset naming we'd
+  eventually want: Tileset_Ground, Atlas_Trees_Bushes, etc.).
+- Used Node's built-in `node:sqlite` (DatabaseSync) instead of `better-sqlite3` —
+  avoids native module compilation on Windows (no build tools needed), and Node
+  24 ships it unflagged. Revisit only if we hit a real limitation.
+- "Login" is just a name field, no password — one name = one character, looked
+  up by name in the `characters` table. Good enough until we actually want
+  multiple people to play with genuinely separate accounts.
+- Position writes to SQLite are throttled to at most once/second per player
+  while moving (in-memory state updates every MOVE regardless), plus always
+  flushed on disconnect — avoids hammering disk on every 50ms position update.
+- Gathering is server-authoritative: client predicts its own progress bar
+  locally (from when it sent GATHER_START) purely for UI smoothness, but the
+  server independently times the gather and re-validates range/availability
+  every tick, only awarding wood and depleting the node when *it* decides
+  gathering is complete. Client and server can drift cosmetically; server
+  always wins.
+- Only one resource type so far ("wood", a plain column on `characters`) and
+  nodes are not exclusive — multiple players could gather the same node
+  simultaneously since MVP doesn't track contention. Revisit both if/when we
+  add more resource types or want gathering to feel contested.
+- Resource nodes (4 static trees) and their depleted/respawn state live only
+  in server memory, not SQLite — resets to all-available on server restart.
+  Fine for MVP; revisit if node state needs to survive restarts later.
+- Gather-speed upgrade: each level costs `5 + level*5` wood and cuts gather
+  duration by 400ms, floored at 500ms (shared formula in protocol-types.ts so
+  client's predictive progress bar and server's authoritative timing never
+  disagree on the formula, only cosmetically on the clock). Purchase is a
+  single atomic SQLite statement keyed off a fresh read of wood/level, so it
+  can't be double-spent by rapid double-clicks.
+- Renamed `GATHER_RANGE_PX` to `INTERACTION_RANGE_PX` when battling monsters
+  needed the same range check — one constant shared by both interaction types
+  rather than two identical ones.
+- Battle mirrors gathering exactly (channel-in-range, server-authoritative
+  completion, client-predicted bar) via a single generalized `ChannelState`
+  in WorldScene instead of duplicating the gather/battle bar logic — the two
+  differ only in target map, status field value, duration formula, and bar
+  color.
+- XP is stored as "progress within current level" (resets to the remainder on
+  level-up), not lifetime total — `xpToNextLevel(level)` is the shared
+  threshold formula. `addXp()` loops in case a single reward crosses more than
+  one level at low levels.
+- Monster combat has no real damage/HP model yet — defeating a monster is a
+  single timed channel, like gathering. Fine for MVP-of-MVP; revisit if combat
+  needs to feel more granular (multi-hit, monster fights back, etc).
+- Equipment scoped down hard from Idlekin's real system: one slot (weapon),
+  three rarity tiers (common/rare/epic vs. their seven), no separate item
+  instances — just a `weaponRarity` string on the character, since "better
+  rarity always wins and worse is discarded" means there's nothing else to
+  track per-item yet. Revisit if a real inventory/itemization system becomes
+  worth it (e.g. once there's more than one stat a weapon could roll).
+- Loot only ever upgrades or is silently discarded (no "downgrade" prompt, no
+  stash) — keeps the server-side rule dead simple (`rarityRank(dropped) >
+  rarityRank(current)`) and avoids needing an inventory UI before Phase 7.
+- Gathering and battling are standing server-side "intents"
+  (`{kind, targetId}`), not one-shot actions: clicking a target sets the
+  intent and the player auto-repeats it (channel → award → wait for
+  respawn → channel again) until they click the same target again (toggle
+  off, sends STOP_ACTION), click a different target (switch), or walk out of
+  range (server and client both auto-cancel independently, no message
+  needed). This replaced the original one-shot-per-click model after the user
+  pointed out it didn't match how idle games actually work.
+- Offline progress only continues resource *gathering* specifically (not
+  battling) — battling produces discrete XP/loot per kill, not a per-tick
+  resource, so "what were you producing when you left" doesn't apply the same
+  way. `characters.offlineGatherResource` (wood/ore/null) is set on disconnect
+  from whatever gather intent was active; cleared on next reconnect regardless
+  of whether it earned anything.
+- Offline earn rate uses the *full* auto-gather cycle time
+  (`gatherDurationForLevel + GATHER_RESPAWN_MS`), not just the active-channel
+  portion — matches actual live throughput, since most of a gather cycle is
+  spent waiting for the node to respawn.
+- Monster variety via a `MONSTER_STATS` lookup (xpReward + durationMultiplier
+  per kind) rather than per-monster fields — keeps adding a new monster kind
+  to a one-line table entry. Goblins are 1.6x slime's base battle duration and
+  worth ~2.4x the XP.
+- Armor slot mirrors weapon exactly (rarity tiers, upgrade-only, one column on
+  `characters`) but its effect is an XP multiplier on kills
+  (common/rare/epic → +10%/+25%/+50%) rather than a speed bonus — matches
+  Idlekin's actual `xp_pve_rate` bonus type from the reverse-engineered
+  client bundle. Loot rolls 50/50 between weapon and armor slot before
+  rolling rarity, both slots share the same `LOOT_DROP_CHANCE` (30%/kill).
+- Added a third slot (boots) and generalized loot handling into
+  `ITEM_SLOTS`/`SLOT_MAPS`/`SLOT_SETTERS` lookup tables instead of growing
+  another if/else branch — adding a 4th slot later is a one-line addition to
+  each table, not a new code path. Boots' rarity bonus is movement speed
+  (client-side only, doesn't touch server tick logic at all, unlike
+  weapon/armor) — deliberately chosen as the one gear effect a player can
+  *see* rather than infer from slightly faster timers.
+- Boss monsters are a data flag (`MonsterStats.guaranteedDrop` +
+  `respawnMultiplier`), not special-cased branching in the tick loop or loot
+  function — `maybeDropLoot` takes the monster and checks the flag itself.
+  Keeps "add a new boss" a one-line table entry away.
+- Player HP has no passive regen and no in-combat damage-over-time tick loop —
+  a monster's counter-hit is rolled once per battle *cycle completion* (the
+  same moment XP/loot get awarded), not on a separate per-second timer. Kept
+  it simple deliberately: no regen means defeat is a real (if soft) setback,
+  and reusing the existing completion event means no new tick-loop plumbing.
+  Revisit if combat needs to feel more real-time (e.g. damage mid-channel).
+  Defeat always sends the player to the fixed `PLAYER_SPAWN` (400,300) at half
+  max HP — no death penalty beyond time lost, matches the game's low-stakes
+  idle tone.
+- Real inventory replaced "auto-equip if better rarity, discard if worse":
+  loot now creates a real row in a new `items` table (per-character, per-slot,
+  per-rarity, `equipped` boolean) and the player chooses what to wear via a
+  DOM overlay panel (`I` key), not the canvas — deliberately DOM instead of
+  Phaser game-objects for this one, since a real grid+click UI with hover
+  states is much less code as HTML/CSS than hand-rolled in Phaser, matching
+  how the login screen already does it. `weaponRarity`/`armorRarity`/
+  `bootsRarity` columns on `characters` stay as a denormalized "currently
+  equipped" cache (unchanged consumers: gather/battle duration, move speed,
+  XP bonus formulas) — kept in sync by `db.equipItem()` on every equip swap,
+  avoids a join on every tick. No inventory cap and no discard/sell yet —
+  bag can only grow. No item stats beyond rarity (still just weapon/armor/
+  boots +speed/+xp/+movespeed by tier, same as before this phase).
+- Real combat resolution (`resolveHit` in shared) replaced the flat
+  "hitChance/hitDamage roll, instant kill" model after the user asked for a
+  proper stat-driven system. `hitChance = accuracy - evasion` (clamped
+  5-95%), `crit = roll < critChance`, `damage = round(minHit..maxHit) *
+  (crit ? critMultiplier : 1) - armor` (floored at 1). Same function resolves
+  both directions (player→monster, monster→player) — attacker/defender stats
+  are just swapped, no duplicated logic.
+- Item itemization now has two independent axes: rarity (drop-weighted,
+  drives the existing speed/xp/movespeed tier bonuses) and a separate rolled
+  `statValue` (ranged by slot+rarity) that drives combat stats — weapon bonus
+  damage, armor flat reduction, boots evasion%. Kept to one numeric roll per
+  item for this pass rather than multiple affixes; a second roll per item is
+  a natural next step if the loot feels too flat.
+- `equippedItems` (a new server map of the full equipped `ItemInstance` per
+  slot, not just rarity) sits alongside the older `weaponRarities`/
+  `armorRarities`/`bootsRarities` maps rather than replacing them — those
+  three are still what the speed/xp/movespeed formulas consume, while combat
+  resolution needs the item's `statValue` too. Slight duplication, kept
+  because splitting it out cleanly would have meant touching every existing
+  call site for a same-session feature; revisit if the two ever drift.
+- Monster combat stats (accuracy/evasion/armor/crit) live in `MONSTER_STATS`
+  per kind, same table pattern as everything else monster-related — adding a
+  new monster kind means filling in one more row, not new branching logic.
+- Player HP regen still doesn't exist (see Phase 12 decision) — now more
+  noticeable since fights take multiple exchanges and monsters hit back each
+  one. Revisit if defeat starts feeling too punishing without it.
+- World size and spawn point are now shared constants (`WORLD_WIDTH`/
+  `WORLD_HEIGHT`/`PLAYER_SPAWN` in protocol-types.ts) instead of separately
+  hardcoded numbers in client (`WORLD_BOUNDS`, grid, initial sprite position)
+  and server (`loadOrCreateCharacter` default row, defeat-respawn position) —
+  the two are structurally guaranteed to agree now, rather than by
+  convention.
+- Crafting reuses the existing loot/equip pipeline end to end rather than
+  inventing a parallel one: `CRAFT_ITEM` calls the same `addItem` the
+  monster-loot path uses and pushes the same `LOOT_UPDATE`/`ITEMS_UPDATE`
+  messages, so the client's "item found" toast and inventory refresh work
+  unmodified for crafted items. Originally common-rarity only; extended to
+  all 3 rarities via `craftCostFor` (base cost x a per-rarity multiplier —
+  1x/4x/12x for common/rare/epic) rather than a full slot x rarity cost
+  table, so crafting became a guaranteed-but-expensive alternative to
+  drop RNG rather than strictly a cheap early crutch.
+- Crafting station state (`stations: CraftingStationState[]`) lives in
+  server memory only, same as resource nodes/monsters — no need to persist
+  since there's currently only one, always at map center.
+- Object titles are a static `Record<kind, string>` lookup per object type
+  (`NODE_LABELS`/`MONSTER_LABELS`/`STATION_LABEL`) rendered once at
+  creation, not updated per-tick — labels never change after spawn so
+  there's nothing to keep in sync.
+- Now that the world (1600x1200) is bigger than the canvas (800x600), the
+  camera follows the player and all HUD (`hpText`/`woodText`/etc, the two
+  upgrade buttons) had to be pinned via `setScrollFactor(0)` — previously
+  world size == canvas size so this was never an issue; anything added to
+  the HUD from here on needs the same treatment or it'll drift off-screen
+  as the camera scrolls.
+- Monster counter-attacks decoupled from the player's own attack-cycle timer:
+  previously both sides traded exactly one hit per player battle-cycle
+  completion, so upgrading your own attack speed silently also raised how
+  often the monster hit you. Now each monster kind has its own
+  `attackIntervalMs` (independent tick loop, keyed by `monsterAttackAt` per
+  player) — trolls swing slow and heavy, goblins comparatively fast, and
+  neither is affected by the player's battle-power/weapon-speed stat.
+  `BATTLE_RESULT` is now player-attack-only; the monster's swing moved to a
+  new `MONSTER_ATTACK` message so the two combat-log entries don't have to
+  be emitted in lockstep.
+- Combat log (`CombatLog.ts`) is a plain always-visible DOM panel, not a
+  Phaser text object and not a toggleable overlay like the inventory/craft
+  panels — it needs to stay readable and scrollable while the player keeps
+  playing, unlike those two which pause the moment you'd want to read them.
+  Purely client-side, fed by existing message payloads already received for
+  floating text — no new server messages needed for this one.
+- Packs use a fixed offset shape (diamond for 4, triangle for 3) around a
+  center point rather than random scatter within a radius — deterministic
+  and guarantees every member is close enough to every other member for
+  `BATTLE_RANGE_PX` retargeting to actually work, which random placement
+  wouldn't reliably guarantee at small sample sizes (4 monsters).
+- Auto-retarget search (`findNearestAliveMonsterOfKind`) is same-kind-only
+  and range-limited to `BATTLE_RANGE_PX` from the player's *current*
+  position (not the dead monster's position) — deliberately no
+  cross-pack-kind retargeting (killing the last slime doesn't auto-start a
+  goblin fight) and no player auto-walk to reach a farther pack member; if
+  nothing else is in range the old "wait for this one to respawn" behavior
+  is the fallback, so a lone monster (or the last kill in a pack) still
+  behaves exactly as before this phase.
+- Offline combat reuses `battleDurationMs` as the "time per kill" unit for
+  the offline math, same way offline gathering already reuses
+  `gatherDurationForLevel` — an abstraction, since live combat is no longer
+  literally one exchange per `battleDurationMs` (see Phase 17), but a
+  reasonable average-time-to-kill proxy for a background simulation that
+  doesn't need to be hit-by-hit accurate.
+- `offlineGatherResource` and `offlineBattleMonsterKind` are mutually
+  exclusive by construction (a player has exactly one standing intent at a
+  time) but both columns are defensively cleared together on every offline
+  resolution path, not just the one that was actually populated — cheap
+  insurance against them ever drifting out of sync.
+- `CharacterPanel`/`InventoryPanel` split follows the same DOM-overlay
+  pattern as before (not a new architectural direction), just two overlays
+  instead of one — `#character-overlay` and `#inventory-overlay` share
+  nearly all their CSS (`.inv-header`, `.inv-stats`, etc. now apply to
+  both) since they're visually the same "centered modal card" shape, only
+  their contents differ.
+- Dock buttons are plain DOM elements positioned absolutely over the canvas
+  (`#ui-dock`, `.dock-btn`), not Phaser game objects — consistent with
+  every other panel-toggle UI in the game being DOM (see the Phase 13
+  decision on why: real click/hover states are far less code as HTML/CSS
+  than hand-rolled in Phaser).
+- `#game-frame` is the actual positioning root for every DOM overlay now —
+  `#game-root` stays viewport-sized purely to flex-center `#game-frame`,
+  but nothing should ever be positioned directly against `#game-root`
+  again, or it'll reintroduce the "corner of the browser, not the corner of
+  the canvas" bug. Any new absolutely-positioned UI must go inside
+  `#game-frame`.
+- Canvas fills the browser window (`Phaser.Scale.RESIZE` against a 100%/100%
+  `#game-frame`) rather than being a fixed pixel size — briefly tried a
+  fixed 1280x800 box first, but the user specifically wanted the game
+  window itself bigger, not just a bigger fixed box, so switched to a
+  responsive canvas. `this.scale.width/height` is the live source of truth
+  for any Phaser-side (non-DOM) UI that needs to anchor to a screen edge —
+  a `resize` listener keeps the two right-anchored upgrade buttons and the
+  camera's own size in sync when the window changes. A short-lived
+  `client/src/constants.ts` (fixed CANVAS_WIDTH/HEIGHT) was added then
+  deleted in the same session once this responsive approach replaced it.
+- Item tooltip (`ItemTooltip.ts`) is a single shared DOM element
+  (`#item-tooltip`) that every item card re-renders into on hover, not one
+  tooltip element per card — standard pattern for cursor-following
+  tooltips, avoids dozens of idle absolutely-positioned elements sitting in
+  the DOM at once.
+- Selling only refunds wood (never ore, never a new currency) — keeps the
+  sink feeding straight back into the one resource crafting/upgrades both
+  already consume, rather than introducing gold as a fourth thing to
+  balance. Sell value is a flat per-rarity table (not tied to item stat
+  roll or slot) — deliberately simple; revisit if selling ever needs to
+  feel more precise than "how rare was it."
+- `db.sellItem` re-reads the item row itself (rarity + equipped flag) by
+  id+characterId rather than trusting anything the client sends beyond the
+  id — same ownership-check shape as `equipItem`, prevents selling another
+  player's item or an equipped one via a forged message.
+- Potions are a character-level stack count, not an `items` table row —
+  unlike gear, there's no per-instance state (no rarity, no equipped flag,
+  no statValue) worth tracking per potion, so a plain counter is the
+  correct model, not a table row per potion crafted.
+- Secondary stat deliberately picked a *different* flavor per slot
+  (crit%/evasion%/move-speed) rather than "the same stat, more of it" —
+  makes the two rolls on one item feel like two separate reasons to want
+  it, not just a bigger number. Ranges kept smaller than the primary roll
+  on purpose so it reads as a bonus, not co-equal with the main stat.
+- Double attack is a genuinely separate swing (its own `resolveHit` call,
+  its own `BATTLE_RESULT`), not `damage * 2` on a single roll — keeps it
+  consistent with how every other combat number in this game is a real
+  independent roll, and means a double attack can crit on one swing and
+  miss on the other, which a flat multiplier couldn't express.
+- Wolf's stat profile was chosen to be genuinely distinct, not a
+  reskinned goblin — fastest attack interval of any monster + highest
+  evasion-for-tier, vs. low HP, so packs of them play differently (many
+  small fast exchanges) than a goblin or troll pack (fewer, bigger hits).
+  Placement (1100, 1500) deliberately mirrors the troll lair (1100, 100)
+  for a symmetric map rather than picking an arbitrary empty spot.
+- Ring needed no server-side "cached rarity" field the way weapon/armor/
+  boots each got one — those three exist because gather/battle-duration/
+  move-speed formulas need a flat rarity value cheaply on every tick
+  without a join; ring's only consumers (max-hit and accuracy) already go
+  through the full `equippedItems` map, so adding a redundant cached field
+  would've been pure duplication for no formula that needed it.
+- Potion recipe now leans almost entirely on herb (8 herb + 2 wood, 0 ore)
+  rather than splitting evenly across all 3 materials — makes gathering
+  herb specifically worthwhile rather than a token ingredient, and the
+  herb bushes being clustered right at the workbench means "go get potion
+  ingredients" is a short, self-contained loop.
+- `resourceForNodeKind()` replaced an inline ternary that had baked in the
+  assumption of exactly 2 node kinds (`kind === "tree" ? wood : ore`) —
+  the kind of thing that silently keeps compiling but produces wrong data
+  when a 3rd kind is added if not caught. Centralizing it in shared means
+  both the live-gather tick loop and the offline-resume-on-reconnect path
+  use the same mapping instead of each hand-rolling their own.
+- Daily bonus eligibility uses elapsed-time (20h since last claim) instead
+  of calendar-day comparison — no timezone handling, no "midnight in whose
+  timezone" ambiguity, and it's a single column + subtraction rather than
+  date-library logic. 20h instead of 24h deliberately forgives claiming a
+  bit earlier each day rather than punishing players who play at a
+  slightly different time than yesterday.
+- Picked Kenney's "Roguelike/RPG Pack" over other free tile sets
+  specifically because it's CC0 (no attribution required, though a license
+  copy was kept anyway) and ships as one flat spritesheet rather than a
+  Tiled `.tmx` project — a raw `.tmx` was briefly attempted for exact tile
+  coordinates but its long base64+zlib "Objects" layer decoded to
+  impossible GIDs when hand-transcribed in PowerShell, so tile coordinates
+  were instead nailed down by hand-cropping the sheet with row/col labels
+  burned into debug PNGs and visually confirming each one — slower but
+  unambiguous. Resource nodes moved from `Arc` circles to a new
+  `NodeVisual`/`Image`-based type distinct from `InteractableVisual`
+  (monsters kept as `Arc`) since Image has no `setFillStyle`; depleted
+  state now reads via tint instead of fill color. Superseded in Phase 36:
+  `InteractableVisual.shape` also became `Image` once monster bust sprites
+  existed, so both visual types now share the tint-based status mechanic.
+- Shadows are plain `Ellipse` game objects added immediately before the
+  sprite they belong to, relying on same-depth insertion order to render
+  behind it, rather than an explicit `setDepth(-1)` — depth -1 would have
+  put them behind the background `TileSprite` itself (depth 0), making
+  them invisible.
+- Reskinned the goblin via `setTint` on a same-pack barbarian bust rather
+  than pulling in a third asset pack just for one missing color — Tiny
+  Dungeon's roster has no green humanoid bust, and tint was already the
+  established mechanism for this pack's dead/depleted states, so reusing
+  it for a "different monster flavor" cost nothing new to learn.
+  Superseded in Phase 37: the whole Tiny Dungeon pack was dropped once an
+  animated pack was found, so the tinted-bust goblin no longer exists.
+- Composing our own `actors.png` beat loading 0x72's frames individually
+  or using its shipped sheet as-is. Its frames range from 16x16 to 32x36,
+  so `load.spritesheet` (fixed cells) can't address them and the shipped
+  sheet needs a JSON atlas to interpret. Normalising offline into one
+  32x36 grid collapses all of that into `row * 8 + col` and, by
+  bottom-aligning each cell, makes `setOrigin(0.5, 1)` mean "feet on the
+  world position" for every actor uniformly — which is what lets one
+  shadow helper and one label-offset helper serve all six actors.
+- Picked 0x72's pack for the *animation frames specifically*: both Kenney
+  packs already in the project have good art but zero walk-cycle frames,
+  which is why Phase 36 shipped static busts. Sourced the frames from a
+  GitHub mirror rather than itch.io because itch's download flow is
+  interactive; the mirror exposes per-frame PNGs, so only the ~40 frames
+  actually used were fetched instead of the whole pack.
+- Substituted `orc_warrior` for the pack's literal `goblin` sprite: the
+  real goblin is 16x16 and 45 of its 256 pixels are near-black, so it
+  vanished against grass — the exact complaint from Phase 36. Checked the
+  pixel histogram before committing rather than eyeballing it on the
+  dark-background contact sheet, which had hidden the problem.
+- Slime and wolf are drawn from shape primitives (ellipse/rect/triangle
+  masks → derived outline → tone bands) rather than hand-typed character
+  maps. Character maps are the usual way to do pixel art in code, but
+  16-char rows typed by hand came out asymmetric and were painful to
+  iterate; primitives stay symmetric by construction and each tweak is a
+  number, not a re-typed grid.
+- Y-sorting via `setDepth(y)` was not optional polish — it is forced by
+  moving actors to a feet-on-position origin. Before that, sprites were
+  centre-anchored and overlap barely showed; after it, draw order is
+  visible, and the default (creation order) puts the player behind every
+  tree and monster because the player exists before the first snapshot.
+  Background, scatter, FX and HUD get constants far outside the world's Y
+  range so they can never interleave with sorted objects.
+- Ground scatter uses full-bleed decorated grass tiles rather than
+  transparent props, which normally would show as obvious squares. It
+  works here only because those tiles' base green is byte-identical
+  (123,173,44) to the plain grass tile — verified before use — and
+  because they're placed on the same 32px lattice at the same scale as
+  the background TileSprite. A seeded xorshift keeps the layout identical
+  across reloads; an unseeded `Math.random` would reshuffle the world
+  every time the player logged in. **Reversed in Phase 38**: that
+  byte-identical-background trick is exactly what forbade giving the
+  grass any tonal variation, and the lattice made the clutter line up
+  into a visible grid. Drawing transparent clutter instead removed both
+  constraints at once. The seeded-PRNG reasoning still stands.
+- Baking `props.png` was driven by a real bug, not tidiness. `row * 57 +
+  col` has no way to fail loudly: swap the operands and you still get a
+  valid tile index, just the wrong picture — the crafting station shipped
+  as a blinking blue flower for exactly this reason, and typechecking,
+  linting and asset-loading all passed. A flat 0..N index with named
+  constants removes the failure mode rather than fixing one instance of
+  it. The secondary win is compositing: the sheet's good trees are two
+  tiles stacked, which no single frame index can address.
+- Tree and bush frames were originally chosen off a contact sheet drawn on
+  a dark background, where every green looked distinct. In the game they
+  sit on green grass, and (13,9)/(19,9) turn out to be within a few points
+  of the grass hue — hence the "ghost outline" look. Lesson applied since:
+  preview candidate art on the background it will actually appear on. The
+  props preview now renders over the real grass texture for this reason.
+- The ground clutter is hand-drawn rather than borrowed because the sheet
+  cannot supply it cleanly: its flower tiles include a stone-path fragment
+  bleeding in from the adjacent tile, and its white flowers are drawn in
+  greys (153/223/194) that overlap the very stone tones a colour key would
+  need to remove. Drawing them also made them far subtler than the sheet's
+  five-blossom bouquets, which is what the field actually needed.
+- Armour is shown by palette-swapping the body at build time, not by an
+  overlay layer or a runtime tint. An overlay would need its own 8 frames
+  per piece drawn to match the body's idle/run bob or it detaches from the
+  animation; `setTint` multiplies the whole sprite, so it would stain skin,
+  plume and gauntlets along with the plate; swapping to a different
+  character sprite per tier changes who you are. The knight uses just 6
+  colours, exactly two of which are armour, so repainting those two is
+  enough — and doing it per-frame at build time is animation-correct by
+  construction. The same trick extends to boots (a third colour) if wanted.
+- Removing the idle model was the point, not a side effect. Progress bars
+  on a click-to-start action, offline accrual, and "standing intents" are
+  the idle-game vocabulary; proximity-driven combat plus monsters that come
+  to you is the RPG vocabulary. Keeping both would have meant two systems
+  deciding what a player is doing.
+- Monster aggro is sticky (keeps its target until that target dies, leaves,
+  or logs out) rather than "nearest player each tick". Re-picking every
+  tick makes a pack visibly flip between two nearby players, and makes
+  kiting incoherent. The de-aggro radius is 1.4x the aggro radius for the
+  same reason — equal radii make aggro blink on and off when a player walks
+  the boundary.
+- Monsters heal to full when they reach home after leashing. Without it,
+  hit-and-run leaves a camp permanently chipped down and the intended
+  difficulty quietly evaporates.
+- Weapons are separate sprites parented to a grip offset, not baked into
+  the character frames. Baking would mean re-rendering every actor frame
+  per weapon (6 actors x 8 frames x N weapons), and the source art is
+  drawn for exactly this approach — every weapon points up from a hilt at
+  the bottom, so bottom-aligning the cell puts the rotation pivot on the
+  hand for free. It also means the swing is one tween rather than an
+  animation per weapon.
+- The player's authoritative position had to be split out of
+  `localSprite.x/y` before any attack animation could exist. With the
+  sprite doubling as game state, a lunge tween would have fed a shoved
+  position straight into distance checks and `sendMove`. Monsters needed
+  no such split — they never move, so their sprite can be tweened freely
+  and snapped back to the stored `monster.x`.
+- The effect and sound work is deliberately a library, not the two cues
+  combat needs today: the user asked for spells/skills to be supported
+  ahead of time. So `fx.png` carries elemental and support shapes with no
+  current caller (bolt/fire/frost/lightning), and `cast`/`heal` cues exist
+  unused-ish for the same reason. Adding a spell later should be picking a
+  row and a tint, not producing art.
+- SFX are synthesised rather than downloaded. The CC0 sound packs worth
+  using are large downloads of mostly-irrelevant clips, whereas a handful
+  of short chiptune blips is a few lines of arithmetic — and it keeps the
+  whole palette consistent and trivially extensible (add an entry to the
+  script, re-run). `playSfx` rate-limits per cue because auto-battle fires
+  several results a second and stacked copies just buzz.
+- Grass is one baked 256x256 texture rather than per-tile variety chosen at
+  runtime. A mosaic of 4 variants x random flips gives 16 distinct-looking
+  cells, and the brightness field is generated with wrapping lattice
+  indices so the texture still tiles seamlessly after shading — all of it
+  paid for once at build time, leaving the runtime a single TileSprite.
+
+## Current status
+Phase 0 through 45 complete (2026-08-18). Latest: class comes from the weapon
+in your hand, not a choice at login — `classForWeapon` is the one function
+that answers "what am I", and skills, reach, damage attribute and mana all
+route through it, so swapping weapons swaps class mid-fight and bare hands
+are a real (weak) archetype rather than a broken state. Eight weapon families
+across three archetypes, each tuning its archetype with range/speed/damage
+multipliers so two warrior weapons genuinely play differently. Characters are
+now drawn as a paperdoll: a naked `body.png` plus one `gear.png` layer per
+equipped visible slot, layers slaved to the body's current frame so they
+cannot drift, and both generated from one parametric skeleton so alignment is
+correct by construction. Six slots, four of them visible; style picks the art,
+rarity only tints it. Three real bugs fixed on the way through: the server
+could not boot at all (`insertCharacter` had 23 placeholders for 22 columns),
+helm and cape rolled stats that no combat formula ever read, and the character
+sheet computed damage from strength regardless of class. The workbench gained
+a weapon-family picker, which is where changing class is a deliberate act.
+Verified by script across all five families and all four visible slots; both
+workspaces typecheck and every atlas serves. Not yet confirmed in-browser.
+Before that, Phase 44: the class system —
+warrior, ranger and mage, each with its own body art across four armour
+tiers, its own weapon family (sword / bow / staff) that only it may equip,
+its own primary attribute, and crucially its own auto-attack range, which is
+what makes them feel different rather than merely differently-numbered. A
+fourth attribute, Intelligence, drives a new mana pool that gates skills
+alongside their cooldowns. 21 skills — seven per class, five active and two
+passive — unlock by level and are shown in a skill-tree panel (`K`); the
+hotbar rebuilds itself per class and level. Effects were rebuilt at higher
+fidelity (48px cells, 6 frames, 14 schools, soft alpha falloff). Character
+class is chosen at the login screen and fixed at creation; the DB migrates
+existing characters to warrior. Verified by script with all three classes in
+separate camps. Before that, Phase 43: stakes, monster verbs and
+co-op. Three fixes were the difference between combat that can be lost and
+combat that cannot: potions had no cooldown at all (drink the stack, become
+unkillable), regen ticked while you were being hit, and dying was free —
+respawn cost nothing, teleported you home, and reset the monster to full, so
+suicide beat retreat. Each monster kind now has an ability rather than only
+a stat block: wolves leap, goblins call for help, slimes burst on death,
+trolls telegraph. Mend and War Cry can target a selected ally, which is the
+first mechanical reason to play together rather than alongside — one click
+selects either an enemy or an ally and the server resolves which. Added
+Dash (the answer to a 200px/s wolf), range indicators, and level scaling for
+skills. Verified with four scripted clients; the first run failed for the
+right reason (bots stood inside the camps, so nothing had to approach and
+the new abilities could not fire) and passed once repositioned. Before that,
+Phase 42: combat depth, from an
+audit of the previous phase's own code. Two findings were real defects, not
+missing features: kill credit went entirely to whoever landed the last blow
+(so a second player on the same monster earned nothing, making co-op
+pointless), and monsters attacked whoever was *nearest* rather than whoever
+was hurting them (so a passer-by stole aggro, and no group role could
+exist). Both are now served by one per-monster damage table that doubles as
+threat and as the XP split. Also: melee crowding (separation steering plus a
+cap on how many can press into contact, since a pack previously collapsed
+onto one point), an AoE target cap, a 900ms global cooldown, skills routed
+through `resolveHit` so they can miss and crit like any swing — they
+previously bypassed accuracy entirely, quietly making Agility irrelevant on
+the hotbar — and a telegraphed troll slam you answer by walking out of it.
+Verified with three concurrent scripted clients: GCD refusal then success, a
+skill that genuinely missed, a pack holding 39.6px apart instead of
+stacking, both players earning XP from one camp, and the wind-up observed.
+Before that, Phase 41: combat gained actual
+decisions. Left-click selects a target (Tab cycles), and the server prefers
+it over "nearest" while still auto-attacking if you have none. Five
+cooldown skills on keys 1-5, each answering a different problem — pack
+damage, reach, escape, sustain, burst — validated server-side, with the
+client's cooldown driven by the server's reply rather than the keypress.
+Positioning matters now that each monster kind has its own reach and chase
+speed measured against the player's 220px/s: wolves stick to you, trolls
+outrange you but can be outrun, slimes must touch you. Feedback added:
+target ring, target frame, chill tint, cooldown curtains, in-combat
+indicator. The balance fix that mattered most: monster speed was 42 against
+the player's 220, so nothing could ever catch you and the chase system was
+inert. Verified by script — all five skills fire correctly, a sixth cast is
+refused as cooling down, auto-attacks land on the *selected* target, and
+the wolf moves at exactly its stated 200px/s. Before that, Phase 40:
+the idle model is gone
+and combat is a real fight. No click-to-start, no progress bars, no
+standing intents, no offline progress — the server decides what a player is
+doing from where they stand, and `MOVE` is the only action input left.
+Monsters run a proper idle/chase/return AI with sticky aggro, leashing and
+heal-on-reset, so packs come to you and fleeing means something. Attack
+speed became a property of the attacker rather than the target. Armour is
+now visible via build-time palette swaps of the knight's two armour tones
+(leather/bronze/steel/gold), and other players' weapons and armour render
+too. Weapon placement had two real bugs fixed: over-long rare/epic blades,
+and swings stranded mid-arc by killed tweens. Verified with a scripted
+WebSocket client — a bot walked into a slime camp, monsters closed 29px on
+their own, and 5 auto-attacks plus 16 counter-attacks landed with no input.
+Not yet confirmed in-browser. Before that, Phase 39: combat animation and the
+systems behind it. Equipped weapons are now genuinely held — `weapons.png`
+is bottom-aligned so the sprite pivots on its grip, and rarity picks the
+art so an upgrade is visible in the world; monsters and other players
+wield too (the latter needed `weaponRarity` added to `PlayerState`,
+merged in at broadcast from the existing server map). This forced a real
+fix first: the player's position lived on `localSprite.x/y`, so the render
+object was also the game state and any visual lunge would have corrupted
+what was sent to the server — `playerX/playerY` are now authoritative with
+the sprite as a view. Full attack beat (face, wind up, swing, lunge,
+impact, flash, recoil, crit shake), mirrored for monster attacks, plus a
+proper defeat animation. Built as systems per the user's mid-phase
+request: an 8-effect x 4-frame library behind `playEffect()`, and 10
+synthesised WAV cues behind a rate-limited `playSfx()` — including `cast`
+and `heal`, which exist ahead of the spell system that will use them.
+`[M]` toggles sound. Verified: both workspaces typecheck, dev server
+clean, all 5 atlases and 10 sounds serve 200 — not yet confirmed
+in-browser. Before that, Phase 38: first round of fixes
+against the running game. The crafting station was rendering as a blinking
+blue flower — `STATION_FRAMES` had row and column swapped in the
+`row * 57 + col` tile formula, which silently yields a real but wrong
+tile. Fixed structurally by baking `props.png`, a flat 0..14 index of every
+non-actor object, which also unlocked two-tile-tall trees. Trees and bushes
+were nearly the same hue as the grass (chosen off a dark-background contact
+sheet) so they read as ghost outlines — swapped for contrasting variants.
+Grass was one tile repeated and looked flat and gridded — now a baked
+256x256 mosaic of four flipped variants under a wrapping brightness field.
+Ground clutter was dense bouquets snapped to a lattice — now hand-drawn
+tufts/flowers/pebbles placed freely. HUD portrait was a tofu-glyph emoji —
+now the player's live idle animation. Plus per-node art variants hashed
+from node id, redrawn rocks, and `ACTOR_SCALE` 2 → 3. Verified: typecheck
+clean, dev server clean, all assets serve 200 — not yet re-confirmed
+visually in-browser. Before that, Phase 37: `npm run dev` from repo root runs
+server (ws://localhost:8080) + client (http://localhost:5173) via
+`concurrently`; both `server` and `client` typecheck clean
+(`npx tsc --noEmit --allowImportingTsExtensions`). Latest: a full art
+pass — the user asked to upgrade every sprite, animate what needs
+animating, and get proper animated character art. Turned on `pixelArt`
+(the whole game had been silently bilinear-blurred), brought in 0x72's
+CC0 "DungeonTileset II" for its 4-frame idle/run animations, composed a
+uniform 32x36 `actors.png` from it, and hand-drew the slime and wolf that
+pack lacks. Player/other players/all 4 monsters are now animated sprites
+with idle+run loops and facing; the crafting station is an animated
+forge; trees and bushes sway; hits flash and recoil the monster; ~320
+seeded flower tiles decorate the ground; and real Y-depth sorting was
+added (forced by the new feet-on-position origin, and it also fixed
+world objects being able to draw over the HUD). Verified: typecheck
+clean, dev server clean, all three asset files serve 200 over HTTP — but
+not yet confirmed visually in-browser. Before that: sprite
+visibility fixes + character/monster art, in response to user feedback
+that Phase 35's nodes were "barely visible" against the grass and the
+rock "does not look like rock at all" — added ground-shadow ellipses for
+contrast and a hand-drawn boulder, and gave actors static bust sprites
+(since superseded by the animated art above). Before that: real terrain/
+environment sprites — a CC0 Kenney tileset (`client/public/assets/
+tiles.png`) replaces the plain colored `Grid` background (now a grass
+`TileSprite`) and the tree/rock/bush resource nodes (now cropped tile
+`Image`s instead of colored circles, depleted state via tint) — user
+explicitly asked to "download and add some basic stuff" for environment
+art. Before that: a 30-item
+inventory cap (loot/craft/offline-battle-loot all respect it, new generic
+`INFO` toast message for the "bag full" notice, live "(N/30)" counter in
+the Inventory header). Before that: a second
+consumable, XP Tonic (craft at workbench for 12 herb + 4 ore, click to use
+for +25 XP), mirroring the potion pattern with a shared render helper.
+Before that: a daily login
+bonus (20 wood/20 ore/15 herb/1 potion, claimable every 20h, checked on
+every connect). Before that: a 3rd
+gatherable resource, Herb (from new bush nodes clustered by the
+workbench), Health Potions reworked to cost mostly herb instead of
+wood/ore, and Vitality now
+also boosts passive HP regen amount (new "HP Regen" character-sheet stat)
+— proceeding autonomously per the user's explicit "add herb + more stats,
+improvise" request. Not yet confirmed live. Before that: a leaderboard
+(🏆 dock icon / `L`, top 10 by level, reads live from SQLite so offline
+characters still rank). Before that: a 4th
+equipment slot, Ring (bonus damage + bonus accuracy%) — confirmed the
+item-slot architecture really does generalize as designed, `tsc`'s
+exhaustiveness checks caught every touch point. Before
+that: a 4th monster kind, Wolf — fast/evasive glass-cannon, new 4-wolf den
+at (1100, 1500). Before that: Agility now also grants a double-attack
+chance (capped 25%, own combat-log line per swing). Before that: the
+top-left HUD became a real unit
+frame (portrait + HP/XP bars) instead of plain text. Before that: every
+item now rolls a second stat of a different flavor than its primary
+(weapon crit%, armor evasion%, boots
+move speed). Before that: craftable Health Potions (workbench recipe, +30
+HP, click the
+inventory stack to use). Before that: unequipped items can now be sold for
+wood (rarity-scaled: common 5 /
+rare 20 / epic 60) via a hover-revealed sell button per card and a new
+`SELL_ITEM` message, since the bag had no sink at all before this.
+Before that: wood/ore moved out of the HUD entirely and into the Inventory
+panel as stackable material slots (🪵/🪨 with an xN quantity badge) with
+their own filter tab, confirmed via AskUserQuestion that HUD counters
+should go away rather than duplicate the display. Before that: user
+pushed back on the reference-inspired redesign ("looks nothing like it") —
+the gap was the visual *style* (gold/leather fantasy skin), not just
+layout, and after AskUserQuestion confirmed the whole UI should be
+reskinned, not just the two panels touched so far. Applied a gold/brown/
+parchment CSS theme via custom properties across every DOM surface (login,
+all 3 panels, dock, combat log, tooltip) plus a matching pass on the
+Phaser-rendered HUD (new
+background panel behind the top-left stat block, recolored text/buttons,
+serif font). Functional signal colors (HP threshold colors, combat
+floating-text, item rarity borders) deliberately left alone. Not yet
+confirmed live in-browser (typecheck + clean dev-server
+reloads confirmed only). Before that: the MMO-style dock went through two
+rounds of user-caught fixes in quick succession — first the dock/panels
+were positioned against the full-viewport `#game-root` instead of the
+canvas (fixed with a `#game-frame` wrapper), then the user clarified they
+wanted the actual game window bigger, not just a bigger fixed box, so the
+canvas now fills the whole browser window via `Phaser.Scale.RESIZE`; the
+dock itself was then also re-centered to bottom-middle and enlarged
+(48px → 60px) per direct feedback once visible. Inventory grid separately
+reworked from plain text cards to icon + rarity-glow slots with a hover
+tooltip (`ItemTooltip.ts`). Before that: combat reworked
+into a true auto-battler per explicit user direction — monsters regrouped
+into packs (2 slime/2 goblin packs of 4, 1 troll pack of 3, world grown to
+2200x1600 to fit them), killing one auto-retargets to the nearest living
+pack-mate of the same kind (new `BATTLE_RANGE_PX` = 110, looser than
+gathering's 40), and offline progress now covers battling too — reconnect
+after being disconnected mid-fight simulates kills/XP at the normal rate but
+loot at 20% of the normal drop chance (capped at 5 items), toasted via a new
+`OFFLINE_COMBAT_SUMMARY` message — user moved on to the next request before
+explicitly confirming this one live in-browser. Before that: a
+persistent combat-log DOM panel (bottom-left, fading history of
+hits/misses/crits/loot/level-ups/defeats) — confirmed live. Before that:
+monster counter-attacks moved to their own per-kind cadence
+(`attackIntervalMs`) instead of firing once per player attack cycle, so
+weapon/battle-power speed only affects your own attack rate — confirmed
+live. Crafting extended from common-only to all 3 rarity tiers (cost scales
+1x/4x/12x). Before that: world first expanded to 1600x1200 with a
+populated layout, camera-follow + screen-pinned HUD, name/title labels
+above every node/monster/station, and the crafting station itself
+(confirmed live). Before that: passive HP regen (1 HP/5s while below max)
+and a full stat-driven combat resolution system (Strength/Agility/Vitality
+driving damage/accuracy-crit/HP, item stat rolls, monster HP bars, floating
+combat text). Earlier in the session the background dev-server process was
+found stopped mid-session and had to be
+restarted before testing could continue — worth remembering: if a
+task-notification reports a background process stopped unexpectedly, verify
+the port is actually listening (`Get-NetTCPConnection`) before trusting the
+next "it works" at face value.
+User is directing an open-ended "keep upgrading it, use Idlekin as reference
+— combat, monsters, items, UI" build — proceeding autonomously through
+further additions in that space, pausing only for the user to eyeball the
+browser at testable milestones (I can't see the canvas myself), not for
+go-ahead permission on what to build next. No committed next phase — see
+Phase 35+ candidates above.
