@@ -1082,7 +1082,18 @@ finished, client mid-refactor and not compiling), completed here.
       typecheck; all seven atlases serve 200. Paperdoll alignment and every
       weapon grip checked against a rendered composite of the real atlases —
       which is how the bow grip was caught planting the bottom limb below the
-      character's feet. Not yet confirmed in-browser
+      character's feet.
+- [x] **Confirmed in-browser 2026-08-18** (headless Playwright — no display is
+      attached to this machine): a fresh character spawns naked at the
+      workbench; crafting and equipping a common sword shows the blade in-hand
+      on the naked body with the toast "Sword in hand — you fight as a
+      Warrior", and the character panel's weapon slot reflects it. Wandered
+      into a wolf and fought it live — hit/miss/crit combat log, target ring,
+      in-combat indicator, floating damage text, and every world-object label
+      (Wolf, Goblin, Rock, Herb Bush, Tree, Workbench) rendered correctly with
+      zero browser console errors. No visual bugs found (the workbench in
+      particular renders as the correct animated forge, not the Phase 38
+      mis-tiled-flower regression)
 
 ## Phase 46 — Named: WieldBound
 - [x] The project had no name of its own — it was still called after the game
@@ -1103,7 +1114,107 @@ finished, client mid-refactor and not compiling), completed here.
       at the time — rewriting them would turn an accurate build record into a
       false one
 
-## Phase 47+ — Revisit and pick from here
+## Phase 47 — Renderer rewrite: 2D Phaser → 3D Three.js
+User asked for higher quality overall — "better models, animations and effects"
+— and whether 2D could become 2.5D. Investigated properly rather than answering
+from memory, and the investigation changed the answer twice.
+
+**How the decision was reached (worth keeping, because the first two answers
+were wrong):**
+- First pass recommended staying 2D in a 3/4 perspective. The reasoning was
+  sound as far as it went: the game already Y-depth-sorts with feet-on-position
+  origins, so it *has* the 2.5D skeleton; what reads as flat is (a) characters
+  only ever facing the camera via `flipX`, (b) no lighting whatsoever, (c) a
+  ground plane with no elevation, (d) 8 frames per actor. None of those are
+  fixed by changing projection.
+- Phaser 3.90 turned out to ship far more than assumed — `Bloom`, `Bokeh`
+  (tilt-shift), `Glow`, `Vignette`, `ColorMatrix`, `LightPipeline` — so the
+  HD-2D *look* was partly reachable in-engine. Checked `node_modules` rather
+  than trusting memory.
+- The argument against 3D was the asset pipeline, not the renderer: PowerShell
+  + `System.Drawing` is excellent at 16px pixel art and cannot produce models,
+  rigs or hand-painted textures. The claim was that free 3D assets would look
+  generic and mismatched.
+- User asked whether assets could be sourced autonomously. **That is what
+  overturned it.** Quaternius ships CC0 rigged+animated fantasy characters with
+  direct download URLs, no login and no interactive flow — verified by actually
+  downloading the pack, reading its `License.txt` (CC0 1.0) and parsing 16
+  animation stacks out of `Warrior.fbx`, whose clip list (Idle / Walk / Run /
+  Sword_Attack / RecieveHit / Death / Cast) is almost exactly this game's
+  existing combat vocabulary
+- Built a throwaway look-dev spike before committing anything
+  (`scratchpad/spike3d`) — real assets, real rig, orbit camera, day/dusk/night,
+  rolling terrain, live weapon swapping. User compared it against the running 2D
+  game and chose 3D. **Deciding by eye on a working scene rather than by
+  argument was the right call and should be repeated for changes this large**
+
+**The finding that makes this fit WieldBound specifically:** the Quaternius rig
+ships a dedicated `WeaponR` socket bone with the weapon already parented to it.
+So "class is whatever you are holding" becomes one mesh swap on one bone, with
+every rig animation carrying it for free — architecturally *cleaner* than the
+2D grip-offset system built across Phases 39-45, not a regression from it.
+
+- [x] **M1 — playable 3D client.** Three.js scene, terrain, camera follow,
+      actors from `STATE_SNAPSHOT`, movement input, DOM panels intact.
+      Verified in-browser: 23 monsters load, walked 630px to the wolf den, the
+      wolf's server-side chase AI closed the rest, and a real fight ran —
+      hits/misses/crits both ways, HP 60→47, wolf 22→13, floating damage,
+      nameplates and HP bars. Both workspaces typecheck; no console errors.
+      Notes from building it:
+      - `client/src/three/{assets,Actor,World,hud,Game}.ts` replace
+        `scenes/WorldScene.ts`. `net/socket.ts` and all six DOM panels were
+        reused *without modification*, which is the clearest evidence the
+        renderer really was the only coupled part
+      - The HUD moved from canvas-drawn to DOM (unit frame, nameplates,
+        floating combat text). It inherits the existing gold/parchment theme,
+        needs no resize handling, and renders text crisply — the class of bug
+        that produced Phase 38's tofu-glyph portrait is now unrepresentable
+      - **Occlusion fading** had to be built: in 2D the player was always drawn
+        over anything nearer the camera by Y-sorting, so a tree could never
+        hide them. In 3D it genuinely does, and fighting inside a wood was
+        fighting blind. Anything between camera and player now fades to 20%,
+        with `depthWrite` off so the faded trunk does not punch a hole in what
+        is behind it
+      - Skinned meshes must be cloned with `SkeletonUtils.clone`, not
+        `Object3D.clone` — the latter keeps pointing at the original skeleton,
+        so every monster of a kind shares one pose
+      - Nameplate projection needs a camera-space test before the perspective
+        divide. `Vector3.project()` alone maps points *behind* the camera back
+        into the viewport, mirrored, which pinned labels to the screen edges
+      - Vite's watcher must ignore `public/models` and `public/textures`: on
+        Windows it grabs a handle mid-write and kills the dev server with
+        `EBUSY` whenever an asset is regenerated while it is running
+      - Movement looked broken under headless SwiftShader (~70px/s against a
+        stated 220). It is not: software rendering drops the frame rate and the
+        `dt` clamp throttles the step. Worth remembering before chasing it
+        again — verify movement against `__wieldbound` state, not by eye
+- [ ] **M2 — combat feedback.** Attack/hit/death animations driven by the
+      existing `BATTLE_RESULT` / `MONSTER_ATTACK` / `HP_UPDATE` messages,
+      floating damage, HP bars, target ring
+- [ ] **M3 — gear and class in 3D.** Weapon socket swapping wired to
+      `Appearance`; armour via mesh swap + material tint (style x rarity kept
+      independent, the thing Phase 45's paperdoll got right)
+- [ ] **M4 — effects, skills VFX, day/night, polish**
+
+**Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
+(every formula and the whole wire format), `client/src/net/socket.ts` (verified
+renderer-agnostic), and all six DOM panels (inventory, character, craft, skills,
+leaderboard, combat log).
+
+**Gets rebuilt:** `client/src/scenes/WorldScene.ts` (2057 lines) and the
+Phaser-drawn HUD — unit frame, hotbar, floating text, target frame — which move
+to DOM, where the rest of this game's UI already lives and where text renders
+crisply instead of as canvas glyphs.
+
+**Known asset gaps at the time of the decision:** fully-animated CC0 wolf,
+goblin and troll are NOT available by direct link. Quaternius's Ultimate
+Monsters pack (50 animated creatures, CC0, glTF included) is exactly right but
+is served from a Google Drive folder, which cannot be fetched programmatically —
+it needs one manual download. Until then the four monster kinds render with
+stand-ins from the packs that did fetch cleanly (slime is a genuine match;
+skeleton, dragon and bat stand in for the rest).
+
+## Phase 48+ — Revisit and pick from here
 Candidates, in no fixed order: mana as a resource on top of skill
 cooldowns, telegraphed boss attacks you can step out of, more skills
 (the `lightning` and `bolt` effect rows are still unused), guilds,
@@ -1602,6 +1713,15 @@ music, player-facing damage-type/resistances, more crafting recipes
   cells, and the brightness field is generated with wrapping lattice
   indices so the texture still tiles seamlessly after shading — all of it
   paid for once at build time, leaving the runtime a single TileSprite.
+- This machine (a fresh Windows box picking up the project) had neither Git
+  nor Node.js preinstalled; both were installed via `winget` (`Git.Git`,
+  `OpenJS.NodeJS`) rather than assuming either was already present. Also has
+  no attached display, so "confirm in-browser" here means headless Playwright
+  (Chromium) driving the Vite dev server and screenshotting — installed into
+  the scratch/temp directory, not as a repo dependency, since it's a
+  verification tool rather than something the game itself needs. Worth
+  reusing this approach for future in-browser confirmations on this machine
+  rather than re-deriving a driver each time.
 
 ## Current status
 Phase 0 through 46 complete (2026-08-18). Latest: the project has a name of
@@ -1627,7 +1747,11 @@ helm and cape rolled stats that no combat formula ever read, and the character
 sheet computed damage from strength regardless of class. The workbench gained
 a weapon-family picker, which is where changing class is a deliberate act.
 Verified by script across all five families and all four visible slots; both
-workspaces typecheck and every atlas serves. Not yet confirmed in-browser.
+workspaces typecheck and every atlas serves. Confirmed in-browser 2026-08-18
+(headless Playwright, this machine has no display): naked-by-default spawn,
+sword visibly in-hand after crafting/equipping with the class-change toast
+firing, and a live fight against a wolf with working combat log/target
+ring/floating damage and no console errors.
 Before that, Phase 44: the class system —
 warrior, ranger and mage, each with its own body art across four armour
 tiers, its own weapon family (sword / bow / staff) that only it may equip,

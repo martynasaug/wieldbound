@@ -1,0 +1,57 @@
+3D assets used by the Three.js client (Phase 47 onward). All CC0 (public
+domain equivalent); no attribution is legally required, but provenance is
+recorded here so every asset stays traceable — same policy as the 2D art in
+../assets/ASSET_CREDITS.txt.
+
+CHARACTERS + WEAPONS
+
+Warrior.fbx            Quaternius "RPG Characters" (Nov 2020)
+Warrior_Sword.fbx      https://opengameart.org/content/lowpoly-rpg-characters
+Ranger_Bow.fbx         https://quaternius.com/  (CC0 1.0 Universal)
+Ranger_Arrow.fbx
+Rogue_Dagger.fbx       6 rigged, animated, textured fantasy characters. The
+Wizard_Staff.fbx       warrior carries 14 animation clips: Idle, Idle2,
+Cleric_Staff.fbx       Idle_Weapon, Idle_Attacking, Walk, Run, Run_Weapon,
+                       Sword_Attack, Sword_AttackFast, RecieveHit,
+                       RecieveHit_Attacking, Roll, PickUp, Death.
+
+                       The rig ships a dedicated `WeaponR` socket bone with
+                       the weapon already parented to it. That is what makes
+                       "your class is whatever you are holding" a mesh swap
+                       on one bone, with every animation carrying it for free.
+
+MONSTERS
+
+Slime.fbx              Quaternius "Animated Monster Pack"
+Skeleton.fbx           https://opengameart.org/content/lowpoly-animated-monsters
+Bat.fbx                (CC0). Rigged and animated.
+Dragon.fbx
+                       STAND-INS: the game has four monster kinds — slime,
+                       goblin, wolf, troll — and only the slime is a genuine
+                       match here. Skeleton/Bat/Dragon currently stand in for
+                       goblin/wolf/troll (see MONSTER_MODELS in three/Game.ts).
+                       Quaternius's "Ultimate Monsters" pack (50 animated
+                       creatures, CC0, glTF included) is the right source but
+                       is served from a Google Drive folder, which cannot be
+                       fetched programmatically and needs one manual download.
+
+TREES
+
+Tree_*.fbx             Quaternius "LowPoly Textured Trees" (May 2020)
+Pine_*.fbx             https://opengameart.org/content/lowpoly-textured-trees
+Birch_*.fbx            (CC0). Animal-Crossing-style stylised trees, with
+DeadTree_1.fbx         seasonal leaf texture variants in ../textures/.
+
+TEXTURES
+
+../textures/*.png      Shipped with the packs above. Material names mostly
+                       match file names; the loader resolves exact, then
+                       `<name>_Texture`, then a prefix match, and falls back
+                       to a flat colour (see assets.ts).
+
+NOTE ON flipY
+
+Textures keep three.js's default flipY (true). The usual advice for FBX is to
+force it false — doing that here put every UV island on the wrong part of the
+atlas and rendered the warrior's steel plate as the brown leather sitting
+directly above it in the sheet.

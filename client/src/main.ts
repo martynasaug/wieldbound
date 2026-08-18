@@ -1,5 +1,4 @@
-import Phaser from "phaser";
-import { WorldScene } from "./scenes/WorldScene";
+import { Game } from "./three/Game";
 
 // A thrown error inside Phaser's create() leaves a black canvas and nothing
 // else — the failure is completely silent unless you have devtools open.
@@ -39,23 +38,8 @@ function startGame(characterName: string): void {
   gameFrame.style.width = "100%";
   gameFrame.style.height = "100%";
 
-  const game = new Phaser.Game({
-    type: Phaser.AUTO,
-    parent: "game-frame",
-    scale: {
-      mode: Phaser.Scale.RESIZE,
-      width: window.innerWidth,
-      height: window.innerHeight,
-    },
-    // Every texture in this game is 16px-grid pixel art drawn at 2-3x, so
-    // NEAREST filtering is mandatory — the default bilinear scaling turns
-    // the sprites and tiles into a blurry mush at those sizes.
-    pixelArt: true,
-    backgroundColor: "#1d1f21",
-  });
-
-  game.scene.add("WorldScene", WorldScene);
-  game.scene.start("WorldScene", { characterName });
+  const game = new Game(gameFrame, characterName);
+  void game.start().catch((e) => showFatal(String((e as Error)?.stack ?? e)));
 }
 
 function handlePlay(): void {
