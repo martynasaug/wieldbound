@@ -1188,6 +1188,37 @@ every rig animation carrying it for free — architecturally *cleaner* than the
         stated 220). It is not: software rendering drops the frame rate and the
         `dt` clamp throttles the step. Worth remembering before chasing it
         again — verify movement against `__wieldbound` state, not by eye
+- [x] **M1.5 — the real monster roster, and a world big enough to hold it.**
+      User supplied the Drive-gated Quaternius Ultimate Monsters pack (50
+      animated creatures, CC0), so the M1 stand-ins are gone.
+      - **4 monster kinds → 13**, in five difficulty bands. Each has a role
+        rather than a bigger stat line: `spikyblob` punishes standing in a
+        cluster (death burst 13 in 110px), `armabee` outruns you at 215px/s and
+        leaps but folds when caught, `ghost` answers *accuracy* not damage (38
+        evasion — a low-Agility build simply cannot land on it), `golem` has 14
+        armour so chip damage does nothing, `dragon` both telegraphs and closes
+        the gap so neither standing nor running is a whole answer
+      - **World 2200x1600 → 4800x3600.** The point is not size: difficulty is
+        now laid out as *distance from spawn*, so walking further is the
+        progression. Verified by walking a bot outward — HP fell 60 → 53 → 42
+        → 30 → 19 across the bands without ever choosing to fight
+      - Monster and node layout became polar (`ringPack`, `ringNodes`) rather
+        than absolute coordinates. The old node list had been written against
+        the 2200x1600 world and all of it bunched into one corner the moment
+        the world grew; relative placement cannot go stale that way
+      - **glTF added alongside FBX.** 2.7x smaller for the same model, texture
+        embedded, and none of the FBX material/UV fixing needed. `name` carries
+        the extension so both coexist
+      - **Distance culling** for monsters: ~80 exist, and the server correctly
+        sends all of them, but building 80 skinned meshes is another matter.
+        Models are created within 1150px and torn down past 1550px — the gap is
+        hysteresis, since a single threshold thrashes a whole camp in and out
+        as the player walks the boundary. First tried 1500/2000, which rendered
+        54 meshes while standing still at spawn
+      - Deleted `scenes/WorldScene.ts` and dropped the `phaser` dependency. It
+        was orphaned by M1 and only surfaced now because growing `MonsterKind`
+        broke its exhaustive `Record<MonsterKind, ActorName>` — which is the
+        Phase 29 exhaustiveness check doing its job one last time on the way out
 - [ ] **M2 — combat feedback.** Attack/hit/death animations driven by the
       existing `BATTLE_RESULT` / `MONSTER_ATTACK` / `HP_UPDATE` messages,
       floating damage, HP bars, target ring

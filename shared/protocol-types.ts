@@ -9,8 +9,12 @@ export const GATHER_RESPAWN_MS = 8000;
 // member of the pack without the player needing to shuffle a few pixels over.
 export const BATTLE_RANGE_PX = 110;
 
-export const WORLD_WIDTH = 2200;
-export const WORLD_HEIGHT = 1600;
+// Grown from 2200x1600 when the monster roster went from 4 kinds to 13. The
+// point is not raw size: it is that difficulty can now be laid out as distance
+// from spawn, so wandering further is the progression rather than a menu of
+// equally-dangerous camps sitting a few steps apart.
+export const WORLD_WIDTH = 4800;
+export const WORLD_HEIGHT = 3600;
 
 export const GATHER_DURATION_MS = 3000;
 export const GATHER_LEVEL_STEP_MS = 400;
@@ -319,7 +323,30 @@ export const WEAKENED_DURATION_MS = 20000;
 export const WEAKENED_DAMAGE_PENALTY = 0.25;
 export const LOOT_DROP_CHANCE = 0.3;
 
-export type MonsterKind = "slime" | "goblin" | "wolf" | "troll";
+// Thirteen kinds, laid out in the world as five difficulty bands radiating from
+// spawn (see the server's monster layout). Adding one is still a single
+// MONSTER_STATS row plus a model mapping on the client — the Phase 9 promise,
+// re-tested here at scale: going from 4 kinds to 13 needed no new branching
+// anywhere in the tick loop, the AI, or the loot roller.
+export type MonsterKind =
+  // band 1 — the ring you can clear at level 1
+  | "slime"
+  | "mushnub"
+  // band 2
+  | "spikyblob"
+  | "goblin"
+  | "armabee"
+  // band 3
+  | "wolf"
+  | "cactoro"
+  | "orcbrute"
+  // band 4
+  | "ghost"
+  | "troll"
+  | "demon"
+  // band 5 — the far corners
+  | "golem"
+  | "dragon";
 
 export interface MonsterStats {
   maxHp: number;
@@ -452,12 +479,210 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 3000,
     attackRangePx: 82,
     speedPxPerSec: 92,
-    // The only monster with a telegraph. Slow enough to outrun, hits a wide
-    // area for far more than its normal swing, and gives you 900ms to get
-    // out — so the fight is about reading it, not out-healing it.
+    // Slow enough to outrun, hits a wide area for far more than its normal
+    // swing, and gives you 900ms to get out — so the fight is about reading it,
+    // not out-healing it.
     windupMs: 900,
     slamRadiusPx: 120,
     slamDamageMultiplier: 1.7,
+  },
+
+  // ---------------------------------------------------------------- band 1
+  // Slower and meatier than a slime but with no trick at all — the kind you
+  // learn the attack rhythm on.
+  mushnub: {
+    maxHp: 22,
+    minHit: 2,
+    maxHit: 4,
+    accuracy: 45,
+    evasion: 4,
+    armor: 1,
+    critChance: 2,
+    critMultiplier: 1.3,
+    xpReward: 8,
+    durationMultiplier: 1.1,
+    respawnMultiplier: 1,
+    guaranteedDrop: false,
+    attackIntervalMs: 2400,
+    attackRangePx: 44,
+    speedPxPerSec: 82,
+  },
+
+  // ---------------------------------------------------------------- band 2
+  // The slime's lesson taken seriously: a much bigger death burst, so clearing
+  // a cluster with AoE while standing in it genuinely hurts.
+  spikyblob: {
+    maxHp: 30,
+    minHit: 3,
+    maxHit: 5,
+    accuracy: 50,
+    evasion: 6,
+    armor: 1,
+    critChance: 3,
+    critMultiplier: 1.3,
+    xpReward: 12,
+    durationMultiplier: 1.2,
+    respawnMultiplier: 1,
+    guaranteedDrop: false,
+    attackIntervalMs: 2000,
+    attackRangePx: 46,
+    speedPxPerSec: 100,
+    deathBurstRadiusPx: 110,
+    deathBurstDamage: 13,
+  },
+  // Faster than the player and it leaps, but folds immediately once caught.
+  // The answer is Frost Nova or a wall, not out-running it.
+  armabee: {
+    maxHp: 26,
+    minHit: 3,
+    maxHit: 6,
+    accuracy: 58,
+    evasion: 26,
+    armor: 0,
+    critChance: 6,
+    critMultiplier: 1.35,
+    xpReward: 15,
+    durationMultiplier: 1.1,
+    respawnMultiplier: 1,
+    guaranteedDrop: false,
+    attackIntervalMs: 1300,
+    attackRangePx: 46,
+    speedPxPerSec: 215,
+    leapRangePx: 250,
+    leapSpeedMultiplier: 3.2,
+    leapDurationMs: 380,
+    leapCooldownMs: 6000,
+  },
+
+  // ---------------------------------------------------------------- band 3
+  // Armoured enough that low hit-bands scrape off it, and it bursts on death.
+  cactoro: {
+    maxHp: 60,
+    minHit: 5,
+    maxHit: 9,
+    accuracy: 62,
+    evasion: 8,
+    armor: 4,
+    critChance: 5,
+    critMultiplier: 1.4,
+    xpReward: 22,
+    durationMultiplier: 1.6,
+    respawnMultiplier: 1,
+    guaranteedDrop: false,
+    attackIntervalMs: 2000,
+    attackRangePx: 52,
+    speedPxPerSec: 112,
+    deathBurstRadiusPx: 90,
+    deathBurstDamage: 10,
+  },
+  // The goblin's shout, with a much wider radius and a body behind it. Pulling
+  // one carelessly brings a camp that can actually kill you.
+  orcbrute: {
+    maxHp: 90,
+    minHit: 7,
+    maxHit: 12,
+    accuracy: 68,
+    evasion: 12,
+    armor: 4,
+    critChance: 7,
+    critMultiplier: 1.45,
+    xpReward: 30,
+    durationMultiplier: 2,
+    respawnMultiplier: 1.4,
+    guaranteedDrop: false,
+    attackIntervalMs: 1900,
+    attackRangePx: 60,
+    speedPxPerSec: 142,
+    alertRadiusPx: 300,
+  },
+
+  // ---------------------------------------------------------------- band 4
+  // Answers accuracy rather than damage: 38 evasion means a low-Agility build
+  // simply cannot land on it, whatever its gear says.
+  ghost: {
+    maxHp: 45,
+    minHit: 6,
+    maxHit: 10,
+    accuracy: 66,
+    evasion: 38,
+    armor: 0,
+    critChance: 10,
+    critMultiplier: 1.5,
+    xpReward: 26,
+    durationMultiplier: 1.7,
+    respawnMultiplier: 1.2,
+    guaranteedDrop: false,
+    attackIntervalMs: 1700,
+    attackRangePx: 58,
+    speedPxPerSec: 168,
+  },
+  // The troll's damage without the tell — fast, hard-hitting and it crits.
+  demon: {
+    maxHp: 130,
+    minHit: 10,
+    maxHit: 16,
+    accuracy: 74,
+    evasion: 14,
+    armor: 5,
+    critChance: 16,
+    critMultiplier: 1.8,
+    xpReward: 45,
+    durationMultiplier: 3,
+    respawnMultiplier: 1.6,
+    guaranteedDrop: false,
+    attackIntervalMs: 1800,
+    attackRangePx: 64,
+    speedPxPerSec: 152,
+  },
+
+  // ---------------------------------------------------------------- band 5
+  // Armour 14 is the point: it subtracts from every hit, so chip damage does
+  // nothing and you need a real weapon rather than a fast one.
+  golem: {
+    maxHp: 240,
+    minHit: 11,
+    maxHit: 19,
+    accuracy: 72,
+    evasion: 4,
+    armor: 14,
+    critChance: 6,
+    critMultiplier: 1.5,
+    xpReward: 70,
+    durationMultiplier: 4.5,
+    respawnMultiplier: 3,
+    guaranteedDrop: true,
+    attackIntervalMs: 3200,
+    attackRangePx: 78,
+    speedPxPerSec: 70,
+    windupMs: 1100,
+    slamRadiusPx: 140,
+    slamDamageMultiplier: 1.8,
+  },
+  // The apex: it telegraphs AND closes the gap, so neither standing still nor
+  // running is a whole answer on its own.
+  dragon: {
+    maxHp: 340,
+    minHit: 15,
+    maxHit: 25,
+    accuracy: 78,
+    evasion: 12,
+    armor: 9,
+    critChance: 12,
+    critMultiplier: 1.7,
+    xpReward: 110,
+    durationMultiplier: 5,
+    respawnMultiplier: 4,
+    guaranteedDrop: true,
+    attackIntervalMs: 2600,
+    attackRangePx: 95,
+    speedPxPerSec: 124,
+    windupMs: 950,
+    slamRadiusPx: 165,
+    slamDamageMultiplier: 1.9,
+    leapRangePx: 320,
+    leapSpeedMultiplier: 2.8,
+    leapDurationMs: 500,
+    leapCooldownMs: 9000,
   },
 };
 
@@ -1070,9 +1295,18 @@ export interface TonicsUpdateMessage {
 export const NODE_LABELS: Record<ResourceNodeKind, string> = { tree: "Tree", rock: "Rock", bush: "Herb Bush" };
 export const MONSTER_LABELS: Record<MonsterKind, string> = {
   slime: "Slime",
+  mushnub: "Mushnub",
+  spikyblob: "Spiky Blob",
   goblin: "Goblin",
+  armabee: "Armabee",
   wolf: "Wolf",
+  cactoro: "Cactoro",
+  orcbrute: "Orc Brute",
+  ghost: "Ghost",
   troll: "Troll",
+  demon: "Demon",
+  golem: "Golem",
+  dragon: "Dragon",
 };
 export const STATION_LABEL = "Workbench";
 

@@ -11,10 +11,10 @@ export type ActorAnim = "idle" | "run" | "attack" | "hit" | "die";
 // differently, so this is a preference list rather than an exact mapping —
 // `findClip` falls back to a loose match before giving up.
 const CLIP_PREFERENCES: Record<ActorAnim, string[]> = {
-  idle: ["Idle_Weapon", "Idle", "Idle2", "Flying"],
-  run: ["Run_Weapon", "Run", "Walk", "Flying"],
-  attack: ["Sword_Attack", "Attack", "Punch", "Bite", "Sword_AttackFast"],
-  hit: ["RecieveHit", "ReceiveHit", "Hit", "Damage"],
+  idle: ["Idle_Weapon", "Idle", "Idle2", "Flying_Idle", "Flying"],
+  run: ["Run_Weapon", "Run", "Walk", "Fly", "Flying"],
+  attack: ["Sword_Attack", "Attack", "Punch", "Bite", "Headbutt", "Sword_AttackFast"],
+  hit: ["RecieveHit", "HitReact", "ReceiveHit", "Hit", "Damage"],
   die: ["Death", "Die"],
 };
 

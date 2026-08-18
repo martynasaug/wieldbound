@@ -225,29 +225,44 @@ function appearanceOf(playerId: string): Appearance {
 }
 
 
+/**
+ * Places `count` nodes evenly around a ring centred on spawn.
+ *
+ * These were absolute coordinates until the world grew from 2200x1600 to
+ * 4800x3600, at which point every one of them sat bunched in the north-west
+ * corner. Expressing them relative to spawn means the layout follows the world
+ * size instead of silently going stale the next time it changes.
+ */
+function ringNodes(
+  prefix: string,
+  kind: ResourceNodeState["kind"],
+  radius: number,
+  count: number,
+  startDeg = 0,
+): ResourceNodeState[] {
+  return Array.from({ length: count }, (_, i) => {
+    const a = ((startDeg + (360 / count) * i) * Math.PI) / 180;
+    return {
+      id: `${prefix}-${i + 1}`,
+      kind,
+      x: Math.round(PLAYER_SPAWN.x + Math.cos(a) * radius),
+      y: Math.round(PLAYER_SPAWN.y + Math.sin(a) * radius),
+      status: "available" as const,
+    };
+  });
+}
+
 const nodes: ResourceNodeState[] = [
-  { id: "tree-1", kind: "tree", x: 250, y: 800, status: "available" },
-  { id: "tree-2", kind: "tree", x: 1950, y: 800, status: "available" },
-  { id: "tree-3", kind: "tree", x: 700, y: 150, status: "available" },
-  { id: "tree-4", kind: "tree", x: 1500, y: 150, status: "available" },
-  { id: "tree-5", kind: "tree", x: 700, y: 1450, status: "available" },
-  { id: "tree-6", kind: "tree", x: 1500, y: 1450, status: "available" },
-  { id: "tree-7", kind: "tree", x: 1100, y: 400, status: "available" },
-  { id: "tree-8", kind: "tree", x: 1100, y: 1200, status: "available" },
-  { id: "tree-9", kind: "tree", x: 250, y: 1100, status: "available" },
-  { id: "tree-10", kind: "tree", x: 1950, y: 500, status: "available" },
-  { id: "rock-1", kind: "rock", x: 600, y: 600, status: "available" },
-  { id: "rock-2", kind: "rock", x: 1600, y: 600, status: "available" },
-  { id: "rock-3", kind: "rock", x: 600, y: 1000, status: "available" },
-  { id: "rock-4", kind: "rock", x: 1600, y: 1000, status: "available" },
-  { id: "rock-5", kind: "rock", x: 1100, y: 1550, status: "available" },
-  // Herb bushes cluster near the workbench/spawn — a little garden ring
-  // around town, convenient since potions are also crafted at the
-  // workbench right next to them.
-  { id: "bush-1", kind: "bush", x: 950, y: 680, status: "available" },
-  { id: "bush-2", kind: "bush", x: 1250, y: 680, status: "available" },
-  { id: "bush-3", kind: "bush", x: 950, y: 920, status: "available" },
-  { id: "bush-4", kind: "bush", x: 1250, y: 920, status: "available" },
+  // Herb bushes ring the workbench — a garden around town, convenient since
+  // potions are crafted at the bench they surround.
+  ...ringNodes("bush", "bush", 330, 6, 15),
+  // Wood and ore spread outward. The outer rings sit in the same ground as the
+  // band-2/3 camps, so gathering out there is a decision rather than a chore.
+  ...ringNodes("tree-inner", "tree", 560, 8, 22),
+  ...ringNodes("rock-inner", "rock", 820, 6, 30),
+  ...ringNodes("tree-mid", "tree", 1150, 10, 12),
+  ...ringNodes("rock-outer", "rock", 1400, 8, 15),
+  ...ringNodes("tree-outer", "tree", 1560, 10, 30),
 ];
 const nodeRespawnAt = new Map<string, number>();
 
@@ -281,13 +296,67 @@ function spawnPack(
   return offsets.map(([dx, dy], i) => spawnMonster(`${prefix}-${i + 1}`, kind, centerX + dx, centerY + dy));
 }
 
+/**
+ * Places a pack at a polar offset from spawn.
+ *
+ * Difficulty is laid out as distance: the further you walk from the workbench,
+ * the worse what you meet. Expressing that as (radius, angle) rather than
+ * absolute coordinates is what keeps it readable — the band a camp belongs to
+ * is the number you are looking at, not something you infer by comparing two
+ * coordinates against the map centre.
+ */
+function ringPack(
+  prefix: string,
+  kind: MonsterState["kind"],
+  radius: number,
+  angleDeg: number,
+  offsets: readonly (readonly [number, number])[] = DIAMOND_OFFSETS,
+): MonsterState[] {
+  const a = (angleDeg * Math.PI) / 180;
+  return spawnPack(
+    prefix,
+    kind,
+    PLAYER_SPAWN.x + Math.cos(a) * radius,
+    PLAYER_SPAWN.y + Math.sin(a) * radius,
+    offsets,
+  );
+}
+
 const monsters: MonsterState[] = [
-  ...spawnPack("slime-a", "slime", 400, 300, DIAMOND_OFFSETS),
-  ...spawnPack("slime-b", "slime", 1800, 1300, DIAMOND_OFFSETS),
-  ...spawnPack("goblin-a", "goblin", 1800, 300, DIAMOND_OFFSETS),
-  ...spawnPack("goblin-b", "goblin", 400, 1300, DIAMOND_OFFSETS),
-  ...spawnPack("wolf-den", "wolf", 1100, 1500, DIAMOND_OFFSETS),
-  ...spawnPack("troll-lair", "troll", 1100, 100, TRIANGLE_OFFSETS),
+  // Band 1 (~620px) — clearable at level 1. Deliberately no camp closer than
+  // this, so spawn and the workbench stay safe ground.
+  ...ringPack("slime-a", "slime", 620, 0),
+  ...ringPack("mushnub-a", "mushnub", 620, 90),
+  ...ringPack("slime-b", "slime", 620, 180),
+  ...ringPack("mushnub-b", "mushnub", 620, 270),
+
+  // Band 2 (~1000px)
+  ...ringPack("goblin-a", "goblin", 1000, 45),
+  ...ringPack("spikyblob-a", "spikyblob", 1000, 135),
+  ...ringPack("goblin-b", "goblin", 1000, 225),
+  ...ringPack("armabee-a", "armabee", 1000, 315),
+
+  // Band 3 (~1350-1450px)
+  ...ringPack("wolf-a", "wolf", 1350, 20),
+  ...ringPack("cactoro-a", "cactoro", 1350, 100),
+  ...ringPack("orcbrute-a", "orcbrute", 1350, 200),
+  ...ringPack("wolf-b", "wolf", 1350, 280),
+  ...ringPack("spikyblob-b", "spikyblob", 1450, 160),
+  ...ringPack("armabee-b", "armabee", 1450, 340),
+
+  // Band 4 (~1700-1750px). Troll and demon come in threes — three things
+  // hitting this hard at once is already the whole fight.
+  ...ringPack("ghost-a", "ghost", 1700, 70),
+  ...ringPack("troll-a", "troll", 1700, 190, TRIANGLE_OFFSETS),
+  ...ringPack("demon-a", "demon", 1700, 310, TRIANGLE_OFFSETS),
+  ...ringPack("cactoro-b", "cactoro", 1750, 130),
+  ...ringPack("orcbrute-b", "orcbrute", 1750, 250),
+
+  // Band 5 (~2050px) — the far corners. Angles are kept off vertical because
+  // the world is wider than it is tall and a pack at 90 degrees would spawn
+  // outside the south edge.
+  ...ringPack("golem-a", "golem", 2050, 140, TRIANGLE_OFFSETS),
+  ...ringPack("dragon-a", "dragon", 2050, 320, TRIANGLE_OFFSETS),
 ];
 const monsterRespawnAt = new Map<string, number>();
 

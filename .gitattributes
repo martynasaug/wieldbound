@@ -1,0 +1,10 @@
+# Asset files must reach the browser byte-for-byte. Without this, Git's
+# autocrlf rewrites line endings inside the .gltf files on checkout — they are
+# JSON so it parses either way, but it rewrites megabytes of embedded base64
+# for no reason and makes every diff look like the whole model changed.
+*.gltf   -text
+*.glb    binary
+*.fbx    binary
+*.png    binary
+*.jpg    binary
+*.wav    binary

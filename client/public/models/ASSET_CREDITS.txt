@@ -20,20 +20,32 @@ Cleric_Staff.fbx       Idle_Weapon, Idle_Attacking, Walk, Run, Run_Weapon,
                        "your class is whatever you are holding" a mesh swap
                        on one bone, with every animation carrying it for free.
 
-MONSTERS
+MONSTERS  (*.gltf)
 
-Slime.fbx              Quaternius "Animated Monster Pack"
-Skeleton.fbx           https://opengameart.org/content/lowpoly-animated-monsters
-Bat.fbx                (CC0). Rigged and animated.
-Dragon.fbx
-                       STAND-INS: the game has four monster kinds — slime,
-                       goblin, wolf, troll — and only the slime is a genuine
-                       match here. Skeleton/Bat/Dragon currently stand in for
-                       goblin/wolf/troll (see MONSTER_MODELS in three/Game.ts).
-                       Quaternius's "Ultimate Monsters" pack (50 animated
-                       creatures, CC0, glTF included) is the right source but
-                       is served from a Google Drive folder, which cannot be
-                       fetched programmatically and needs one manual download.
+All thirteen from Quaternius "Ultimate Monsters" — 50 rigged, animated
+creatures, CC0 1.0 Universal.
+https://quaternius.com/packs/ultimatemonsters.html
+
+  GreenBlob            slime          Mushnub          mushnub
+  GreenSpikyBlob       spikyblob      Orc              goblin
+  Armabee              armabee        Dog              wolf
+  Cactoro              cactoro        Orc_Skull        orcbrute
+  Ghost                ghost          Yeti             troll
+  Demon                demon          Goleling_Evolved golem
+  Dragon_Evolved       dragon
+
+Clips: Idle, Walk, Run, Punch, HitReact, Death, Jump, Duck, Wave, No.
+Mapped to the engine's idle/run/attack/hit/die states in three/Actor.ts.
+
+WHY glTF RATHER THAN THE FBX IN THE SAME PACK
+  ~2.7x smaller for the identical model (Orc: 1250 KB vs 3395 KB), the texture
+  atlas is embedded in a bufferView so each file is standalone, and it needs
+  none of the material-rebuilding and UV-flip correction the FBX path below
+  requires. The client loads both formats; `name` carries the extension.
+
+  This pack is distributed from a Google Drive folder, which cannot be fetched
+  programmatically — it was downloaded manually. Worth knowing if these ever
+  need re-acquiring.
 
 TREES
 

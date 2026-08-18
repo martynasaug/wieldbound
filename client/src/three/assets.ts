@@ -14,6 +14,7 @@
 
 import * as THREE from "three";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 const MODEL_PATH = "/models";
@@ -52,6 +53,7 @@ function resolveTexture(name: string | undefined): string | null {
 }
 
 const fbxLoader = new FBXLoader();
+const gltfLoader = new GLTFLoader();
 const texLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
 const modelCache = new Map<string, Promise<THREE.Group>>();
@@ -66,11 +68,22 @@ function texture(name: string): THREE.Texture {
   return t;
 }
 
+/** Shadow flags only. glTF already arrives with correct PBR materials and its
+ *  texture embedded, so touching the materials would only lose the map. */
+function dressGltf(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+  });
+}
+
 /**
  * Replaces the FBX's authored materials with lit standard materials, binds
  * textures where a matching file exists, and turns on shadow casting.
  */
-function dress(root: THREE.Object3D): void {
+function dressFbx(root: THREE.Object3D): void {
   root.traverse((child) => {
     const mesh = child as THREE.Mesh;
     if (!mesh.isMesh) return;
@@ -101,20 +114,47 @@ function dress(root: THREE.Object3D): void {
   });
 }
 
-/** Loads (and caches) one FBX. The cached object is a prototype — never added to a scene. */
+/**
+ * Loads (and caches) one model. The cached object is a prototype — never added
+ * to a scene; callers get their own copy via instantiate().
+ *
+ * `name` carries its extension so both formats can coexist: the characters and
+ * trees are FBX, and the monster pack is glTF, which is ~2.7x smaller for the
+ * same model, ships its texture embedded, and needs none of the FBX material
+ * and UV fixing below.
+ */
 export function loadModel(name: string): Promise<THREE.Group> {
   let p = modelCache.get(name);
   if (!p) {
+    const isGltf = name.endsWith(".gltf") || name.endsWith(".glb");
+    const url = `${MODEL_PATH}/${name}${isGltf ? "" : ".fbx"}`;
     p = new Promise<THREE.Group>((resolve, reject) => {
-      fbxLoader.load(
-        `${MODEL_PATH}/${name}.fbx`,
-        (group) => {
-          dress(group);
-          resolve(group);
-        },
-        undefined,
-        (err) => reject(new Error(`failed to load ${name}: ${String(err)}`)),
-      );
+      const fail = (err: unknown) => reject(new Error(`failed to load ${name}: ${String(err)}`));
+      if (isGltf) {
+        gltfLoader.load(
+          url,
+          (gltf) => {
+            const group = gltf.scene as THREE.Group;
+            // three keeps animations on the parsed result, not the scene graph,
+            // so they have to be carried across or instantiate() finds none.
+            group.animations = gltf.animations;
+            dressGltf(group);
+            resolve(group);
+          },
+          undefined,
+          fail,
+        );
+      } else {
+        fbxLoader.load(
+          url,
+          (group) => {
+            dressFbx(group);
+            resolve(group);
+          },
+          undefined,
+          fail,
+        );
+      }
     });
     modelCache.set(name, p);
   }

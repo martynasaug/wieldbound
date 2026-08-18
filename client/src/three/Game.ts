@@ -74,17 +74,41 @@ import { instantiate } from "./assets";
 
 const PLAYER_HEIGHT = 1.8;
 
-// Monster art. Slime is a genuine match; the rest are stand-ins until the
-// Quaternius Ultimate Monsters pack (Drive-gated, needs one manual download)
-// is available. Heights are tuned to the kind's role, not the source model.
+// Monster art, one row per kind. Every model is from Quaternius's Ultimate
+// Monsters (CC0, glTF), so the stand-ins from M1 are gone. Height is chosen to
+// read the kind's role at a glance — a golem should look like it has 14 armour
+// before you attack it — not to match whatever scale the source was authored at.
 const MONSTER_MODELS: Record<MonsterKind, { model: string; height: number }> = {
-  slime: { model: "Slime", height: 0.85 },
-  goblin: { model: "Skeleton", height: 1.5 },
-  wolf: { model: "Bat", height: 1.0 },
-  troll: { model: "Dragon", height: 3.0 },
+  slime: { model: "GreenBlob.gltf", height: 0.8 },
+  mushnub: { model: "Mushnub.gltf", height: 0.95 },
+  spikyblob: { model: "GreenSpikyBlob.gltf", height: 1.0 },
+  goblin: { model: "Orc.gltf", height: 1.5 },
+  armabee: { model: "Armabee.gltf", height: 1.0 },
+  wolf: { model: "Dog.gltf", height: 1.0 },
+  cactoro: { model: "Cactoro.gltf", height: 1.7 },
+  orcbrute: { model: "Orc_Skull.gltf", height: 1.9 },
+  ghost: { model: "Ghost.gltf", height: 1.5 },
+  troll: { model: "Yeti.gltf", height: 2.3 },
+  demon: { model: "Demon.gltf", height: 2.2 },
+  golem: { model: "Goleling_Evolved.gltf", height: 2.8 },
+  dragon: { model: "Dragon_Evolved.gltf", height: 3.4 },
 };
 
 const MOVE_SEND_INTERVAL_MS = 60;
+
+// The world holds ~80 monsters and the server sends all of them in every
+// snapshot, which is correct — it is authoritative and the client should not be
+// deciding what exists. Rendering all 80 as animated skinned meshes is another
+// matter: each one costs a skeleton update per frame. So models are built
+// lazily when a camp comes near and torn down once it is well away. The gap
+// between the two radii is hysteresis; with a single threshold a player walking
+// the boundary would thrash a whole camp in and out every frame.
+// 1150px is roughly a screen and a half at this camera, and comfortably beyond
+// the 260px a monster will notice you from — so nothing ever pops in while it
+// could matter. Set at 1500 initially, which rendered ~54 skinned meshes while
+// standing at spawn because bands 1-3 all fell inside it.
+const MONSTER_SPAWN_RADIUS_PX = 1150;
+const MONSTER_DESPAWN_RADIUS_PX = 1550;
 
 interface MonsterVisual {
   actor: Actor;
@@ -384,13 +408,24 @@ export class Game {
 
   private syncMonsters(states: MonsterState[]): void {
     for (const s of states) {
+      const distance = Math.hypot(s.x - this.playerX, s.y - this.playerY);
       let vis = this.monsters.get(s.id);
+
       if (!vis) {
+        // Far camps cost nothing at all — no model, no skeleton, no update.
+        if (distance > MONSTER_SPAWN_RADIUS_PX) continue;
         const spec = MONSTER_MODELS[s.kind];
         const actor = new Actor({ model: spec.model, height: spec.height });
         vis = { actor, kind: s.kind, state: s, dead: false };
         this.monsters.set(s.id, vis);
         void actor.load().then(() => this.world.scene.add(actor.root));
+      } else if (distance > MONSTER_DESPAWN_RADIUS_PX) {
+        vis.actor.dispose();
+        this.monsters.delete(s.id);
+        // The server would still happily resolve a skill against something the
+        // player can no longer see, so drop the selection with the model.
+        if (this.targetId === s.id) this.setTarget(null);
+        continue;
       }
       const prev = vis.actor.position;
       const x = toWorldX(s.x);
