@@ -10,7 +10,9 @@ import * as THREE from "three";
 import {
   INTERACTION_RANGE_PX,
   MONSTER_LABELS,
+  MONSTER_STATS,
   NODE_LABELS,
+  SKILLS,
   STATION_LABEL,
   WORLD_WIDTH,
   WORLD_HEIGHT,
@@ -61,6 +63,9 @@ import { TargetFrame } from "../ui/TargetFrame";
 import { Hotbar } from "../ui/Hotbar";
 import { Actor } from "./Actor";
 import { Hud } from "./hud";
+import { Effects, isEffectName, type EffectName } from "./effects";
+import { Indicators } from "./indicators";
+import { playSfx, preloadSfx, toggleMuted } from "./sfx";
 import {
   PX_PER_UNIT,
   World,
@@ -110,11 +115,23 @@ const MOVE_SEND_INTERVAL_MS = 60;
 const MONSTER_SPAWN_RADIUS_PX = 1150;
 const MONSTER_DESPAWN_RADIUS_PX = 1550;
 
+// How long after a swing starts the hit is considered to land. Roughly where
+// the weapon is at the bottom of its arc — without it the damage number appears
+// on the same frame as the wind-up, which reads as a number popping out of
+// nowhere rather than as a blow connecting.
+const IMPACT_DELAY_MS = 170;
+
+// The reach ring fades out once combat traffic stops, so it is not permanently
+// drawn under a player who is just walking around.
+const COMBAT_INDICATOR_TIMEOUT_MS = 3500;
+
 interface MonsterVisual {
   actor: Actor;
   kind: MonsterKind;
   state: MonsterState;
   dead: boolean;
+  /** Previous wind-up flag, so the telegraph cue fires on the edge not every tick. */
+  windingUp: boolean;
 }
 
 export class Game {
@@ -162,6 +179,9 @@ export class Game {
   private herb = 0;
 
   private targetId: string | null = null;
+  /** Last movement input direction, so a dash with no keys held still has a way to go. */
+  private moveInputX = 0;
+  private moveInputY = 0;
 
   private readonly players = new Map<string, Actor>();
   private readonly playerNames = new Map<string, string>();
@@ -176,12 +196,21 @@ export class Game {
   private readonly clock = new THREE.Clock();
   private readonly raycaster = new THREE.Raycaster();
   private readonly fadedMaterials = new Set<THREE.Material>();
+  private readonly effects: Effects;
+  private readonly indicators: Indicators;
+  private readonly shakeScratch = new THREE.Vector3();
   private running = false;
+  /** Last moment combat traffic arrived, used to show the reach ring only while fighting. */
+  private lastCombatAt = 0;
+  /** Ally selection is a separate slot from the enemy one, mirroring the server. */
+  private allyTargetId: string | null = null;
 
   constructor(container: HTMLElement, characterName: string) {
     this.name = characterName;
     this.world = new World(container);
     this.hud = new Hud(container);
+    this.effects = new Effects(this.world.scene);
+    this.indicators = new Indicators(this.world.scene);
 
     this.characterPanel = new CharacterPanel((stat) => this.socket.sendAllocateStat(stat));
     this.inventoryPanel = new InventoryPanel(
@@ -227,6 +256,13 @@ export class Game {
           this.combatLog.push(`Level up! You are now level ${this.level}.`, "#ffd873");
           this.hud.toast(`Level up — ${this.level}`, "#ffd873");
           this.refreshClassUi();
+          playSfx("levelup");
+          const self = this.localActor;
+          if (self) {
+            this.effects.play("holy", self.position.x, self.position.y + 1.0, self.position.z, {
+              scale: 3.4, tint: 0xffd873, durationMs: 900,
+            });
+          }
         }
       },
       onLootUpdate: (p) => {
@@ -309,6 +345,7 @@ export class Game {
     this.world.scene.add(this.localActor.root);
     this.localActor.snapTo(toWorldX(this.playerX), 0, toWorldZ(this.playerY));
 
+    preloadSfx();
     this.bindInput();
     this.socket.connect();
     this.loop();
@@ -416,7 +453,7 @@ export class Game {
         if (distance > MONSTER_SPAWN_RADIUS_PX) continue;
         const spec = MONSTER_MODELS[s.kind];
         const actor = new Actor({ model: spec.model, height: spec.height });
-        vis = { actor, kind: s.kind, state: s, dead: false };
+        vis = { actor, kind: s.kind, state: s, dead: false, windingUp: false };
         this.monsters.set(s.id, vis);
         void actor.load().then(() => this.world.scene.add(actor.root));
       } else if (distance > MONSTER_DESPAWN_RADIUS_PX) {
@@ -435,14 +472,26 @@ export class Game {
       vis.actor.setTargetPosition(x, 0, z);
       if (moving) vis.actor.faceToward(x, z);
 
+      // Chill is a gameplay signal (your Frost Nova is still working), so it
+      // gets a colour rather than being inferred from the monster moving slower.
+      vis.actor.setChilled(s.slowed);
+
       const nowDead = s.status === "dead";
       if (nowDead && !vis.dead) {
         vis.actor.play("die");
+        vis.actor.setChilled(false);
+        if (this.targetId === s.id) this.setTarget(null);
       } else if (!nowDead && vis.dead) {
         vis.actor.revive();
       } else if (!nowDead) {
         vis.actor.play(moving ? "run" : "idle");
       }
+
+      // The wind-up needs a sound the moment it starts, or a player looking at
+      // their own character never learns the danger circle appeared.
+      if (s.windingUp && !vis.windingUp) playSfx("cast", 0.8);
+      vis.windingUp = s.windingUp;
+
       vis.dead = nowDead;
       vis.state = s;
     }
@@ -538,11 +587,21 @@ export class Game {
   }
 
   private onHpUpdate(p: { hp: number; maxHp: number; defeated: boolean; x?: number; y?: number }): void {
-    const took = p.hp < this.hp;
+    const delta = p.hp - this.hp;
     this.hp = p.hp;
     this.maxHp = p.maxHp;
     this.hud.setHp(this.hp, this.maxHp);
-    if (took) this.localActor?.play("hit");
+    if (delta < 0) this.localActor?.play("hit");
+
+    // Healing was completely silent before — a potion looked identical to
+    // nothing happening. The threshold keeps passive regen (1-5 HP every 5s)
+    // from spraying numbers, while a potion or a Mend always shows.
+    if (delta >= 8 && this.localActor) {
+      const at = this.localActor.position;
+      this.floatOver(this.localActor, `+${delta}`, "#7ed957");
+      this.effects.play("heal", at.x, at.y + 1.0, at.z, { scale: 2.4, tint: 0x7ed957, durationMs: 620 });
+      playSfx("heal");
+    }
     if (p.defeated) {
       this.combatLog.push("You were defeated.", "#ff6b6b");
       this.hud.toast("You were defeated.", "#ff6b6b");
@@ -557,6 +616,11 @@ export class Game {
     }
   }
 
+  // A swing is a beat, not an instant. The server tells us the outcome all at
+  // once, but playing the wind-up and the impact on the same frame reads as the
+  // number simply appearing — so the animation and sound go now, and the hit
+  // lands IMPACT_DELAY_MS later, which is roughly where the weapon is at the
+  // bottom of the arc.
   private onBattleResult(p: {
     monsterId: string;
     playerHit: boolean;
@@ -565,44 +629,98 @@ export class Game {
     monsterDefeated: boolean;
   }): void {
     const vis = this.monsters.get(p.monsterId);
+    this.lastCombatAt = performance.now();
     this.localActor?.play("attack");
     if (vis) this.localActor?.faceToward(vis.actor.position.x, vis.actor.position.z);
+    playSfx("swing");
 
     const label = vis ? MONSTER_LABELS[vis.kind] : "enemy";
-    if (!p.playerHit) {
-      this.combatLog.push(`You miss the ${label}.`, "#9a8d76");
-      if (vis) this.floatOver(vis.actor, "MISS", "#cfc4ad");
-      return;
-    }
-    const text = p.playerCrit ? `CRIT ${p.playerDamage}` : `${p.playerDamage}`;
-    this.combatLog.push(
-      `You hit the ${label} for ${p.playerDamage}${p.playerCrit ? " (CRIT)" : ""}.`,
-      p.playerCrit ? "#ffd85e" : "#e8dcc0",
-    );
-    if (vis) this.floatOver(vis.actor, text, p.playerCrit ? "#ffd85e" : "#ffffff");
-    if (p.monsterDefeated) this.combatLog.push(`You defeated the ${label}.`, "#7ed957");
+    const ranged = attackRangeFor(this.appearance.weaponType) > 120;
+
+    window.setTimeout(() => {
+      const target = this.monsters.get(p.monsterId);
+      if (!p.playerHit) {
+        this.combatLog.push(`You miss the ${label}.`, "#9a8d76");
+        if (target) this.floatOver(target.actor, "MISS", "#cfc4ad");
+        playSfx("miss");
+        return;
+      }
+
+      this.combatLog.push(
+        `You hit the ${label} for ${p.playerDamage}${p.playerCrit ? " (CRIT)" : ""}.`,
+        p.playerCrit ? "#ffd85e" : "#e8dcc0",
+      );
+      playSfx(p.playerCrit ? "crit" : "hit");
+
+      if (target) {
+        const at = target.actor.position;
+        // Land the effect at the monster's middle, not a fixed height — a slime
+        // is 0.8 units tall and a dragon 3.4, and a constant offset puts the
+        // burst inside the ground on one and around the ankles of the other.
+        const mid = at.y + MONSTER_MODELS[target.kind].height * 0.55;
+        const size = Math.max(1.6, MONSTER_MODELS[target.kind].height * 1.3);
+
+        target.actor.flash(p.playerCrit ? 0xffd85e : 0xffffff, p.playerCrit ? 190 : 120);
+        this.floatOver(target.actor, p.playerCrit ? `CRIT ${p.playerDamage}` : `${p.playerDamage}`,
+          p.playerCrit ? "#ffd85e" : "#ffffff");
+        // A ranged class should not spawn a sword arc on its target.
+        this.effects.play(ranged ? "arrow" : "slash", at.x, mid, at.z, {
+          scale: size * (p.playerCrit ? 1.5 : 1.15),
+          tint: p.playerCrit ? 0xffd85e : 0xffffff,
+          durationMs: 420,
+          spin: ranged ? 0 : 0.05,
+        });
+        this.effects.play("impact", at.x, mid, at.z, {
+          scale: size * (p.playerCrit ? 1.25 : 0.95),
+          tint: p.playerCrit ? 0xffc94a : 0xfff0c8,
+          durationMs: 360,
+        });
+      }
+      if (p.playerCrit) this.effects.shake(0.09, 150);
+
+      if (p.monsterDefeated) {
+        this.combatLog.push(`You defeated the ${label}.`, "#7ed957");
+        playSfx("die");
+        if (target) {
+          const at = target.actor.position;
+          this.effects.play("impact", at.x, at.y + 0.7, at.z, { scale: 2.6, tint: 0xffb066, durationMs: 520 });
+        }
+      }
+    }, IMPACT_DELAY_MS);
   }
 
   private onMonsterAttack(p: { monsterId: string; hit: boolean; crit: boolean; damage: number }): void {
     const vis = this.monsters.get(p.monsterId);
+    this.lastCombatAt = performance.now();
     if (vis) {
       vis.actor.play("attack");
-      if (this.localActor) {
-        vis.actor.faceToward(this.localActor.position.x, this.localActor.position.z);
-      }
+      if (this.localActor) vis.actor.faceToward(this.localActor.position.x, this.localActor.position.z);
     }
     const label = vis ? MONSTER_LABELS[vis.kind] : "enemy";
-    if (!p.hit) {
-      this.combatLog.push(`The ${label} misses you.`, "#9a8d76");
-      return;
-    }
-    this.combatLog.push(
-      `The ${label} ${p.crit ? "CRITs" : "hits"} you for ${p.damage}.`,
-      p.crit ? "#ff8f5e" : "#ff9d9d",
-    );
-    if (this.localActor) {
-      this.floatOver(this.localActor, `-${p.damage}`, p.crit ? "#ff8f5e" : "#ff6b6b");
-    }
+
+    window.setTimeout(() => {
+      if (!p.hit) {
+        this.combatLog.push(`The ${label} misses you.`, "#9a8d76");
+        playSfx("miss", 0.7);
+        return;
+      }
+      this.combatLog.push(
+        `The ${label} ${p.crit ? "CRITs" : "hits"} you for ${p.damage}.`,
+        p.crit ? "#ff8f5e" : "#ff9d9d",
+      );
+      playSfx("hurt");
+      if (this.localActor) {
+        const at = this.localActor.position;
+        this.localActor.flash(0xff6b6b, 130);
+        this.floatOver(this.localActor, `-${p.damage}`, p.crit ? "#ff8f5e" : "#ff6b6b");
+        this.effects.play("impact", at.x, at.y + 1.0, at.z, {
+          scale: p.crit ? 1.9 : 1.35,
+          tint: 0xff7a5a,
+          durationMs: 320,
+        });
+      }
+      if (p.crit) this.effects.shake(0.11, 170);
+    }, IMPACT_DELAY_MS);
   }
 
   private onSkillResult(p: {
@@ -613,26 +731,135 @@ export class Game {
     globalCooldownMs: number;
     hits: { monsterId: string; hit: boolean; damage: number; crit: boolean }[];
     healed?: number;
+    buffMs?: number;
+    slowMs?: number;
   }): void {
+    const skill = SKILLS[p.skillId];
+
     if (!p.ok) {
-      this.combatLog.push(`${p.skillId}: ${p.reason ?? "failed"}`, "#c98d5e");
+      // A refusal has to say why, in the player's words rather than the
+      // protocol's. Silently doing nothing is the single worst thing a hotbar
+      // can do, and "cooling down" arriving as a log line nobody reads is
+      // barely better — so it goes on screen where the press happened.
+      this.hud.toast(`${skill.name}: ${p.reason ?? "failed"}`, "#c98d5e");
+      this.combatLog.push(`${skill.name} — ${p.reason ?? "failed"}`, "#c98d5e");
+      // Still honour a cooldown the server reports, or the bar lies about
+      // readiness until the next successful cast.
+      if (p.cooldownRemainingMs > 0) this.hotbar.startCooldown(p.skillId, p.cooldownRemainingMs);
+      if (p.globalCooldownMs > 0) this.hotbar.startGlobalCooldown(p.globalCooldownMs);
       return;
     }
+
+    this.lastCombatAt = performance.now();
     this.hotbar.startCooldown(p.skillId, p.cooldownRemainingMs);
     this.hotbar.startGlobalCooldown(p.globalCooldownMs);
-    this.localActor?.play("attack");
+    this.combatLog.push(`You cast ${skill.name}.`, "#9ad4ff");
+
+    const school: EffectName = isEffectName(skill.effect) ? skill.effect : "arcane";
+    const self = this.localActor;
+
+    if (skill.kind === "mobility") {
+      // Resolved client-side by design: movement is already client-authoritative
+      // and the server's job was only to own the cooldown. Without this the
+      // mobility skills consumed a cooldown and did nothing at all.
+      this.performDash(skill.power, skill.id === "disengage");
+      playSfx("swing");
+      if (self) {
+        this.effects.play(school, self.position.x, self.position.y + 0.8, self.position.z, {
+          scale: 2.2, tint: 0xcfe8ff,
+        });
+      }
+      return;
+    }
+
+    self?.play("attack");
+    playSfx(skill.kind === "heal" ? "heal" : "cast");
+
+    if (skill.kind === "heal" || skill.kind === "buff") {
+      const beneficiary = this.allyTargetId ? this.players.get(this.allyTargetId) : null;
+      const on = beneficiary ?? self;
+      if (on) {
+        this.effects.play(school, on.position.x, on.position.y + 1.0, on.position.z, {
+          scale: 2.6,
+          tint: skill.kind === "heal" ? 0x7ed957 : 0xffd873,
+          durationMs: 620,
+        });
+      }
+      if (p.healed && on) this.floatOver(on, `+${p.healed}`, "#7ed957");
+      if (p.buffMs) this.hud.toast(`${skill.name} active`, "#ffd873");
+      return;
+    }
+
+    // Offensive. Radius skills burst at the caster; targeted ones travel.
+    if (skill.radiusPx > 0 && skill.rangePx === 0 && self) {
+      this.effects.play(school, self.position.x, self.position.y + 0.5, self.position.z, {
+        scale: (skill.radiusPx / PX_PER_UNIT) * 2.1,
+        durationMs: 560,
+      });
+      this.effects.shake(0.07, 160);
+    }
+
     for (const hit of p.hits) {
       const vis = this.monsters.get(hit.monsterId);
       if (!vis) continue;
+      const at = vis.actor.position;
+
+      if (skill.rangePx > 0 && self) {
+        this.effects.play(school, at.x, at.y + 0.9, at.z, {
+          scale: 1.9,
+          from: new THREE.Vector3(self.position.x, self.position.y + 1.1, self.position.z),
+          durationMs: 380,
+        });
+      } else if (skill.radiusPx === 0) {
+        this.effects.play(school, at.x, at.y + 0.9, at.z, { scale: 1.9 });
+      }
+
       if (!hit.hit) {
         this.floatOver(vis.actor, "MISS", "#cfc4ad");
         continue;
       }
-      this.floatOver(vis.actor, hit.crit ? `CRIT ${hit.damage}` : `${hit.damage}`, "#9ad4ff");
+      vis.actor.flash(hit.crit ? 0xffd85e : 0x9ad4ff, 150);
+      this.floatOver(vis.actor, hit.crit ? `CRIT ${hit.damage}` : `${hit.damage}`,
+        hit.crit ? "#ffd85e" : "#9ad4ff");
+      playSfx(hit.crit ? "crit" : "hit", 0.8);
     }
-    if (p.healed && this.localActor) {
-      this.floatOver(this.localActor, `+${p.healed}`, "#7ed957");
+
+    if (p.slowMs) this.combatLog.push("Chilled.", "#8fd4ff");
+  }
+
+  /**
+   * Mobility displacement. `away` sends you directly away from the nearest
+   * enemy (Disengage); everything else surges the way you are moving, falling
+   * back to your facing when standing still.
+   */
+  private performDash(distancePx: number, away: boolean): void {
+    let dx = this.moveInputX;
+    let dz = this.moveInputY;
+
+    if (away || (dx === 0 && dz === 0)) {
+      let nearest: MonsterVisual | null = null;
+      let best = Infinity;
+      for (const v of this.monsters.values()) {
+        if (v.dead) continue;
+        const d = Math.hypot(v.state.x - this.playerX, v.state.y - this.playerY);
+        if (d < best) {
+          best = d;
+          nearest = v;
+        }
+      }
+      if (nearest) {
+        const sign = away ? -1 : 1;
+        dx = ((nearest.state.x - this.playerX) / (best || 1)) * sign;
+        dz = ((nearest.state.y - this.playerY) / (best || 1)) * sign;
+      }
     }
+    if (dx === 0 && dz === 0) return;
+
+    const len = Math.hypot(dx, dz) || 1;
+    this.playerX = clamp(this.playerX + (dx / len) * distancePx, 0, WORLD_WIDTH);
+    this.playerY = clamp(this.playerY + (dz / len) * distancePx, 0, WORLD_HEIGHT);
+    this.localActor?.snapTo(toWorldX(this.playerX), 0, toWorldZ(this.playerY));
+    this.socket.sendMove(this.playerX, this.playerY);
   }
 
   private floatOver(actor: Actor, text: string, color: string): void {
@@ -737,6 +964,10 @@ export class Game {
         this.cycleTarget();
       } else if (key === "escape") {
         this.setTarget(null);
+        this.allyTargetId = null;
+      } else if (key === "m") {
+        const nowMuted = toggleMuted();
+        this.hud.toast(nowMuted ? "Sound off" : "Sound on", "#c9b47a");
       } else {
         const skillId = this.hotbar.skillForKey(key);
         if (skillId) this.useSkill(skillId);
@@ -756,12 +987,23 @@ export class Game {
     );
     this.raycaster.setFromCamera(ndc, this.world.camera);
 
-    // Test against monsters first, then stations. Ground clicks clear the target.
+    // Enemies first, then allies, then stations. Ground clicks clear both.
     for (const [id, vis] of this.monsters) {
       if (vis.dead || !vis.actor.loaded) continue;
       const hits = this.raycaster.intersectObject(vis.actor.root, true);
       if (hits.length > 0) {
         this.setTarget(id);
+        return;
+      }
+    }
+    // One selection covers enemies and allies — the server looks the id up in
+    // both and stores it as whichever it turns out to be, so clicking a player
+    // is how you give Mend and War Cry someone to help.
+    for (const [id, actor] of this.players) {
+      if (!actor.loaded) continue;
+      const hits = this.raycaster.intersectObject(actor.root, true);
+      if (hits.length > 0) {
+        this.setAllyTarget(id);
         return;
       }
     }
@@ -785,8 +1027,18 @@ export class Game {
 
   private setTarget(id: string | null): void {
     this.targetId = id;
+    if (id) this.allyTargetId = null; // one selection at a time, as the server models it
     this.socket.sendSetTarget(id);
     if (!id) this.targetFrame.hide();
+  }
+
+  private setAllyTarget(id: string | null): void {
+    this.allyTargetId = id;
+    if (id) this.targetId = null;
+    this.socket.sendSetTarget(id);
+    if (id) {
+      this.combatLog.push(`Assisting ${this.playerNames.get(id) ?? "ally"}.`, "#9ad4ff");
+    }
   }
 
   private cycleTarget(): void {
@@ -822,13 +1074,67 @@ export class Game {
 
     if (this.localActor) {
       this.world.follow(this.localActor.position.x, this.localActor.position.z, dt);
+      // Shake is applied after the camera is placed, so it reads as a knock to
+      // the view rather than fighting the follow easing.
+      const shake = this.effects.shakeOffset(this.shakeScratch);
+      this.world.camera.position.add(shake);
     }
+
+    // The hotbar's curtains are driven per frame, not per message. Calling this
+    // only from onManaUpdate (as M1 did) left every cooldown visually frozen at
+    // whatever it was when mana last changed.
+    this.hotbar.update(this.mana);
+    this.effects.update(this.world.camera);
+    this.updateIndicators();
 
     this.fadeOccluders();
     this.drawPlates();
     this.world.render();
     requestAnimationFrame(this.loop);
   };
+
+  private updateIndicators(): void {
+    const self = this.localActor;
+    if (!self) return;
+
+    // Target ring, doubling as a range readout.
+    const target = this.targetId ? this.monsters.get(this.targetId) : null;
+    if (target && !target.dead) {
+      const reach = attackRangeFor(this.appearance.weaponType);
+      const dist = Math.hypot(target.state.x - this.playerX, target.state.y - this.playerY);
+      const spec = MONSTER_MODELS[target.kind];
+      this.indicators.showTarget(
+        target.actor.position.x,
+        target.actor.position.z,
+        dist <= reach,
+        Math.max(0.7, spec.height * 0.5),
+      );
+    } else {
+      this.indicators.hideTarget();
+    }
+
+    // Reach ring, only while a fight is actually happening.
+    if (performance.now() - this.lastCombatAt < COMBAT_INDICATOR_TIMEOUT_MS) {
+      this.indicators.showReach(
+        self.position.x,
+        self.position.z,
+        attackRangeFor(this.appearance.weaponType) / PX_PER_UNIT,
+      );
+    } else {
+      this.indicators.hideReach();
+    }
+
+    // Boss telegraphs. The radius is a static per-kind stat, which is exactly
+    // why the snapshot only needs to carry the boolean.
+    this.indicators.beginDanger();
+    for (const [id, vis] of this.monsters) {
+      if (vis.dead || !vis.state.windingUp) continue;
+      const slam = MONSTER_STATS[vis.kind].slamRadiusPx;
+      if (!slam) continue;
+      this.indicators.danger(id, vis.actor.position.x, vis.actor.position.z, slam / PX_PER_UNIT);
+    }
+    this.indicators.endDanger();
+  }
 
   /**
    * Fades anything standing between the camera and the player.
@@ -893,6 +1199,11 @@ export class Game {
 
     const actor = this.localActor;
     if (!actor) return;
+
+    if (dx !== 0 || dy !== 0) {
+      this.moveInputX = dx;
+      this.moveInputY = dy;
+    }
 
     if (dx === 0 && dy === 0) {
       actor.play("idle");
@@ -968,7 +1279,9 @@ export class Game {
 
     this.hud.endPlates();
 
-    // Target frame mirrors the selected monster's live snapshot values.
+    // Target frame mirrors the selected monster's live snapshot values. The
+    // hide branch is not optional: without it the frame stayed on screen
+    // showing a dead monster's last known health forever.
     const t = this.targetId ? this.monsters.get(this.targetId) : null;
     if (t && !t.dead) {
       const range = attackRangeFor(this.appearance.weaponType);
@@ -979,6 +1292,14 @@ export class Game {
         t.state.maxHp,
         dist > range ? "out of reach" : undefined,
       );
+    } else if (this.allyTargetId) {
+      const ally = this.players.get(this.allyTargetId);
+      // Remote players' HP is not on the wire, so the frame shows the name and
+      // says what the selection is for, rather than inventing a health bar.
+      if (ally) this.targetFrame.show(this.playerNames.get(this.allyTargetId) ?? "Ally", 0, 0, "ally");
+      else this.targetFrame.hide();
+    } else {
+      this.targetFrame.hide();
     }
   }
 }

@@ -67,6 +67,10 @@ const STYLE = `
 }
 `;
 
+// Screen area the unit frame occupies (left/top offsets plus its size, with a
+// little slack). Nameplates falling inside it are suppressed.
+const HUD_FRAME_RECT = { w: 300, h: 130 };
+
 export interface PlateSpec {
   name: string;
   hp?: number;
@@ -178,6 +182,11 @@ export class Hud {
 
   plate(id: string, screen: { x: number; y: number } | null, spec: PlateSpec): void {
     if (!screen) return;
+    // Nameplates are world-anchored and the unit frame is not, so anything
+    // behind the frame drew straight over the player's own health. Suppress
+    // rather than reposition: a label yanked away from the thing it names is
+    // worse than a label that briefly is not there.
+    if (screen.x < HUD_FRAME_RECT.w && screen.y < HUD_FRAME_RECT.h) return;
     this.seenThisFrame.add(id);
     let el = this.plates.get(id);
     if (!el) {

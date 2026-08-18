@@ -600,18 +600,30 @@
       }
       .skill-btn {
         position: relative;
-        width: 54px;
-        height: 54px;
+        width: 58px;
+        height: 58px;
         background: var(--slot-grad);
         border: 2px solid var(--gold-dim);
-        border-radius: 8px;
-        font-size: 24px;
+        border-radius: 9px;
+        font-size: 26px;
         line-height: 1;
         cursor: pointer;
         overflow: hidden;
         color: var(--parchment);
+        box-shadow: 0 3px 10px #0009, inset 0 1px 0 #ffffff18;
+        transition: border-color .12s, transform .08s, box-shadow .15s;
       }
-      .skill-btn:hover { border-color: var(--gold); }
+      .skill-btn:hover { border-color: var(--gold); transform: translateY(-2px); }
+      .skill-btn:active { transform: translateY(1px); }
+      /* A ready skill glows faintly, so the bar can be read at a glance
+         mid-fight without parsing every cooldown curtain individually. */
+      .skill-btn.ready {
+        border-color: var(--gold);
+        box-shadow: 0 3px 10px #0009, inset 0 1px 0 #ffffff18, 0 0 12px #d9a44166;
+      }
+      /* Unaffordable is dimmed from JS (opacity); this makes it read as
+         "greyed out" rather than merely faint. */
+      .skill-btn[style*="0.45"] { filter: saturate(0.35); }
       .skill-key {
         position: absolute;
         top: 2px;
@@ -645,22 +657,38 @@
       /* Target frame, mirroring the player's own unit frame top-left. */
       #target-frame {
         position: absolute;
-        top: 10px;
+        top: 14px;
         left: 50%;
         transform: translateX(-50%);
-        width: 220px;
-        padding: 6px 10px 8px;
-        background: rgba(43, 31, 18, 0.85);
-        border: 1px solid var(--gold-dim);
-        border-radius: 6px;
+        width: 250px;
+        padding: 8px 12px 10px;
+        background: linear-gradient(rgba(58, 42, 23, 0.94), rgba(36, 26, 15, 0.94));
+        border: 1px solid var(--gold);
+        border-radius: 8px;
+        box-shadow: 0 4px 18px #0009;
         z-index: 6;
         display: none;
       }
       #target-frame.shown { display: block; }
       #target-name {
-        font: 13px Georgia, serif;
-        color: var(--parchment);
-        margin-bottom: 4px;
+        font: bold 13px Georgia, serif;
+        color: var(--gold-bright);
+        margin-bottom: 5px;
+        text-shadow: 0 1px 2px #000;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      #target-name .t-extra {
+        font-weight: normal;
+        color: #c98d5e;
+      }
+      #target-hp-text {
+        font: 10px/1 monospace;
+        color: #f5e7c8;
+        text-align: center;
+        margin-top: 3px;
+        text-shadow: 0 1px 1px #000;
       }
       #target-hp-track {
         height: 12px;
@@ -871,6 +899,7 @@
       <div id="target-frame">
         <div id="target-name"></div>
         <div id="target-hp-track"><div id="target-hp-fill"></div></div>
+        <div id="target-hp-text"></div>
       </div>
       <div id="hotbar"></div>
       <div id="ui-dock">

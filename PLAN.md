@@ -1219,9 +1219,62 @@ every rig animation carrying it for free — architecturally *cleaner* than the
         was orphaned by M1 and only surfaced now because growing `MonsterKind`
         broke its exhaustive `Record<MonsterKind, ActorName>` — which is the
         Phase 29 exhaustiveness check doing its job one last time on the way out
-- [ ] **M2 — combat feedback.** Attack/hit/death animations driven by the
-      existing `BATTLE_RESULT` / `MONSTER_ATTACK` / `HP_UPDATE` messages,
-      floating damage, HP bars, target ring
+- [x] **M2 — combat feedback, effects, sound and UI polish.** User: combat is
+      "very clunky", "very buggy", wants animations and effects for everything
+      and the UI working properly. Audited the M1 port against the server
+      rather than guessing, and most of it was *missing wiring*, not broken
+      logic — the server had been resolving all of this correctly the whole
+      time and the client simply was not showing it.
+
+      **Real bugs found and fixed:**
+      - `Hotbar.update()` is documented "called every frame" and drives the
+        cooldown curtains, but M1 only called it from `onManaUpdate` — so every
+        cooldown was visually frozen at whatever it was when mana last changed.
+        This is almost certainly the single biggest source of "clunky".
+        Verified fixed by sampling the curtain as it drains: 92.7% → 77.7% →
+        60.3% → 35.6% → 20.3% with the counter ticking down
+      - Mobility skills (Dash / Charge / Disengage) consumed a cooldown and did
+        *nothing*. They are resolved client-side by design — movement is
+        already client-authoritative and the server only owns the cooldown —
+        and M1 never implemented that half
+      - The target frame never hid, so it sat on screen showing a dead
+        monster's last known health indefinitely
+      - Skill failures were silent. The server sends a real reason ("not enough
+        mana", "nothing in range", "cooling down") and it was being dropped.
+        Now toasted at the moment of the press. This immediately paid for
+        itself — it is how a test that looked like "skills do not fire" turned
+        out to be a bot standing out of range
+      - Ally targeting was unimplemented, so Mend and War Cry could never
+        benefit anyone else — the whole co-op mechanic from Phase 43
+      - `MonsterState.windingUp` was ignored, so the troll/golem/dragon
+        telegraph was invisible and those fights just looked unfairly hard
+      - `MonsterState.slowed` was ignored, so Frost Nova had no visible effect
+
+      **Added:**
+      - Effects, reusing `fx.png` — the 14-school x 6-frame atlas built for the
+        2D client — as camera-facing additive quads. The schools already match
+        `SkillDef.effect` one-for-one, so adding a spell is still picking a row
+        and a tint, which is the promise Phase 39 made. Verified all 14 render
+      - Sound, reusing the 10 synthesised cues. Rate-limited per cue and pooled
+        4-deep per sound, because auto-attack against a pack fires several
+        results a second and one `Audio` element cuts itself off
+      - Ground indicators: target ring (gold in reach, grey out of it), the
+        player's own reach ring while fighting, and a pulsing danger circle
+        covering exactly the area a telegraphed slam will hit
+      - Hit flash and chill tint on actors, via emissive with the flash
+        overriding the chill and then handing it back
+      - Camera shake on crits, healing feedback (silent before — a potion
+        looked identical to nothing happening), level-up burst
+      - **Swings are a beat, not an instant.** The server reports the whole
+        outcome at once; playing wind-up and impact on the same frame reads as
+        a number popping out of nowhere. The animation and swing sound fire
+        immediately, the hit lands 170ms later
+      - Effects scale and sit at the target's *middle*, derived from the
+        monster's height — a constant offset buried the burst in the ground on
+        a 0.8-unit slime and put it at the ankles of a 3.4-unit dragon
+      - UI: ready-glow on usable skills, bigger slots, target frame with real
+        HP numbers and a separate status column, and nameplates suppressed
+        behind the unit frame instead of drawing over the player's own health
 - [ ] **M3 — gear and class in 3D.** Weapon socket swapping wired to
       `Appearance`; armour via mesh swap + material tint (style x rarity kept
       independent, the thing Phase 45's paperdoll got right)

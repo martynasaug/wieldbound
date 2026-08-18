@@ -52,6 +52,15 @@ export class Actor {
   weaponSocket: THREE.Object3D | null = null;
   ready = false;
 
+  // Emissive is used for two signals that must not fight each other: a brief
+  // white/gold flash when something lands a hit, and a persistent blue while
+  // chilled. Flash wins while it runs, then the chill (or nothing) resumes.
+  private readonly litMaterials: { mat: THREE.MeshStandardMaterial; base: number }[] = [];
+  private flashUntil = 0;
+  private flashColor = 0xffffff;
+  private chilled = false;
+  private emissiveApplied = -1;
+
   constructor(private readonly options: ActorOptions) {
     this.facingOffset = options.facingOffset ?? 0;
     this.root.add(this.pivot);
@@ -81,8 +90,39 @@ export class Actor {
       findNode(instance.object, "^weapon\\.r$") ??
       findNode(instance.object, "^weapon");
 
+    instance.object.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        const std = m as THREE.MeshStandardMaterial;
+        if (std.emissive) this.litMaterials.push({ mat: std, base: std.emissive.getHex() });
+      }
+    });
+
     this.ready = true;
     this.play("idle", true);
+  }
+
+  /** Brief emissive pop when a hit lands. Gold for crits, white otherwise. */
+  flash(color = 0xffffff, ms = 130): void {
+    this.flashColor = color;
+    this.flashUntil = performance.now() + ms;
+  }
+
+  /** Frost Nova and Poison Arrow both slow; the blue is what says it worked. */
+  setChilled(chilled: boolean): void {
+    this.chilled = chilled;
+  }
+
+  private applyEmissive(): void {
+    const flashing = performance.now() < this.flashUntil;
+    const want = flashing ? this.flashColor : this.chilled ? 0x2f6fa8 : -1;
+    if (want === this.emissiveApplied) return;
+    this.emissiveApplied = want;
+    for (const { mat, base } of this.litMaterials) {
+      mat.emissive.setHex(want === -1 ? base : want);
+    }
   }
 
   /** True once the model has loaded and can be posed. */
@@ -171,6 +211,7 @@ export class Actor {
 
   update(dtSeconds: number): void {
     this.mixer?.update(dtSeconds);
+    this.applyEmissive();
 
     // Ease toward the server position. Snapshots arrive every ~100ms, so without
     // this every actor visibly steps rather than moves.
