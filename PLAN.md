@@ -1,9 +1,15 @@
-# Idlekin-clone MVP — Build Plan
+# WieldBound — Build Plan
 
-Reference: modeled after app.playidlekin.com (Phaser 3 client, WebSocket real-time
-sync, server-authoritative state). This plan is the source of truth for progress —
-update checkboxes as steps complete, add notes under a step if decisions are made
-that future-us needs to remember.
+Named in Phase 46. It was "idlekin-clone" for the first 45 phases, and the
+references to Idlekin below are kept as written: they are a record of what
+was actually being copied at the time, and by Phase 40 the idle model they
+refer to had been deliberately removed. The name now comes from the rule that
+replaced it — your class is whatever weapon you are holding.
+
+Reference: originally modeled after app.playidlekin.com (Phaser 3 client,
+WebSocket real-time sync, server-authoritative state). This plan is the source
+of truth for progress — update checkboxes as steps complete, add notes under a
+step if decisions are made that future-us needs to remember.
 
 Everything runs 100% local: Node process on localhost = "server", SQLite file = "database".
 No hosting/cloud DB until we explicitly decide to go live.
@@ -1078,7 +1084,26 @@ finished, client mid-refactor and not compiling), completed here.
       which is how the bow grip was caught planting the bottom limb below the
       character's feet. Not yet confirmed in-browser
 
-## Phase 46+ — Revisit and pick from here
+## Phase 46 — Named: WieldBound
+- [x] The project had no name of its own — it was still called after the game
+      it was originally a study of, which stopped being accurate around Phase
+      40 when the idle model was deleted outright
+- [x] **WieldBound**, after the rule that actually distinguishes it: your
+      class is derived from your equipped weapon, so you are bound by what you
+      wield. Checked before committing to it — no Steam app, no itch.io page,
+      no GitHub repo, no npm package, and wieldbound.com/.io/.net/.game/.gg
+      all unregistered. Trademark registries (EUIPO/USPTO) were NOT checked;
+      they need a manual search before any commercial release
+- [x] Renamed: page title and login header, `package.json`/`package-lock.json`,
+      the SQLite file (`idlekin.db` → `wieldbound.db`, existing characters
+      migrated by renaming the file and its WAL/SHM siblings), README, this
+      plan's title, the repo directory, and the GitHub remote
+- [x] Deliberately NOT renamed: every reference to Idlekin in the phase log
+      and decisions log below. Those describe what was actually being mirrored
+      at the time — rewriting them would turn an accurate build record into a
+      false one
+
+## Phase 47+ — Revisit and pick from here
 Candidates, in no fixed order: mana as a resource on top of skill
 cooldowns, telegraphed boss attacks you can step out of, more skills
 (the `lightning` and `bolt` effect rows are still unused), guilds,
@@ -1579,7 +1604,13 @@ music, player-facing damage-type/resistances, more crafting recipes
   paid for once at build time, leaving the runtime a single TileSprite.
 
 ## Current status
-Phase 0 through 45 complete (2026-08-18). Latest: class comes from the weapon
+Phase 0 through 46 complete (2026-08-18). Latest: the project has a name of
+its own — **WieldBound** — after the rule that distinguishes it, replacing a
+working title that named the game it was originally a study of and had been
+inaccurate since the idle model was deleted in Phase 40. Availability checked
+across Steam, itch.io, GitHub, npm and five TLDs before committing; trademark
+registries still need a manual search if this ever goes commercial. Before
+that, Phase 45: class comes from the weapon
 in your hand, not a choice at login — `classForWeapon` is the one function
 that answers "what am I", and skills, reach, damage attribute and mana all
 route through it, so swapping weapons swaps class mid-fight and bare hands

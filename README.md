@@ -1,13 +1,21 @@
-# idlekin-clone
+# WieldBound
+
+*You are whatever you're holding.*
 
 A browser MMORPG built from scratch — Phaser 3 client, authoritative Node
 WebSocket server, SQLite persistence. Everything runs locally: a Node process
 on localhost is the server, a SQLite file is the database. No cloud services,
 no hosting, no accounts.
 
-Inspired by [Idlekin](https://app.playidlekin.com/), though it has drifted a
-long way from an idle game — the idle framing was removed outright in favour
-of a real auto-battler with monster AI, threat, positioning and skills.
+There is no class selection. Pick up a sword and you fight as a Warrior; drop
+it for a staff and you are a Mage, mid-fight, with a different skill bar, a
+different reach and a different mana pool. Bare-handed you are an Adventurer —
+a real, weak archetype rather than a broken state. That one rule is where the
+name comes from.
+
+Originally started as a study of [Idlekin](https://app.playidlekin.com/), but
+it has drifted a long way: the idle framing was removed outright in favour of
+a real auto-battler with monster AI, threat, positioning and skills.
 
 ## Running it
 
@@ -25,7 +33,7 @@ That starts both halves via `concurrently`:
 
 Open the client, enter a character name, and press Play. Open a second tab
 with a different name to see multiplayer. The database file is created on
-first run at `server/data/idlekin.db`.
+first run at `server/data/wieldbound.db`.
 
 ## What's in it
 
