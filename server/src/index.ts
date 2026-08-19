@@ -87,6 +87,8 @@ import {
   critDamageMultiplier,
   doubleAttackChance,
   gatherDurationForLevel,
+  gatherYieldFor,
+  bandAt,
   gatherUpgradeCost,
   maxHpForLevel,
   playerAccuracy,
@@ -466,6 +468,15 @@ const nodes: ResourceNodeState[] = [
   ...ringNodes("tree-mid", "tree", 1150, 10, 12),
   ...ringNodes("rock-outer", "rock", 1400, 8, 15),
   ...ringNodes("tree-outer", "tree", 1560, 10, 30),
+  // Out where the ghosts and trolls are. Nothing forces a player this far for
+  // materials, but the reforge ladder's upper steps cost thousands and the
+  // inner rings cannot pay for them in any reasonable time — so the ground has
+  // to reach as far as the economy does.
+  ...ringNodes("bush-far", "bush", 1780, 6, 40),
+  ...ringNodes("rock-far", "rock", 1900, 8, 22),
+  ...ringNodes("tree-far", "tree", 2050, 8, 5),
+  ...ringNodes("rock-deep", "rock", 2350, 6, 35),
+  ...ringNodes("tree-deep", "tree", 2450, 6, 8),
 ];
 const nodeRespawnAt = new Map<string, number>();
 
@@ -2548,18 +2559,23 @@ setInterval(() => {
       node.status = "depleted";
       nodeRespawnAt.set(node.id, now + GATHER_RESPAWN_MS);
 
+      // How much depends on where the node stands. One gather used to be worth
+      // exactly one wherever it happened, which made the ground the one part of
+      // the world that did not reward walking further out.
+      const yielded = gatherYieldFor(bandAt(node.x, node.y), gatherLevels.get(playerId) ?? 0);
+
       if (node.kind === "tree") {
-        const wood = addWood(playerId, 1);
+        const wood = addWood(playerId, yielded);
         woodBalances.set(playerId, wood);
         if (socket) sendInventoryUpdate(socket, wood, gatherLevels.get(playerId) ?? 0);
       } else if (node.kind === "rock") {
-        const ore = addOre(playerId, 1);
+        const ore = addOre(playerId, yielded);
         oreBalances.set(playerId, ore);
         if (socket) {
           sendOreUpdate(socket, woodBalances.get(playerId) ?? 0, ore, battlePowerLevels.get(playerId) ?? 0);
         }
       } else {
-        const herb = addHerb(playerId, 1);
+        const herb = addHerb(playerId, yielded);
         herbBalances.set(playerId, herb);
         if (socket) sendHerbUpdate(socket, herb);
       }

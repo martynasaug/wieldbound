@@ -511,6 +511,40 @@ export function gatherUpgradeCost(level: number): number {
   return 5 + level * 5;
 }
 
+// --- Richer ground further out ---------------------------------------------
+// Every node gave exactly one, wherever it stood — so the one rule the world is
+// laid out by, that walking further from the smithy IS the progression, was
+// true of monsters and loot and not of the ground. A tree beside the anvil paid
+// the same as a tree at the treeline.
+//
+// The rings are the monsters' own, so a player learns one geography rather than
+// two: the ground gets richer exactly where it gets dangerous, and the reason a
+// band-4 node is worth walking to is standing next to it.
+export const RESOURCE_BAND_RADII = [800, 1200, 1600, 2100] as const;
+
+/** Which of the five rings a point falls in, 1 (at the smithy) to 5. */
+export function bandAt(x: number, y: number): 1 | 2 | 3 | 4 | 5 {
+  const distance = Math.hypot(x - PLAYER_SPAWN.x, y - PLAYER_SPAWN.y);
+  for (let i = 0; i < RESOURCE_BAND_RADII.length; i++) {
+    if (distance < RESOURCE_BAND_RADII[i]) return (i + 1) as 1 | 2 | 3 | 4 | 5;
+  }
+  return 5;
+}
+
+/**
+ * How much one gather yields.
+ *
+ * Superlinear in the band and linear in the upgrade, so the ground rewards
+ * going somewhere and the upgrade rewards staying alive there — two different
+ * axes rather than one number twice. The upgrade's contribution scales with the
+ * band too, or it would be worth most in exactly the place it is easiest to
+ * use.
+ */
+export function gatherYieldFor(band: 1 | 2 | 3 | 4 | 5, gatherLevel = 0): number {
+  const base = [2, 3, 5, 8, 12][band - 1];
+  return base + Math.floor((gatherLevel * band) / 2);
+}
+
 export const BATTLE_DURATION_MS = 1500;
 export const BATTLE_DURATION_FLOOR_MS = 450;
 export const BATTLE_POWER_STEP_MS = 120;

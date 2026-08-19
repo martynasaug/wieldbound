@@ -2523,6 +2523,29 @@ crafting system to go with them.
         every materials update. Losing a choice mid-decision is the kind of
         thing nobody reports and everybody notices
 
+- [x] **M1.10 — the ground gets richer further out.** A balance problem the
+      catalogue created and then made visible: every node paid exactly one,
+      wherever it stood, while forge costs now reach 327 materials and the top
+      reforge steps run into the thousands. Gathering was an order of magnitude
+      behind the economy built on top of it.
+      - **Yield scales with the band the node stands in** — 2 / 3 / 5 / 8 / 12 —
+        using the monsters' own rings, so a player learns one geography rather
+        than two. The one rule the world is laid out by, that walking further
+        from the smithy IS the progression, was true of monsters and loot and
+        not of the ground
+      - **Five new node rings out at bands 4 and 5**, because nothing existed
+        past 1560 and the economy has to be reachable from somewhere. 82 nodes
+        now, spread 14/16/18/22/12 across the bands
+      - The gather upgrade is a second axis rather than the same one twice: it
+        adds on top of the band, and scales WITH the band, or it would be worth
+        most in exactly the place it is easiest to use
+      - **The plate says what a node is worth.** The rule is invisible otherwise
+        — a player would have to gather at two distances and compare two numbers
+        in a corner, and almost nobody does that
+      - The suite now checks the economy is reachable at all: the dearest recipe
+        is 327 materials against a band-4 gather of 14, so about two dozen
+        gathers rather than a week of them
+
 - [ ] **M2 — remaining item work.** What a second material tier would buy, and
       whether consumables belong in the catalogue rather than beside it.
 
@@ -3965,6 +3988,19 @@ music, player-facing damage-type/resistances, more crafting recipes
   check lives where the roll happens rather than at the message handler, so the
   forge, the loot table and the bench obey it by construction rather than by
   three separate remembering.
+
+- The ground obeys the same rule the rest of the world does: further out is
+  richer. Nodes paid exactly one wherever they stood, which made the ground the
+  only part of the game where walking further was not the progression — and it
+  used the monsters' own ring radii so a player learns one geography rather than
+  two.
+- An economy needs a test that it is reachable at all. The catalogue's forge
+  costs grew to 327 materials while gathering still paid one per node, and
+  nothing in the suite would have noticed: every individual number was
+  defensible and the ratio between them was not. The check is now the ratio.
+- The gather upgrade scales WITH the band rather than beside it, or it is worth
+  most in exactly the place it is easiest to use — which would make the safest
+  ground the best ground and undo the point of the rings.
 
 - A test that shares a world with a live game must assert on IDENTITY, not on
   counts. Something is usually hitting the character, so a stray real damage

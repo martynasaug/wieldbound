@@ -18,6 +18,9 @@ import path from "node:path";
 import {
   ITEM_SLOTS,
   MONSTER_STATS,
+  PLAYER_SPAWN,
+  bandAt,
+  gatherYieldFor,
   RARITIES,
   RARITY_ORDER,
   WEAPONS,
@@ -540,6 +543,48 @@ section("9c. cutting a rune");
   const runed = reforgeItem(worn, rand, "cruel");
   check("reforging into Runed honours the cut", runed.affixes.includes("cruel"),
     runed.affixes.join(", "));
+}
+
+// --- 9d. the ground gets richer further out ----------------------------------
+// The world is laid out so that walking further from the smithy IS the
+// progression, and that was true of monsters and loot and not of the ground.
+section("9d. richer ground further out");
+{
+  const centre = bandAt(PLAYER_SPAWN.x, PLAYER_SPAWN.y);
+  check("the smithy itself is band 1", centre === 1, String(centre));
+
+  let last = 0;
+  for (const band of [1, 2, 3, 4, 5]) {
+    const y = gatherYieldFor(band, 0);
+    check(`band ${band} pays more than band ${band - 1}`, y > last, `${y} after ${last}`);
+    last = y;
+  }
+  console.log(`  a gather pays ${[1, 2, 3, 4, 5].map((b) => gatherYieldFor(b, 0)).join(" / ")} by band`);
+
+  // The upgrade is a second axis, not the same one twice.
+  check("the gather upgrade adds on top of the band",
+    gatherYieldFor(3, 6) > gatherYieldFor(3, 0),
+    `${gatherYieldFor(3, 0)} -> ${gatherYieldFor(3, 6)}`);
+  check("and is worth more where the ground is richer",
+    gatherYieldFor(5, 6) - gatherYieldFor(5, 0) > gatherYieldFor(1, 6) - gatherYieldFor(1, 0),
+    `band 5 +${gatherYieldFor(5, 6) - gatherYieldFor(5, 0)} vs band 1 +${gatherYieldFor(1, 6) - gatherYieldFor(1, 0)}`);
+
+  // Bands must actually rise with distance, and the far corner must be band 5.
+  const along = [0, 400, 900, 1300, 1700, 2200, 2900].map((d) =>
+    bandAt(PLAYER_SPAWN.x + d, PLAYER_SPAWN.y));
+  check("bands rise with distance and never fall",
+    along.every((b, i) => i === 0 || b >= along[i - 1]), along.join(","));
+  check("the far corner is band 5", bandAt(0, 0) === 5, String(bandAt(0, 0)));
+
+  // The economy has to be reachable: the dearest forge recipe should be a
+  // session's gathering, not a week of it.
+  const dearest = Math.max(
+    ...bases.map((b) => MATERIALS.reduce((s, m) => s + (forgeCost(b)[m] ?? 0), 0)),
+  );
+  const perGather = gatherYieldFor(4, 3);
+  console.log(`  the dearest recipe is ${dearest} materials; a band-4 gather pays ${perGather}`);
+  check("the dearest recipe is within a few hundred gathers",
+    dearest / perGather < 100, `${Math.round(dearest / perGather)} gathers`);
 }
 
 // --- 10. affix totals reach the passive vocabulary --------------------------

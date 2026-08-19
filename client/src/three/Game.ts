@@ -24,7 +24,9 @@ import {
   defaultAttackFor,
   doubleAttackChance,
   equippedBySlot,
+  bandAt,
   gatherDurationForLevel,
+  gatherYieldFor,
   gearArmor,
   gearCritChance,
   gearDamageBonus,
@@ -2440,7 +2442,11 @@ export class Game {
         this.world.project(obj.position.x, NODE_LABEL_Y[state.kind], obj.position.z, 34),
         {
           kind: "node",
-          name: NODE_LABELS[state.kind],
+          // What it is worth, on the label. The rule — richer the further out
+          // you go — is invisible otherwise: a player would have to gather at
+          // two distances and compare two numbers in a corner to notice it, and
+          // almost nobody does that.
+          name: `${NODE_LABELS[state.kind]} ×${gatherYieldFor(bandAt(state.x, state.y), this.gatherLevel)}`,
           icon: NODE_PLATE_ICON[state.kind],
           dim: state.status !== "available",
           distance: rangeTo(obj.position.x, obj.position.z),
