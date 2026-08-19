@@ -31,6 +31,7 @@ import {
   affixBonus,
   baseGuard,
   basePower,
+  STARTING_RECIPES,
   canAfford,
   forgeCost,
   forgeableBases,
@@ -330,12 +331,31 @@ const runedYield = salvageYield({ id: "x", equipped: false, ...rollItem(sample, 
 check("a better item salvages for more",
   (runedYield.ore ?? 0) > (brokenYield.ore ?? 0), `${runedYield.ore} vs ${brokenYield.ore}`);
 
-// The forge unlocks with level rather than opening everything at once.
-const atOne = forgeableBases(1).length;
-const atTwenty = forgeableBases(20).length;
-console.log(`  forge offers ${atOne} recipes at level 1, ${atTwenty} at level 20`);
-check("the forge starts small", atOne > 0 && atOne < bases.length);
-check("the forge eventually offers everything", atTwenty === bases.length);
+// The forge is opened by SALVAGING, not by levelling. Band 1 is known from the
+// start so a new smith can make something; everything else has to be taken
+// apart first, which is what ties the three verbs into one loop.
+const fresh = forgeableBases([]);
+console.log(`  a new smith knows ${fresh.length} of ${bases.length} recipes`);
+check("a new smith knows something", fresh.length > 0);
+check("but not everything", fresh.length < bases.length);
+check("and what they know is exactly the band-1 catalogue",
+  fresh.every((b) => b.band === 1) && fresh.length === bases.filter((b) => b.band === 1).length,
+  `${fresh.length} vs ${bases.filter((b) => b.band === 1).length}`);
+check("every starting recipe is band 1", STARTING_RECIPES.every((id) => ITEM_BASES[id].band === 1));
+
+// Learning one adds exactly one.
+const afterOne = forgeableBases(["claymore"]);
+check("learning a recipe adds exactly that recipe",
+  afterOne.length === fresh.length + 1 && afterOne.some((b) => b.id === "claymore"),
+  `${fresh.length} -> ${afterOne.length}`);
+check("learning a band-1 recipe changes nothing, since it was never locked",
+  forgeableBases(["armingsword"]).length === fresh.length);
+
+// And everything is reachable: a base nobody can ever learn is content that
+// does not exist.
+const everything = forgeableBases(bases.map((b) => b.id));
+check("knowing every recipe unlocks the whole catalogue",
+  everything.length === bases.length, `${everything.length}/${bases.length}`);
 
 // --- 10. affix totals reach the passive vocabulary --------------------------
 section("10. affixes reach the stat sheet");

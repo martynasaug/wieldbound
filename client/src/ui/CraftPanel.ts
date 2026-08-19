@@ -32,12 +32,12 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import {
-  FORGE_LEVEL_FOR_BAND,
+  ITEM_BASES,
   MATERIALS,
   canAfford,
+  canForge,
   describeCost,
   forgeCost,
-  forgeableBases,
   itemBase,
   nextRarity,
   reforgeCost,
@@ -64,7 +64,9 @@ export class CraftPanel {
 
   private materials: Record<Material, number> = { wood: 0, ore: 0, herb: 0, essence: 0 };
   private items: ItemInstance[] = [];
-  private level = 1;
+  /** Base ids this character has learned to forge. Band-1 recipes are known
+   *  without being taught, so this is only what salvaging has added. */
+  private recipes: string[] = [];
   private stationId: string | null = null;
   private tab: Tab = "forge";
   /** Which slot's shelf is open in Forge. Seventy-eight recipes in one
@@ -107,8 +109,8 @@ export class CraftPanel {
     if (this.isOpen) this.render();
   }
 
-  setLevel(level: number): void {
-    this.level = level;
+  setRecipes(known: string[]): void {
+    this.recipes = known;
     if (this.isOpen) this.render();
   }
 
@@ -242,19 +244,21 @@ export class CraftPanel {
     }
     this.grid.appendChild(shelves);
 
-    const available = forgeableBases(this.level).filter((b) => b.slot === this.slotFilter);
-    const locked = Object.values(
-      Object.fromEntries(
-        forgeableBases(99)
-          .filter((b) => b.slot === this.slotFilter && !available.includes(b))
-          .map((b) => [b.id, b]),
-      ),
-    ) as ItemBase[];
+    const known = new Set(this.recipes);
+    const all = Object.values(ITEM_BASES)
+      .filter((b) => b.slot === this.slotFilter)
+      .sort((a, b) => a.band - b.band || a.name.localeCompare(b.name));
+    const available = all.filter((b) => canForge(b, known).ok);
+    const locked = all.filter((b) => !canForge(b, known).ok);
 
-    this.section(`${SLOT_LABEL[this.slotFilter]} — ${available.length} known`);
+    this.section(`${SLOT_LABEL[this.slotFilter]} — ${available.length} of ${all.length} known`);
     for (const base of available) this.renderForgeRow(base, true);
     if (locked.length) {
-      this.section(`${locked.length} not yet learned`);
+      // Shown rather than hidden, because "salvage one to learn it" is the
+      // single rule of this system and a player who never sees a locked row
+      // never discovers it. The list is also the closest thing the game has to
+      // a bestiary of its own items.
+      this.section(`${locked.length} not yet learned — salvage one to learn it`);
       for (const base of locked) this.renderForgeRow(base, false);
     }
   }
@@ -264,7 +268,7 @@ export class CraftPanel {
     const sub = unlocked ? this.costLine(cost) : document.createElement("div");
     if (!unlocked) {
       sub.className = "craft-row-cost short";
-      sub.textContent = `Needs level ${FORGE_LEVEL_FOR_BAND[base.band]}`;
+      sub.textContent = `Unknown — salvage one to learn it (band ${base.band})`;
     }
     this.row(
       base.icon,

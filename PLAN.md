@@ -2392,8 +2392,31 @@ crafting system to go with them.
       on those items and the bottom of the ladder meaningless for them. The
       floor of the system has to leave room for the system to move.
 
-- [ ] **M2 — remaining item work.** Whether the forge should teach recipes
-      rather than gate them by level, and what a second material tier would buy.
+- [x] **M1.4 — a smith knows what they have taken apart.** The forge was gated
+      by character level, which made it a shop: reach level 8 and a list of
+      things you have never seen unlocks itself. That is a gate, not a craft,
+      and it left the three verbs as three unrelated buttons.
+      - **A recipe is learned by SALVAGING one.** Find a Frostbrand, break it
+        down, and now you can make Frostbrands. The loop closes: exploration
+        feeds salvage, salvage feeds the forge, the forge feeds the ladder — and
+        "what do I do with a duplicate?" finally has an answer better than
+        "delete it"
+      - Band 1 is known from the start (21 of 107) so a new smith can make
+        something on the first day. Everything else has to be taken apart
+      - **Materials remain the real cost.** A level-1 character who somehow
+        salvages a band-5 sword has learned something they cannot afford for a
+        long time, which is a far more interesting position than a locked list
+      - Locked rows are SHOWN, not hidden, with "salvage one to learn it" on
+        them. A player who never sees a locked row never discovers the one rule
+        the system has — and the list doubles as the closest thing the game has
+        to a catalogue of its own items
+      - Stored as rows keyed by (character, base), because that is the shape a
+        wide column cannot hold; the absence of a row is the honest
+        representation of "never seen one". Enforced on the server as well as
+        greyed on the client, the same split `canLearnTalent` already makes
+
+- [ ] **M2 — remaining item work.** What a second material tier would buy, and
+      whether the reforge ladder wants a failure chance at the top.
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -3788,6 +3811,22 @@ music, player-facing damage-type/resistances, more crafting recipes
   `PassiveBonus`, and both now render through `passiveSummary`, so two sources
   that give armour say "armour" the same way in the same order everywhere.
 
+- A recipe is learned by taking one apart, not by reaching a level. Level-gating
+  made the forge a shop — a list of things you have never seen unlocking itself
+  on a schedule — and left the three smithy verbs as three unrelated buttons.
+  Learning by salvage closes the loop instead: exploration feeds salvage,
+  salvage feeds the forge, the forge feeds the ladder. It also gives a duplicate
+  an answer better than "delete it", which is the question every item system has
+  to answer eventually.
+- Locked recipes are shown, not hidden. The system has exactly one rule and a
+  player who never sees a locked row never learns it — and the full list is the
+  closest thing the game has to a catalogue of its own items, which is worth
+  having for its own sake.
+- Materials stay the real cost, so learning something far above your level is
+  allowed. A level-1 smith who salvages a band-5 sword has learned something
+  they cannot afford for a long time, and that is a much more interesting
+  position to be in than a greyed-out list.
+
 - A test that shares a world with a live game must assert on IDENTITY, not on
   counts. Something is usually hitting the character, so a stray real damage
   number lands mid-probe and "six elements" becomes seven. And a test character
@@ -3806,8 +3845,18 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M1.3 complete (2026-08-20). **Latest: M1.1 through M1.3 —
-weapons that feel different, loot on the ground, and matched gear.**
+Phase 0 through 48 M1.4 complete (2026-08-20). **Latest: M1.1 through M1.4 —
+weapons that feel different, loot on the ground, matched gear, and a forge that
+teaches rather than unlocks.**
+
+M1.4 replaced the forge's level gate with a learned one: a recipe comes from
+SALVAGING one, so the three smithy verbs form a loop instead of sitting as three
+unrelated buttons. Band 1 (21 of 107) is known from the start; everything else
+has to be taken apart first, and materials remain the real cost — a level-1
+smith who salvages a band-5 sword has learned something they cannot afford,
+which is more interesting than a locked list. Locked rows are shown with
+"salvage one to learn it" on them, because the system has one rule and a hidden
+row never teaches it.
 
 M1.1 closed a promise the data made and the game did not keep: 37 weapons
 carried per-item range/speed/damage multipliers and nothing read them, so a

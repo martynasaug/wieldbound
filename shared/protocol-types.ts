@@ -2001,6 +2001,18 @@ export interface MaterialsUpdateMessage {
   payload: { wood: number; ore: number; herb: number; essence: number };
 }
 
+/**
+ * Everything the character has learned to make.
+ *
+ * Sent whole rather than as a delta, for the same reason the item list is: the
+ * set is small, it changes rarely, and a client that missed one increment would
+ * be quietly unable to forge something it had earned.
+ */
+export interface RecipesUpdateMessage {
+  type: "RECIPES_UPDATE";
+  payload: { known: string[] };
+}
+
 // Consumables are a plain stack count on the character (mirrors
 // wood/ore/herb), not an ItemInstance — there's nothing to equip or roll a
 // stat on, just a quantity that goes up when crafted and down when used.
@@ -2645,6 +2657,7 @@ export type ServerToClientMessage =
   | WelcomeMessage
   | InventoryUpdateMessage
   | MaterialsUpdateMessage
+  | RecipesUpdateMessage
   | HerbUpdateMessage
   | OreUpdateMessage
   | XpUpdateMessage

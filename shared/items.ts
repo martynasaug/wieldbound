@@ -1413,26 +1413,45 @@ export function forgeCost(base: ItemBase): MaterialCost {
 }
 
 /**
- * The forge only makes what you have earned the right to make.
+ * A SMITH KNOWS WHAT THEY HAVE TAKEN APART.
  *
- * Band 1 is open from the start; every band after it wants character level, so
- * the forge tracks the world rather than skipping it. Deliberately character
- * level and not weapon level: weapon level is a commitment to one family, and
- * gating the forge behind it would punish exactly the weapon-swapping the game
- * is named for.
+ * The forge used to be gated by character level, which made it a shop: reach
+ * level 8 and a list of things you had never seen unlocks itself. That is a
+ * gate, not a craft, and it left the three verbs as three unrelated buttons.
+ *
+ * A recipe is LEARNED BY SALVAGING one, so the loop closes: find a Frostbrand,
+ * break it down, and now you can make Frostbrands. Every verb feeds the next —
+ * exploration feeds salvage, salvage feeds the forge, the forge feeds the
+ * ladder — and "what do I do with a duplicate?" finally has an answer better
+ * than "delete it".
+ *
+ * Materials remain the real cost. A level-1 character who somehow salvages a
+ * band-5 sword has learned something they cannot afford for a long time, which
+ * is a much more interesting position to be in than a locked list.
  */
-export const FORGE_LEVEL_FOR_BAND: Record<ItemBand, number> = { 1: 1, 2: 4, 3: 8, 4: 13, 5: 19 };
+export const STARTING_RECIPES: string[] = Object.values(ITEM_BASES)
+  .filter((b) => b.band === 1)
+  .map((b) => b.id);
 
-export function canForge(base: ItemBase, level: number): { ok: boolean; reason?: string } {
-  const need = FORGE_LEVEL_FOR_BAND[base.band];
-  if (level < need) return { ok: false, reason: `needs level ${need}` };
+/** Whether a base is known without having to be learned. */
+export function isBasicRecipe(baseId: string): boolean {
+  return itemBase(baseId).band === 1;
+}
+
+export function canForge(
+  base: ItemBase,
+  known: ReadonlySet<string> | string[],
+): { ok: boolean; reason?: string } {
+  if (isBasicRecipe(base.id)) return { ok: true };
+  const has = Array.isArray(known) ? known.includes(base.id) : known.has(base.id);
+  if (!has) return { ok: false, reason: "salvage one to learn it" };
   return { ok: true };
 }
 
-/** Everything the forge will make at this level, best first within each slot. */
-export function forgeableBases(level: number): ItemBase[] {
+/** Everything the forge will make, grouped by slot then band then name. */
+export function forgeableBases(known: ReadonlySet<string> | string[]): ItemBase[] {
   return Object.values(ITEM_BASES)
-    .filter((b) => canForge(b, level).ok)
+    .filter((b) => canForge(b, known).ok)
     .sort((a, b) => a.slot.localeCompare(b.slot) || a.band - b.band || a.name.localeCompare(b.name));
 }
 

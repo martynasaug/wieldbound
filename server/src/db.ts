@@ -28,6 +28,7 @@ import {
   type LeaderboardEntry,
 } from "../../shared/protocol-types.ts";
 import {
+  isBasicRecipe,
   isTwoHanded,
   salvageYield,
   type MaterialCost,
@@ -639,17 +640,62 @@ export function equipItem(characterId: string, itemId: string): EquipResult | nu
 export function salvageItem(
   characterId: string,
   itemId: string,
-): { yielded: MaterialCost; items: ItemInstance[]; materials: MaterialTotals } | null {
+): {
+  yielded: MaterialCost;
+  /** The base whose recipe this taught, or null if it taught nothing new. */
+  learned: string | null;
+  items: ItemInstance[];
+  materials: MaterialTotals;
+} | null {
   const item = getItem(characterId, itemId);
   if (!item || item.equipped) return null;
 
   const yielded = salvageYield(item);
+  // Taking it apart is how you learn to make one. This is the whole reason
+  // salvage exists as a verb rather than as a delete button, and it is what
+  // gives a duplicate an answer better than "throw it away".
+  const learned = !isBasicRecipe(item.baseId) && learnRecipe(characterId, item.baseId);
   deleteItemStmt.run(itemId);
   if (yielded.wood) addWood(characterId, yielded.wood);
   if (yielded.ore) addOre(characterId, yielded.ore);
   if (yielded.herb) addHerb(characterId, yielded.herb);
 
-  return { yielded, items: listItems(characterId), materials: materialsOf(characterId) };
+  return {
+    yielded,
+    learned: learned ? item.baseId : null,
+    items: listItems(characterId),
+    materials: materialsOf(characterId),
+  };
+}
+
+// --- Known recipes ----------------------------------------------------------
+// A smith knows what they have taken apart. Rows rather than a column, because
+// this is a set keyed by (character, base) — the shape a wide row cannot hold
+// without turning into JSON, and the same argument the talent ranks make.
+// The absence of a row is the honest representation of "never seen one".
+db.exec(`
+  CREATE TABLE IF NOT EXISTS recipes (
+    characterId TEXT NOT NULL,
+    baseId TEXT NOT NULL,
+    learnedAt INTEGER NOT NULL,
+    PRIMARY KEY (characterId, baseId)
+  );
+`);
+
+const selectRecipes = db.prepare("SELECT baseId FROM recipes WHERE characterId = ?");
+const insertRecipe = db.prepare(
+  "INSERT OR IGNORE INTO recipes (characterId, baseId, learnedAt) VALUES (?, ?, ?)",
+);
+
+export function knownRecipes(characterId: string): string[] {
+  return (selectRecipes.all(characterId) as unknown as { baseId: string }[]).map((r) => r.baseId);
+}
+
+/** Records a recipe, and says whether it was new — which is what decides
+ *  whether the player is told anything. */
+export function learnRecipe(characterId: string, baseId: string): boolean {
+  const result = insertRecipe.run(characterId, baseId, Date.now());
+  return Number(result.changes) > 0;
 }
 
 export interface MaterialTotals {

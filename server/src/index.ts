@@ -152,6 +152,7 @@ import {
   materialsOf,
   spendMaterials,
   addEssence,
+  knownRecipes,
   listItems,
   equipItem,
   craftPotion,
@@ -1610,6 +1611,16 @@ function maybeDropEssence(playerId: string, socket: WebSocket, monster: MonsterS
   sendInfo(socket, `+${amount} essence`, "#c0a6ff");
 }
 
+/** Everything this character has learned to make. */
+function sendRecipes(socket: WebSocket, playerId: string): void {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  const update: ServerToClientMessage = {
+    type: "RECIPES_UPDATE",
+    payload: { known: knownRecipes(playerId) },
+  };
+  socket.send(JSON.stringify(update));
+}
+
 /** The whole wallet, in one message. */
 function sendMaterials(socket: WebSocket, playerId: string): void {
   if (socket.readyState !== WebSocket.OPEN) return;
@@ -1736,6 +1747,7 @@ wss.on("connection", (socket) => {
       // welcome payload was settled, and one message that always says all four
       // is better than a fifth field that only some paths remember to set.
       sendMaterials(socket, id);
+      sendRecipes(socket, id);
       return;
     }
 
@@ -1910,6 +1922,16 @@ wss.on("connection", (socket) => {
       sendItemsUpdate(socket, id, result.items);
       sendMaterials(socket, id);
       sendInfo(socket, `Salvaged: ${describeCost(result.yielded)}.`, "#c9b47a");
+      if (result.learned) {
+        // Worth its own line, and a louder colour: this is the moment the loop
+        // closes, and a player who misses it never learns that salvage teaches.
+        sendInfo(
+          socket,
+          `You learn to forge ${ITEM_BASES[result.learned]?.name ?? "it"}.`,
+          "#ffd873",
+        );
+        sendRecipes(socket, id);
+      }
       return;
     }
 
@@ -1944,7 +1966,7 @@ wss.on("connection", (socket) => {
       // reason `canLearnTalent` is: the button the client greys out and the
       // rule the server enforces have to be the same rule, and a hand-written
       // message can say anything at all.
-      const gate = canForge(base, playerLevels.get(id) ?? 1);
+      const gate = canForge(base, knownRecipes(id));
       if (!gate.ok) {
         sendInfo(socket, `${base.name}: ${gate.reason}.`, "#c98d5e");
         return;

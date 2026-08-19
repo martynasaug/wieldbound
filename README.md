@@ -121,6 +121,8 @@ first run at `server/data/wieldbound.db`.
   two-handed weapons that empty it.
 - **A smithy with three verbs** — Forge a named thing from the catalogue,
   Reforge one step up the ladder, or Salvage anything down into materials.
+  **Salvaging teaches you to make it**, so the three feed each other: find a
+  Frostbrand, break it down, and now you can forge Frostbrands.
   Plus **essence**, a fourth material that only comes off kills, so the top of
   the ladder cannot be reached by gathering alone.
 - **Loot lands on the ground** — a kill leaves the item's own model where the

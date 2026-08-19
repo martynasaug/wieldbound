@@ -21,6 +21,8 @@ export interface GameSocketHandlers {
    *  essence made that four, and four ways to say one thing is three chances
    *  for the client's idea of the wallet to drift from the server's. */
   onMaterials: (payload: Extract<ServerToClientMessage, { type: "MATERIALS_UPDATE" }>["payload"]) => void;
+  /** What the character has learned to forge. Whole set, not a delta. */
+  onRecipes: (payload: Extract<ServerToClientMessage, { type: "RECIPES_UPDATE" }>["payload"]) => void;
   onOreUpdate: (payload: Extract<ServerToClientMessage, { type: "ORE_UPDATE" }>["payload"]) => void;
   onXpUpdate: (payload: Extract<ServerToClientMessage, { type: "XP_UPDATE" }>["payload"]) => void;
   onLootUpdate: (payload: Extract<ServerToClientMessage, { type: "LOOT_UPDATE" }>["payload"]) => void;
@@ -70,6 +72,8 @@ export class GameSocket {
         this.handlers.onInventoryUpdate(msg.payload);
       } else if (msg.type === "MATERIALS_UPDATE") {
         this.handlers.onMaterials(msg.payload);
+      } else if (msg.type === "RECIPES_UPDATE") {
+        this.handlers.onRecipes(msg.payload);
       } else if (msg.type === "HERB_UPDATE") {
         this.handlers.onHerbUpdate(msg.payload);
       } else if (msg.type === "ORE_UPDATE") {

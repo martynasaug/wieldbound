@@ -100,6 +100,7 @@ import {
   ITEM_BASES,
   PALETTE_SETS,
   activeSets,
+  canForge,
   forgeCost,
   gearPassives,
   hitBandOf,
@@ -315,6 +316,8 @@ export class Game {
   private herb = 0;
   /** The fourth material, off kills rather than out of the ground. */
   private essence = 0;
+  /** Base ids this character has learned to forge, by taking one apart. */
+  private recipes: string[] = [];
 
   // Targeting has two halves, and keeping them apart is the whole design.
   //
@@ -443,6 +446,10 @@ export class Game {
         this.herb = p.herb;
         this.essence = p.essence;
         this.syncMaterials();
+      },
+      onRecipes: (p) => {
+        this.recipes = p.known;
+        this.craftPanel.setRecipes(this.recipes);
       },
       onHerbUpdate: (p) => {
         this.herb = p.herb;
@@ -594,6 +601,7 @@ export class Game {
       RARITIES,
       PALETTE_SETS,
       activeSets,
+      canForge,
       gearPassives,
       itemName,
       itemPassives,
@@ -1526,7 +1534,6 @@ export class Game {
     // The bench lists the bag twice — Reforge and Salvage both read it — so it
     // has to hear about every change, not only about the ones made at the bench.
     this.craftPanel.setItems(this.items);
-    this.craftPanel.setLevel(this.level);
     this.craftPanel.setEquippedWeapon(this.appearance.weaponType);
     // Which attributes are worth points depends on what is in your hand.
     this.characterPanel.setWeapon(this.appearance.weaponType, this.weaponProgress?.level ?? null);
@@ -1854,7 +1861,7 @@ export class Game {
           // what level you are (which recipes are learned).
           this.syncMaterials();
           this.craftPanel.setItems(this.items);
-          this.craftPanel.setLevel(this.level);
+          this.craftPanel.setRecipes(this.recipes);
           this.craftPanel.open(id);
         } else {
           this.hud.toast("Too far from the workbench.", "#c98d5e");
