@@ -8,6 +8,8 @@ export class TargetFrame {
   private nameEl = document.getElementById("target-name")!;
   private fill = document.getElementById("target-hp-fill")!;
   private hpText = document.getElementById("target-hp-text")!;
+  private cast = document.getElementById("target-cast")!;
+  private castFill = document.getElementById("target-cast-fill")!;
 
   show(name: string, hp: number, maxHp: number, extra?: string): void {
     this.root.classList.add("shown");
@@ -35,7 +37,25 @@ export class TargetFrame {
     this.hpText.textContent = known ? `${Math.max(0, Math.round(hp))} / ${Math.round(maxHp)}` : "";
   }
 
+  /**
+   * The target's wind-up, as a filling bar.
+   *
+   * The danger circle on the ground says where a telegraphed slam will land;
+   * this says when. Without it a player can see that something is coming and
+   * still has no way to judge whether there is time to walk out, which turns a
+   * mechanic meant to be answered by moving into one answered by guessing.
+   */
+  setWindup(progress: number | null): void {
+    if (progress === null) {
+      this.cast.classList.remove("shown");
+      return;
+    }
+    this.cast.classList.add("shown");
+    this.castFill.style.width = `${Math.max(0, Math.min(1, progress)) * 100}%`;
+  }
+
   hide(): void {
     this.root.classList.remove("shown");
+    this.cast.classList.remove("shown");
   }
 }

@@ -12,10 +12,13 @@
 
 export type SfxName =
   | "swing" | "hit" | "crit" | "miss" | "hurt"
-  | "die" | "gather" | "levelup" | "cast" | "heal";
+  | "die" | "gather" | "levelup" | "cast" | "heal"
+  // Release cues for the two weapon families that do not swing anything.
+  | "bow" | "beam";
 
 const SFX_NAMES: SfxName[] = [
   "swing", "hit", "crit", "miss", "hurt", "die", "gather", "levelup", "cast", "heal",
+  "bow", "beam",
 ];
 
 const POOL_SIZE = 4;
@@ -34,6 +37,8 @@ const VOLUME: Partial<Record<SfxName, number>> = {
   cast: 0.4,
   heal: 0.45,
   gather: 0.3,
+  bow: 0.35,
+  beam: 0.3,
 };
 
 class Cue {

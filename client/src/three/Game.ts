@@ -20,6 +20,7 @@ import {
   attackRangeFor,
   classForWeapon,
   critDamageMultiplier,
+  defaultAttackFor,
   doubleAttackChance,
   equippedBySlot,
   gatherDurationForLevel,
@@ -29,6 +30,8 @@ import {
   gearEvasion,
   gearMoveBonus,
   movePxPerSec,
+  PLAYER_BODY_RADIUS_PX,
+  resolveBodyCollision,
   playerAccuracy,
   playerAttackIntervalMs,
   playerCritChance,
@@ -37,7 +40,10 @@ import {
   primaryStatValue,
   regenAmountForVitality,
   sellValueFor,
-  unlockedActives,
+  hasActive,
+  talentPassives,
+  applyAttackSpeed,
+  applyDamagePercent,
   weaponDef,
   xpBonusPercent,
   xpToNextLevel,
@@ -56,15 +62,17 @@ import { GameSocket } from "../net/socket";
 import { CharacterPanel } from "../ui/CharacterPanel";
 import { InventoryPanel } from "../ui/InventoryPanel";
 import { CraftPanel } from "../ui/CraftPanel";
-import { SkillPanel } from "../ui/SkillPanel";
+import { SkillPanel, type WeaponProgressView } from "../ui/SkillPanel";
 import { LeaderboardPanel } from "../ui/LeaderboardPanel";
 import { CombatLog } from "../ui/CombatLog";
 import { TargetFrame } from "../ui/TargetFrame";
-import { Hotbar } from "../ui/Hotbar";
+import { ATTACK_SLOT, Hotbar, type BarAction } from "../ui/Hotbar";
 import { Actor } from "./Actor";
+import { CLASS_BODIES } from "./gear";
 import { Hud } from "./hud";
 import { Effects, isEffectName, type EffectName } from "./effects";
 import { Indicators } from "./indicators";
+import { ATTACK_STYLES, Projectiles, attackStyle, impactDelayMs } from "./attacks";
 import { playSfx, preloadSfx, toggleMuted } from "./sfx";
 import {
   PX_PER_UNIT,
@@ -115,15 +123,38 @@ const MOVE_SEND_INTERVAL_MS = 60;
 const MONSTER_SPAWN_RADIUS_PX = 1150;
 const MONSTER_DESPAWN_RADIUS_PX = 1550;
 
-// How long after a swing starts the hit is considered to land. Roughly where
-// the weapon is at the bottom of its arc — without it the damage number appears
-// on the same frame as the wind-up, which reads as a number popping out of
-// nowhere rather than as a blow connecting.
+// How long after a monster's swing starts its hit is considered to land.
+// Without a beat the damage number appears on the same frame as the wind-up,
+// which reads as a number popping out of nowhere rather than as a blow
+// connecting. Every monster in the roster fights at contact range, so one
+// constant covers them; the PLAYER's beat comes from the weapon instead — see
+// `impactDelayMs` in attacks.ts, where a flying attack lands when it arrives.
 const IMPACT_DELAY_MS = 170;
 
 // The reach ring fades out once combat traffic stops, so it is not permanently
 // drawn under a player who is just walking around.
 const COMBAT_INDICATOR_TIMEOUT_MS = 3500;
+
+// How far out an enemy will be picked up automatically. Wider than any weapon
+// reaches, so the marker appears while you are still walking in and you know
+// what you are about to fight before it is on top of you — but not so wide
+// that crossing the map keeps flickering a ring onto distant camps.
+const ENGAGE_RADIUS_PX = 340;
+
+// A click within this many screen pixels of a monster counts as a click on it,
+// even if the ray missed the mesh. A slime is under a metre tall and renders
+// perhaps twenty pixels across at this camera; demanding a pixel-accurate hit
+// on one is the difference between a targeting system and a test of aim.
+const CLICK_SLACK_PX = 42;
+// How much closer a rival has to be before auto-targeting abandons the enemy
+// it is already on. Without a margin, two monsters jostling at nearly equal
+// range swap the target every frame — which would be a worse experience than
+// the clicking this replaces, and would spam the wire with selections.
+const TARGET_STICKINESS_PX = 26;
+// Only monsters this close to the cursor are raycast at all. Keeps the picking
+// cost to a couple of meshes instead of every monster on screen, which matters
+// because this runs on pointer move as well as on click.
+const PICK_CANDIDATE_PX = 90;
 
 interface MonsterVisual {
   actor: Actor;
@@ -132,6 +163,34 @@ interface MonsterVisual {
   dead: boolean;
   /** Previous wind-up flag, so the telegraph cue fires on the edge not every tick. */
   windingUp: boolean;
+  /** When the current wind-up started, for the target frame's timer bar. */
+  windupStartedAt: number;
+  /** Latched run/idle decision — see `isMoving`. */
+  moving: boolean;
+}
+
+// How far a snapshot-driven actor must travel between snapshots to count as
+// running, and how still it must go before it counts as stopped. Two
+// thresholds rather than one because a single one chatters: a monster holding
+// position at the edge of its stop distance drifts a pixel back and forth, and
+// on one threshold that flickers the run animation on and off every snapshot.
+const MOVE_START_PX = 2.0;
+const MOVE_STOP_PX = 0.7;
+
+/**
+ * Whether a snapshot-driven actor should be running, measured between the last
+ * two SERVER positions rather than between rendered ones.
+ *
+ * Rendered positions are interpolated, so they lag the truth: reading them says
+ * "stopped" while the model is still visibly catching up, which plays the idle
+ * animation over a sliding character — the ice-skating this is here to remove.
+ * The server positions are the actual motion and have no lag to be fooled by.
+ */
+function isMoving(prevX: number, prevY: number, x: number, y: number, wasMoving: boolean): boolean {
+  const travelled = Math.hypot(x - prevX, y - prevY);
+  if (travelled > MOVE_START_PX) return true;
+  if (travelled < MOVE_STOP_PX) return false;
+  return wasMoving;
 }
 
 export class Game {
@@ -178,13 +237,35 @@ export class Game {
   private ore = 0;
   private herb = 0;
 
-  private targetId: string | null = null;
+  // Targeting has two halves, and keeping them apart is the whole design.
+  //
+  // `lockedId` is a deliberate choice: you clicked something, or tabbed to it.
+  // It persists until it dies or you pick another, and it is the ONLY thing a
+  // click changes.
+  //
+  // `engagedId` is what you are actually fighting this instant, worked out
+  // every frame from the same rule the server auto-attacks by. It exists
+  // because the server has always fought the nearest enemy for you whether or
+  // not you ever clicked — but the client showed nothing unless you did, so
+  // clicking *felt* mandatory when it never was. Deriving and drawing it is
+  // what turns a click from a chore into an override.
+  private lockedId: string | null = null;
+  private engagedId: string | null = null;
+  /** Last selection actually sent, so auto-targeting does not spam the wire. */
+  private sentTargetId: string | null = null;
+  /** Cursor position, for the hover ring and forgiving clicks. */
+  private pointerX = -1;
+  private pointerY = -1;
+  private hoverId: string | null = null;
   /** Last movement input direction, so a dash with no keys held still has a way to go. */
   private moveInputX = 0;
   private moveInputY = 0;
 
   private readonly players = new Map<string, Actor>();
   private readonly playerNames = new Map<string, string>();
+  /** Last SERVER position per remote player, so run/idle is decided from real
+   *  motion rather than from the interpolated model — see `isMoving`. */
+  private readonly playerMotion = new Map<string, { x: number; y: number; moving: boolean }>();
   private readonly monsters = new Map<string, MonsterVisual>();
   private readonly nodes = new Map<string, THREE.Object3D>();
   private readonly nodeStates = new Map<string, ResourceNodeState>();
@@ -198,10 +279,19 @@ export class Game {
   private readonly fadedMaterials = new Set<THREE.Material>();
   private readonly effects: Effects;
   private readonly indicators: Indicators;
+  private readonly projectiles: Projectiles;
   private readonly shakeScratch = new THREE.Vector3();
   private running = false;
   /** Last moment combat traffic arrived, used to show the reach ring only while fighting. */
   private lastCombatAt = 0;
+  /** Whether a standing attack order exists, per the server. */
+  private attacking = false;
+  private readonly dockButtons: { el: HTMLElement; isOpen: () => boolean }[] = [];
+  /** Rail windows in the order they were opened, so the oldest can be evicted
+   *  when a new one would not fit. */
+  private readonly windowOrder: { id: string; close: () => void }[] = [];
+  /** The held weapon's proficiency and learned talents, from the server. */
+  private weaponProgress: WeaponProgressView | null = null;
   /** Ally selection is a separate slot from the enemy one, mirroring the server. */
   private allyTargetId: string | null = null;
 
@@ -211,6 +301,7 @@ export class Game {
     this.hud = new Hud(container);
     this.effects = new Effects(this.world.scene);
     this.indicators = new Indicators(this.world.scene);
+    this.projectiles = new Projectiles(this.world.scene);
 
     this.characterPanel = new CharacterPanel((stat) => this.socket.sendAllocateStat(stat));
     this.inventoryPanel = new InventoryPanel(
@@ -225,9 +316,15 @@ export class Game {
       (stationId) => this.socket.sendCraftPotion(stationId),
       (stationId) => this.socket.sendCraftTonic(stationId),
     );
-    this.skillPanel = new SkillPanel();
+    this.skillPanel = new SkillPanel(
+      (nodeId) => this.socket.sendLearnTalent(nodeId),
+      (weapon) => this.socket.sendResetTalents(weapon),
+    );
     this.leaderboardPanel = new LeaderboardPanel(characterName);
-    this.hotbar = new Hotbar((skillId) => this.useSkill(skillId));
+    this.hotbar = new Hotbar(
+      (action) => this.useAction(action),
+      (weapon, layout) => this.socket.sendSetHotbar(weapon ?? "fist", layout),
+    );
 
     this.socket = new GameSocket("ws://localhost:8080", characterName, {
       onWelcome: (p) => this.onWelcome(p),
@@ -323,6 +420,8 @@ export class Game {
         this.combatLog.push(p.text, p.color);
       },
       onSkillResult: (p) => this.onSkillResult(p),
+      onAttackState: (p) => this.onAttackState(p),
+      onWeaponProgress: (p) => this.onWeaponProgress(p),
       onManaUpdate: (p) => {
         this.mana = p.mana;
         this.maxMana = p.maxMana;
@@ -338,9 +437,28 @@ export class Game {
     // screenshot alone, and this is how the "keys stick after a panel steals
     // focus" bug was found.
     (window as unknown as Record<string, unknown>).__wieldbound = this;
+    // The rule tables alongside the live state, so a console session can ask
+    // "should these two be touching?" without guessing at the numbers. Body
+    // radii in particular are invisible — there is nothing on screen that
+    // draws them.
+    (window as unknown as Record<string, unknown>).__wieldboundRules = {
+      MONSTER_STATS,
+      ATTACK_STYLES,
+      impactDelayMs,
+    };
     await this.world.buildDecor();
 
-    this.localActor = new Actor({ model: "Warrior", height: PLAYER_HEIGHT });
+    // Starts as the bare-handed body; WELCOME's appearance re-dresses it, and
+    // swaps the rig outright if the saved character is already holding something.
+    // `interpolate: false` because this actor's position is recomputed exactly
+    // every frame by stepMovement; easing toward it would only add lag, and the
+    // lag is what makes the character glide after you let go of the key.
+    this.localActor = new Actor({
+      model: CLASS_BODIES.adventurer,
+      height: PLAYER_HEIGHT,
+      interpolate: false,
+    });
+    this.localActor.setAppearance(this.appearance);
     await this.localActor.load();
     this.world.scene.add(this.localActor.root);
     this.localActor.snapTo(toWorldX(this.playerX), 0, toWorldZ(this.playerY));
@@ -411,6 +529,13 @@ export class Game {
   }): void {
     this.syncPlayers(p.players);
     this.syncMonsters(p.monsters);
+    // The monsters just moved, so where the player may stand has changed.
+    this.resolvePlayerCollision();
+    this.localActor?.setTargetPosition(
+      toWorldX(this.playerX),
+      0,
+      toWorldZ(this.playerY),
+    );
     this.syncNodes(p.nodes);
     this.syncStations(p.stations);
   }
@@ -423,23 +548,30 @@ export class Game {
       this.playerNames.set(s.id, s.name);
       let actor = this.players.get(s.id);
       if (!actor) {
-        actor = new Actor({ model: "Warrior", height: PLAYER_HEIGHT });
+        actor = new Actor({ model: CLASS_BODIES.adventurer, height: PLAYER_HEIGHT });
         this.players.set(s.id, actor);
+        this.playerMotion.set(s.id, { x: s.x, y: s.y, moving: false });
         void actor.load().then(() => this.world.scene.add(actor!.root));
       }
+      // Remote players are dressed from the same `Appearance` the local player
+      // renders itself from, so there is one drawing path rather than a
+      // self-case and an others-case that can drift apart.
+      actor.setAppearance(s.appearance);
       const x = toWorldX(s.x);
       const z = toWorldZ(s.y);
-      const prev = actor.position;
-      const moving = Math.hypot(x - prev.x, z - prev.z) > 0.02;
+      const motion = this.playerMotion.get(s.id) ?? { x: s.x, y: s.y, moving: false };
+      const moving = isMoving(motion.x, motion.y, s.x, s.y, motion.moving);
       actor.setTargetPosition(x, 0, z);
-      if (moving) actor.faceToward(x, z);
+      if (moving) actor.faceDirection(s.x - motion.x, s.y - motion.y);
       actor.play(moving ? "run" : "idle");
+      this.playerMotion.set(s.id, { x: s.x, y: s.y, moving });
     }
     for (const [id, actor] of this.players) {
       if (seen.has(id)) continue;
       actor.dispose();
       this.players.delete(id);
       this.playerNames.delete(id);
+      this.playerMotion.delete(id);
     }
   }
 
@@ -453,7 +585,7 @@ export class Game {
         if (distance > MONSTER_SPAWN_RADIUS_PX) continue;
         const spec = MONSTER_MODELS[s.kind];
         const actor = new Actor({ model: spec.model, height: spec.height });
-        vis = { actor, kind: s.kind, state: s, dead: false, windingUp: false };
+        vis = { actor, kind: s.kind, state: s, dead: false, windingUp: false, windupStartedAt: 0, moving: false };
         this.monsters.set(s.id, vis);
         void actor.load().then(() => this.world.scene.add(actor.root));
       } else if (distance > MONSTER_DESPAWN_RADIUS_PX) {
@@ -461,16 +593,17 @@ export class Game {
         this.monsters.delete(s.id);
         // The server would still happily resolve a skill against something the
         // player can no longer see, so drop the selection with the model.
-        if (this.targetId === s.id) this.setTarget(null);
+        if (this.lockedId === s.id) this.setTarget(null);
         continue;
       }
-      const prev = vis.actor.position;
       const x = toWorldX(s.x);
       const z = toWorldZ(s.y);
-      const moving = Math.hypot(x - prev.x, z - prev.z) > 0.02;
+      // Measured in server pixels between snapshots — see `isMoving`.
+      const moving = isMoving(vis.state.x, vis.state.y, s.x, s.y, vis.moving);
+      vis.moving = moving;
 
       vis.actor.setTargetPosition(x, 0, z);
-      if (moving) vis.actor.faceToward(x, z);
+      if (moving) vis.actor.faceDirection(s.x - vis.state.x, s.y - vis.state.y);
 
       // Chill is a gameplay signal (your Frost Nova is still working), so it
       // gets a colour rather than being inferred from the monster moving slower.
@@ -480,7 +613,7 @@ export class Game {
       if (nowDead && !vis.dead) {
         vis.actor.play("die");
         vis.actor.setChilled(false);
-        if (this.targetId === s.id) this.setTarget(null);
+        if (this.lockedId === s.id) this.setTarget(null);
       } else if (!nowDead && vis.dead) {
         vis.actor.revive();
       } else if (!nowDead) {
@@ -489,7 +622,10 @@ export class Game {
 
       // The wind-up needs a sound the moment it starts, or a player looking at
       // their own character never learns the danger circle appeared.
-      if (s.windingUp && !vis.windingUp) playSfx("cast", 0.8);
+      if (s.windingUp && !vis.windingUp) {
+        playSfx("cast", 0.8);
+        vis.windupStartedAt = performance.now();
+      }
       vis.windingUp = s.windingUp;
 
       vis.dead = nowDead;
@@ -618,9 +754,12 @@ export class Game {
 
   // A swing is a beat, not an instant. The server tells us the outcome all at
   // once, but playing the wind-up and the impact on the same frame reads as the
-  // number simply appearing — so the animation and sound go now, and the hit
-  // lands IMPACT_DELAY_MS later, which is roughly where the weapon is at the
-  // bottom of the arc.
+  // number simply appearing — so the release goes now and the hit lands later.
+  //
+  // How much later is the weapon's business. A sword has a fixed beat because a
+  // swing's timing belongs to the swing; an arrow's is its flight time over the
+  // actual gap, so the number appears exactly when the arrow arrives, at every
+  // range rather than at one lucky one.
   private onBattleResult(p: {
     monsterId: string;
     playerHit: boolean;
@@ -632,10 +771,17 @@ export class Game {
     this.lastCombatAt = performance.now();
     this.localActor?.play("attack");
     if (vis) this.localActor?.faceToward(vis.actor.position.x, vis.actor.position.z);
-    playSfx("swing");
+
+    // What the weapon actually does, and — for anything that flies — how long
+    // it takes to get there. One table drives both, so the damage number can
+    // never appear before its own arrow does.
+    const style = attackStyle(this.appearance.weaponType);
+    const gap = vis ? this.distanceTo(vis) : 0;
+    const delay = impactDelayMs(style, gap);
+    playSfx(style.releaseSfx);
+    if (vis) this.launchAttack(style, vis, delay);
 
     const label = vis ? MONSTER_LABELS[vis.kind] : "enemy";
-    const ranged = attackRangeFor(this.appearance.weaponType) > 120;
 
     window.setTimeout(() => {
       const target = this.monsters.get(p.monsterId);
@@ -663,15 +809,17 @@ export class Game {
         target.actor.flash(p.playerCrit ? 0xffd85e : 0xffffff, p.playerCrit ? 190 : 120);
         this.floatOver(target.actor, p.playerCrit ? `CRIT ${p.playerDamage}` : `${p.playerDamage}`,
           p.playerCrit ? "#ffd85e" : "#ffffff");
-        // A ranged class should not spawn a sword arc on its target.
-        this.effects.play(ranged ? "arrow" : "slash", at.x, mid, at.z, {
-          scale: size * (p.playerCrit ? 1.5 : 1.15),
-          tint: p.playerCrit ? 0xffd85e : 0xffffff,
+        // The mark the weapon leaves: an arc for blades, a shockwave for a
+        // mace, an arcane bloom for a staff. Weight scales with the family, so
+        // an axe lands visibly heavier than a dagger.
+        this.effects.play(style.impact, at.x, mid, at.z, {
+          scale: size * style.impactScale * (p.playerCrit ? 1.5 : 1.15),
+          tint: p.playerCrit ? 0xffd85e : style.tint,
           durationMs: 420,
-          spin: ranged ? 0 : 0.05,
+          spin: style.delivery === "melee" ? 0.05 : 0,
         });
         this.effects.play("impact", at.x, mid, at.z, {
-          scale: size * (p.playerCrit ? 1.25 : 0.95),
+          scale: size * style.impactScale * (p.playerCrit ? 1.25 : 0.95),
           tint: p.playerCrit ? 0xffc94a : 0xfff0c8,
           durationMs: 360,
         });
@@ -686,7 +834,47 @@ export class Game {
           this.effects.play("impact", at.x, at.y + 0.7, at.z, { scale: 2.6, tint: 0xffb066, durationMs: 520 });
         }
       }
-    }, IMPACT_DELAY_MS);
+    }, delay);
+  }
+
+  /**
+   * Sends the blow on its way: an arrow or bolt in flight, a beam drawn
+   * straight to the target, or nothing at all for melee, where the swing
+   * animation is already the whole story.
+   *
+   * Everything leaves the weapon socket rather than the body, so an arrow
+   * comes off the bow instead of out of the archer's chest.
+   */
+  private launchAttack(
+    style: ReturnType<typeof attackStyle>,
+    vis: MonsterVisual,
+    flightMs: number,
+  ): void {
+    const self = this.localActor;
+    if (!self || style.delivery === "melee") return;
+
+    const from = self.muzzlePosition(new THREE.Vector3());
+    const at = vis.actor.position;
+    const to = new THREE.Vector3(
+      at.x,
+      at.y + MONSTER_MODELS[vis.kind].height * 0.55,
+      at.z,
+    );
+
+    if (style.delivery === "arrow") {
+      this.projectiles.arrow(from, to, flightMs);
+    } else if (style.delivery === "beam") {
+      this.projectiles.beam(from, to, style.tint);
+    } else {
+      // A bolt is a travelling fx quad — the effects system already carries
+      // the schools and the travel, so this needs no new art.
+      this.effects.play(style.impact, to.x, to.y, to.z, {
+        scale: 1.5,
+        tint: style.tint,
+        from,
+        durationMs: flightMs,
+      });
+    }
   }
 
   private onMonsterAttack(p: { monsterId: string; hit: boolean; crit: boolean; damage: number }): void {
@@ -799,6 +987,26 @@ export class Game {
       this.effects.shake(0.07, 160);
     }
 
+    // Fired into empty air. The skill really did go off — mana and cooldown
+    // are spent — so it has to look like it, or a press with nothing in range
+    // is indistinguishable from a press that was ignored.
+    if (p.hits.length === 0 && self && skill.radiusPx === 0) {
+      const facing = self.facingVector();
+      const throwPx = Math.min(skill.rangePx, 120) / PX_PER_UNIT;
+      this.effects.play(
+        school,
+        self.position.x + facing.x * throwPx,
+        self.position.y + 1.0,
+        self.position.z + facing.z * throwPx,
+        {
+          scale: 1.7,
+          from: new THREE.Vector3(self.position.x, self.position.y + 1.1, self.position.z),
+          durationMs: 380,
+        },
+      );
+      this.combatLog.push(skill.name + " finds nothing.", "#9a8d76");
+    }
+
     for (const hit of p.hits) {
       const vis = this.monsters.get(hit.monsterId);
       if (!vis) continue;
@@ -853,7 +1061,14 @@ export class Game {
         dz = ((nearest.state.y - this.playerY) / (best || 1)) * sign;
       }
     }
-    if (dx === 0 && dz === 0) return;
+    if (dx === 0 && dz === 0) {
+      // Standing still with nothing nearby used to abandon the dash here —
+      // after the server had already charged the cooldown and the mana. Facing
+      // is always defined, so there is always a direction to go.
+      const facing = this.localActor?.facingVector();
+      dx = facing?.x ?? 0;
+      dz = facing?.z ?? 1;
+    }
 
     const len = Math.hypot(dx, dz) || 1;
     this.playerX = clamp(this.playerX + (dx / len) * distancePx, 0, WORLD_WIDTH);
@@ -875,6 +1090,12 @@ export class Game {
     this.inventoryPanel.setItems(this.items);
     this.characterPanel.setEquipped(this.items);
     this.craftPanel.setEquippedWeapon(this.appearance.weaponType);
+    // Which attributes are worth points depends on what is in your hand.
+    this.characterPanel.setWeapon(this.appearance.weaponType, this.weaponProgress?.level ?? null);
+    // The local player rebuilds its own look from its item list rather than
+    // waiting for a snapshot to tell it what it is wearing, which is what makes
+    // equipping read as instant.
+    this.localActor?.setAppearance(this.appearance);
     this.refreshClassUi();
     this.refreshStats();
   }
@@ -884,10 +1105,28 @@ export class Game {
     this.craftPanel.setResources(this.wood, this.ore, this.herb);
   }
 
+  /**
+   * Proficiency and talents for the weapon in hand. Everything downstream of
+   * the tree — the bar, the panel, the stat sheet — is rebuilt from here, so
+   * there is one place a talent change lands rather than three.
+   */
+  private onWeaponProgress(p: WeaponProgressView & { reason?: string }): void {
+    const gained = p.pointsAvailable - (this.weaponProgress?.pointsAvailable ?? 0);
+    this.weaponProgress = p;
+    this.skillPanel.setProgress(p);
+    this.hotbar.setLayout(p.weaponType, p.hotbar);
+    this.characterPanel.setWeapon(p.weaponType, p.level);
+    this.refreshClassUi();
+    this.refreshStats();
+    if (p.reason) this.hud.toast(p.reason, "#c98d5e");
+    else if (gained > 0 && p.pointsAvailable > 0) {
+      this.hud.toast(`${p.pointsAvailable} talent point${p.pointsAvailable === 1 ? "" : "s"} — press K`, "#ffd873");
+    }
+  }
+
   private refreshClassUi(): void {
-    const cls = classForWeapon(this.appearance.weaponType);
-    this.hotbar.setCharacter(cls, this.level);
-    this.skillPanel.setCharacter(cls, this.level);
+    // The bar's contents are the player's own layout, pushed by the server
+    // with WEAPON_PROGRESS; all that is left to do per frame is the cooldowns.
     this.hotbar.update(this.mana);
   }
 
@@ -903,21 +1142,37 @@ export class Game {
       vitality: this.vitality,
       intelligence: this.intelligence,
     });
+    // Talents feed every one of these. The sheet quoting a number the fight
+    // does not use is the exact failure this file has always been written to
+    // avoid, and a tree full of percentages is the easiest way to reintroduce
+    // it — so they go through the same shared helpers the server calls.
+    const talents = this.passives();
     this.characterPanel.setStats({
       moveSpeedPxPerSec: this.moveSpeed(),
       xpBonusPercent: xpBonusPercent(this.armorRarity),
       gatherTimeSec: gatherDurationForLevel(this.gatherLevel, this.agility) / 1000,
       battleTimeSec:
-        (playerAttackIntervalMs(this.weaponRarity, this.battlePowerLevel, this.agility) *
-          wpn.speedMultiplier) /
-        1000,
-      minHit: Math.round(playerMinHit(power) * wpn.damageMultiplier),
-      maxHit: Math.round(playerMaxHit(power, gearDamageBonus(gear)) * wpn.damageMultiplier),
-      accuracy: playerAccuracy(this.agility) + this.equippedBonusStatValue("ring"),
-      critChance: playerCritChance(this.agility) + gearCritChance(gear),
-      critDamagePercent: Math.round(critDamageMultiplier(this.weaponRarity) * 100),
-      armor: gearArmor(gear),
-      evasion: gearEvasion(gear),
+        applyAttackSpeed(
+          playerAttackIntervalMs(this.weaponRarity, this.battlePowerLevel, this.agility) *
+            wpn.speedMultiplier,
+          talents.attackSpeedPercent,
+        ) / 1000,
+      minHit: applyDamagePercent(
+        Math.round(playerMinHit(power) * wpn.damageMultiplier),
+        talents.damagePercent,
+      ),
+      maxHit: applyDamagePercent(
+        Math.round(playerMaxHit(power, gearDamageBonus(gear)) * wpn.damageMultiplier),
+        talents.damagePercent,
+      ),
+      accuracy:
+        playerAccuracy(this.agility, talents.accuracyBonus) + this.equippedBonusStatValue("ring"),
+      critChance: playerCritChance(this.agility) + gearCritChance(gear) + talents.critChance,
+      critDamagePercent: Math.round(
+        critDamageMultiplier(this.weaponRarity, talents.critDamagePercent) * 100,
+      ),
+      armor: gearArmor(gear) + talents.armor,
+      evasion: gearEvasion(gear) + talents.evasion,
       doubleAttackPercent: doubleAttackChance(this.agility),
       hpRegen: regenAmountForVitality(this.vitality),
     });
@@ -941,7 +1196,17 @@ export class Game {
   }
 
   private moveSpeed(): number {
-    return movePxPerSec(this.bootsRarity, this.agility, gearMoveBonus(equippedBySlot(this.items)));
+    return movePxPerSec(
+      this.bootsRarity,
+      this.agility,
+      gearMoveBonus(equippedBySlot(this.items)) + this.passives().moveSpeedBonus,
+    );
+  }
+
+  /** Passive totals from the held weapon's learned talents — the same shared
+   *  aggregation the server resolves combat with. */
+  private passives(): ReturnType<typeof talentPassives> {
+    return talentPassives(this.appearance.weaponType, this.weaponProgress?.ranks ?? {});
   }
 
   // ------------------------------------------------------------------ input
@@ -950,34 +1215,143 @@ export class Game {
     window.addEventListener("keydown", (e) => {
       const typing = (e.target as HTMLElement)?.tagName === "INPUT";
       if (typing) return;
+      // A pending rebind is capturing the keyboard; anything pressed belongs
+      // to it, not to movement or a panel toggle.
+      if (this.hotbar.isRebinding) return;
       this.keys.add(e.key.toLowerCase());
 
       const key = e.key.toLowerCase();
-      if (key === "c") this.characterPanel.toggle();
-      else if (key === "i") this.inventoryPanel.toggle();
-      else if (key === "k") this.skillPanel.toggle();
-      else if (key === "l") {
+      // The keys and the dock buttons are two ways to do one thing, so both
+      // finish by re-lighting the dock.
+      if (key === "c") {
+        this.characterPanel.toggle();
+        this.fitWindows(this.characterPanel.isOpen ? "dock-character" : undefined);
+      } else if (key === "i") {
+        this.inventoryPanel.toggle();
+        this.fitWindows(this.inventoryPanel.isOpen ? "dock-inventory" : undefined);
+      } else if (key === "k") {
+        this.skillPanel.toggle();
+        this.fitWindows(this.skillPanel.isOpen ? "dock-skills" : undefined);
+      } else if (key === "l") {
         this.leaderboardPanel.toggle();
         if (this.leaderboardPanel.isOpen) this.socket.sendRequestLeaderboard();
+        this.fitWindows(this.leaderboardPanel.isOpen ? "dock-leaderboard" : undefined);
       } else if (key === "tab") {
         e.preventDefault();
         this.cycleTarget();
       } else if (key === "escape") {
+        // Releases the lock rather than clearing targeting outright — with
+        // auto-targeting there is no such thing as fighting nothing while
+        // something is in front of you.
+        if (this.lockedId) this.hud.toast("Target released.", "#c9b47a");
         this.setTarget(null);
         this.allyTargetId = null;
       } else if (key === "m") {
         const nowMuted = toggleMuted();
         this.hud.toast(nowMuted ? "Sound off" : "Sound on", "#c9b47a");
       } else {
-        const skillId = this.hotbar.skillForKey(key);
-        if (skillId) this.useSkill(skillId);
+        const action = this.hotbar.skillForKey(key);
+        if (action) this.useAction(action);
       }
     });
 
     window.addEventListener("keyup", (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener("blur", () => this.keys.clear());
 
+    // The dock buttons have existed since the 2D client and were never wired
+    // to anything after the Three.js port — the markup survived, its listeners
+    // did not, so every icon was decorative. Bound here alongside the keys
+    // they mirror, and kept lit while their window is open.
+    this.bindDock();
+
     this.world.renderer.domElement.addEventListener("pointerdown", (e) => this.onPointerDown(e));
+    this.world.renderer.domElement.addEventListener("pointermove", (e) => {
+      this.pointerX = e.clientX;
+      this.pointerY = e.clientY;
+    });
+    this.world.renderer.domElement.addEventListener("pointerleave", () => {
+      this.pointerX = -1;
+      this.pointerY = -1;
+      this.hoverId = null;
+    });
+  }
+
+  private bindDock(): void {
+    const buttons: [string, () => void, () => boolean][] = [
+      ["dock-character", () => this.characterPanel.toggle(), () => this.characterPanel.isOpen],
+      ["dock-inventory", () => this.inventoryPanel.toggle(), () => this.inventoryPanel.isOpen],
+      ["dock-skills", () => this.skillPanel.toggle(), () => this.skillPanel.isOpen],
+      [
+        "dock-leaderboard",
+        () => {
+          this.leaderboardPanel.toggle();
+          if (this.leaderboardPanel.isOpen) this.socket.sendRequestLeaderboard();
+        },
+        () => this.leaderboardPanel.isOpen,
+      ],
+    ];
+    for (const [id, toggle, isOpen] of buttons) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.addEventListener("click", () => {
+        toggle();
+        this.fitWindows(isOpen() ? id : undefined);
+      });
+      this.dockButtons.push({ el, isOpen });
+    }
+    this.refreshDock();
+  }
+
+  /** Keeps the dock lit in step with the windows, however they were opened. */
+  private refreshDock(): void {
+    for (const { el, isOpen } of this.dockButtons) el.classList.toggle("active", isOpen());
+  }
+
+  /** Every window the rail lays out, with the handles the fitter needs. */
+  private get railWindows(): { id: string; isOpen: () => boolean; close: () => void }[] {
+    return [
+      { id: "dock-character", isOpen: () => this.characterPanel.isOpen, close: () => this.characterPanel.close() },
+      { id: "dock-inventory", isOpen: () => this.inventoryPanel.isOpen, close: () => this.inventoryPanel.close() },
+      { id: "dock-skills", isOpen: () => this.skillPanel.isOpen, close: () => this.skillPanel.close() },
+      { id: "dock-leaderboard", isOpen: () => this.leaderboardPanel.isOpen, close: () => this.leaderboardPanel.close() },
+    ];
+  }
+
+  /**
+   * Keeps the rail inside the screen by closing the oldest window when a new
+   * one will not fit.
+   *
+   * Windows lay out right-to-left and never overlap, which is the point — but
+   * all four together are wider than any screen, and the alternative to
+   * evicting is a panel sitting half off the left edge with no way to reach
+   * it. Oldest first, because the one just opened is the one being looked at.
+   */
+  private fitWindows(justOpened?: string): void {
+    if (justOpened) {
+      const existing = this.windowOrder.findIndex((w) => w.id === justOpened);
+      if (existing >= 0) this.windowOrder.splice(existing, 1);
+      const entry = this.railWindows.find((w) => w.id === justOpened);
+      if (entry) this.windowOrder.push({ id: entry.id, close: entry.close });
+    }
+    // Forget anything closed by other means before measuring.
+    for (let i = this.windowOrder.length - 1; i >= 0; i--) {
+      const entry = this.railWindows.find((w) => w.id === this.windowOrder[i].id);
+      if (!entry?.isOpen()) this.windowOrder.splice(i, 1);
+    }
+
+    const rail = document.getElementById("window-rail");
+    if (rail) {
+      let guard = this.railWindows.length;
+      while (guard-- > 0 && this.windowOrder.length > 1) {
+        const used = Array.from(rail.querySelectorAll<HTMLElement>(".window.open")).reduce(
+          (total, el) => total + el.getBoundingClientRect().width + 10,
+          0,
+        );
+        if (used <= rail.clientWidth) break;
+        this.windowOrder.shift()?.close();
+      }
+    }
+    this.refreshDock();
   }
 
   private onPointerDown(e: PointerEvent): void {
@@ -988,13 +1362,12 @@ export class Game {
     this.raycaster.setFromCamera(ndc, this.world.camera);
 
     // Enemies first, then allies, then stations. Ground clicks clear both.
-    for (const [id, vis] of this.monsters) {
-      if (vis.dead || !vis.actor.loaded) continue;
-      const hits = this.raycaster.intersectObject(vis.actor.root, true);
-      if (hits.length > 0) {
-        this.setTarget(id);
-        return;
-      }
+    const picked = this.pickMonsterAt(e.clientX, e.clientY);
+    if (picked) {
+      // Clicking what is already locked unlocks it, which is how you hand
+      // control back to auto-targeting without hunting for empty ground.
+      this.setTarget(picked === this.lockedId ? null : picked);
+      return;
     }
     // One selection covers enemies and allies — the server looks the id up in
     // both and stores it as whichever it turns out to be, so clicking a player
@@ -1025,38 +1398,210 @@ export class Game {
     this.setTarget(null);
   }
 
+  /** Distance from the player to a monster, in server pixels. */
+  private distanceTo(vis: MonsterVisual): number {
+    return Math.hypot(vis.state.x - this.playerX, vis.state.y - this.playerY);
+  }
+
+  private aliveMonsters(): [string, MonsterVisual][] {
+    return [...this.monsters.entries()].filter(
+      ([, v]) => !v.dead && v.state.status === "alive",
+    );
+  }
+
+  /**
+   * Nearest living enemy within `limit` px, biased toward the one already
+   * engaged. A pack shuffles constantly — separation alone moves bodies every
+   * tick — so plain "nearest" would hand the target back and forth between two
+   * monsters standing shoulder to shoulder. Sticking until something is
+   * meaningfully closer is what makes an auto-picked target feel chosen.
+   */
+  private nearestMonster(limit: number): string | null {
+    let best: string | null = null;
+    let bestDist = limit;
+    for (const [id, vis] of this.aliveMonsters()) {
+      const d = this.distanceTo(vis);
+      if (d <= bestDist) {
+        best = id;
+        bestDist = d;
+      }
+    }
+
+    const held = this.engagedId ? this.monsters.get(this.engagedId) : undefined;
+    if (!held || held.dead || held.state.status !== "alive") return best;
+    const heldDist = this.distanceTo(held);
+    if (heldDist > limit) return best;
+    return bestDist > heldDist - TARGET_STICKINESS_PX ? this.engagedId : best;
+  }
+
+  /**
+   * Works out what the player is fighting, and keeps the server's idea of it
+   * in step. Runs every frame.
+   *
+   * The order matters and mirrors how the server resolves a swing:
+   *   1. the locked target, if it is alive and in reach — a deliberate choice
+   *      beats proximity, which is the entire point of having made it
+   *   2. otherwise the nearest enemy in reach, because that is what auto-attack
+   *      is hitting whether or not anyone clicked
+   *   3. otherwise the locked target even out of reach, so walking toward
+   *      something you chose keeps showing it as yours
+   *   4. otherwise the nearest enemy inside the engage radius, dimmed — the
+   *      marker that appears as you approach a camp
+   */
+  private updateTargeting(): void {
+    const reach = attackRangeFor(this.appearance.weaponType);
+    const locked = this.lockedId ? this.monsters.get(this.lockedId) : undefined;
+    const lockedAlive = locked && !locked.dead && locked.state.status === "alive";
+    if (this.lockedId && !lockedAlive) {
+      // It died or streamed out; drop the lock so auto-targeting resumes
+      // instead of leaving the player pointed at nothing.
+      this.lockedId = null;
+    }
+
+    const lockedInReach = lockedAlive && this.distanceTo(locked!) <= reach;
+    this.engagedId =
+      (lockedInReach ? this.lockedId : null) ??
+      this.nearestMonster(reach) ??
+      (lockedAlive ? this.lockedId : null) ??
+      this.nearestMonster(ENGAGE_RADIUS_PX);
+
+    // Keep the server's selection matching what the player can see, so a
+    // single-target skill hits the thing the ring is drawn around. Skipped
+    // while an ally is selected: that selection is what Mend and War Cry read,
+    // and quietly overwriting it would break co-op for the sake of a ring.
+    if (this.lockedId || this.allyTargetId) return;
+    if (this.engagedId === this.sentTargetId) return;
+    this.sentTargetId = this.engagedId;
+    this.socket.sendSetTarget(this.engagedId);
+  }
+
+  /**
+   * The monster a click at these screen coordinates should take.
+   *
+   * Two passes, because a raycast alone is a poor pointing device here. It is
+   * narrowed to the handful of monsters near the cursor (cheap enough to run on
+   * pointer move), then resolved by depth so the one in FRONT wins — the old
+   * code returned whichever came first in map order, so with two bodies
+   * overlapping you could select the one behind. If the ray misses everything,
+   * the nearest silhouette within a few dozen pixels is taken instead, which is
+   * what makes small monsters clickable at all.
+   */
+  private pickMonsterAt(clientX: number, clientY: number): string | null {
+    const candidates: { id: string; vis: MonsterVisual; screenDist: number }[] = [];
+    for (const [id, vis] of this.aliveMonsters()) {
+      if (!vis.actor.loaded) continue;
+      const spec = MONSTER_MODELS[vis.kind];
+      const p = vis.actor.position;
+      const screen = this.world.project(p.x, p.y + spec.height * 0.5, p.z);
+      if (!screen) continue;
+      const screenDist = Math.hypot(screen.x - clientX, screen.y - clientY);
+      if (screenDist <= PICK_CANDIDATE_PX) candidates.push({ id, vis, screenDist });
+    }
+    if (candidates.length === 0) return null;
+
+    const ndc = new THREE.Vector2(
+      (clientX / window.innerWidth) * 2 - 1,
+      -(clientY / window.innerHeight) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(ndc, this.world.camera);
+    let hitId: string | null = null;
+    let hitDepth = Infinity;
+    for (const c of candidates) {
+      const hits = this.raycaster.intersectObject(c.vis.actor.root, true);
+      if (hits.length > 0 && hits[0].distance < hitDepth) {
+        hitDepth = hits[0].distance;
+        hitId = c.id;
+      }
+    }
+    if (hitId) return hitId;
+
+    candidates.sort((a, b) => a.screenDist - b.screenDist);
+    return candidates[0].screenDist <= CLICK_SLACK_PX ? candidates[0].id : null;
+  }
+
   private setTarget(id: string | null): void {
-    this.targetId = id;
+    this.lockedId = id;
     if (id) this.allyTargetId = null; // one selection at a time, as the server models it
+    // Recorded so auto-targeting knows what the server was last told and does
+    // not either re-send it or skip a send it actually owes.
+    this.sentTargetId = id;
     this.socket.sendSetTarget(id);
     if (!id) this.targetFrame.hide();
   }
 
   private setAllyTarget(id: string | null): void {
     this.allyTargetId = id;
-    if (id) this.targetId = null;
+    if (id) this.lockedId = null;
+    this.sentTargetId = id;
     this.socket.sendSetTarget(id);
     if (id) {
       this.combatLog.push(`Assisting ${this.playerNames.get(id) ?? "ally"}.`, "#9ad4ff");
     }
   }
 
+  /**
+   * Next enemy, nearest first.
+   *
+   * Scoped to the engage radius rather than to every monster with a model:
+   * models are built out to 1150px, so the old version cycled through some
+   * thirty creatures across four camps and reaching the one in front of you
+   * meant pressing Tab a dozen times. It also starts from whatever you are
+   * currently fighting, not from your last click, so Tab means "not that one,
+   * the next one" even when you never clicked at all.
+   */
   private cycleTarget(): void {
-    const alive = [...this.monsters.entries()]
-      .filter(([, v]) => !v.dead)
-      .sort((a, b) => {
-        const da = Math.hypot(a[1].state.x - this.playerX, a[1].state.y - this.playerY);
-        const db = Math.hypot(b[1].state.x - this.playerX, b[1].state.y - this.playerY);
-        return da - db;
-      });
-    if (alive.length === 0) return;
-    const idx = alive.findIndex(([id]) => id === this.targetId);
-    this.setTarget(alive[(idx + 1) % alive.length][0]);
+    const reach = attackRangeFor(this.appearance.weaponType);
+    const limit = Math.max(ENGAGE_RADIUS_PX, reach * 1.2);
+    const near = this.aliveMonsters()
+      .filter(([, v]) => this.distanceTo(v) <= limit)
+      .sort((a, b) => this.distanceTo(a[1]) - this.distanceTo(b[1]));
+    if (near.length === 0) {
+      this.hud.toast("Nothing in range.", "#c98d5e");
+      return;
+    }
+    const from = this.lockedId ?? this.engagedId;
+    const idx = near.findIndex(([id]) => id === from);
+    this.setTarget(near[(idx + 1) % near.length][0]);
+  }
+
+  /** One entry point for the bar, whichever slot was pressed. */
+  private useAction(action: BarAction): void {
+    if (action === ATTACK_SLOT) {
+      this.socket.sendUseAttack();
+      return;
+    }
+    this.useSkill(action);
+  }
+
+  /**
+   * The swing clock and whether an attack order stands. Both come from the
+   * server, which owns the timer; the client only draws it.
+   */
+  private onAttackState(p: {
+    attacking: boolean;
+    readyInMs: number;
+    intervalMs: number;
+    reason?: string;
+  }): void {
+    const wasAttacking = this.attacking;
+    this.attacking = p.attacking;
+    this.hotbar.setAttackState(p.attacking, p.readyInMs, p.intervalMs);
+    if (p.reason) {
+      const attack = defaultAttackFor(this.appearance.weaponType);
+      this.hud.toast(`${attack.name}: ${p.reason}`, "#c98d5e");
+    }
+    // Worth a line in the log: with combat no longer starting itself, knowing
+    // whether you are actually fighting is something the player has to be able
+    // to check without counting damage numbers.
+    if (p.attacking && !wasAttacking) this.combatLog.push("You engage.", "#ffd873");
+    else if (!p.attacking && wasAttacking) this.combatLog.push("You break off.", "#9a8d76");
   }
 
   private useSkill(skillId: SkillId): void {
-    const cls = classForWeapon(this.appearance.weaponType);
-    if (!unlockedActives(cls, this.level).some((s) => s.id === skillId)) return;
+    // Cheap local guard against a stale keybinding; the server re-checks the
+    // same rule against the same tree, so this only saves a round trip.
+    const ranks = this.weaponProgress?.ranks ?? {};
+    if (!hasActive(this.appearance.weaponType, ranks, skillId)) return;
     this.socket.sendUseSkill(skillId);
   }
 
@@ -1085,6 +1630,12 @@ export class Game {
     // whatever it was when mana last changed.
     this.hotbar.update(this.mana);
     this.effects.update(this.world.camera);
+    this.projectiles.update();
+    // Derived before anything draws, so the ring, the frame and the nameplate
+    // all agree within a single frame.
+    this.updateTargeting();
+    this.hoverId =
+      this.pointerX >= 0 ? this.pickMonsterAt(this.pointerX, this.pointerY) : null;
     this.updateIndicators();
 
     this.fadeOccluders();
@@ -1097,29 +1648,56 @@ export class Game {
     const self = this.localActor;
     if (!self) return;
 
-    // Target ring, doubling as a range readout.
-    const target = this.targetId ? this.monsters.get(this.targetId) : null;
-    if (target && !target.dead) {
-      const reach = attackRangeFor(this.appearance.weaponType);
-      const dist = Math.hypot(target.state.x - this.playerX, target.state.y - this.playerY);
-      const spec = MONSTER_MODELS[target.kind];
+    const reach = attackRangeFor(this.appearance.weaponType);
+
+    // Target ring, doubling as a range readout. Drawn around whatever is
+    // actually being fought, chosen or not.
+    const engaged = this.engagedId ? this.monsters.get(this.engagedId) : null;
+    if (engaged && !engaged.dead) {
+      const spec = MONSTER_MODELS[engaged.kind];
       this.indicators.showTarget(
-        target.actor.position.x,
-        target.actor.position.z,
-        dist <= reach,
+        engaged.actor.position.x,
+        engaged.actor.position.z,
+        this.distanceTo(engaged) <= reach,
         Math.max(0.7, spec.height * 0.5),
       );
     } else {
       this.indicators.hideTarget();
     }
 
+    // The lock ring sits just outside it. Same monster almost always, in which
+    // case the two read as one thicker marker.
+    const locked = this.lockedId ? this.monsters.get(this.lockedId) : null;
+    if (locked && !locked.dead) {
+      const spec = MONSTER_MODELS[locked.kind];
+      this.indicators.showLock(
+        locked.actor.position.x,
+        locked.actor.position.z,
+        Math.max(0.7, spec.height * 0.5),
+      );
+    } else {
+      this.indicators.hideLock();
+    }
+
+    // Hover: what a click would take right now.
+    const hovered =
+      this.hoverId && this.hoverId !== this.engagedId && this.hoverId !== this.lockedId
+        ? this.monsters.get(this.hoverId)
+        : null;
+    if (hovered && !hovered.dead) {
+      const spec = MONSTER_MODELS[hovered.kind];
+      this.indicators.showHover(
+        hovered.actor.position.x,
+        hovered.actor.position.z,
+        Math.max(0.7, spec.height * 0.5),
+      );
+    } else {
+      this.indicators.hideHover();
+    }
+
     // Reach ring, only while a fight is actually happening.
     if (performance.now() - this.lastCombatAt < COMBAT_INDICATOR_TIMEOUT_MS) {
-      this.indicators.showReach(
-        self.position.x,
-        self.position.z,
-        attackRangeFor(this.appearance.weaponType) / PX_PER_UNIT,
-      );
+      this.indicators.showReach(self.position.x, self.position.z, reach / PX_PER_UNIT);
     } else {
       this.indicators.hideReach();
     }
@@ -1219,8 +1797,51 @@ export class Game {
       actor.faceDirection(dx / len, dy / len);
     }
 
+    this.resolvePlayerCollision();
     actor.setTargetPosition(toWorldX(this.playerX), 0, toWorldZ(this.playerY));
     this.maybeSendPosition();
+  }
+
+  /**
+   * Pushes the player out of any body they are overlapping.
+   *
+   * Resolved on the client because movement is client-authoritative, and
+   * collision that waited for a server round trip would feel like lag rather
+   * than like a wall. The server re-runs the same shared function on whatever
+   * position arrives, so honesty is not assumed.
+   *
+   * Called from two places, and it needs both. Once per frame, because the
+   * player moves; and again the moment a snapshot lands, because the monsters
+   * move too — a body walking into a standing player closes the gap from its
+   * own side, and between the snapshot and the next rendered frame the player
+   * would otherwise be left standing inside it. At a low frame rate that gap is
+   * long enough to see.
+   */
+  private resolvePlayerCollision(): void {
+    const solved = resolveBodyCollision(
+      this.playerX,
+      this.playerY,
+      PLAYER_BODY_RADIUS_PX,
+      this.monsterBodies(),
+    );
+    this.playerX = solved.x;
+    this.playerY = solved.y;
+  }
+
+  /** Living monster bodies near enough to matter, as plain circles. Only the
+   *  ones with models exist here, which is exactly right: everything beyond the
+   *  cull radius is far too distant to be standing on. */
+  private monsterBodies(): { x: number; y: number; radiusPx: number }[] {
+    const out: { x: number; y: number; radiusPx: number }[] = [];
+    for (const vis of this.monsters.values()) {
+      if (vis.dead || vis.state.status !== "alive") continue;
+      out.push({
+        x: vis.state.x,
+        y: vis.state.y,
+        radiusPx: MONSTER_STATS[vis.kind].bodyRadiusPx,
+      });
+    }
+    return out;
   }
 
   private maybeSendPosition(): void {
@@ -1254,7 +1875,7 @@ export class Game {
         name: MONSTER_LABELS[vis.kind],
         hp: vis.state.hp,
         maxHp: vis.state.maxHp,
-        targeted: id === this.targetId,
+        targeted: id === this.engagedId || id === this.lockedId,
       });
     }
 
@@ -1282,15 +1903,30 @@ export class Game {
     // Target frame mirrors the selected monster's live snapshot values. The
     // hide branch is not optional: without it the frame stayed on screen
     // showing a dead monster's last known health forever.
-    const t = this.targetId ? this.monsters.get(this.targetId) : null;
+    const shownId = this.lockedId ?? this.engagedId;
+    const t = shownId ? this.monsters.get(shownId) : null;
     if (t && !t.dead) {
       const range = attackRangeFor(this.appearance.weaponType);
-      const dist = Math.hypot(t.state.x - this.playerX, t.state.y - this.playerY);
-      this.targetFrame.show(
-        MONSTER_LABELS[t.kind],
-        t.state.hp,
-        t.state.maxHp,
-        dist > range ? "out of reach" : undefined,
+      const dist = this.distanceTo(t);
+      // "locked" is worth saying out loud: it is the difference between the
+      // game having picked this for you and you having insisted on it.
+      const note =
+        dist > range
+          ? this.lockedId === shownId
+            ? "locked · out of reach"
+            : "approaching"
+          : this.lockedId === shownId
+            ? "locked"
+            : undefined;
+      this.targetFrame.show(MONSTER_LABELS[t.kind], t.state.hp, t.state.maxHp, note);
+      // Only the kinds that telegraph have a windup duration, and only they
+      // ever set the flag, so the bar appears exactly when there is something
+      // to time.
+      const windup = MONSTER_STATS[t.kind].windupMs;
+      this.targetFrame.setWindup(
+        t.state.windingUp && windup
+          ? (performance.now() - t.windupStartedAt) / windup
+          : null,
       );
     } else if (this.allyTargetId) {
       const ally = this.players.get(this.allyTargetId);

@@ -60,138 +60,152 @@
       }
       .login-card button:hover { filter: brightness(1.1); }
 
-      #character-overlay,
-      #inventory-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(10, 6, 2, 0.65);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        font-family: Georgia, "Times New Roman", serif;
-        z-index: 10;
-      }
-      #character-overlay.open,
-      #inventory-overlay.open { display: flex; }
+      /* --- Window frames ------------------------------------------------ */
+      /* Layered borders and a lit inner edge, so a panel reads as a carved
+         object rather than as a div with a stroke. */
       #character-panel,
-      #inventory-panel {
-        background: var(--panel-grad);
-        border: 2px solid var(--gold-dim);
-        border-radius: 10px;
-        width: 380px;
-        max-height: 520px;
+      #inventory-panel,
+      #craft-panel,
+      #leaderboard-panel,
+      #skills-panel {
         display: flex;
         flex-direction: column;
-        color: var(--parchment);
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-      }
-      #inventory-panel { width: 460px; }
-      .inv-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--gold-dim);
-        background: var(--panel-grad-dark);
-        border-radius: 8px 8px 0 0;
-      }
-      .inv-header h2 { margin: 0; font-size: 16px; color: var(--gold-bright); }
-      .inv-capacity { font-size: 11px; color: var(--muted); font-weight: normal; }
-      .inv-capacity.inv-capacity-full { color: #ef5350; }
-      #character-close,
-      #inventory-close {
-        background: none;
-        border: none;
-        color: var(--muted);
-        font-size: 20px;
-        cursor: pointer;
-        line-height: 1;
-      }
-      #character-close:hover,
-      #inventory-close:hover { color: var(--gold-bright); }
-      .char-banner {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 16px;
-        border-bottom: 1px solid var(--gold-dim);
-        background: var(--panel-grad-dark);
-        border-radius: 8px 8px 0 0;
-      }
-      .char-banner-flag { color: var(--gold); font-size: 14px; }
-      #char-name-label { font-weight: bold; font-size: 15px; flex: 1; color: var(--gold-bright); }
-      .char-banner-level {
-        font-size: 11px;
-        color: #2b1f12;
-        background: linear-gradient(180deg, var(--gold-bright), var(--gold));
-        border: 1px solid var(--gold-dim);
+        min-height: 0;
+        background:
+          linear-gradient(180deg, rgba(74,54,32,.97), rgba(33,24,13,.98));
+        border: 1px solid #8a6a30;
         border-radius: 10px;
-        padding: 2px 8px;
-        font-weight: bold;
+        box-shadow:
+          0 0 0 1px #1b1309,
+          0 14px 34px rgba(0,0,0,.66),
+          inset 0 1px 0 rgba(255,220,150,.12),
+          inset 0 0 24px rgba(0,0,0,.45);
       }
-      .char-body {
+      #character-panel { width: 372px; }
+      #inventory-panel { width: 400px; }
+      #craft-panel { width: 420px; }
+      #leaderboard-panel { width: 320px; }
+      #skills-panel { width: 520px; }
+      .win-title {
+        display: flex; align-items: center; gap: 8px;
+        padding: 9px 12px;
+        background: linear-gradient(180deg, #5a4224, #3a2a16);
+        border-bottom: 1px solid var(--gold-dim);
+        border-radius: 8px 8px 0 0;
+        color: var(--gold-bright); font-size: 15px; font-weight: bold;
+      }
+      .win-icon { font-size: 16px; }
+      .win-sub { font-size: 11px; color: var(--muted); font-weight: normal; margin-left: auto; }
+      .win-action {
+        background: var(--slot-grad); border: 1px solid var(--gold-dim); color: var(--parchment);
+        border-radius: 4px; padding: 3px 9px; font: 11px Georgia, serif; cursor: pointer;
+      }
+      .win-action:hover { border-color: var(--gold); }
+      .win-close {
+        background: none; border: none; color: var(--muted);
+        font-size: 20px; line-height: 1; cursor: pointer; padding: 0 2px;
+      }
+      .win-close:hover { color: var(--gold-bright); }
+
+      /* --- Paperdoll ---------------------------------------------------- */
+      .doll { display: flex; gap: 9px; padding: 14px 12px 12px; align-items: stretch; }
+      .doll-col { display: flex; flex-direction: column; gap: 9px; }
+      .doll-figure { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+      /* The portrait frame: a lit bevel, a deep vignette behind the figure and a
+         soft shaft of light. Cheap in CSS and the single biggest reason the
+         window stops reading as a form. */
+      .doll-frame {
         position: relative;
-        height: 190px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-bottom: 1px solid var(--gold-dim);
-        background: radial-gradient(ellipse at center, #3c2c1a 0%, #1c150c 100%);
+        flex: 1;
+        min-height: 150px;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 9px;
+        background: radial-gradient(ellipse 70% 60% at 50% 38%, #6b5230 0%, #3a2a15 55%, #1d1409 100%);
+        border: 1px solid #8a6a30;
+        box-shadow:
+          inset 0 0 30px rgba(0,0,0,.75),
+          inset 0 1px 0 rgba(255,220,150,.16),
+          0 2px 8px rgba(0,0,0,.5);
+        overflow: hidden;
       }
-      .char-silhouette {
-        font-size: 96px;
-        line-height: 1;
-        opacity: 0.55;
-        filter: grayscale(1) sepia(0.3);
+      .doll-frame::before {
+        content: "";
+        position: absolute; inset: 0;
+        background: linear-gradient(180deg, rgba(255,226,160,.16), transparent 55%);
+        pointer-events: none;
       }
-      .equip-slot {
-        border: 2px solid var(--gold-dim);
+      /* Inner keyline, so the frame has depth rather than one hard edge. */
+      .doll-frame::after {
+        content: "";
+        position: absolute; inset: 5px;
+        border: 1px solid rgba(226,176,79,.28);
         border-radius: 6px;
-        padding: 8px;
-        text-align: center;
-        background: var(--slot-grad);
-        transition: border-color 0.15s;
-        width: 64px;
-        box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.06);
+        pointer-events: none;
       }
-      .char-body .equip-slot {
-        position: absolute;
+      .doll-art {
+        font-size: 64px; line-height: 1; position: relative;
+        filter: drop-shadow(0 6px 10px rgba(0,0,0,.75));
       }
-      /* Six slots in two symmetric columns around the figure: what you hold
-         and wear on the left, what covers you on the right. */
-      .equip-helm { left: 16px; top: 16px; }
-      .equip-weapon { left: 16px; top: 50%; transform: translateY(-50%); }
-      .equip-ring { left: 16px; bottom: 16px; }
-      .equip-cape { right: 16px; top: 16px; }
-      .equip-armor { right: 16px; top: 50%; transform: translateY(-50%); }
-      .equip-boots { right: 16px; bottom: 16px; }
-      .equip-slot .equip-icon { font-size: 22px; line-height: 1; }
-      .equip-slot .equip-slot-name {
-        font-size: 10px;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-top: 2px;
+
+      .doll-plate {
+        text-align: center; padding: 7px 8px; border-radius: 7px;
+        background: linear-gradient(180deg, #4a3620, #2a1e10);
+        border: 1px solid #7a5c2a;
+        box-shadow: inset 0 1px 0 rgba(255,220,150,.1);
       }
-      .equip-slot .equip-rarity { font-size: 12px; margin-top: 2px; text-transform: capitalize; }
-      .inv-stats {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 6px 12px;
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--gold-dim);
-        font-size: 12px;
+      .doll-weapon { font-size: 14px; color: var(--gold-bright); letter-spacing: .02em; }
+      .doll-prof { font-size: 11px; color: var(--muted); margin-top: 1px; }
+      .doll-power {
+        display: flex; align-items: baseline; justify-content: center; gap: 6px;
+        margin-top: 5px; padding-top: 5px; border-top: 1px solid rgba(106,81,43,.5);
       }
-      .inv-stats .stat-label { color: var(--muted); margin-right: 6px; }
-      .inv-attrs {
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--gold-dim);
+      .doll-power span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+      .doll-power b { font-size: 16px; color: var(--gold-bright); }
+
+      /* A gear slot is a bevelled square whose border carries the rarity, and
+         whose glow does too once something is in it. Empty shows a ghosted glyph
+         of what belongs there, which teaches the layout without a caption under
+         every box. */
+      .gear-slot {
+        width: 54px; height: 54px; border-radius: 8px; position: relative;
+        background: linear-gradient(160deg, #4a3720, #241a0e);
+        border: 2px solid #5a441f;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 26px; cursor: pointer;
+        box-shadow: inset 0 1px 0 rgba(255,220,150,.1), inset 0 -6px 10px rgba(0,0,0,.4);
+        transition: border-color .12s, box-shadow .15s, transform .08s;
       }
-      .attr-points {
-        font-size: 12px;
-        color: var(--gold-bright);
-        margin-bottom: 8px;
+      .gear-slot.filled { box-shadow: inset 0 1px 0 rgba(255,220,150,.14), 0 0 11px -2px currentColor; }
+      .gear-slot:hover { border-color: var(--gold-bright); transform: translateY(-1px); }
+      .gear-slot .gear-empty { opacity: .26; filter: grayscale(1); font-size: 22px; }
+      .gear-slot .gear-lvl {
+        position: absolute; bottom: 1px; right: 4px;
+        font: bold 10px Georgia, serif; color: #fff; text-shadow: 0 1px 3px #000;
       }
+
+      /* --- Tabs --------------------------------------------------------- */
+      .char-tabs { display: flex; gap: 4px; padding: 0 12px; }
+      .char-tab {
+        flex: 1; background: var(--panel-grad-dark); border: 1px solid var(--gold-dim);
+        border-bottom: none; border-radius: 6px 6px 0 0; color: var(--muted);
+        padding: 6px; font: 12px Georgia, serif; cursor: pointer;
+      }
+      .char-tab.active { color: var(--gold-bright); background: var(--slot-grad); }
+      .char-tabbody { padding: 10px 12px 4px; border-top: 1px solid var(--gold-dim); }
+      .char-tabbody.hidden { display: none; }
+      .stat-group { margin-bottom: 8px; }
+      .stat-group h4 {
+        margin: 0 0 4px; font-size: 11px; color: var(--gold); text-transform: uppercase;
+        letter-spacing: .06em; font-weight: normal;
+      }
+      .stat-group div { display: flex; justify-content: space-between; font-size: 12px; padding: 1px 0; }
+      .attr-points-row {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 12px; color: var(--muted); margin-bottom: 4px;
+      }
+      .attr-points-row b { color: var(--gold-bright); font-size: 15px; }
+      .attr-note { font-size: 10px; color: var(--muted); flex: 1; text-align: right; margin-right: 8px; }
       .attr-row {
         display: flex;
         align-items: center;
@@ -200,6 +214,13 @@
         padding: 3px 0;
       }
       .attr-row .attr-name { color: var(--muted); }
+      /* Which stats this weapon actually wants. Spending points blind is the
+         one part of character building the game never explained. */
+      .attr-advice { font-size: 11px; color: #cbbb95; margin: 2px 0 8px; line-height: 1.35; }
+      .attr-advice b { color: var(--gold-bright); }
+      .attr-row.attr-primary .attr-name { color: var(--gold-bright); }
+      .attr-row.attr-primary .attr-name::after { content: " ★"; font-size: 9px; }
+      .attr-row.attr-minor { opacity: .62; }
       .attr-row .attr-value { min-width: 20px; text-align: right; margin-right: 8px; color: var(--parchment); }
       .attr-plus {
         background: linear-gradient(180deg, var(--gold-bright), var(--gold));
@@ -230,145 +251,45 @@
         text-transform: uppercase;
         letter-spacing: 0.05em;
       }
-      .inv-tabs {
-        display: flex;
-        gap: 6px;
-        padding: 10px 16px 0;
-      }
-      .inv-tab {
-        flex: 1;
-        background: var(--slot-grad);
-        border: 2px solid var(--gold-dim);
-        border-radius: 6px;
-        color: var(--muted);
-        padding: 8px 6px;
-        font-size: 14px;
-        font-family: Georgia, serif;
-        cursor: pointer;
-      }
-      .inv-tab:hover { border-color: var(--gold); }
-      .inv-tab.active {
-        border-color: var(--gold-bright);
-        background: linear-gradient(180deg, #5a4420, #3a2c16);
-        color: var(--gold-bright);
-      }
       #inventory-grid {
-        overflow-y: auto;
-        padding: 12px 16px 16px;
-        display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 10px;
+        display: grid; grid-template-columns: repeat(6, 54px); gap: 6px;
+        padding: 12px; justify-content: center;
       }
-      .inv-item {
-        position: relative;
-        aspect-ratio: 1;
-        border: 2px solid var(--gold-dim);
-        border-radius: 6px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        font-size: 12px;
-        background: var(--slot-grad);
-        transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
-        box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.06);
+      .bag-slot {
+        width: 54px; height: 54px; border-radius: 7px; position: relative;
+        background: var(--slot-grad); border: 2px solid #4a3a1c;
+        display: flex; align-items: center; justify-content: center; font-size: 25px;
+        cursor: default;
       }
-      .inv-item:hover { border-color: var(--gold-bright); transform: translateY(-2px); }
-      .inv-item.equipped { cursor: default; }
-      .inv-item.equipped::after {
-        content: "✓";
-        position: absolute;
-        top: 2px;
-        right: 4px;
-        font-size: 10px;
-        color: #7ed957;
+      .bag-slot.filled { cursor: pointer; }
+      .bag-slot.filled:hover { filter: brightness(1.18); }
+      .bag-slot .bag-qty {
+        position: absolute; bottom: 1px; right: 3px;
+        font: bold 11px Georgia, serif; color: #fff; text-shadow: 0 1px 3px #000;
       }
-      .inv-item.rarity-common { border-color: #8a7a5e; }
-      .inv-item.rarity-common:hover { box-shadow: 0 0 6px rgba(158, 158, 158, 0.5); }
-      .inv-item.rarity-rare { border-color: #5aa8f0; }
-      .inv-item.rarity-rare:hover { box-shadow: 0 0 8px rgba(66, 165, 245, 0.6); }
-      .inv-item.rarity-epic { border-color: #c968e0; box-shadow: 0 0 5px rgba(171, 71, 188, 0.4); }
-      .inv-item.rarity-epic:hover { box-shadow: 0 0 10px rgba(171, 71, 188, 0.8); }
-      .inv-item .inv-item-icon { font-size: 26px; line-height: 1; }
-      .inv-item .inv-item-slot {
-        color: var(--muted);
-        font-size: 9px;
-        text-transform: uppercase;
-        margin-top: 2px;
+      /* Sell lives on the item, appears on hover, and says the price — a
+         destructive action should never be a bare click. */
+      .bag-sell {
+        position: absolute; top: -6px; right: -6px; display: none;
+        background: #3a2a16; border: 1px solid var(--gold-dim); color: var(--gold-bright);
+        border-radius: 10px; font: 10px Georgia, serif; padding: 1px 5px; cursor: pointer;
       }
-      .inv-empty { color: var(--muted); font-size: 12px; padding: 8px 16px 16px; }
-      .inv-item-sell {
-        position: absolute;
-        bottom: 2px;
-        left: 2px;
-        right: 2px;
-        font-size: 9px;
-        font-family: Georgia, serif;
-        background: rgba(20, 14, 6, 0.85);
-        border: 1px solid var(--gold-dim);
-        border-radius: 4px;
-        color: var(--gold-bright);
-        padding: 1px 0;
-        cursor: pointer;
-        opacity: 0;
-        transition: opacity 0.15s;
+      .bag-slot:hover .bag-sell { display: block; }
+      .bag-sell:hover { background: #5a3a16; border-color: var(--gold); }
+      .inv-footer {
+        display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        padding: 8px 12px; border-top: 1px solid var(--gold-dim);
       }
-      .inv-item:hover .inv-item-sell { opacity: 1; }
-      .inv-item-sell:hover { background: #3a2c16; }
-      .inv-item.rarity-material { border-color: #7a9a5c; cursor: default; }
-      .inv-item.rarity-material:hover { box-shadow: 0 0 6px rgba(126, 217, 87, 0.4); transform: none; }
-      .inv-item-qty {
-        position: absolute;
-        bottom: 2px;
-        right: 4px;
-        font-size: 10px;
-        font-weight: bold;
-        color: var(--gold-bright);
-        text-shadow: 0 1px 1px #000;
+      .inv-currency, .inv-consumables { display: flex; gap: 12px; align-items: center; }
+      .cur { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--parchment); }
+      .cur span.cur-icon { font-size: 15px; }
+      .use-btn {
+        display: flex; align-items: center; gap: 5px; background: var(--slot-grad);
+        border: 1px solid var(--gold-dim); border-radius: 6px; padding: 4px 8px;
+        color: var(--parchment); font: 12px Georgia, serif; cursor: pointer;
       }
-
-      #item-tooltip {
-        position: fixed;
-        display: none;
-        background: var(--panel-grad-dark);
-        border: 1px solid var(--gold-dim);
-        border-radius: 6px;
-        padding: 8px 10px;
-        font-family: Georgia, serif;
-        font-size: 12px;
-        color: var(--parchment);
-        pointer-events: none;
-        z-index: 20;
-        max-width: 200px;
-        line-height: 1.5;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-      }
-      #item-tooltip .tt-title { font-weight: bold; margin-bottom: 2px; text-transform: capitalize; }
-      #item-tooltip .tt-line { color: var(--muted); }
-
-      #craft-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(10, 6, 2, 0.65);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        font-family: Georgia, "Times New Roman", serif;
-        z-index: 10;
-      }
-      #craft-overlay.open { display: flex; }
-      #craft-panel {
-        background: var(--panel-grad);
-        border: 2px solid var(--gold-dim);
-        border-radius: 10px;
-        width: 340px;
-        max-height: 480px;
-        display: flex;
-        flex-direction: column;
-        color: var(--parchment);
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-      }
+      .use-btn:hover:not(:disabled) { border-color: var(--gold); }
+      .use-btn:disabled { opacity: .4; cursor: default; }
       #craft-grid { overflow-y: auto; }
       #craft-close {
         background: none;
@@ -456,37 +377,6 @@
         filter: none;
       }
 
-      #leaderboard-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(10, 6, 2, 0.65);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        font-family: Georgia, "Times New Roman", serif;
-        z-index: 10;
-      }
-      #leaderboard-overlay.open { display: flex; }
-      #leaderboard-panel {
-        background: var(--panel-grad);
-        border: 2px solid var(--gold-dim);
-        border-radius: 10px;
-        width: 340px;
-        max-height: 480px;
-        display: flex;
-        flex-direction: column;
-        color: var(--parchment);
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-      }
-      #leaderboard-close {
-        background: none;
-        border: none;
-        color: var(--muted);
-        font-size: 20px;
-        cursor: pointer;
-        line-height: 1;
-      }
-      #leaderboard-close:hover { color: var(--gold-bright); }
       #leaderboard-list { overflow-y: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 4px; }
       .lb-row {
         display: flex;
@@ -524,15 +414,52 @@
       #combat-log .log-entry { white-space: pre-wrap; }
       #combat-log .log-entry.log-fade { opacity: 0.45; }
 
+      /* The dock sits on the right edge, where the windows it opens appear —
+         a button at the bottom-centre that opens a panel on the right makes
+         the player's eye cross the screen for every interaction. */
       #ui-dock {
         position: absolute;
-        left: 50%;
-        bottom: 12px;
-        transform: translateX(-50%);
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
         display: flex;
-        gap: 10px;
-        z-index: 6;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 11;
       }
+
+      /* --- Window rail -------------------------------------------------- */
+      #window-rail {
+        position: absolute;
+        top: 14px;
+        right: 82px;
+        /* `left` matters: without it the rail shrink-wraps its contents and
+           its own width becomes whatever is open, which makes "does the next
+           window still fit?" unanswerable. Spanning the screen and packing
+           right (row-reverse) gives the fitter a real budget to measure
+           against. It stops short of the left edge so the rail can never
+           reach the player and target unit frames. */
+        left: 296px;
+        bottom: 150px;
+        display: flex;
+        flex-direction: row-reverse;
+        align-items: flex-start;
+        gap: 10px;
+        z-index: 10;
+        /* The rail spans most of the screen but must not eat clicks meant for
+           the world; only the panels themselves are interactive. */
+        pointer-events: none;
+      }
+      .window {
+        display: none;
+        pointer-events: auto;
+        max-height: 100%;
+        flex-direction: column;
+        font-family: Georgia, "Times New Roman", serif;
+        color: var(--parchment);
+      }
+      .window.open { display: flex; }
+      .window-body { overflow-y: auto; overflow-x: hidden; }
       #login-hint {
         margin: 2px 0 10px;
         font: 12px Georgia, serif;
@@ -541,26 +468,41 @@
         line-height: 1.5;
       }
       /* Skill tree: one column per tier, locked entries dimmed. */
-      #skills-overlay {
-        position: absolute;
-        inset: 0;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        background: rgba(0, 0, 0, 0.55);
-        z-index: 8;
+      #skills-list { padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+      /* --- Talent tree ------------------------------------------------ */
+      .talent-header { display: flex; align-items: center; gap: 12px; }
+      .talent-xp { flex: 1; height: 10px; background: #1c150c; border: 1px solid var(--gold-dim); border-radius: 4px; overflow: hidden; }
+      .talent-xp-fill { height: 100%; background: linear-gradient(90deg, #8a6a30, var(--gold)); }
+      .talent-points { font-size: 12px; color: var(--muted); white-space: nowrap; }
+      .talent-points b { color: var(--gold-bright); font-size: 15px; }
+      .talent-points span { display: block; font-size: 11px; }
+      .talent-reset {
+        background: var(--slot-grad); border: 1px solid var(--gold-dim); color: var(--parchment);
+        border-radius: 4px; padding: 4px 8px; font: 11px Georgia, serif; cursor: pointer;
       }
-      #skills-overlay.open { display: flex; }
-      #skills-panel {
-        width: min(760px, 92%);
-        max-height: 84%;
-        overflow-y: auto;
-        background: var(--panel-grad, rgba(43, 31, 18, 0.97));
-        border: 2px solid var(--gold-dim);
-        border-radius: 10px;
-        padding: 0 0 14px;
+      .talent-reset:disabled { opacity: .4; cursor: default; }
+      .talent-tier { border-top: 1px solid #6a512b55; padding-top: 8px; }
+      .talent-tier.locked { opacity: .45; }
+      .talent-tier-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; letter-spacing: .04em; }
+      .talent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .talent-node {
+        display: flex; align-items: flex-start; gap: 8px; text-align: left;
+        background: var(--slot-grad); border: 1px solid var(--gold-dim);
+        border-radius: 6px; padding: 7px 9px; cursor: pointer; color: var(--parchment);
+        font-family: Georgia, serif;
       }
-      #skills-list { padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+      /* Three states worth telling apart at a glance: bought, buyable, and
+         out of reach. Anything less and the tree reads as a wall of text. */
+      .talent-node.learned { border-color: var(--gold); box-shadow: inset 0 0 0 1px #d9a44133; }
+      .talent-node.maxed { border-color: #7ed957; }
+      .talent-node.unavailable { opacity: .5; cursor: default; }
+      .talent-node:hover:not(.unavailable):not(.maxed) { border-color: var(--gold-bright); }
+      .tn-icon { font-size: 19px; line-height: 1.1; }
+      .tn-body { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+      .tn-body b { color: var(--gold-bright); font-size: 12px; }
+      .tn-body i { color: var(--muted); font-size: 10px; font-style: normal; }
+      .tn-desc { font-size: 11px; color: #cbbb95; }
+      .tn-rank { font-size: 11px; color: var(--gold); white-space: nowrap; }
       .skill-row {
         display: flex;
         gap: 10px;
@@ -589,15 +531,7 @@
       /* Mana bar under the HP/XP pair in the unit frame. */
       /* Skill hotbar sits above the panel dock, the usual MMO arrangement:
          actions you press mid-fight on the action row, windows below. */
-      #hotbar {
-        position: absolute;
-        left: 50%;
-        bottom: 84px;
-        transform: translateX(-50%);
-        display: flex;
-        gap: 8px;
-        z-index: 6;
-      }
+      #hotbar { display: flex; gap: 6px; }
       .skill-btn {
         position: relative;
         width: 58px;
@@ -624,6 +558,34 @@
       /* Unaffordable is dimmed from JS (opacity); this makes it read as
          "greyed out" rather than merely faint. */
       .skill-btn[style*="0.45"] { filter: saturate(0.35); }
+      /* The default attack sits apart from the spells: it costs nothing, it is
+         always there, and it is the slot a new player should reach for first. */
+      .skill-btn.skill-attack {
+        border-color: #c0894a;
+        margin-right: 10px;
+      }
+      /* An attack order is standing. The bar is the only place that says so, so
+         it says it loudly — combat no longer starts by itself, and "am I
+         actually fighting?" has to be answerable at a glance. */
+      .skill-btn.skill-attack.engaged {
+        border-color: #ff9d4a;
+        box-shadow: 0 3px 10px #0009, inset 0 1px 0 #ffffff18, 0 0 16px #ff8a3aaa;
+      }
+      #hotbar-wrap { position: absolute; bottom: 78px; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 8px; z-index: 6; }
+      #hotbar-config {
+        background: var(--slot-grad); border: 1px solid var(--gold-dim); color: var(--muted);
+        border-radius: 6px; width: 26px; height: 26px; font-size: 14px; cursor: pointer;
+      }
+      #hotbar-config:hover, #hotbar-config.editing { color: var(--gold-bright); border-color: var(--gold); }
+      /* Edit mode makes the slots obviously mutable rather than relying on the
+         player having read a tooltip. */
+      #hotbar.editing .skill-btn { outline: 1px dashed var(--gold); cursor: grab; }
+      .skill-btn.drop-target { border-color: var(--gold-bright); box-shadow: 0 0 12px #ffd87399; }
+      .skill-btn.slot-empty { opacity: .45; }
+      .skill-key.rebinding { background: var(--gold); color: #201607; border-radius: 3px; }
+      /* Talent nodes become drag handles for the bar once learned. */
+      .talent-node.draggable { cursor: grab; }
+      .talent-node.draggable:active { cursor: grabbing; }
       .skill-key {
         position: absolute;
         top: 2px;
@@ -655,12 +617,16 @@
       }
       .skill-btn.ready .skill-cd-text { display: none; }
       /* Target frame, mirroring the player's own unit frame top-left. */
+      /* Directly under the player's own frame, not centred. Centre-top is where
+         the window rail reaches once two panels are open, and a target frame
+         that hides behind the bag is worse than useless mid-fight. Stacking the
+         two unit frames also puts the health bars you are comparing next to
+         each other, and leaves the whole top-centre free. */
       #target-frame {
         position: absolute;
-        top: 14px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 250px;
+        top: 122px;
+        left: 14px;
+        width: 264px;
         padding: 8px 12px 10px;
         background: linear-gradient(rgba(58, 42, 23, 0.94), rgba(36, 26, 15, 0.94));
         border: 1px solid var(--gold);
@@ -701,6 +667,24 @@
         height: 100%;
         width: 100%;
         background: #c0392b;
+      }
+      /* Wind-up bar. The danger circle on the ground already says WHERE a
+         telegraphed slam will land; this says WHEN, which is the half you need
+         to decide whether there is time to walk out of it. */
+      #target-cast {
+        display: none;
+        height: 7px;
+        margin-top: 3px;
+        background: #1c150c;
+        border: 1px solid #a8642e;
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      #target-cast.shown { display: block; }
+      #target-cast-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #d9741f, #ffb45e);
       }
       .dock-btn {
         position: relative;
@@ -767,141 +751,164 @@
     </div>
     <div id="game-root">
      <div id="game-frame">
-      <div id="character-overlay">
-        <div id="character-panel">
-          <div class="char-banner">
-            <span class="char-banner-flag">⚑</span>
-            <span id="char-name-label">Adventurer</span>
-            <span class="char-banner-level">Lv <span id="char-level-label">1</span></span>
-            <button id="character-close">&times;</button>
-          </div>
-          <div class="char-body">
-            <div class="equip-slot equip-helm" data-slot="helm">
-              <div class="equip-icon">⛑️</div>
-              <div class="equip-slot-name">Helm</div>
-              <div class="equip-rarity">None</div>
+      <!-- Every panel lives in one right-hand rail. Windows lay out
+           right-to-left as they open, so two can be up at once without
+           overlapping and neither one covers the character. -->
+      <div id="window-rail">
+        <div id="character-overlay" class="window">
+          <div id="character-panel">
+            <div class="win-title">
+              <span class="win-icon">🧙</span>
+              <span id="char-name-label">Adventurer</span>
+              <span class="win-sub">Level <span id="char-level-label">1</span> · <span id="char-class-label">Adventurer</span></span>
+              <button id="character-close" class="win-close">&times;</button>
             </div>
-            <div class="equip-slot equip-weapon" data-slot="weapon">
-              <div class="equip-icon">⚔️</div>
-              <div class="equip-slot-name">Weapon</div>
-              <div class="equip-rarity">None</div>
+
+            <!-- Paperdoll: equipment down both sides of the figure, the way every
+                 RPG has done it since it stopped being a list. Slot order is
+                 anatomical so the eye can find a piece without reading labels. -->
+            <!-- Portrait framed by its equipment. The frame, the plate under the
+               figure and the corner flourishes are what stop this reading as a
+               grid of grey squares. -->
+          <div class="doll">
+            <div class="doll-col">
+              <div class="gear-slot" data-slot="helm"><span class="gear-empty">⛑️</span></div>
+              <div class="gear-slot" data-slot="cape"><span class="gear-empty">🧣</span></div>
+              <div class="gear-slot" data-slot="armor"><span class="gear-empty">🛡️</span></div>
             </div>
-            <div class="equip-slot equip-ring" data-slot="ring">
-              <div class="equip-icon">💍</div>
-              <div class="equip-slot-name">Ring</div>
-              <div class="equip-rarity">None</div>
+            <div class="doll-figure">
+              <div class="doll-frame">
+                <div class="doll-art" id="doll-art">🧍</div>
+              </div>
+              <div class="doll-plate">
+                <div class="doll-weapon" id="doll-weapon">Unarmed</div>
+                <div class="doll-prof" id="doll-prof"></div>
+                <div class="doll-power"><span>Gear</span><b id="doll-power">0</b></div>
+              </div>
             </div>
-            <div class="char-silhouette">🧍</div>
-            <div class="equip-slot equip-cape" data-slot="cape">
-              <div class="equip-icon">🧣</div>
-              <div class="equip-slot-name">Cape</div>
-              <div class="equip-rarity">None</div>
-            </div>
-            <div class="equip-slot equip-armor" data-slot="armor">
-              <div class="equip-icon">🛡️</div>
-              <div class="equip-slot-name">Armor</div>
-              <div class="equip-rarity">None</div>
-            </div>
-            <div class="equip-slot equip-boots" data-slot="boots">
-              <div class="equip-icon">👢</div>
-              <div class="equip-slot-name">Boots</div>
-              <div class="equip-rarity">None</div>
-            </div>
-          </div>
-          <div class="inv-attrs">
-            <div class="attr-points">Points to spend: <span id="attr-points">0</span></div>
-            <div class="attr-row" data-stat="strength">
-              <span class="attr-name">Strength</span>
-              <span class="attr-value" id="attr-strength">0</span>
-              <button class="attr-plus" data-stat="strength">+</button>
-            </div>
-            <div class="attr-row" data-stat="agility">
-              <span class="attr-name">Agility</span>
-              <span class="attr-value" id="attr-agility">0</span>
-              <button class="attr-plus" data-stat="agility">+</button>
-            </div>
-            <div class="attr-row" data-stat="vitality">
-              <span class="attr-name">Vitality</span>
-              <span class="attr-value" id="attr-vitality">0</span>
-              <button class="attr-plus" data-stat="vitality">+</button>
-            </div>
-            <div class="attr-row" data-stat="intelligence">
-              <span class="attr-name">Intelligence</span>
-              <span class="attr-value" id="attr-intelligence">0</span>
-              <button class="attr-plus" data-stat="intelligence">+</button>
+            <div class="doll-col">
+              <div class="gear-slot" data-slot="weapon"><span class="gear-empty">⚔️</span></div>
+              <div class="gear-slot" data-slot="ring"><span class="gear-empty">💍</span></div>
+              <div class="gear-slot" data-slot="boots"><span class="gear-empty">👢</span></div>
             </div>
           </div>
-          <div class="inv-stats">
-            <div><span class="stat-label">Move Speed</span><span id="stat-move"></span></div>
-            <div><span class="stat-label">XP Bonus</span><span id="stat-xpbonus"></span></div>
-            <div><span class="stat-label">Gather Time</span><span id="stat-gather"></span></div>
-            <div><span class="stat-label">Attack Speed</span><span id="stat-battle"></span></div>
-            <div><span class="stat-label">Hit Damage</span><span id="stat-hit"></span></div>
-            <div><span class="stat-label">Accuracy</span><span id="stat-accuracy"></span></div>
-            <div><span class="stat-label">Crit Chance</span><span id="stat-crit-chance"></span></div>
-            <div><span class="stat-label">Crit Damage</span><span id="stat-crit-damage"></span></div>
-            <div><span class="stat-label">Armor</span><span id="stat-armor"></span></div>
-            <div><span class="stat-label">Evasion</span><span id="stat-evasion"></span></div>
-            <div><span class="stat-label">Double Attack</span><span id="stat-double-attack"></span></div>
-            <div><span class="stat-label">HP Regen</span><span id="stat-hp-regen"></span></div>
+          <div class="char-tabs">
+              <button class="char-tab active" data-tab="attributes">Attributes</button>
+              <button class="char-tab" data-tab="stats">Statistics</button>
+            </div>
+
+            <div class="char-tabbody window-body" data-tab="attributes">
+              <div class="attr-points-row">
+                <span>Points to spend</span><b id="attr-points">0</b>
+              </div>
+              <div class="attr-advice" id="attr-advice"></div>
+              <div class="attr-row" data-stat="strength">
+                <span class="attr-name">Strength</span>
+                <span class="attr-note" data-stat-note="strength"></span>
+                <span class="attr-value" id="attr-strength">0</span>
+                <button class="attr-plus" data-stat="strength">+</button>
+              </div>
+              <div class="attr-row" data-stat="agility">
+                <span class="attr-name">Agility</span>
+                <span class="attr-note" data-stat-note="agility"></span>
+                <span class="attr-value" id="attr-agility">0</span>
+                <button class="attr-plus" data-stat="agility">+</button>
+              </div>
+              <div class="attr-row" data-stat="vitality">
+                <span class="attr-name">Vitality</span>
+                <span class="attr-note" data-stat-note="vitality"></span>
+                <span class="attr-value" id="attr-vitality">0</span>
+                <button class="attr-plus" data-stat="vitality">+</button>
+              </div>
+              <div class="attr-row" data-stat="intelligence">
+                <span class="attr-name">Intelligence</span>
+                <span class="attr-note" data-stat-note="intelligence"></span>
+                <span class="attr-value" id="attr-intelligence">0</span>
+                <button class="attr-plus" data-stat="intelligence">+</button>
+              </div>
+            </div>
+
+            <div class="char-tabbody window-body hidden" data-tab="stats">
+              <div class="stat-group"><h4>Offence</h4>
+                <div><span class="stat-label">Hit Damage</span><span id="stat-hit"></span></div>
+                <div><span class="stat-label">Attack Speed</span><span id="stat-battle"></span></div>
+                <div><span class="stat-label">Accuracy</span><span id="stat-accuracy"></span></div>
+                <div><span class="stat-label">Crit Chance</span><span id="stat-crit-chance"></span></div>
+                <div><span class="stat-label">Crit Damage</span><span id="stat-crit-damage"></span></div>
+                <div><span class="stat-label">Double Attack</span><span id="stat-double-attack"></span></div>
+              </div>
+              <div class="stat-group"><h4>Defence</h4>
+                <div><span class="stat-label">Armor</span><span id="stat-armor"></span></div>
+                <div><span class="stat-label">Evasion</span><span id="stat-evasion"></span></div>
+                <div><span class="stat-label">HP Regen</span><span id="stat-hp-regen"></span></div>
+              </div>
+              <div class="stat-group"><h4>World</h4>
+                <div><span class="stat-label">Move Speed</span><span id="stat-move"></span></div>
+                <div><span class="stat-label">XP Bonus</span><span id="stat-xpbonus"></span></div>
+                <div><span class="stat-label">Gather Time</span><span id="stat-gather"></span></div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-      <div id="inventory-overlay">
-        <div id="inventory-panel">
-          <div class="inv-header">
-            <h2>Inventory <span id="inv-capacity" class="inv-capacity"></span></h2>
-            <button id="inventory-close">&times;</button>
+        <div id="inventory-overlay" class="window">
+          <div id="inventory-panel">
+            <div class="win-title">
+              <span class="win-icon">🎒</span>
+              <span>Bags</span>
+              <span class="win-sub" id="inv-capacity"></span>
+              <button id="inv-sort" class="win-action" title="Sort by slot, then rarity">Sort</button>
+              <button id="inventory-close" class="win-close">&times;</button>
+            </div>
+            <!-- Every slot is drawn, filled or not. A bag that grows and shrinks
+                 with its contents makes items move under the cursor; a fixed grid
+                 means the third slot is always the third slot. -->
+            <div id="inventory-grid" class="window-body"></div>
+            <div class="inv-footer">
+              <div class="inv-currency" id="inv-materials"></div>
+              <div class="inv-consumables" id="inv-consumables"></div>
+            </div>
           </div>
-          <div class="inv-tabs">
-            <button class="inv-tab active" data-filter="all">All</button>
-            <button class="inv-tab" data-filter="weapon">⚔️</button>
-            <button class="inv-tab" data-filter="helm">⛑️</button>
-            <button class="inv-tab" data-filter="armor">🛡️</button>
-            <button class="inv-tab" data-filter="cape">🧣</button>
-            <button class="inv-tab" data-filter="boots">👢</button>
-            <button class="inv-tab" data-filter="ring">💍</button>
-            <button class="inv-tab" data-filter="material">🪵</button>
-            <button class="inv-tab" data-filter="potion">🧪</button>
-          </div>
-          <div id="inventory-grid"></div>
         </div>
-      </div>
-      <div id="craft-overlay">
-        <div id="craft-panel">
-          <div class="inv-header">
-            <h2>Workbench</h2>
-            <button id="craft-close">&times;</button>
+        <div id="craft-overlay" class="window">
+          <div id="craft-panel">
+            <div class="win-title">
+              <span class="win-icon">🔨</span><span>Workbench</span>
+              <button id="craft-close" class="win-close">&times;</button>
+            </div>
+            <div id="craft-grid" class="window-body"></div>
           </div>
-          <div id="craft-grid"></div>
         </div>
-      </div>
-      <div id="leaderboard-overlay">
-        <div id="leaderboard-panel">
-          <div class="inv-header">
-            <h2>Leaderboard</h2>
-            <button id="leaderboard-close">&times;</button>
+        <div id="leaderboard-overlay" class="window">
+          <div id="leaderboard-panel">
+            <div class="win-title">
+              <span class="win-icon">🏆</span><span>Leaderboard</span>
+              <button id="leaderboard-close" class="win-close">&times;</button>
+            </div>
+            <div id="leaderboard-list" class="window-body"></div>
           </div>
-          <div id="leaderboard-list"></div>
         </div>
-      </div>
-      <div id="skills-overlay">
-        <div id="skills-panel">
-          <div class="char-banner">
-            <span class="char-banner-flag">📖</span>
-            <span id="skills-title">Skills</span>
-            <button id="skills-close">&times;</button>
+        <div id="skills-overlay" class="window">
+          <div id="skills-panel">
+            <div class="win-title">
+              <span class="win-icon">📖</span>
+              <span id="skills-title">Talents</span>
+              <button id="skills-close" class="win-close">&times;</button>
+            </div>
+            <div id="skills-list" class="window-body"></div>
           </div>
-          <div id="skills-list"></div>
         </div>
       </div>
       <div id="combat-log"></div>
       <div id="target-frame">
         <div id="target-name"></div>
         <div id="target-hp-track"><div id="target-hp-fill"></div></div>
+        <div id="target-cast"><div id="target-cast-fill"></div></div>
         <div id="target-hp-text"></div>
       </div>
-      <div id="hotbar"></div>
+      <div id="hotbar-wrap">
+        <div id="hotbar"></div>
+        <button id="hotbar-config" title="Edit the bar: drag skills from the talent panel (K), drag slots to reorder, right-click to clear, click a key label to rebind">⚙</button>
+      </div>
       <div id="ui-dock">
         <button id="dock-character" class="dock-btn" title="Character (C)">
           🧙<span class="dock-key">C</span><span class="dock-badge" id="dock-character-badge"></span>

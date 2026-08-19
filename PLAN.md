@@ -1275,9 +1275,489 @@ every rig animation carrying it for free — architecturally *cleaner* than the
       - UI: ready-glow on usable skills, bigger slots, target frame with real
         HP numbers and a separate status column, and nameplates suppressed
         behind the unit frame instead of drawing over the player's own health
-- [ ] **M3 — gear and class in 3D.** Weapon socket swapping wired to
-      `Appearance`; armour via mesh swap + material tint (style x rarity kept
-      independent, the thing Phase 45's paperdoll got right)
+- [x] **M3 — gear and class in 3D.** Equipping now changes what you look like,
+      not just what your stat sheet says. Two axes, kept independent exactly as
+      Phase 45's paperdoll kept them: **style picks the mesh, rarity only tints
+      it**. And one axis the 2D game never had — **your class is your whole
+      body**, not just your weapon.
+
+      **The rest of the character pack turned out to be fetchable.** M1 shipped
+      with only `Warrior.fbx`, but the textures for all six characters were
+      already sitting in `public/textures/` — the models had simply never been
+      downloaded. The pack is one zip from OpenGameArt, and all six share ONE
+      skeleton: every bone within about a unit in three hundred of its
+      counterpart on every other body. That single measured fact is what the
+      milestone is built on, because it means one set of armour fits all four
+      class bodies with no per-body fitting at all.
+
+      - **Class is now a silhouette.** `CLASS_BODIES` maps the four classes to
+        four rigs — adventurer→Monk, warrior→Warrior, ranger→Ranger,
+        mage→Wizard — and `setAppearance` swaps the entire body mid-fight when
+        the weapon changes. Pick up a staff and you are not a soldier holding a
+        staff, you are a robed mage. The Monk is the right bare-handed body
+        because it reads as "carries nothing" rather than as a disarmed soldier,
+        which is precisely what Adventurer is meant to be
+      - **Grips are harvested, never tuned.** Every body ships its own weapon
+        already parented to `WeaponR` with the offset, rotation and scale the
+        artist exported. So a weapon is lifted off its native rig *with its
+        local transform*, rather than having those numbers copied into constants
+        that can drift. Axe and mace, which the pack has no model for, are built
+        procedurally inside the **sword's own geometry space**, so they inherit
+        that same grip without introducing a constant of their own. All eight
+        families verified in hand
+      - **Armour is authored in rig coordinates.** Each piece is modelled in the
+        space the rig measures in — feet at y=0, crown at y≈296 — and handed to
+        a holder parented to its bone whose local matrix is that bone's rest
+        pose *undone*. So a helm is written as "a dome at y=254, radius 40"
+        instead of as an offset inside some bone's rotated local frame, and it
+        still rides the head through every animation for free. The numbers came
+        from measuring the rig's own vertices per bone, not from eyeballing
+      - Ten styles across four visible slots, each a real silhouette rather than
+        a recolour: plate has pauldrons on the arm bones and tassets at the hip,
+        chain a mail skirt, robe a floor-length skirt hung from the *waist* bone
+        (pinned to the ribs it rides up when you run), leather crossed straps,
+        the great helm a visor slit, tall boots a shin cuff on the knee bone
+      - **A contact-sheet preview page** at `/preview/`, the 3D descendant of the
+        2D era's `preview_doll.ps1` and built for the same reason: alignment is
+        what goes wrong with a paperdoll and alignment is invisible in a stat
+        panel. It drives the real `Actor.setAppearance`, so a helm that sits on
+        a character's chin there sits on their chin in the game. Its `?hidebody=1`
+        flag earned its place immediately — see the decisions log
+
+      **Four real bugs found on the way, two of them pre-existing:**
+      - `SkeletonUtils.clone` reuses materials *by reference* (three's own docs
+        say so, and `Mesh.copy` confirms it). So every actor built from one model
+        shared one emissive channel: M2's hit flash on a single wolf flashed the
+        entire pack, and chilling one slime tinted them all. Each actor now
+        clones its materials on build. **Pre-existing, shipped in M2**
+      - `Actor.dispose()` disposed geometry that `SkeletonUtils.clone` shares with
+        the cached prototype — so every monster despawn past the cull radius
+        freed the buffers of every future monster of that kind, forcing a GPU
+        re-upload on each respawn. Geometry is owned by the model cache and is no
+        longer disposed per actor. **Pre-existing, shipped in M1.5**
+      - The attack clip was matched loosely, and a loose match for "Attack" finds
+        `Idle_Attacking` on the Wizard and `Attacking_Idle` on the Rogue. A mage
+        would have cast spells by standing still. Fixed by listing the
+        class-specific names, since `findClip` tries every exact name first
+      - A body swap rebuilt the action map but never restarted playback, leaving
+        the character frozen in the bind pose — arms out sideways, weapon aimed
+        at the horizon. It looked exactly like the weapon being attached wrong,
+        and cost the most time of the four
+
+      Verified: all six weapon families equipped in sequence against a live
+      server, each swapping the body and re-attaching all ten armour meshes to
+      the new rig with no accumulation and no console errors; a second client
+      confirming a remote player renders fully geared while its own bare-handed
+      body stays a Monk; flashing that remote leaving the local player's emissive
+      at 0, which is the shared-material fix proving itself; a walk-in fight
+      against a slime exchanging hits both ways with HP 60→41; `smoke.mjs` green
+      across every weapon family and every visible slot; both workspaces
+      typecheck clean.
+- [x] **M3.5 — bodies occupy space, and nothing ice-skates.** User feedback,
+      and both halves were real: you could walk into the middle of a troll and
+      stand there, and characters slid around with the wrong animation playing.
+
+      **Collision.** Nothing in the game had a size. Monsters kept a fixed 34px
+      apart from *each other*, but a player was a point and could stand inside
+      anything. Every creature now has a `bodyRadiusPx` sized to the model the
+      client actually draws, and one shared `resolveBodyCollision` pushes bodies
+      apart. Shared is the point: the client runs it while you move, so a wall
+      feels like a wall instead of like lag, and the server re-runs it on the
+      position it is told about, so a client that skipped it gains nothing. The
+      `MOVE` handler previously assigned `msg.payload.x/y` with no checking at
+      all — not even world bounds.
+      - Monsters also stop at contact rather than at a pure reach fraction, and
+        a chase step is clamped to the remaining gap so a leap cannot overshoot
+        into the player
+      - Monster separation now uses each pair's own radii, so a golem and a
+        dragon no longer overlap while two slimes stand absurdly far apart
+      - A second server pass pushes monsters out of *players*, because the
+        separation pass is blind to them and could shove a body through one.
+        The monster yields, never the player: displacing a player from the
+        server would fight the client's authority and feel like being shoved by
+        something invisible
+      - The client re-resolves both per frame *and* on every snapshot. Only the
+        first was there at first, and it left a visible overlap whenever a
+        monster walked into a standing player between frames
+
+      **Ice-skating, which was four separate faults:**
+      - The local player was position-interpolated like everything else. Its
+        position is recomputed exactly every frame, so the easing was pure lag:
+        measured at ~5px mean and 9.6px peak under a slow frame rate, and about
+        15px at 60fps — a whole body radius — decaying over ~250ms after you
+        release the key. That decay *is* the glide. Now 0px, exactly, every frame
+      - Attack one-shots blocked the run animation, so for the ~1s of every
+        swing the model held a planted pose while the character kept travelling.
+        Since auto-attacks fire while you move, this was most of the "sliding
+        during combat". Running now cancels the swing; standing still still lets
+        it play out
+      - Run/idle for monsters and remote players was decided by comparing
+        *rendered* positions, which are interpolated and therefore lag. They were
+        told to idle while still visibly catching up. Now measured between
+        consecutive server positions, with two thresholds instead of one because
+        a single one chatters when a monster holds station at its stop distance
+      - Monster separation could shove a monster sideways faster than its own
+        top speed. Capped to what it could walk in the same tick
+
+      Verified per rendered frame rather than by eye: 260 consecutive frames
+      walking into a slime camp with zero frames overlapping and a settled
+      distance of exactly the contact distance; player model lag max and mean
+      both 0px against 9.6/4.8 before; 1 frame in 83 moving without the run
+      animation and 4 in 419 monsters sliding while idle, both down from
+      systematic. New `tools/test/bodies.mjs` asserts the two invariants that
+      make collision safe — every weapon reaches past every body, and every
+      monster reaches back — across all 13 kinds and all 8 weapon families, with
+      a required 8px of slack. It caught fists-vs-dragon sitting at +4px, which
+      is why the two largest bodies were trimmed. `smoke.mjs` and the M3
+      appearance sweep both still pass; both workspaces typecheck.
+
+- [x] **M3.6 — targeting you do not have to do, and skills you can always
+      use.** Both from user feedback: picking a specific monster every fight
+      felt strange, especially in a crowd, and the hotbar refused to work
+      outside combat.
+
+      **The targeting complaint turned out to be a feedback bug, not a controls
+      one.** The server has always fought the nearest enemy for you whether or
+      not you ever clicked — auto-attack falls back to nearest-in-reach, and so
+      does every skill. The client simply drew nothing unless you clicked, so
+      clicking *felt* mandatory when it never was. Targeting is now two things
+      kept deliberately apart:
+      - `engagedId` — what you are fighting this instant, derived every frame
+        from the same rule the server swings by, and always drawn. Walk toward
+        a camp and the ring appears on its own
+      - `lockedId` — a deliberate choice, and the only thing a click changes.
+        It gets its own outer ring, survives until it dies, and clicking it
+        again releases it. The frame says "locked" so the distinction is legible
+
+      The client tells the server its auto-pick (only when nothing is locked and
+      no ally is selected, or co-op targeting would be clobbered), so the ring,
+      the auto-attack and a single-target skill are guaranteed to agree.
+
+      **Three real defects behind "strange when monsters are close together":**
+      - Click picking returned the first monster in *map iteration order* whose
+        mesh the ray hit, not the nearest one. With two bodies overlapping you
+        could select the one behind. Now resolved by ray depth
+      - There was no click tolerance at all. A slime is under a metre tall and
+        renders perhaps twenty pixels across, so selecting one was a test of aim.
+        A miss now falls back to the nearest silhouette within 42px
+      - Tab cycled every monster with a model — about thirty across four camps,
+        since models build out to 1150px — so reaching the one in front of you
+        took a dozen presses. Scoped to the engage radius, and it starts from
+        what you are fighting rather than from your last click
+
+      Auto-targeting is sticky by 26px, which is not a detail: monster
+      separation moves bodies every tick, so plain "nearest" hands the target
+      back and forth between two enemies standing shoulder to shoulder. Measured
+      at 0 changes across 50 samples standing beside a pack of four. A hover
+      ring shows which of two overlapping bodies a click would take.
+
+      **Skills no longer need a target.** Pressing one with nothing in range
+      returned "nothing in range" and did nothing, which made the hotbar feel
+      like it belonged to the monsters — you could not swing at the air, see
+      what a spell looked like, or open a fight with your opener instead of
+      walking into auto-attack range first. A skill now fires whenever the
+      *caster* can afford it: off cooldown, enough mana, right class, unlocked.
+      Whether it connects is a separate question and `hits: []` is a fine answer
+      to it. Ground-targeted AoE with nothing to aim at lands at the caster's
+      feet rather than being refused, and a shot that finds nothing still plays
+      its effect along the caster's facing — otherwise a press with nothing in
+      range looks identical to a press that was ignored. **The refusals that
+      remain are all about the caster, never about the world.**
+
+      That also fixed a plain bug: a mobility skill used while standing still
+      with no enemy nearby had no direction to go, so it returned early — after
+      the server had already charged the cooldown and the mana. It falls back to
+      facing now, which is always defined.
+
+      Verified: walked into a camp without clicking once and a target was
+      acquired after 600ms, sent to the server, and fought — Cleave connected
+      with no click anywhere in the run; 0 target changes standing in a pack;
+      click locks, holds, and releases on a second click; Tab moves on; all five
+      warrior skills fire at spawn with the nearest monster 550px away, none
+      refused, and Charge visibly displaced the player 180px. Collision, ice-
+      skating, body-rule and M3 appearance suites all still pass.
+
+- [x] **M3.7 — every weapon family fights like itself.** User feedback: an
+      auto-attack looked the same whatever you held. A ranger three hundred
+      pixels away hit things with an invisible melee swing, a mage did the same
+      with a stick, and both made the noise of a sword going through air.
+
+      One table in `attacks.ts` now says how each of the eight families
+      delivers a blow, and — this is the part that matters — **the same table
+      decides when the blow lands**. A projectile's beat is its flight time over
+      the real gap, so the damage number cannot appear before its own arrow
+      does, at any range, rather than at the one range a constant happened to
+      suit. Melee keeps a fixed beat, because a swing's timing belongs to the
+      swing and not to the distance.
+      - **bow** fires the pack's own `Ranger_Arrow` model, flown from the weapon
+        socket to the target and pointed along its path. Measured 90ms at point
+        blank rising to 200ms at 300px
+      - **staff** throws a travelling arcane bolt — a moving `fx.png` quad, so
+        it needed no new art, which is the promise Phase 39 made
+      - **wand** fires a beam, as the user asked for: instant, thin, a white
+        core inside a tinted glow, drawn between two points rather than at one.
+        It is what makes the wand a sidearm beside the staff instead of a
+        shorter copy of it
+      - **melee** differs by weight rather than by kind: dagger 105ms and a
+        small pale arc, sword 170ms, mace 215ms with a shockwave, axe 235ms and
+        the heaviest burst of the five. Fists get their own small, weaponless
+        impact
+      - Two new synthesised cues, `bow` (a string snap over a falling twang)
+        and `beam` (a vibrato zap), because a bow that goes *whoosh* like a
+        sword was the loudest thing wrong with ranger combat. Re-running the
+        generator reproduced the other ten byte for byte, which is the check
+        that nothing else moved
+
+      Projectiles leave the **weapon socket**, not the body, so an arrow comes
+      off the bow rather than out of the archer's chest — and it keeps tracking
+      through the draw, since the socket is a bone. The arrow is deliberately
+      oversized with a warm trail: at this camera a player is about fifty pixels
+      tall, so a correctly-scaled arrow is a two-pixel splinter and firing one
+      is indistinguishable from firing nothing. Its long axis is found by
+      measuring the bounding box rather than assumed, because the weapon FBXs in
+      this pack disagree about which axis that is.
+
+      Verified by instrumenting the real code path per family: sword/axe/dagger
+      release `swing` and spawn nothing; bow releases `bow` and spawned 4
+      arrows; staff releases `cast` and spawned 5 travelling bolts; wand
+      releases `beam` and spawned 9 beams; mace releases `swing`. The beat
+      table was checked across four distances per family, and both an arrow
+      mid-flight and a beam were screenshotted to confirm orientation and
+      readability. Collision, ice-skating, targeting, skill-freedom, body-rule,
+      M3 appearance and smoke suites all still pass.
+
+- [x] **M3.8 — the default attack is a real action, and combat is something
+      you start.** Two pieces of user feedback that turned out to be one
+      change: the basic attack should be a slot on the bar like any other, and
+      the character should not attack anything just because it walked near it.
+
+      **Combat no longer starts itself.** Since Phase 40 the server decided
+      what a player was doing from where they stood, and proximity was an
+      instruction to draw a weapon — the last piece of idle-era reasoning left
+      in the game. An attack order is now something you give, by pressing the
+      default attack or any offensive skill, and it stands on its own
+      afterwards so a fight needs no keypress per swing or per corpse. It lapses
+      two seconds after nothing has been in reach.
+      - **The two seconds are load-bearing.** The window has to outlast the gaps
+        *inside* a fight — a target dying while you pick the next, chasing
+        something that fled — without outlasting the walk *between* fights. The
+        first attempt used four, and the test caught it re-engaging on arrival
+        at the next camp, which is the exact thing an attack order exists to
+        prevent
+      - Heals, buffs and dashes deliberately do not give the order. Mending an
+        ally or dashing away from something is not an instruction to fight it
+      - Dying cancels the order, so you respawn standing rather than mid-fight
+
+      **The default attack is a bar slot, per weapon.** `DEFAULT_ATTACKS` is
+      keyed by weapon rather than class, because a bow and a dagger are both a
+      ranger's and have nothing in common — Slash, Hew, Crush, Stab, Shoot,
+      Arcane Blast, Zap and Jab. It sits in slot 1 with the skills after it, and
+      pressing it does something waiting does not: an undefined swing clock
+      means "just closed", and the press cashes that in immediately instead of
+      eating the closing wind-up. Opening a fight is an action, not a pause.
+      Deliberately exempt from the global cooldown — auto-attacks never were,
+      and putting the manual press under it would make pressing your own attack
+      worse than not pressing it.
+
+      **Combat enhancements that came with it:**
+      - **Weapon speed is finally visible.** The attack slot's curtain is the
+        swing timer, so dagger 330ms, wand 385ms, sword/bow/staff 550ms, mace
+        660ms and axe 743ms are readable at a glance. The 0.6x–1.35x speed
+        multipliers have existed since Phase 45 and nothing on screen had ever
+        counted them. Sent on equip and on connect too, not just after the first
+        blow — telling an axe from a dagger should not require hitting something
+      - **A lit border on the attack slot says an order is standing**, plus
+        "You engage" / "You break off" in the log. With combat no longer
+        starting itself, "am I actually fighting?" has to be answerable
+      - **A wind-up bar on the target frame.** The danger circle already said
+        WHERE a telegraphed slam would land; this says WHEN, which is the half
+        you need to judge whether there is time to walk out. Troll 900ms, dragon
+        950ms, golem 1100ms
+
+      Verified: stood beside a monster for six seconds pressing nothing and
+      landed zero blows; pressing 1 opened the fight and landed four; pressing a
+      *skill* opened it equally well; retreating to open ground lapsed the order;
+      all seven craftable families show their own attack name, icon and swing
+      interval; every weapon's delivery still fires once ordered. Collision,
+      ice-skating, targeting, skill-freedom, body-rule, M3 appearance and smoke
+      suites all still pass.
+
+- [x] **M3.9 — a talent tree per weapon.** The biggest change since the
+      renderer rewrite, and it replaces the class skill system outright.
+      Started as a question about off-hand weapons and became something better:
+      one weapon at a time, and *using* a weapon is what levels that weapon.
+
+      **Two progressions that answer different questions.** Character level is
+      WHO YOU ARE — hit points and stat points, following you across every
+      weapon. Weapon proficiency is WHAT YOU CAN DO WITH THIS THING — talent
+      points in that weapon's tree and nothing else's. Proficiency is earned
+      only while the weapon is in hand, so it accumulates exactly where the
+      playing happened, and picking up a staff for the first time really does
+      mean starting that tree at zero. That is what makes "you are whatever
+      you're holding" a commitment rather than a costume change.
+
+      **Nothing unlocks itself any more.** Skills used to appear on the bar by
+      character level; now every one of them is a node you buy. `unlockLevel`
+      and `classId` are gone from `SkillDef` entirely, and the seven passive
+      `SkillDef`s are gone with them — a skill is something you press, and a
+      passive is a talent rank.
+
+      - **Eight trees, 73 nodes, 27 skills.** Keyed by weapon rather than by
+        class, because three warrior weapons sharing one spell list made an axe
+        a sword with different numbers. The axe tree is heavy single blows and
+        crit damage; the mace tree is armour, control and staying power; both
+        are still "a warrior" because the weapon still decides the archetype.
+        Eleven new skills were written to fill them out
+      - **A node is data** — a name, a rank cap, and either one `SkillId` or a
+        bag of `PassiveBonus`. Seventy-odd nodes only stays maintainable if
+        rebalancing means editing numbers rather than behaviour, which is also
+        why actives are single-rank
+      - `PassiveBonus` grew from 7 knobs to 16, and all nine new ones are
+        threaded into the shared formulas — damage, attack speed, crit damage,
+        reach, skill power, mana cost, cooldowns, max HP, accuracy. A tree full
+        of percentages that never reached the maths would be decoration
+      - **Stat points now come with advice.** Which attributes a weapon wants
+        genuinely changes with the weapon, since that is what decides which one
+        multiplies your damage — so the character panel stars the primary, dims
+        the two that barely matter, and says why in a sentence
+      - Free unlimited respec per weapon. A tree you cannot experiment with is
+        a tree you read a guide for
+
+      **The test caught a real design failure.** `tools/test/talents.mjs`
+      asserts, among other things, that a tree cannot fit inside its own point
+      budget — and the first draft did, every one of them: 19-20 ranks against
+      20 points at the cap, so you would simply buy everything and never
+      choose, which is precisely what the feature was for. Passive rank caps
+      went up by two across the board; trees now run 29-31 ranks against 20
+      points, so a finished weapon has about two thirds of its tree and which
+      two thirds is the build. The same test checks every granted skill exists,
+      every prerequisite is in the same tree and in an earlier tier, no node is
+      inert, no skill is stranded outside every tree, and each tree can
+      actually be walked from level 1 to the cap without the points getting
+      stuck.
+
+      Two narrow SQLite tables rather than columns: both are keyed by
+      (character, weapon) and one additionally by node, which a wide row cannot
+      hold without becoming JSON — and an absent row is the honest way to say
+      "never touched that weapon".
+
+      Verified live: a fresh character starts with one point, an empty tree and
+      a bar holding nothing but its default attack; buying `fist.haymaker`
+      puts a second slot on the bar; a second purchase with no points is
+      refused by the server, as is a tier-4 node at proficiency 1. Fighting
+      with a sword took the sword from 0 to 104 xp and proficiency 1 to 3 while
+      the axe tree stayed at zero. Keen Edge moved the sheet's damage 16-50 to
+      17-52, Tempered moved armour 2 to 4, Precision moved crit 35% to 38%.
+      Refund returns the points. Stat advice follows the weapon: sword stars
+      Strength, staff stars Intelligence. Every earlier suite still passes.
+
+- [x] **M3.10 — a real RPG interface.** User: make it a regular MMORPG UI,
+      remove what is unnecessary, add what is missing, and let the player own
+      the action bar.
+
+      **The action bar belongs to the player now.** It used to be generated —
+      every unlocked skill in tree order, keys assigned by position — so there
+      was no such thing as *your* layout, and learning a talent could shuffle
+      everything one slot to the right and retrain your hands for you. Ten
+      slots, and only the player changes them: drag a learned skill out of the
+      talent panel, drag slots to reorder, right-click to clear, click a key
+      label to rebind to any key. Stored per weapon and per character, because
+      the skills are per weapon — a bar that survived a weapon swap would be
+      full of things you cannot cast.
+      - Cooldowns are keyed by ACTION rather than by slot, so moving a skill
+        mid-fight does not reset the cooldown it is already on
+      - The rebind listener captures, so the key being bound cannot also fire
+        the action it is being bound to on the way past
+      - `normalizeHotbar` runs on both sides and repairs anything: wrong
+        length, unknown skill ids, duplicate keys, the same skill in two slots
+      - A weapon with no stored layout gets a suggested one rather than an
+        empty bar, and every layout is pruned of skills the player has since
+        refunded, so a talent reset cannot leave a dead button behind
+
+      **Character window: a paperdoll.** Equipment down both sides of a figure
+      that shows what you are, what you hold and how far into that weapon you
+      are; attributes and statistics behind tabs. The old version stacked six
+      labelled boxes, twelve statistics and four attribute rows into one
+      column, so the question the window exists to answer — what am I wearing,
+      is this an upgrade — competed for space with numbers you read once.
+      Empty slots show a ghosted glyph of what belongs there, which teaches the
+      layout without a label under every box.
+
+      **Inventory: a real bag.** All thirty slots are drawn whether or not they
+      hold anything, so the third slot is always the third slot — the old grid
+      drew only the cards it had and reflowed every time anything was looted,
+      moving items under the cursor. Materials and consumables moved to a
+      footer, since they are counters rather than objects competing with gear
+      for grid space. The nine filter tabs are gone: they existed to manage a
+      mess that a fixed grid and one Sort button do not have.
+
+      **Removed:** nine inventory filter tabs, the emoji silhouette, the
+      labelled equipment boxes, two competing header styles. **Added:** one
+      shared window chrome across all five panels, rarity-coloured slot borders
+      everywhere, item tooltips on the paperdoll as well as the bag, per-
+      attribute worth labels (primary / useful / situational / wasted), a
+      capacity readout, and a sell button that carries its own price so the
+      only irreversible action in the window never shares a gesture with
+      equipping.
+
+      Verified: drag from the talent panel onto slot 3 and drag slot 3 onto
+      slot 7, both through the real DOM drag events; rebinding slot 5 to `q`
+      and `skillForKey("q")` returning the skill; the whole layout surviving a
+      reconnect; right-click clearing. Screenshotted both windows. Collision,
+      engagement, targeting, ice-skating, appearance, talent-tree, body-rule
+      and smoke suites all still pass.
+
+- [x] **M3.11 — windows that behave like an MMO's.** User: put the icons and
+      the windows on the right, let the bag and the character sheet be open at
+      once without colliding, some panels are the wrong size, the icons do
+      nothing, and the character window looks plain.
+
+      **The dock icons genuinely did nothing.** The markup has been there since
+      the 2D client; the Three.js port in M1 carried it across and left its
+      listeners behind, so all four buttons had been decorative for eleven
+      milestones. Wired now, and lit while their window is open, however it was
+      opened.
+
+      **A window rail instead of five full-screen overlays.** Each panel used
+      to be centred inside its own dimming backdrop, so two could never be
+      usefully open — they stacked in the same place — and every one of them
+      hid the game. They now live in one right-anchored rail and lay out
+      right-to-left as they open, so the bag sits beside the character sheet
+      and you can see what you are equipping.
+      - The rail stops short of the left edge, so it can never reach the player
+        and target unit frames
+      - All four together are wider than any screen, so opening one that will
+        not fit closes the oldest rather than pushing a panel off the edge with
+        no way back
+      - The target frame moved under the player's own frame. Centre-top is
+        exactly where the rail reaches with two windows open, and stacking them
+        also puts the two health bars you are comparing next to each other
+
+      **The wrong sizes were real.** Panels had a `max-height` and no
+      `overflow`, so anything taller was simply cut off — which is why the
+      character window's tabs were half missing. Every panel now scrolls its
+      body inside a fixed frame, verified per window: all four fit the rail,
+      sit on screen, and scroll rather than clip.
+
+      **The character window stopped looking like a form.** A framed portrait
+      with a lit bevel, a vignette and a shaft of light; a name plate carrying
+      the weapon, its proficiency and a single Gear number summed from the
+      rolls combat actually reads; bevelled equipment slots whose border AND
+      glow carry the rarity, driven from one `currentColor` assignment. All
+      five panels share one window chrome.
+
+      Verified: clicking each dock icon opens and lights it; character and bag
+      side by side with measured boxes proving no overlap; opening a fourth
+      window evicting the oldest and leaving everything on screen; the bar
+      layout surviving a reconnect. Collision, targeting, ice-skating,
+      engagement, bar customisation, drag-and-drop, appearance, talent, body
+      and smoke suites all still pass.
+
+      One test bug worth remembering: the bar-persistence test appeared to fail
+      after this change, and had not — it logged back in under a hardcoded
+      different character name after its reload, so it was reading someone
+      else's bar. Server and client were both correct the whole time.
+
 - [ ] **M4 — effects, skills VFX, day/night, polish**
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
@@ -1797,6 +2277,364 @@ music, player-facing damage-type/resistances, more crafting recipes
   cells, and the brightness field is generated with wrapping lattice
   indices so the texture still tiles seamlessly after shading — all of it
   paid for once at build time, leaving the runtime a single TileSprite.
+- Your class is your whole body, not just the thing in your hand. The rule
+  was always "you are whatever you're holding", but until M3 the only visible
+  half of it was the weapon. Swapping the rig as well costs one model load
+  (cached after the first) and makes the game's central rule readable at a
+  glance across a field, which no stat panel can do. The alternative — one
+  neutral body wearing class-flavoured gear — would have made the four
+  archetypes differ only by the item in the right hand, which is exactly the
+  "differently-numbered rather than different" failure Phase 44 set out to
+  avoid.
+- Weapon grips are harvested off the rig that authored them rather than
+  measured into constants. Every character FBX already parents its own weapon
+  to `WeaponR` with the correct offset, rotation and scale, so lifting the mesh
+  complete with its local transform makes the grip correct by construction —
+  there is no number anyone can get wrong, and re-exporting the art fixes the
+  game without touching the code. The probe that measured those transforms was
+  written first and thrown away afterwards; what survives is the rule that the
+  values are never copied out. Axe and mace extend this rather than breaking
+  it: with no model in the pack, they are built inside the *sword's* geometry
+  space so the sword's harvested grip places them too.
+- Armour is authored in rig coordinates, and the bone holder undoes the rest
+  pose to make that legal. Writing gear directly in a bone's local frame means
+  every offset is expressed inside a rotated, 100x-scaled space that differs
+  per bone — unreadable, and unfixable without trial and error. A holder whose
+  local matrix is the bone's rest transform inverted lets a helm be written as
+  "a dome at y=254, radius 40" in the same numbers the rig itself measures in,
+  while still riding the bone through every animation. The rest matrices are
+  captured at build time, not read when the gear is attached: equipping happens
+  mid-stride, and reading a bone then would pin the gear to whatever pose the
+  character was standing in at that instant.
+- Armour attaches rigidly to bones instead of being skinned. A rigid piece
+  cannot deform, so every style is placed on a part of the body that does not
+  need to — skull, torso, hip, foot, shin, shoulder — and the cost is zero
+  extra skinning. It is the same win the weapon socket already provided, which
+  is why the robe's skirt hangs from the *waist* bone rather than the chest:
+  pinned to the ribs it slides up the legs the moment the character runs.
+- Do not use `Skeleton.pose()` to force a known rest pose on this rig. It
+  writes each root bone's bind-space *world* matrix into its *local* matrix,
+  and here the root bone's parent is `CharacterArmature`, a plain Group already
+  carrying a scale of 100 — so the scale lands twice and every bone comes out a
+  hundred times too big. Building the holders immediately after `instantiate`,
+  before any clip has run and with nothing awaited in between, is both simpler
+  and actually correct.
+- The preview page gained a `?hidebody=1` flag, and it is the reason the armour
+  got fitted in two passes instead of ten. On the body, "this helm is too
+  small" and "this helm is the right size but sunk inside the skull" look
+  identical — both show a thin ring round the ears. With the body hidden the
+  pieces were obviously well-formed, which said the fault was clearance, not
+  shape: the caps topped out at rig y 287 against a crown at 295, so the skull
+  erupted through the dome. Worth reaching for whenever something "looks too
+  small" — the question is usually whether it is small or buried.
+- Vite's `watch.ignored` on `public/models` (added in M1 to stop Windows EBUSY
+  crashes) also means a *newly added* model file 404s into the SPA fallback
+  until the dev server is restarted — Vite builds its public-file set at startup
+  and the watcher it would learn additions from is the one being ignored. The
+  symptom is an FBX parse error reading "Cannot find the version number", which
+  is the loader choking on `<!doctype html>`. Restart the dev server after
+  dropping a model in; do not go looking for a corrupt download.
+- Bodies are one shared function, run on both sides, not a server rule the
+  client obeys or a client rule the server trusts. Collision resolved only on
+  the server arrives a round trip late and feels like lag rather than like a
+  wall; resolved only on the client it is worth exactly as much as the client's
+  honesty. Running `resolveBodyCollision` in both places is what makes it both
+  immediate and authoritative, and putting it in `shared/` is the only reason
+  the two answers agree — the same argument that put every combat formula there.
+- When a monster and a player overlap, the monster is the one that moves. The
+  server could push either, but pushing the player means overriding the one
+  piece of state the client owns, arriving a round trip after the fact, and
+  reading as being shoved by something invisible. Moving the monster is
+  invisible when it is right and harmless when it is slightly wrong.
+- Body radii are sized to the model the client draws, not chosen as gameplay
+  numbers. A hitbox that disagrees with the silhouette is a bug the player can
+  see and cannot explain. The constraint this creates — every weapon must still
+  reach past every body, and every monster must still reach back — is asserted
+  in `tools/test/bodies.mjs` rather than left to judgement, because breaking it
+  produces no error: melee against that one kind just quietly stops working. It
+  earned itself immediately, catching bare fists against a dragon with 4px of
+  slack.
+- The local player is the one actor that must NOT be interpolated. Easing
+  toward a target is right for anything driven by snapshots arriving every
+  ~100ms, and it was applied uniformly for that reason — but the local player's
+  position is recomputed exactly every frame, so easing toward it can only ever
+  add lag. At 60fps that is roughly 15px of permanent trail, decaying over a
+  quarter of a second after input stops, which is precisely the "slippery
+  ground" the player reported. The general-purpose smoothing was the bug.
+- Running cancels a swing; standing still does not. The attack clip is about a
+  second long and auto-attacks fire while you move, so a one-shot that refused
+  to yield to the run animation meant the model held a planted pose through most
+  of every fight while the character kept travelling. Letting *idle* cancel it
+  too would mean attacks were rarely seen through, so only movement does — which
+  is also what cancelling a swing ought to mean.
+- Anything that decides "is this actor moving?" must read the positions the
+  server sent, never the rendered ones. Rendered positions are interpolated, so
+  they lag: asking them yields "stopped" while the model is still visibly
+  catching up, which plays idle over a sliding character — the exact artefact
+  the interpolation exists to avoid. Two thresholds rather than one, because a
+  monster holding station at its stop distance drifts a pixel either way and a
+  single threshold flickers the run cycle on and off every snapshot.
+- Nothing may be pushed faster than it can walk. The monster separation shove
+  was a fixed 6px per tick regardless of the creature, which for a slow monster
+  is faster than its own top speed — a body sliding sideways quicker than it
+  could ever move itself is ice-skating by definition, however correct the
+  spacing it produces. Capped to the distance that monster could have walked in
+  the same tick.
+- Verify motion per rendered frame, not by sampling on a timer. The first
+  collision measurement sampled every 100ms and reported a 1-3px penetration
+  that looked like a real defect; measuring inside `requestAnimationFrame`
+  instead showed zero overlapping frames out of 260. The timer had been catching
+  the gap between a snapshot landing and the next frame correcting it. The same
+  run also reported a 290px model lag that turned out to be the test's own setup
+  teleport — worth discounting the warm-up frames before believing any number a
+  harness reports about itself.
+- Targeting is derived by default and chosen only on purpose. The server had
+  always fought the nearest enemy whether or not anyone clicked, so the
+  clunkiness players felt was never the controls — it was that the client drew
+  nothing unless you clicked, which made a click look compulsory. Splitting the
+  idea in two (`engagedId`, worked out every frame; `lockedId`, only ever set by
+  a click) means the common case needs no input at all and a deliberate choice
+  still overrides it. Worth remembering as a diagnosis, not just a fix: "the
+  controls are awkward" can mean "the display is silent about what is already
+  happening".
+- The client tells the server its automatic pick, rather than both sides
+  deriving one independently. Two implementations of "nearest enemy" agree
+  almost always, and the times they disagree are the worst possible ones — the
+  ring drawn around one monster while a single-target skill fires at another.
+  Sending it makes them the same fact. Suppressed while an ally is selected,
+  because that selection is what Mend and War Cry read and quietly overwriting
+  it would trade co-op for a ring.
+- Auto-targeting has to be sticky or it is worse than clicking. Monster
+  separation nudges every body each tick, so plain "nearest" swaps the target
+  between two enemies standing shoulder to shoulder several times a second —
+  flickering the ring, spamming selections down the socket, and making the
+  system feel possessed. A 26px margin before switching costs nothing and
+  measured 0 changes over 50 samples in a four-monster pack. Same lesson as the
+  aggro hysteresis in Phase 40 and the run/idle thresholds in M3.5: anything
+  that picks a winner from a moving field needs a margin, not a comparison.
+- Picking by raycast alone is a poor pointing device, twice over. It returned
+  whichever monster came first in map order rather than the nearest along the
+  ray, so with two bodies overlapping you could select the one behind — and it
+  demanded a pixel-accurate hit on a slime that renders about twenty pixels
+  across. Resolving hits by depth fixes the first; falling back to the nearest
+  silhouette within 42px fixes the second. The candidate set is narrowed by
+  screen distance first, which keeps it cheap enough to also run on pointer move
+  and drive a hover ring.
+- Skills refuse for reasons about the caster, never about the world. "Cooling
+  down", "not enough mana", "not your class", "unlocks at level N" are all
+  facts about you and are worth saying. "Nothing in range" is a fact about the
+  field, and enforcing it meant the hotbar only worked when monsters permitted
+  it — you could not swing at the air, test what a spell looked like, or open a
+  fight with your opener. A skill now always fires and `hits: []` is a perfectly
+  good outcome. The cost is that a cooldown can be wasted on empty ground, which
+  is the player's business.
+- A skill that connects with nothing still has to look like it fired. Mana and
+  cooldown are spent either way, so drawing nothing makes a press with no target
+  indistinguishable from a press that was ignored — which is the very confusion
+  removing the refusal was meant to end. The effect plays along the caster's
+  facing instead, which is also the only direction available: the server knows
+  where players are but not which way they face, so anything aimed has to be
+  resolved client-side, exactly as the dash already was.
+- One table decides both what an attack looks like and when it lands. Timing
+  and presentation were separate before — a constant 170ms beat next to an
+  effect chosen by a `ranged` boolean — and separate is how they drift: an
+  arrow that takes 200ms to arrive while the damage lands at 170ms is a
+  number appearing in front of its own projectile. Deriving the beat from the
+  projectile's speed and the actual gap makes the two agree by construction,
+  at every range rather than at the one the constant happened to suit. Melee
+  keeps a fixed beat on purpose: a swing's timing is a property of the swing.
+- Attack presentation is keyed by weapon, not by class. A ranger's bow and
+  dagger want nothing in common — one flies, one stabs — while a sword and an
+  axe differ only in weight. Keying by class would have forced the bow and the
+  dagger to share a delivery and given the game three presentations for eight
+  weapons, which is the same flattening Phase 45 rejected when it gave each
+  family its own range, speed and damage multipliers.
+- Projectiles are launched from the weapon socket rather than from the actor's
+  position plus an offset. The socket is a bone, so it tracks the draw
+  animation for free and an arrow leaves the bow instead of the archer's
+  sternum. Same reasoning as the weapon meshes in M3: the rig already knows
+  where the hand is, and any constant that answers the same question is a
+  constant that can be wrong.
+- The arrow is drawn far larger than scale, and that is the correct call. This
+  camera puts a player at roughly fifty pixels tall, so a proportionate arrow
+  is a two-pixel splinter against grass — firing one would be
+  indistinguishable from firing nothing, which defeats the entire point of
+  making ranged combat visible. It gets an additive trail for the same reason:
+  low-poly geometry catches almost no light at that distance. Readability beats
+  proportion whenever the two disagree at this scale.
+- The arrow's long axis is measured, not assumed. The weapon models in this
+  pack disagree about orientation — the standalone bow lies along Z while the
+  Wizard's built-in staff runs along Y — so any hard-coded axis is a guess that
+  a re-export can silently invalidate, and the failure mode is an arrow flying
+  sideways. Rotating whichever bounding-box side is longest into +Z means
+  orientation cannot be wrong, only the model can.
+- Beams are not effects and do not belong in `Effects`. Everything in that
+  system is a camera-facing quad from `fx.png` positioned at a point; a beam is
+  a shape defined by two endpoints, and an arrow is a real mesh that has to
+  point where it is going. Bending the atlas system to cover them would have
+  cost more than a small sibling class that does exactly those two things —
+  while the travelling bolt, which genuinely is a moving quad, stayed in
+  `Effects` and needed no new code at all.
+- Standing near something is not an instruction to attack it. Phase 40 removed
+  the idle model but kept its central habit — the server reading intent off the
+  player's position — and proximity-driven combat is the last place that
+  survived. It meant a player crossing the map picked fights they never chose,
+  and it sat badly beside everything added since: explicit targeting, free
+  skill use, a bar you press. An attack order you give and that lapses on its
+  own is the same idea Phase 40 was reaching for (no standing intents, no
+  progress bars) applied honestly to combat rather than stopping short of it.
+- The attack order lapses on a timer rather than clearing when its target dies.
+  Clearing per corpse is the strictest reading of "you must press to attack",
+  and it would mean a keypress per kill in a four-monster camp — friction of
+  exactly the kind the targeting work had just removed. A window that outlasts
+  the gaps inside a fight but not the walk between them gets the deliberate
+  engagement without the tax. Two seconds; four was measured re-engaging the
+  player on arrival at the next camp.
+- The default attack is keyed by weapon, not by class, and is not a SkillDef.
+  A bow and a dagger are both a ranger's and share nothing; meanwhile a default
+  attack has no cooldown, no mana cost and no unlock level, so most of SkillDef
+  would have been dead fields describing it. A separate small table keyed the
+  way the game already thinks — "you are whatever you're holding" — costs one
+  extra type and keeps both shapes honest.
+- The default attack is exempt from the global cooldown. Auto-attacks were
+  never GCD-gated, and they still are not; putting the *manual* press under the
+  GCD would mean pressing your own attack made you worse than ignoring it, and
+  would let a basic attack lock out a real spell. The swing timer is the only
+  clock that governs it, which is also what makes that curtain meaningful.
+- The swing timer is sent by the server even though every ingredient is already
+  in `shared`. The client could re-derive it — it has `playerAttackIntervalMs`
+  and the weapon multiplier — but the swing clock is a running state machine
+  the server owns: it starts on first coming into reach, resets per swing, and
+  is thrown away on disengage. Re-deriving that is re-implementing it, and any
+  drift shows up as a bar disagreeing with when you actually hit. Sending it on
+  equip and on connect as well as on each swing means the bar is never guessing.
+- Putting the swing timer on screen was the cheapest combat improvement
+  available, because the mechanic already existed and was merely invisible.
+  Weapon speed multipliers have been in the game since Phase 45 — a dagger
+  swings at 0.6x and an axe at 1.35x — and no player could perceive the
+  difference, so two of the three knobs distinguishing weapon families were
+  doing their work in the dark. The same reasoning produced the wind-up bar:
+  the telegraph's *radius* was drawn and its *timing* was not, so a mechanic
+  meant to be answered by moving could only be answered by guessing.
+- Character level and weapon proficiency are separate progressions because they
+  answer separate questions. Level is who you are — hit points and stat points
+  that follow you across every weapon, so switching never throws the character
+  away. Proficiency is what you can do with the thing in your hand, and it is
+  earned only while holding it. Merging them would have meant either a level-20
+  character being instantly expert with a weapon they had never swung, or
+  switching weapons costing you your hit points; keeping them apart is what lets
+  a weapon swap be a real commitment without being a punishment.
+- Talent trees are keyed by weapon, not by class. Three warrior weapons sharing
+  one spell list is what made an axe a sword with different numbers — the same
+  flattening that M3.7 fixed for attack presentation, one layer deeper. A tree
+  each lets the axe be heavy single blows and the mace be armour and control
+  while both stay warriors, because the weapon still decides the archetype.
+- A talent node is data, never behaviour: a name, a rank cap, and either one
+  `SkillId` or a bag of `PassiveBonus`. Seventy-odd nodes across eight trees is
+  only maintainable if rebalancing means editing numbers, and the fixed
+  `PassiveBonus` vocabulary is what makes that possible — sixteen knobs that
+  every node draws from and that the shared formulas all read. It is also why
+  actives are single-rank: "do I have this skill" is a clean question, and
+  making every skill separately rankable would put a scaling rule in eighty
+  places.
+- Every talent percentage had to be threaded into the shared formulas, not just
+  displayed. A tree whose numbers never reach the combat maths is decoration,
+  and the failure would be invisible — the panel would say +24% damage and the
+  damage would not move. So `PassiveBonus` gained nine fields and each got a
+  named helper in `shared/` (`applyDamagePercent`, `applyAttackSpeed`,
+  `applyCooldown`, `applyManaCost`, plus optional arguments on the existing
+  range/crit/accuracy/HP functions) so the server's resolution and the client's
+  stat sheet apply them identically. The sheet was updated in the same pass for
+  exactly that reason.
+- A tree that fits inside its own point budget is a checklist. The first draft
+  of all eight had 19-20 total ranks against 20 points at the cap, so a player
+  would buy everything and never make a decision — the precise opposite of the
+  feature's purpose, and completely invisible while reading the data. Only
+  `tools/test/talents.mjs` asserting "total ranks must exceed the budget" caught
+  it. Trees now run 29-31 ranks, so a finished weapon has about two thirds of
+  its tree and which two thirds is the build. Worth generalising: whenever a
+  system's point is that the player chooses, something should assert that the
+  choice is real, because a system with no scarcity still looks correct.
+- Weapon progression lives in two narrow tables rather than columns on
+  `characters`. Both are keyed by (character, weapon) and one additionally by
+  node, which is a shape a wide row cannot hold without turning into JSON — and
+  rows mean the absence of a row is the honest representation of "never touched
+  that weapon" rather than eight columns of zero on every character.
+- Stat points needed advice once weapons had trees. Which attribute is worth
+  buying genuinely changes with what you hold, because that is what decides
+  which one multiplies your damage — a bow wants Agility for damage AND
+  accuracy, a staff wants Intelligence for damage AND mana. The rankings are not
+  opinions; they fall out of `primaryStatValue` and what each weapon does with
+  the rest. Points are permanent, so leaving the player to guess was the one
+  part of building a character the game had never explained.
+- A generated action bar is not the player's bar. Listing every unlocked skill
+  in tree order and assigning keys by position looks tidy and is quietly
+  hostile: learning a talent inserts an entry and every key after it now does
+  something else, so the game retrains your hands on its own schedule. Storing a
+  layout the player edits costs one table and one message, and it is the
+  difference between a bar you use and a bar you have to re-read.
+- Bar cooldowns are keyed by action, not by slot. Slots are furniture the player
+  rearranges; a cooldown belongs to the skill. Keying by slot would mean
+  dragging a spell mid-fight either reset its cooldown or inherited the previous
+  occupant's — both wrong, and both the kind of bug that only shows up when
+  someone reorganises under pressure.
+- The rebind listener captures. Bound on the window in capture phase and
+  stopping propagation, so the key being assigned cannot also trigger the action
+  it is being assigned to, or a panel toggle, or movement, on its way through.
+  Obvious in hindsight and invisible until someone binds a skill to "i" and the
+  inventory opens every time they press it.
+- Hotbar layouts are stored per weapon, like the trees that feed them. A bar
+  that survived a weapon swap would be full of skills the player cannot cast,
+  because the tree changed underneath it. The same argument that made talents
+  per weapon makes the bar per weapon; anything else would need a "which of
+  these buttons still work" pass on every equip.
+- Every slot in the bag is drawn, filled or not. Rendering only the cards that
+  exist means the grid reflows on every loot drop and items move under the
+  cursor mid-click. A fixed grid costs thirty empty divs and buys the one
+  property a bag needs: the third slot is always the third slot.
+- Filter tabs were solving a problem the layout created. Nine of them existed
+  because gear, materials and potions shared one reflowing grid and became
+  unfindable. Giving materials and consumables their own footer — they are
+  counters, not objects — and adding one Sort button removed the need for all
+  nine. Worth checking, when a UI grows controls, whether they are managing a
+  mess that a better arrangement would not produce.
+- Selling never shares a gesture with equipping. It is the only irreversible
+  action in the inventory, so it gets its own button, revealed on hover, with
+  the price written on it. A right-click-to-sell would be faster and would
+  eventually cost somebody an epic.
+- Panels belong in one rail, not in five independent full-screen overlays. Each
+  overlay centred its own panel behind its own backdrop, so two open at once
+  stacked in the same place and every one of them hid the game. A single
+  right-anchored flex rail gives non-overlapping layout for free, keeps the
+  world visible, and puts the windows on the side the buttons that open them
+  now live on.
+- The rail must have a `left`, not only a `right`. Absolutely positioned with
+  just `right`/`top`/`bottom` it shrink-wraps its contents — so its width IS
+  whatever is already open, and "will the next window still fit?" becomes
+  unanswerable. The fitter silently evicted almost everything until the rail
+  was given a real span to measure against.
+- When windows cannot all fit, close the oldest rather than letting one slide
+  off the edge. Four panels are wider than any screen. Overflowing leaves one
+  half off-screen with no way to reach it; evicting is predictable, and
+  oldest-first is right because the one just opened is the one being looked at.
+- A `max-height` with no `overflow` is a silent truncation. Several panels had
+  exactly that, which is why the character sheet's tabs were cut in half — the
+  content was there, the frame simply ended. Every panel now scrolls a body
+  inside a fixed frame, and the check is per window: does it fit the rail, is
+  it on screen, does its content scroll rather than clip.
+- Dock buttons had been dead since the M1 port. The markup survived the move
+  from Phaser to Three.js and the listeners did not, so four icons sat on
+  screen doing nothing for eleven milestones — including across several of my
+  own passes over that file. Markup that outlives its wiring is invisible to
+  typechecking and to every test that drives the game by keyboard, which is
+  exactly how the tests here drive it. Worth clicking a UI occasionally rather
+  than only scripting it.
+- Ornament is cheap and does most of the work. The character window read as
+  "plain and default" not because anything was missing but because every
+  surface was one flat fill with one stroke. A vignette behind the portrait, a
+  lit inner bevel, a keyline inset from the frame edge and a rarity glow that
+  follows `currentColor` cost about forty lines of CSS and no new assets.
+
 - This machine (a fresh Windows box picking up the project) had neither Git
   nor Node.js preinstalled; both were installed via `winget` (`Git.Git`,
   `OpenJS.NodeJS`) rather than assuming either was already present. Also has
@@ -1808,7 +2646,222 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 46 complete (2026-08-18). Latest: the project has a name of
+Phase 0 through 47 M3.11 complete (2026-08-19). **Latest: M3.11 — windows
+that behave like an MMO's.** The dock icons genuinely did nothing: the markup
+survived the M1 port from Phaser and its listeners did not, so all four had
+been decorative for eleven milestones. They are wired now, moved to the right
+edge, and lit while their window is open. The five full-screen dimming
+overlays became one right-anchored window rail: panels lay out right-to-left
+as they open, so the bag sits beside the character sheet instead of on top of
+it, the world stays visible, and the rail stops short of the unit frames.
+Opening a fourth window closes the oldest rather than pushing one off screen.
+The "wrong size" reports were real — panels had a `max-height` and no
+`overflow`, so content was silently truncated; every panel now scrolls a body
+inside a fixed frame. And the character window stopped looking like a form: a
+framed portrait with a vignette and a lit bevel, a name plate carrying the
+weapon, its proficiency and one Gear number summed from the rolls combat
+reads, and equipment slots whose border and glow both carry the rarity.
+Verified by clicking each icon, measuring that the windows do not overlap,
+checking every panel fits and scrolls, and confirming the bar survives a
+reconnect. Every earlier suite still passes.
+
+Before that, M3.10 — a real RPG
+interface.** The action bar belongs to the player now: ten slots, and only the
+player changes them — drag a learned skill out of the talent panel, drag slots
+to reorder, right-click to clear, click a key label to rebind to any key.
+Stored per weapon and per character, because the skills are. It used to be
+generated from the tree, which meant there was no such thing as *your* layout
+and learning a talent could shuffle everything one slot right. Cooldowns are
+keyed by action rather than slot, so rearranging mid-fight cannot reset one.
+The character window became a paperdoll — equipment down both sides of a
+figure showing what you are, what you hold and how far into that weapon you
+are, with attributes and statistics behind tabs instead of stacked in one
+column. The inventory became a real bag: all thirty slots drawn whether filled
+or not, so the third slot is always the third slot, with materials and
+consumables moved to a footer and the nine filter tabs replaced by one Sort
+button — they had existed to manage a mess a fixed grid does not have. All
+five panels now share one window chrome. Verified with the real DOM drag
+events (talent to slot 3, slot 3 to slot 7), a rebind to `q` that
+`skillForKey` resolves, and the whole layout surviving a reconnect; both
+windows screenshotted. Every earlier suite still passes.
+
+Before that, M3.9 — a talent tree
+per weapon**, the biggest change since the renderer rewrite. It started as a
+question about off-hand weapons and became something better: one weapon at a
+time, and *using* a weapon is what levels that weapon. Character level and
+weapon proficiency now answer different questions — level is who you are (hit
+points, stat points, carried across every weapon), proficiency is what you can
+do with the thing in your hand, earned only while holding it. Nothing unlocks
+itself any more: `unlockLevel` and `classId` are gone from `SkillDef`, the
+seven passive `SkillDef`s are gone entirely, and every skill is a node you
+buy. Eight trees, 73 nodes, 27 skills (eleven newly written), keyed by weapon
+rather than class so an axe can be about heavy blows and a mace about armour
+and control while both stay warriors. `PassiveBonus` grew from 7 knobs to 16
+and all nine new ones are threaded into the shared formulas — a tree of
+percentages that never reached the maths would be decoration. Stat points come
+with per-weapon advice now, since which attribute is worth buying genuinely
+changes with what you hold. Free unlimited respec per weapon. **The test
+caught a real design failure**: `tools/test/talents.mjs` asserts a tree cannot
+fit inside its own point budget, and the first draft of all eight did — 19-20
+ranks against 20 points, so you would buy everything and never choose, which
+was the entire point of the feature. Trees now run 29-31 ranks. Verified live:
+a fresh character has one point, an empty tree and a bar holding only its
+default attack; overspending and tier-skipping are both refused server-side;
+fighting with a sword took the sword to proficiency 3 while the axe stayed at
+zero; Keen Edge moved sheet damage 16-50 to 17-52 and Precision moved crit 35%
+to 38%. Every earlier suite still passes.
+
+Before that, M3.8 — the default
+attack is a real action, and combat is something you start.** Two pieces of
+user feedback that turned out to be one change. Since Phase 40 the server read
+intent off the player's position, so walking near a monster was an instruction
+to fight it — the last piece of idle-era reasoning in the game, and badly at
+odds with everything added since. An attack order is now something you give,
+by pressing the default attack or any offensive skill; it stands afterwards so
+a fight needs no keypress per swing or per corpse, and lapses two seconds after
+nothing has been in reach. That number is load-bearing: it must outlast the
+gaps *inside* a fight without outlasting the walk *between* them, and the first
+attempt at four seconds was caught re-engaging the player on arrival at the
+next camp. Heals, buffs and dashes deliberately do not give the order. The
+default attack itself is now a bar slot in position 1, keyed by weapon rather
+than class — Slash, Hew, Crush, Stab, Shoot, Arcane Blast, Zap, Jab — and
+pressing it does something waiting does not: it skips the closing wind-up, so
+opening a fight is an action rather than a pause. It is exempt from the global
+cooldown, since auto-attacks never were. Three combat enhancements came with
+it: **weapon speed is finally visible** (the slot's curtain is the swing timer,
+so dagger 330ms through axe 743ms is readable at a glance — the 0.6x–1.35x
+multipliers have existed since Phase 45 with nothing on screen counting them),
+a lit border and log lines saying whether an order stands, and a **wind-up bar**
+on the target frame, because the danger circle said where a slam would land and
+never when. Verified: six seconds beside a monster pressing nothing landed zero
+blows; pressing 1 opened the fight; a skill opened it equally well; retreating
+lapsed the order; all seven craftable families show their own attack and swing
+interval. Every earlier suite still passes.
+
+Before that, M3.7 — every weapon
+family fights like itself.** An auto-attack used to look identical whatever you
+held: a ranger three hundred pixels away hit things with an invisible melee
+swing, a mage did the same with a stick, and both made the sound of a sword
+going through air. One table in `attacks.ts` now says how each of the eight
+families delivers a blow, and the same table decides **when** the blow lands —
+a projectile's beat is its flight time over the real gap, so the damage number
+cannot appear before its own arrow does at any range. The bow fires the pack's
+`Ranger_Arrow` model from the weapon socket, pointed along its path (90ms at
+point blank, 200ms at 300px); the staff throws a travelling arcane bolt, which
+is just a moving `fx.png` quad and so needed no new art; the wand fires a beam
+— instant, a white core inside a tinted glow — which is what makes it a sidearm
+beside the staff rather than a shorter copy; and melee differs by weight, from
+a 105ms dagger to a 235ms axe with the heaviest burst of the five. Two new
+synthesised cues, `bow` and `beam`, because a bow going *whoosh* like a sword
+was the loudest thing wrong with ranger combat — re-running the generator
+reproduced the other ten byte for byte. The arrow is deliberately oversized
+with an additive trail: at this camera a player is fifty pixels tall, so a
+correctly-scaled arrow is a splinter nobody can see. Verified by instrumenting
+the real code path per family — sword/axe/dagger spawn nothing and release
+`swing`, bow released `bow` and spawned 4 arrows, staff `cast` and 5 bolts,
+wand `beam` and 9 beams — plus the beat table across four distances and
+screenshots of an arrow mid-flight and a beam. Every earlier suite still passes.
+
+Before that, M3.6 — targeting you
+do not have to do, and skills you can always use.** Both from user feedback.
+The targeting complaint turned out to be a feedback bug rather than a controls
+one: the server has always fought the nearest enemy whether or not anyone
+clicked, but the client drew nothing unless you did, so clicking felt
+compulsory when it never was. Targeting is now two things — `engagedId`, what
+you are fighting this instant, derived every frame from the rule the server
+swings by and always drawn; and `lockedId`, a deliberate choice that is the
+only thing a click changes, with its own ring, surviving until it dies and
+released by clicking it again. The client sends its auto-pick so the ring, the
+auto-attack and a single-target skill cannot disagree. Three real defects sat
+behind "strange when monsters are close together": click picking returned the
+first monster in map order rather than the nearest along the ray, so you could
+select the one *behind*; there was no click tolerance at all, making a slime a
+test of aim; and Tab cycled all ~30 monsters with models rather than the ones
+near you. Auto-targeting is sticky by 26px, without which separation jitter
+swaps the target several times a second — measured at 0 changes over 50 samples
+in a pack of four. Skills no longer need a target at all: they refuse for
+reasons about the caster (cooling down, mana, class, level) and never about the
+world, so you can swing at the air or open a fight with your opener; a shot
+that finds nothing still plays its effect along your facing, and ground-targeted
+AoE lands at your feet rather than being refused. That also fixed a plain bug
+where a dash used standing still with no enemy nearby returned early *after*
+the server had charged the cooldown. Verified: walked into a camp without
+clicking once — target acquired in 600ms, sent, and Cleave connected with no
+click anywhere in the run; all five warrior skills fire at spawn with the
+nearest monster 550px away and Charge displaced the player 180px. Collision,
+ice-skating, body-rule and M3 appearance suites all still pass.
+
+Before that, M3.5 — bodies occupy
+space, and nothing ice-skates.** Both from user feedback and both real. Nothing
+in the game had a size: monsters kept 34px from each other but a player was a
+point, so you could stand in the middle of a troll, and the `MOVE` handler
+accepted whatever position arrived without even a bounds check. Every creature
+now has a `bodyRadiusPx` matching the model the client draws, and one shared
+`resolveBodyCollision` runs on both sides — the client while you move, so a
+body feels like a wall rather than like lag, and the server on what it is told,
+so skipping it gains nothing. Monsters stop at contact, a leap is clamped so it
+cannot overshoot into you, separation uses each pair's own radii, and a second
+pass pushes monsters out of players (the monster yields, never the player).
+The ice-skating was four separate faults: the local player was position-
+interpolated like everything else, though its position is exact every frame, so
+the easing was pure lag — ~15px of permanent trail at 60fps decaying over a
+quarter second after you release a key, which *is* the glide; attack one-shots
+blocked the run animation, so for the ~1s of every swing the model held a
+planted pose while the character kept moving, which was most of the sliding
+during combat; run/idle was decided by comparing interpolated *rendered*
+positions, which lag, so actors were told to idle while still visibly catching
+up; and the separation shove could slide a monster sideways faster than its own
+top speed. Verified per rendered frame rather than by eye: 260 consecutive
+frames walking into a slime camp with zero overlapping and a settled distance
+of exactly contact; model lag max and mean both 0px, against 9.6/4.8 before; 1
+frame in 83 moving without the run animation. New `tools/test/bodies.mjs`
+asserts the invariants that make collision safe — every weapon reaches past
+every body, every monster reaches back — over all 13 kinds and 8 weapon
+families with 8px of required slack; it caught bare fists against a dragon at
++4px, which is why the two largest bodies were trimmed. Also fixed a stale
+absolute `file:///` import in `smoke.mjs` that pointed into a different
+checkout and only worked on the machine that wrote it.
+
+Before that, M3 — gear and class are
+visible on the 3D character.** Equipping changes what you look like, not just
+what the stat sheet says, on two axes kept independent the way Phase 45's
+paperdoll kept them: style picks the mesh, rarity only tints it. Plus one the
+2D game never had — class is your whole body. `CLASS_BODIES` maps the four
+classes to four rigs and `setAppearance` swaps the entire body mid-fight, so
+picking up a staff does not make you a soldier holding a staff, it makes you a
+robed mage. This was unlocked by finding that the rest of the character pack
+was one zip away (M1 had shipped only `Warrior.fbx`, though the textures for
+all six were already in the repo) and that all six share ONE skeleton, every
+bone within about a unit in three hundred — which is why a single set of
+armour fits every class with no per-body fitting. Two rules do the work:
+weapon grips are *harvested* off the rig that authored them, transform and
+all, so no grip is ever a number someone can get wrong (axe and mace, absent
+from the pack, are built inside the sword's own geometry space to inherit it);
+and armour is authored in plain rig coordinates — "a dome at y=254, radius 40"
+— with a per-bone holder that undoes the rest pose, so it reads like a
+measurement and still rides the bone through every animation. Ten styles
+across four visible slots, each a real silhouette: plate has pauldrons and
+tassets, chain a mail skirt, robe a floor-length skirt hung from the waist
+bone, the great helm a visor slit. A contact-sheet preview page at `/preview/`
+drives the real `setAppearance` — the 3D descendant of `preview_doll.ps1`, and
+its `?hidebody=1` flag is what separated "this helm is too small" from "this
+helm is buried in the skull" in one look. Four real bugs fixed on the way, two
+of them pre-existing and shipped: `SkeletonUtils.clone` shares materials by
+reference, so M2's hit flash on one wolf flashed the whole pack and chilling
+one slime tinted them all; `dispose()` freed geometry owned by the model cache,
+forcing a GPU re-upload for every monster of a kind on respawn; the attack clip
+was matched loosely, so a mage cast spells by standing still (`Idle_Attacking`
+matches "Attack"); and a body swap never restarted playback, freezing the
+character in its bind pose. Verified against a live server: every weapon family
+equipped in sequence, each swapping the rig and re-attaching all ten armour
+meshes; a second client seeing a remote player fully geared while its own
+bare-handed body stayed a Monk; flashing that remote leaving the local player
+untouched; a real fight, HP 60→41; `smoke.mjs` green; both workspaces
+typecheck clean. **Not yet eyeballed by a human in a real browser** — this
+machine has no display, so everything above is headless Playwright plus the
+contact sheets.
+
+Before that, the project got a name of
 its own — **WieldBound** — after the rule that distinguishes it, replacing a
 working title that named the game it was originally a study of and had been
 inaccurate since the idle model was deleted in Phase 40. Availability checked

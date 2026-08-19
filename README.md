@@ -37,23 +37,54 @@ first run at `server/data/wieldbound.db`.
 
 ## What's in it
 
-- **Combat** — proximity-driven auto-attacks, monster AI with sticky aggro,
+- **Combat** — you start fights, they do not start themselves: press your
+  weapon's own attack (slot 1, different for every weapon family) or any
+  offensive skill, and the swings continue until you walk away. The attack
+  slot's curtain is the swing timer, so weapon speed is something you can see
+  — a dagger lands three blows in the time an axe lands one. Plus monster AI
+  with sticky aggro,
   leashing and heal-on-reset, a threat table that doubles as the XP split,
   melee crowding limits, a global cooldown, and telegraphed attacks you
-  answer by stepping out of them.
+  answer by stepping out of them. Every creature has a body that takes up
+  room, so squaring up to something means standing next to it, not in it.
+  You never have to click a monster: the game marks whatever you are actually
+  fighting, and a click is an override that locks your choice rather than a
+  step you owe it. Skills fire whenever *you* can afford them — off cooldown,
+  enough mana, right class — never gated on something being in range.
 - **Class from your weapon** — there is no class selection. `classForWeapon`
   derives it from whatever you have equipped, so swapping weapons swaps your
-  skills, reach, damage attribute and mana pool. Bare hands are a real (weak)
-  archetype rather than a broken state.
+  skills, reach, damage attribute and mana pool — *and your whole body*, since
+  each class has its own rig. Pick up a staff and you do not become a soldier
+  holding a staff, you become a robed mage. Each of the eight weapon families
+  also *fights* like itself: a bow looses a real arrow that takes time to
+  arrive, a staff throws a bolt, a wand fires a beam, and an axe lands heavier
+  and later than a dagger. Bare hands are a real (weak) archetype rather than
+  a broken state.
 - **13 monster kinds** in five difficulty bands radiating from spawn, so
   walking further from the workbench *is* the progression. Each kind has a
   verb rather than a bigger stat line — one bursts on death, one outruns you,
   one can only be hit by a high-Agility build, one has armour that ignores
   chip damage.
-- **Skills** — cooldown- and mana-gated actives per class, unlocking by level,
-  with a skill tree panel and a hotbar that rebuilds itself as you re-class.
+- **MMO-style windows** — the dock sits on the right and its panels open there
+  too, laid out side by side so the bag and the character sheet can be open at
+  once without covering each other or the world.
+- **An action bar you own** — ten slots, and only you change them: drag a
+  learned skill out of the talent panel, drag slots to reorder, right-click to
+  clear, click a key label to rebind. Saved per weapon, because the skills are.
+- **Talent trees, one per weapon** — using a weapon levels *that weapon*, and
+  its proficiency hands you points to spend where you want. Nothing unlocks
+  itself: all 27 skills and every passive is a node you buy. Eight trees, 73
+  nodes, and about two thirds of a tree fits in a finished weapon's points, so
+  which two thirds is the build. Free respec per weapon.
+- **Two progressions that answer different questions** — character level is who
+  you are (hit points, stat points, carried across every weapon); weapon
+  proficiency is what you can do with the thing in your hand, and it is earned
+  only while holding it. Stat points come with per-weapon advice, since which
+  attribute multiplies your damage depends on what you are wielding.
 - **Gear** — six slots, three rarities, two rolled stats per item, crafting,
-  selling, and an inventory cap.
+  selling, and an inventory cap. Four of the slots show on the character:
+  style picks the mesh, rarity only tints it, so a plate chestpiece and a
+  leather one take the same epic gold and stay recognisably plate and leather.
 - **Plus** gathering, levels and attributes, consumables, a leaderboard, a
   daily bonus, and a persistent combat log.
 
@@ -62,9 +93,14 @@ first run at `server/data/wieldbound.db`.
 ```
 client/   Three.js + Vite + TypeScript
   src/three/   the renderer: Game (orchestrator), World (scene/terrain/camera),
-               Actor (animated model), effects, indicators, hud, sfx, assets
-  src/ui/      DOM panels — inventory, character, craft, skills, leaderboard,
-               combat log, target frame, hotbar. Renderer-agnostic.
+               Actor (animated model), gear (bodies, weapons, armour),
+               attacks (per-weapon delivery + projectiles),
+               effects, indicators, hud, sfx, assets
+  preview/     dev-only contact sheet of every body, weapon, style and rarity,
+               at http://localhost:5173/preview/ — not part of the game bundle
+  src/ui/      DOM panels — bag, character paperdoll, workbench, talent tree,
+               leaderboard, combat log, target frame, action bar.
+               Renderer-agnostic.
   src/net/     socket.ts — renderer-agnostic too
 server/   Node + ws + node:sqlite
 shared/   protocol-types.ts — message shapes AND the game's formulas,
@@ -87,7 +123,8 @@ Monsters are glTF, characters and trees FBX; the client loads both.
 
 Two things survive from the 2D era and are still loaded at runtime:
 `assets/fx.png` (the 14-school effect atlas, drawn as camera-facing quads) and
-`assets/sfx/*.wav` (synthesised, not sourced). Provenance for those is in
+`assets/sfx/*.wav` (synthesised, not sourced — twelve cues now, `bow` and
+`beam` having been added for the weapons that do not swing). Provenance is in
 [`client/public/assets/ASSET_CREDITS.txt`](client/public/assets/ASSET_CREDITS.txt).
 
 The rest of `client/public/assets/` (`grass.png`, `props.png`, `actors.png`,
@@ -98,8 +135,11 @@ it belonged to the Phaser client removed in Phase 47. It is kept because
 ## State of play
 
 The renderer was rewritten from Phaser to Three.js in Phase 47. Milestones M1
-(playable 3D client), M1.5 (13 monsters, bigger world) and M2 (combat feedback,
-effects, sound, UI) are done. **M3 — gear and class visible on the 3D
-character** — is the next piece: the weapon socket is proven to work, but
-equipping armour does not yet change what you look like, which the 2D paperdoll
-did do. See [`PLAN.md`](PLAN.md) for the full picture.
+(playable 3D client), M1.5 (13 monsters, bigger world), M2 (combat feedback,
+effects, sound, UI), M3 (gear and class on the character), M3.5 (bodies
+collide, no ice-skating), M3.6 (targeting and skill freedom), M3.7 (each weapon
+family fights like itself), M3.8 (the default attack as a real action) and M3.9
+(a talent tree per weapon), M3.10 (a real RPG interface) and M3.11 (MMO-style
+window rail) are done. **M4 —
+skill VFX, day/night and polish** — is next. See [`PLAN.md`](PLAN.md) for the
+full picture.

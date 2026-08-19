@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WieldBound — gear contact sheet</title>
+    <style>
+      html, body { margin: 0; background: #14100a; color: #f2e2bd; font-family: Georgia, serif; }
+      #sheet { position: relative; }
+      canvas { display: block; }
+      .label {
+        position: absolute; transform: translateX(-50%);
+        font-size: 13px; text-align: center; text-shadow: 0 1px 3px #000; pointer-events: none;
+      }
+      .label b { color: #ffd873; display: block; font-size: 14px; }
+      .label span { color: #b9a06e; }
+    </style>
+  </head>
+  <body><div id="sheet"></div><script type="module" src="./preview.ts"></script></body>
+</html>

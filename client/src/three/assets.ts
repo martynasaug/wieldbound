@@ -24,7 +24,9 @@ const TEXTURE_PATH = "/textures";
 // weapons add a `_Texture` suffix, `Birch_Leaves` has colour variants, and
 // plain `Bark` has no file at all — hence exact, then suffixed, then prefix.
 const TEXTURE_FILES = [
-  "Warrior_Texture", "Warrior_Sword_Texture",
+  "Warrior_Texture", "Ranger_Texture", "Wizard_Texture",
+  "Monk_Texture", "Rogue_Texture", "Cleric_Texture",
+  "Warrior_Sword_Texture",
   "Ranger_Bow_Texture", "Ranger_Arrow_Texture", "Wizard_Staff_Texture",
   "Rogue_Dagger_Texture", "Cleric_Staff_Texture",
   "Bark_Dead", "Birch_Bark", "Birch_Bark_Dead",
@@ -45,8 +47,16 @@ const MATERIAL_COLORS: Record<string, number> = {
   Dragon: 0x8a5a3c,
 };
 
+// Material names that do not resolve by any rule. The Ranger rig calls its bow
+// material `Bow_Texture` while the file shipped as `Ranger_Bow_Texture`, and no
+// amount of prefix matching bridges that.
+const TEXTURE_ALIASES: Record<string, string> = {
+  Bow_Texture: "Ranger_Bow_Texture",
+};
+
 function resolveTexture(name: string | undefined): string | null {
   if (!name) return null;
+  if (TEXTURE_ALIASES[name]) return TEXTURE_ALIASES[name];
   if (TEXTURE_FILES.includes(name)) return name;
   if (TEXTURE_FILES.includes(`${name}_Texture`)) return `${name}_Texture`;
   return TEXTURE_FILES.find((f) => f.startsWith(`${name}_`)) ?? null;

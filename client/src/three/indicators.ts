@@ -47,14 +47,24 @@ function disc(radius: number, color: number, opacity: number): THREE.Mesh {
 
 export class Indicators {
   private readonly targetRing: THREE.Mesh;
+  /** Drawn around a target you picked by hand, so a deliberate choice stays
+   *  visibly yours even when auto-attack is busy with something nearer. */
+  private readonly lockRing: THREE.Mesh;
+  /** Follows the cursor's candidate, so you can see which of two overlapping
+   *  bodies a click would actually take. */
+  private readonly hoverRing: THREE.Mesh;
   private readonly reachRing: THREE.Mesh;
   private readonly dangerZones = new Map<string, { fill: THREE.Mesh; edge: THREE.Mesh }>();
   private seen = new Set<string>();
 
   constructor(private readonly scene: THREE.Scene) {
     this.targetRing = ring(0.42, 0.55, 0xffd873, 0.9);
+    this.lockRing = ring(0.66, 0.74, 0xffd873, 0.8);
+    this.hoverRing = ring(0.44, 0.52, 0xf2e2bd, 0.4);
     this.reachRing = ring(0.97, 1.0, 0xffe9c4, 0.22);
     scene.add(this.targetRing);
+    scene.add(this.lockRing);
+    scene.add(this.hoverRing);
     scene.add(this.reachRing);
   }
 
@@ -66,6 +76,32 @@ export class Indicators {
     const mat = this.targetRing.material as THREE.MeshBasicMaterial;
     mat.color.setHex(inReach ? 0xffd873 : 0x9a8d76);
     mat.opacity = inReach ? 0.95 : 0.55;
+  }
+
+  /**
+   * The outer ring marking a hand-picked target. Usually it sits directly
+   * around the engaged ring and the two read as one thicker marker; they only
+   * separate when auto-attack is hitting something closer than the thing you
+   * chose, which is exactly the moment worth telling the player about.
+   */
+  showLock(x: number, z: number, radius: number): void {
+    this.lockRing.visible = true;
+    this.lockRing.position.set(x, 0.031, z);
+    this.lockRing.scale.setScalar(Math.max(0.6, radius));
+  }
+
+  hideLock(): void {
+    this.lockRing.visible = false;
+  }
+
+  showHover(x: number, z: number, radius: number): void {
+    this.hoverRing.visible = true;
+    this.hoverRing.position.set(x, 0.029, z);
+    this.hoverRing.scale.setScalar(Math.max(0.6, radius));
+  }
+
+  hideHover(): void {
+    this.hoverRing.visible = false;
   }
 
   hideTarget(): void {

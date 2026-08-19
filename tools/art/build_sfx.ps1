@@ -168,5 +168,32 @@ for ($i = 0; $i -lt $buf.Length; $i++) {
 }
 Write-Wav $buf "heal.wav"
 
+# --- bow: bowstring release, a filtered noise transient over a low twang ---
+# A bow going "whoosh" like a sword was the loudest thing wrong with ranger
+# combat: the release is a snap, not a swing.
+$dur = 0.16; $buf = New-Buffer $dur; $prev = 0.0; $ph = 0.0
+for ($i = 0; $i -lt $buf.Length; $i++) {
+  $t = $i / [double]$RATE
+  $prev = $prev * 0.55 + (NoiseS) * 0.45     # brighter than swing's "air"
+  $snap = $prev * [Math]::Exp(-38 * $t) * 0.55
+  $f = 190 - 90 * ($t / $dur)                # string pitch falling away
+  $ph += 2 * [Math]::PI * $f / $RATE
+  $twang = [Math]::Sin($ph) * [Math]::Exp(-16 * $t) * 0.3
+  $buf[$i] = $snap + $twang
+}
+Write-Wav $buf "bow.wav"
+
+# --- beam: a wand's zap, bright and electrical ------------------------
+$dur = 0.18; $buf = New-Buffer $dur; $ph = 0.0
+for ($i = 0; $i -lt $buf.Length; $i++) {
+  $t = $i / [double]$RATE
+  # Vibrato around a high carrier is what separates "zap" from "beep".
+  $f = 1250 + 260 * [Math]::Sin(2 * [Math]::PI * 60 * $t) - 500 * ($t / $dur)
+  $ph += 2 * [Math]::PI * $f / $RATE
+  $tone = ([Math]::Sin($ph) * 0.7 + (SquareW $ph) * 0.3)
+  $buf[$i] = $tone * [Math]::Exp(-14 * $t) * 0.26
+}
+Write-Wav $buf "beam.wav"
+
 "---"
 "wrote to $assets"

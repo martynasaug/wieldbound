@@ -1,4 +1,5 @@
 import type {
+  HotbarLayout,
   AttributeName,
   ClientToServerMessage,
   ItemRarity,
@@ -31,6 +32,8 @@ export interface GameSocketHandlers {
   onInfo: (payload: Extract<ServerToClientMessage, { type: "INFO" }>["payload"]) => void;
   onSkillResult: (payload: Extract<ServerToClientMessage, { type: "SKILL_RESULT" }>["payload"]) => void;
   onManaUpdate: (payload: Extract<ServerToClientMessage, { type: "MANA_UPDATE" }>["payload"]) => void;
+  onAttackState: (payload: Extract<ServerToClientMessage, { type: "ATTACK_STATE" }>["payload"]) => void;
+  onWeaponProgress: (payload: Extract<ServerToClientMessage, { type: "WEAPON_PROGRESS" }>["payload"]) => void;
 }
 
 export class GameSocket {
@@ -93,6 +96,10 @@ export class GameSocket {
         this.handlers.onSkillResult(msg.payload);
       } else if (msg.type === "MANA_UPDATE") {
         this.handlers.onManaUpdate(msg.payload);
+      } else if (msg.type === "ATTACK_STATE") {
+        this.handlers.onAttackState(msg.payload);
+      } else if (msg.type === "WEAPON_PROGRESS") {
+        this.handlers.onWeaponProgress(msg.payload);
       }
     });
 
@@ -173,5 +180,21 @@ export class GameSocket {
 
   sendUseSkill(skillId: SkillId): void {
     this.send({ type: "USE_SKILL", payload: { skillId } });
+  }
+
+  sendUseAttack(): void {
+    this.send({ type: "USE_ATTACK", payload: {} });
+  }
+
+  sendLearnTalent(nodeId: string): void {
+    this.send({ type: "LEARN_TALENT", payload: { nodeId } });
+  }
+
+  sendSetHotbar(weaponType: WeaponType, layout: HotbarLayout): void {
+    this.send({ type: "SET_HOTBAR", payload: { weaponType, layout } });
+  }
+
+  sendResetTalents(weaponType: WeaponType): void {
+    this.send({ type: "RESET_TALENTS", payload: { weaponType } });
   }
 }

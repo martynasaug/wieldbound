@@ -7,6 +7,8 @@ import {
   LOOT_DROP_CHANCE,
   MONSTER_STATS,
   PLAYER_SPAWN,
+  WORLD_WIDTH,
+  WORLD_HEIGHT,
   POTION_CRAFT_COST,
   POTION_HEAL_AMOUNT,
   TONIC_CRAFT_COST,
@@ -31,8 +33,24 @@ import {
   maxManaFor,
   manaRegenAmount,
   primaryStatValue,
-  passiveBonuses,
+  talentPassives,
   unlockedActives,
+  hasActive,
+  canLearnTalent,
+  spentTalentPoints,
+  talentPointsAtLevel,
+  talentTree,
+  normalizeHotbar,
+  pruneHotbar,
+  suggestedHotbar,
+  type HotbarLayout,
+  weaponProgress,
+  applyDamagePercent,
+  applyAttackSpeed,
+  applyCooldown,
+  applyManaCost,
+  type TalentRanks,
+  type WeaponProgressMessage,
   MANA_REGEN_INTERVAL_MS,
   SHIELD_WALL_MS,
   SHIELD_WALL_REDUCTION,
@@ -41,6 +59,11 @@ import {
   MAX_MELEE_ATTACKERS,
   MELEE_RING_STEP_PX,
   MONSTER_SEPARATION_PX,
+  PLAYER_BODY_RADIUS_PX,
+  ATTACK_ORDER_LAPSE_MS,
+  type AttackStateMessage,
+  resolveBodyCollision,
+  separationFor,
   GLOBAL_COOLDOWN_MS,
   POTION_COOLDOWN_MS,
   COMBAT_LOCKOUT_MS,
@@ -115,6 +138,13 @@ import {
   markDisconnected,
   getLeaderboard,
   claimDailyBonus,
+  getWeaponXp,
+  addWeaponXp,
+  getTalentRanks,
+  setTalentRank,
+  clearTalents,
+  getHotbar,
+  setHotbar,
 } from "./db.ts";
 
 const PORT = 8080;
@@ -123,6 +153,10 @@ const SAVE_INTERVAL_MS = 1000;
 const MONSTER_RESPAWN_MS = 10000;
 const MAX_AOE_TARGETS = 5;
 const HP_REGEN_INTERVAL_MS = 5000; // 1 HP per interval while below max, no regen needed once full
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
 
 // Position/identity only. Equipment lives in its own maps below and is
 // merged in at broadcast time, so there is no second copy of a player's
@@ -179,8 +213,111 @@ function powerOf(playerId: string, attrs: Attributes): number {
 
 // Unlocked passives, totalled. Recomputed rather than cached because level
 // and class are the only inputs and both are cheap to read.
-function passivesOf(playerId: string): ReturnType<typeof passiveBonuses> {
-  return passiveBonuses(classOf(playerId), playerLevels.get(playerId) ?? 1);
+// --- Weapon proficiency ------------------------------------------------------
+// Cached per connected player so combat resolution is not hitting SQLite on
+// every swing. Written through on every change, exactly as the other caches
+// here are.
+const weaponXpCache = new Map<string, Map<WeaponType, number>>();
+const talentCache = new Map<string, Map<WeaponType, TalentRanks>>();
+
+function weaponXpOf(playerId: string, weapon: WeaponType): number {
+  let byWeapon = weaponXpCache.get(playerId);
+  if (!byWeapon) {
+    byWeapon = new Map();
+    weaponXpCache.set(playerId, byWeapon);
+  }
+  const cached = byWeapon.get(weapon);
+  if (cached !== undefined) return cached;
+  const xp = getWeaponXp(playerId, weapon);
+  byWeapon.set(weapon, xp);
+  return xp;
+}
+
+function ranksOf(playerId: string, weapon: WeaponType): TalentRanks {
+  let byWeapon = talentCache.get(playerId);
+  if (!byWeapon) {
+    byWeapon = new Map();
+    talentCache.set(playerId, byWeapon);
+  }
+  const cached = byWeapon.get(weapon);
+  if (cached !== undefined) return cached;
+  const ranks = getTalentRanks(playerId, weapon);
+  byWeapon.set(weapon, ranks);
+  return ranks;
+}
+
+/** The weapon whose tree is currently in force. Fists are a real weapon here,
+ *  with a real tree, so there is no null case. */
+function heldWeapon(playerId: string): WeaponType {
+  return weaponTypeOf(playerId) ?? "fist";
+}
+
+function weaponLevelOf(playerId: string, weapon = heldWeapon(playerId)): number {
+  return weaponProgress(weaponXpOf(playerId, weapon)).level;
+}
+
+/** Passive totals from the held weapon's learned talents. Replaces the old
+ *  class+level lookup: bonuses now come from what you chose, on this weapon. */
+function passivesOf(playerId: string): ReturnType<typeof talentPassives> {
+  const weapon = heldWeapon(playerId);
+  return talentPassives(weapon, ranksOf(playerId, weapon));
+}
+
+/**
+ * The player's bar for a weapon: their stored layout if they have edited one,
+ * otherwise a suggested starting bar. Always pruned, so refunding a talent
+ * cannot leave a button that casts nothing.
+ */
+function hotbarOf(playerId: string, weapon: WeaponType, ranks: TalentRanks): HotbarLayout {
+  const stored = getHotbar(playerId, weapon);
+  const layout = stored
+    ? normalizeHotbar(stored as Partial<HotbarLayout>)
+    : suggestedHotbar(weapon, ranks);
+  return pruneHotbar(layout, weapon, ranks);
+}
+
+function sendWeaponProgress(playerId: string, reason?: string): void {
+  const socket = sockets.get(playerId);
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  const weapon = heldWeapon(playerId);
+  const ranks = ranksOf(playerId, weapon);
+  const xp = weaponXpOf(playerId, weapon);
+  const progress = weaponProgress(xp);
+  const spent = spentTalentPoints(weapon, ranks);
+  const msg: WeaponProgressMessage = {
+    type: "WEAPON_PROGRESS",
+    payload: {
+      weaponType: weapon,
+      xp,
+      level: progress.level,
+      intoLevel: progress.intoLevel,
+      needed: progress.needed,
+      pointsSpent: spent,
+      pointsAvailable: talentPointsAtLevel(progress.level) - spent,
+      ranks,
+      hotbar: hotbarOf(playerId, weapon, ranks),
+      reason,
+    },
+  };
+  socket.send(JSON.stringify(msg));
+}
+
+/** Proficiency is earned only by the weapon that did the work. */
+function awardWeaponXp(playerId: string, amount: number): void {
+  if (amount <= 0) return;
+  const weapon = heldWeapon(playerId);
+  const before = weaponProgress(weaponXpOf(playerId, weapon)).level;
+  const total = addWeaponXp(playerId, weapon, amount);
+  weaponXpCache.get(playerId)?.set(weapon, total);
+  const after = weaponProgress(total).level;
+  if (after > before) {
+    const socket = sockets.get(playerId);
+    const name = WEAPONS[weapon].name;
+    if (socket) {
+      sendInfo(socket, `${name} proficiency ${after} — a talent point to spend.`, "#ffd873");
+    }
+  }
+  sendWeaponProgress(playerId);
 }
 
 function maxManaOf(playerId: string, attrs: Attributes): number {
@@ -188,6 +325,29 @@ function maxManaOf(playerId: string, attrs: Attributes): number {
     maxManaFor(classOf(playerId), playerLevels.get(playerId) ?? 1, attrs.intelligence) +
     passivesOf(playerId).maxManaBonus
   );
+}
+
+/**
+ * Re-sends the numbers a talent purchase or a weapon swap can move.
+ *
+ * Max HP, max mana, reach and swing speed are all now downstream of which
+ * talents are learned on the weapon in hand, so any of the three events that
+ * change that set has to push them: buying a node, refunding a tree, or
+ * picking up a different weapon.
+ */
+function refreshDerivedStats(playerId: string): void {
+  const socket = sockets.get(playerId);
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  const attrs = attributes.get(playerId) ?? EMPTY_ATTRS;
+  const maxHp = maxHpOf(playerId, attrs);
+  const hp = Math.min(hpBalances.get(playerId) ?? maxHp, maxHp);
+  hpBalances.set(playerId, hp);
+  sendHpUpdate(socket, hp, maxHp, false);
+  const maxMana = maxManaOf(playerId, attrs);
+  const mana = Math.min(manaBalances.get(playerId) ?? maxMana, maxMana);
+  manaBalances.set(playerId, mana);
+  sendManaUpdate(socket, mana, maxMana);
+  sendAttackState(playerId);
 }
 
 function sendManaUpdate(socket: WebSocket | undefined, mana: number, maxMana: number): void {
@@ -322,6 +482,16 @@ function ringPack(
   );
 }
 
+/** Every living body a player can bump into, as plain circles. */
+function aliveMonsterBodies(): { x: number; y: number; radiusPx: number }[] {
+  const out: { x: number; y: number; radiusPx: number }[] = [];
+  for (const m of monsters) {
+    if (m.status !== "alive") continue;
+    out.push({ x: m.x, y: m.y, radiusPx: MONSTER_STATS[m.kind].bodyRadiusPx });
+  }
+  return out;
+}
+
 const monsters: MonsterState[] = [
   // Band 1 (~620px) — clearable at level 1. Deliberately no camp closer than
   // this, so spawn and the workbench stay safe ground.
@@ -369,6 +539,10 @@ const stations: CraftingStationState[] = [{ id: "workbench-1", x: PLAYER_SPAWN.x
 // that", and the first tick in range seeds the clock so walking in and out
 // of reach can't be used to rush attacks.
 const nextAttackAt = new Map<string, number>();
+// A standing attack order. Empty means the player is not fighting, however
+// close they happen to be standing to something — walking past a camp is not
+// an instruction to draw a weapon.
+const attackOrders = new Map<string, { since: number; lastInReachAt: number }>();
 const nextGatherAt = new Map<string, number>();
 // The monster a player has explicitly selected. Auto-attack prefers it, and
 // falls back to "whatever is nearest" when unset, so walking into a camp
@@ -398,7 +572,10 @@ function markInCombat(playerId: string, now: number): void {
 // both normal attacks and telegraphed slams can kill, and the penalty must
 // not depend on which one did it.
 function handlePlayerDeath(playerId: string, socket: WebSocket | undefined, now: number): void {
+  // Dying cancels the attack order along with the swing clock: you come back
+  // standing, not mid-fight with whatever killed you.
   clearCombatClocks(playerId);
+  sendAttackState(playerId);
   weakenedUntil.set(playerId, now + WEAKENED_DURATION_MS);
   const { xp, lost } = loseXpFraction(playerId, DEATH_XP_LOSS_FRACTION);
   // Threat dies with you: a corpse should not still be holding a pack's
@@ -525,6 +702,9 @@ function awardKill(monster: MonsterState, now: number): void {
     const share = Math.max(MIN_XP_SHARE, damage / total);
     const reward = Math.max(1, Math.round(xpRewardFor(monster.kind, armorRarities.get(playerId) ?? null) * share));
     const { xp, level, leveledUp, statPoints } = addXp(playerId, reward);
+    // Proficiency follows the same share, so the weapon that did the work is
+    // the weapon that improves — and only while it is actually in hand.
+    awardWeaponXp(playerId, reward);
     playerLevels.set(playerId, level);
     attrs.statPoints = statPoints;
     if (socket) {
@@ -582,6 +762,9 @@ for (const monster of monsters) {
 
 function clearCombatClocks(playerId: string): void {
   nextAttackAt.delete(playerId);
+  attackOrders.delete(playerId);
+  weaponXpCache.delete(playerId);
+  talentCache.delete(playerId);
   nextGatherAt.delete(playerId);
 }
 
@@ -613,15 +796,21 @@ function applySkillDamage(
   let scaled = enraged ? power * (1 + WARCRY_DAMAGE_BONUS) : power;
   if (weakened) scaled *= 1 - WEAKENED_DAMAGE_PENALTY;
 
+  const passives = passivesOf(playerId);
+  scaled = applyDamagePercent(scaled, passives.damagePercent);
   const result = resolveHit({
-    attackerAccuracy: playerAccuracy(attrs.agility) + (equipped?.ring?.bonusStatValue ?? 0),
+    attackerAccuracy:
+      playerAccuracy(attrs.agility, passives.accuracyBonus) + (equipped?.ring?.bonusStatValue ?? 0),
     // A spread around the skill's rated power, so it varies like a weapon
     // swing rather than landing for exactly the same number every cast.
     attackerMinHit: Math.max(1, Math.round(scaled * 0.85)),
     attackerMaxHit: Math.max(2, Math.round(scaled * 1.15)),
     attackerCritChance:
-      playerCritChance(attrs.agility) + gearCritChance(equipped) + passivesOf(playerId).critChance,
-    attackerCritMultiplier: critDamageMultiplier(weaponRarities.get(playerId) ?? null),
+      playerCritChance(attrs.agility) + gearCritChance(equipped) + passives.critChance,
+    attackerCritMultiplier: critDamageMultiplier(
+      weaponRarities.get(playerId) ?? null,
+      passives.critDamagePercent,
+    ),
     defenderEvasion: stats.evasion,
     defenderArmor: stats.armor,
   });
@@ -674,16 +863,16 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
     sendSkillResult(socket, { skillId, ok: false, reason: "cooling down", cooldownRemainingMs: readyAt - now, globalCooldownMs: 0, hits: [] });
     return;
   }
-  // Permanent facts first, transient ones second: being told "not ready"
-  // when the real answer is "your class will never have this" is actively
-  // misleading, and that is exactly what checking the GCD first produced.
+  // Permanent facts first, transient ones second: being told "not ready" when
+  // the real answer is "you never learned this" is actively misleading, and
+  // that is exactly what checking the GCD first produced.
   const level = playerLevels.get(playerId) ?? 1;
-  if (skill.classId !== classOf(playerId) || skill.kind === "passive") {
-    sendSkillResult(socket, { skillId, ok: false, reason: "not your class", cooldownRemainingMs: 0, globalCooldownMs: 0, hits: [] });
-    return;
-  }
-  if (skill.unlockLevel > level) {
-    sendSkillResult(socket, { skillId, ok: false, reason: `unlocks at level ${skill.unlockLevel}`, cooldownRemainingMs: 0, globalCooldownMs: 0, hits: [] });
+  const weapon = heldWeapon(playerId);
+  const ranks = ranksOf(playerId, weapon);
+  if (!hasActive(weapon, ranks, skillId)) {
+    // Covers both "this weapon's tree has no such talent" and "it does, and
+    // you have not bought it" — from the player's side those are one fact.
+    sendSkillResult(socket, { skillId, ok: false, reason: "not learned for this weapon", cooldownRemainingMs: 0, globalCooldownMs: 0, hits: [] });
     return;
   }
 
@@ -694,14 +883,25 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
   }
 
   const attrs = attributes.get(playerId) ?? EMPTY_ATTRS;
+  const passives = passivesOf(playerId);
+  const manaCost = applyManaCost(skill.manaCost, passives.manaCostPercent);
+  const cooldownMs = applyCooldown(skill.cooldownMs, passives.cooldownPercent);
   const maxMana = maxManaOf(playerId, attrs);
   const mana = manaBalances.get(playerId) ?? maxMana;
-  if (mana < skill.manaCost) {
+  if (mana < manaCost) {
     sendSkillResult(socket, { skillId, ok: false, reason: "not enough mana", cooldownRemainingMs: 0, globalCooldownMs: 0, hits: [] });
     return;
   }
 
-  const power = skillPower(skill, powerOf(playerId, attrs), attrs.vitality, level);
+  // Using something meant to hurt is an attack order in its own right, so
+  // opening with a skill works as well as opening with the basic attack. Heals,
+  // buffs and dashes are exempt: mending an ally or dashing away from a fight
+  // are not instructions to start one.
+  if (skill.kind !== "heal" && skill.kind !== "buff" && skill.kind !== "mobility") {
+    orderAttack(playerId, now);
+  }
+
+  const power = skillPower(skill, powerOf(playerId, attrs), attrs.vitality, level, passives.skillPowerPercent);
   const hits: { monsterId: string; hit: boolean; damage: number; crit: boolean }[] = [];
   let healed: number | undefined;
   let buffMs: number | undefined;
@@ -791,32 +991,45 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
       struck = struck.slice(0, skill.chainTargets);
     } else if (skill.radiusPx > 0 && skill.rangePx > 0) {
       // Ground-targeted: lands on your selected enemy and splashes there,
-      // rather than around you (Rain of Arrows, Firebolt).
-      if (!selected || selected.status !== "alive" ||
-          Math.hypot(selected.x - player.x, selected.y - player.y) > skill.rangePx) {
-        sendSkillResult(socket, { skillId, ok: false, reason: "no target in range", cooldownRemainingMs: 0, globalCooldownMs: 0, hits: [] });
-        return;
-      }
+      // rather than around you (Rain of Arrows, Firebolt). With nothing to aim
+      // at it falls on the caster's own feet instead of being refused — see
+      // the note on firing into empty air below.
+      const aimed =
+        selected &&
+        selected.status === "alive" &&
+        Math.hypot(selected.x - player.x, selected.y - player.y) <= skill.rangePx
+          ? selected
+          : null;
+      const cx = aimed ? aimed.x : player.x;
+      const cy = aimed ? aimed.y : player.y;
       struck = monsters.filter(
-        (m) => m.status === "alive" && Math.hypot(m.x - selected.x, m.y - selected.y) <= skill.radiusPx,
+        (m) => m.status === "alive" && Math.hypot(m.x - cx, m.y - cy) <= skill.radiusPx,
       );
     } else if (skill.radiusPx > 0) {
       struck = monsters.filter(
         (m) => m.status === "alive" && Math.hypot(m.x - player.x, m.y - player.y) <= skill.radiusPx,
       );
     } else {
-      const inRange = selected && Math.hypot(selected.x - player.x, selected.y - player.y) <= skill.rangePx;
-      if (!selected || selected.status !== "alive" || !inRange) {
-        sendSkillResult(socket, { skillId, ok: false, reason: "no target in range", cooldownRemainingMs: 0, globalCooldownMs: 0, hits: [] });
-        return;
-      }
-      struck = [selected];
+      const inRange =
+        selected &&
+        selected.status === "alive" &&
+        Math.hypot(selected.x - player.x, selected.y - player.y) <= skill.rangePx;
+      struck = inRange && selected ? [selected] : [];
     }
 
-    if (struck.length === 0) {
-      sendSkillResult(socket, { skillId, ok: false, reason: "nothing in range", cooldownRemainingMs: 0, globalCooldownMs: 0, hits: [] });
-      return;
-    }
+    // Deliberately NOT refused when `struck` is empty.
+    //
+    // Skills used to be gated on having something to hit: press one with no
+    // enemy in range and the server answered "nothing in range" and the press
+    // did nothing at all. That made the hotbar feel like it belonged to the
+    // monsters rather than to the player — you could not swing a sword at the
+    // air, test what a spell looked like, or open a fight with your opener
+    // rather than closing into auto-attack range first.
+    //
+    // Now a skill fires whenever the player can actually afford it: off
+    // cooldown, enough mana, right class, unlocked. Whether it connects is a
+    // separate question, and `hits: []` is a perfectly good answer to it. The
+    // refusals that remain are all about the caster, never about the world.
 
     // AoE is capped rather than unbounded: without a limit one Cleave in a
     // big camp hits everything at full damage, trivialising the exact fights
@@ -846,13 +1059,13 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
 
   // Only charged once the cast is known to have gone through: every failure
   // path above returns before this, so a refused skill costs nothing.
-  spendMana(playerId, skill.manaCost, attrs);
-  cooldowns.set(skillId, now + skill.cooldownMs);
+  spendMana(playerId, manaCost, attrs);
+  cooldowns.set(skillId, now + cooldownMs);
   globalCooldownUntil.set(playerId, now + GLOBAL_COOLDOWN_MS);
   sendSkillResult(socket, {
     skillId,
     ok: true,
-    cooldownRemainingMs: skill.cooldownMs,
+    cooldownRemainingMs: cooldownMs,
     globalCooldownMs: GLOBAL_COOLDOWN_MS,
     hits,
     healed,
@@ -910,6 +1123,108 @@ function resolveSlam(monster: MonsterState, radiusPx: number, damageMultiplier: 
 
 // One swing (or two, with the Agility double-attack) against a monster the
 // player is already confirmed to be standing next to.
+/** The player's swing interval: base speed, tuned by the weapon family. */
+function swingIntervalFor(playerId: string, agility: number): number {
+  // Weapon speed scales the whole interval, so a dagger flurries and an axe
+  // lands one heavy swing in the same window. damageMultiplier moves the other
+  // way (see resolvePlayerAttack), keeping DPS comparable so the choice is
+  // burst-vs-steady rather than one weapon simply winning.
+  const base = Math.round(
+    playerAttackIntervalMs(
+      weaponRarities.get(playerId) ?? null,
+      battlePowerLevels.get(playerId) ?? 0,
+      agility,
+    ) * weaponDef(weaponTypeOf(playerId)).speedMultiplier,
+  );
+  return applyAttackSpeed(base, passivesOf(playerId).attackSpeedPercent);
+}
+
+/** Tells one client where its swing clock stands. Cheap enough to send on
+ *  every change, which is roughly once a swing. */
+function sendAttackState(playerId: string, reason?: string): void {
+  const socket = sockets.get(playerId);
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  const attrs = attributes.get(playerId) ?? EMPTY_ATTRS;
+  const interval = swingIntervalFor(playerId, attrs.agility);
+  const readyAt = nextAttackAt.get(playerId);
+  const msg: AttackStateMessage = {
+    type: "ATTACK_STATE",
+    payload: {
+      attacking: attackOrders.has(playerId),
+      readyInMs: readyAt === undefined ? 0 : Math.max(0, readyAt - Date.now()),
+      intervalMs: interval,
+      reason,
+    },
+  };
+  socket.send(JSON.stringify(msg));
+}
+
+/**
+ * Finds what this player's attack order applies to right now: their selection
+ * if it is alive and in reach, otherwise the nearest thing that is. The same
+ * resolution the auto-swing uses, so a manual press and the swings that follow
+ * it can never disagree about who is being hit.
+ */
+function attackTargetFor(playerId: string, player: LivePlayer): MonsterState | null {
+  const reach = attackRangeFor(weaponTypeOf(playerId), passivesOf(playerId).rangePercent);
+  const selectedId = playerTargets.get(playerId);
+  if (selectedId) {
+    const selected = monsters.find((m) => m.id === selectedId);
+    if (selected && selected.status === "alive" &&
+        Math.hypot(player.x - selected.x, player.y - selected.y) <= reach) {
+      return selected;
+    }
+  }
+  let best: MonsterState | null = null;
+  let bestDist = reach;
+  for (const monster of monsters) {
+    if (monster.status !== "alive") continue;
+    const d = Math.hypot(player.x - monster.x, player.y - monster.y);
+    if (d <= bestDist) {
+      best = monster;
+      bestDist = d;
+    }
+  }
+  return best;
+}
+
+/** Records that the player has ordered an attack — by pressing the default
+ *  attack, or by using a skill that means to hurt something. */
+function orderAttack(playerId: string, now: number): void {
+  const existing = attackOrders.get(playerId);
+  if (existing) existing.lastInReachAt = now;
+  else attackOrders.set(playerId, { since: now, lastInReachAt: now });
+}
+
+/**
+ * A manual swing. Differs from waiting for the auto-swing in one way that
+ * matters: an undefined clock means "just closed", and pressing the button
+ * cashes that in immediately instead of eating the closing wind-up. Opening a
+ * fight is therefore something you do, not something you wait through.
+ */
+function useDefaultAttack(playerId: string, now: number): void {
+  const player = players.get(playerId);
+  if (!player) return;
+  // The order stands whether or not this particular swing lands, so walking
+  // into range after pressing it opens the fight on arrival.
+  orderAttack(playerId, now);
+
+  const target = attackTargetFor(playerId, player);
+  if (!target) {
+    sendAttackState(playerId, "nothing in reach");
+    return;
+  }
+  const readyAt = nextAttackAt.get(playerId);
+  if (readyAt !== undefined && now < readyAt) {
+    sendAttackState(playerId, "still recovering");
+    return;
+  }
+  const attrs = attributes.get(playerId) ?? EMPTY_ATTRS;
+  nextAttackAt.set(playerId, now + swingIntervalFor(playerId, attrs.agility));
+  resolvePlayerAttack(playerId, player, target, attrs, sockets.get(playerId), now);
+  sendAttackState(playerId);
+}
+
 function resolvePlayerAttack(
   playerId: string,
   player: LivePlayer,
@@ -920,8 +1235,12 @@ function resolvePlayerAttack(
 ): void {
   const monsterStats = MONSTER_STATS[monster.kind];
   const equipped = equippedItems.get(playerId);
-  const critChance = playerCritChance(attrs.agility) + gearCritChance(equipped) + passivesOf(playerId).critChance;
-  const critMultiplier = critDamageMultiplier(weaponRarities.get(playerId) ?? null);
+  const passives = passivesOf(playerId);
+  const critChance = playerCritChance(attrs.agility) + gearCritChance(equipped) + passives.critChance;
+  const critMultiplier = critDamageMultiplier(
+    weaponRarities.get(playerId) ?? null,
+    passives.critDamagePercent,
+  );
   const baseDamageBonus = gearDamageBonus(equipped);
   // War Cry rides on top of gear rather than replacing it, so the buff is
   // worth more the better geared you already are.
@@ -933,7 +1252,8 @@ function resolvePlayerAttack(
   // Weakened bites into the same number War Cry inflates, so the two are
   // directly comparable and can cancel each other out.
   if (weakened) totalDamageBonus -= Math.round(playerMaxHit(powerOf(playerId, attrs)) * WEAKENED_DAMAGE_PENALTY);
-  const totalAccuracy = playerAccuracy(attrs.agility) + (equipped?.ring?.bonusStatValue ?? 0);
+  const totalAccuracy =
+    playerAccuracy(attrs.agility, passives.accuracyBonus) + (equipped?.ring?.bonusStatValue ?? 0);
 
   let monsterDefeated = false;
   // Agility gives a chance to swing twice — resolved as an independent extra
@@ -948,8 +1268,14 @@ function resolvePlayerAttack(
     const wpnDamage = weaponDef(weaponTypeOf(playerId)).damageMultiplier;
     const playerAttack = resolveHit({
       attackerAccuracy: totalAccuracy,
-      attackerMinHit: Math.round(playerMinHit(powerOf(playerId, attrs)) * wpnDamage),
-      attackerMaxHit: Math.round(playerMaxHit(powerOf(playerId, attrs), totalDamageBonus) * wpnDamage),
+      attackerMinHit: applyDamagePercent(
+        Math.round(playerMinHit(powerOf(playerId, attrs)) * wpnDamage),
+        passives.damagePercent,
+      ),
+      attackerMaxHit: applyDamagePercent(
+        Math.round(playerMaxHit(powerOf(playerId, attrs), totalDamageBonus) * wpnDamage),
+        passives.damagePercent,
+      ),
       attackerCritChance: critChance,
       attackerCritMultiplier: critMultiplier,
       defenderEvasion: monsterStats.evasion,
@@ -1088,7 +1414,10 @@ function sendStatsUpdate(socket: WebSocket, attrs: Attributes, maxHp: number, ma
 // mage at the same level and Vitality, which is most of what "class" means
 // before a single skill is unlocked.
 function maxHpOf(playerId: string, attrs: Attributes): number {
-  return maxHpForLevel(playerLevels.get(playerId) ?? 1, attrs.vitality) + CLASSES[classOf(playerId)].baseHpBonus;
+  return (
+    maxHpForLevel(playerLevels.get(playerId) ?? 1, attrs.vitality, passivesOf(playerId).maxHpBonus) +
+    CLASSES[classOf(playerId)].baseHpBonus
+  );
 }
 
 function sendBattleResult(
@@ -1247,14 +1576,31 @@ wss.on("connection", (socket) => {
       if (daily) {
         sendDailyBonus(socket, daily);
       }
+      // Seeds the bar's swing timer and the talent panel before anything else
+      // happens.
+      sendAttackState(id);
+      sendWeaponProgress(id);
       return;
     }
 
     if (msg.type === "MOVE" && id) {
       const p = players.get(id);
       if (!p) return;
-      p.x = msg.payload.x;
-      p.y = msg.payload.y;
+      // Movement stays client-authoritative — the client integrates it and the
+      // server takes its word for where it went. "Takes its word" is not the
+      // same as "accepts anything", though: the position is clamped into the
+      // world and pushed out of any body it is standing inside, using the same
+      // shared function the client already ran. A client that honoured the rule
+      // sees no change; one that skipped it gains nothing, because every range
+      // check in combat reads the corrected position.
+      const wanted = resolveBodyCollision(
+        clamp(msg.payload.x, 0, WORLD_WIDTH),
+        clamp(msg.payload.y, 0, WORLD_HEIGHT),
+        PLAYER_BODY_RADIUS_PX,
+        aliveMonsterBodies(),
+      );
+      p.x = wanted.x;
+      p.y = wanted.y;
 
       const now = Date.now();
       if (now - (lastSavedAt.get(id) ?? 0) >= SAVE_INTERVAL_MS) {
@@ -1283,6 +1629,50 @@ wss.on("connection", (socket) => {
 
     if (msg.type === "USE_SKILL" && id) {
       useSkill(id, msg.payload.skillId, Date.now());
+      return;
+    }
+
+    if (msg.type === "USE_ATTACK" && id) {
+      useDefaultAttack(id, Date.now());
+      return;
+    }
+
+    if (msg.type === "LEARN_TALENT" && id) {
+      const weapon = heldWeapon(id);
+      const ranks = ranksOf(id, weapon);
+      const nodeId = msg.payload.nodeId;
+      // The same shared check the client greyed the button with, re-run here
+      // because a message can say anything.
+      const verdict = canLearnTalent(weapon, ranks, nodeId, weaponLevelOf(id, weapon));
+      if (!verdict.ok) {
+        sendWeaponProgress(id, verdict.reason);
+        return;
+      }
+      const next = (ranks[nodeId] ?? 0) + 1;
+      setTalentRank(id, weapon, nodeId, next);
+      ranks[nodeId] = next;
+      sendWeaponProgress(id);
+      // A new talent can change the whole stat line — max HP, mana, reach —
+      // so the derived numbers have to be re-sent, not just the tree.
+      refreshDerivedStats(id);
+      return;
+    }
+
+    if (msg.type === "SET_HOTBAR" && id) {
+      // Normalised before storage rather than on the way out, so a bad layout
+      // is repaired once instead of on every read.
+      setHotbar(id, msg.payload.weaponType, normalizeHotbar(msg.payload.layout));
+      return;
+    }
+
+    if (msg.type === "RESET_TALENTS" && id) {
+      const weapon = msg.payload.weaponType;
+      clearTalents(id, weapon);
+      talentCache.get(id)?.set(weapon, {});
+      const socket2 = sockets.get(id);
+      if (socket2) sendInfo(socket2, `${WEAPONS[weapon].name} talents refunded.`, "#9ad4ff");
+      sendWeaponProgress(id);
+      refreshDerivedStats(id);
       return;
     }
 
@@ -1322,6 +1712,11 @@ wss.on("connection", (socket) => {
       bootsRarities.set(id, result.bootsRarity);
       equippedItems.set(id, computeEquipped(result.items));
       sendItemsUpdate(socket, id, result.items);
+      // A new weapon is a new swing speed, a new tree, and a different set of
+      // learned talents. All of it has to be pushed: the bar's timer, the
+      // tree panel, and every stat the tree feeds.
+      sendWeaponProgress(id);
+      refreshDerivedStats(id);
 
       // Other clients render from the broadcast appearance, so it has to be
       // refreshed here or remote players keep drawing the old gear.
@@ -1648,7 +2043,16 @@ setInterval(() => {
           );
         const rank = queue.findIndex((m) => m.id === monster.id);
         const overflow = Math.max(0, rank - (MAX_MELEE_ATTACKERS - 1));
-        const stopAt = stats.attackRangePx * 0.8 + overflow * MELEE_RING_STEP_PX;
+        // Never closer than the two bodies allow. Without the floor a small,
+        // short-reach monster would keep walking until it was standing in the
+        // player, and the collision pass would then shove the player back out
+        // every tick — the pair would jitter against each other instead of
+        // squaring up.
+        const contact = separationFor(PLAYER_BODY_RADIUS_PX, stats.bodyRadiusPx);
+        const stopAt = Math.max(
+          contact,
+          stats.attackRangePx * 0.8 + overflow * MELEE_RING_STEP_PX,
+        );
 
         // Leap: the gap-closer. Triggered from mid-range and only by front
         // rank monsters, so a pack doesn't all pounce at once. While
@@ -1673,8 +2077,12 @@ setInterval(() => {
         }
 
         if (d > stopAt) {
-          monster.x += ((target.x - monster.x) / d) * speed;
-          monster.y += ((target.y - monster.y) / d) * speed;
+          // Clamped to the remaining gap. A leaping monster moves several
+          // times its normal step, and without this it would sail straight
+          // through the stop distance and end up inside its target.
+          const step = Math.min(speed, d - stopAt);
+          monster.x += ((target.x - monster.x) / d) * step;
+          monster.y += ((target.y - monster.y) / d) * step;
         }
       }
     } else if (ai.state === "return") {
@@ -1714,34 +2122,74 @@ setInterval(() => {
 
   // --- Separation: keep bodies out of each other ---------------------------
   // Chasing alone converges every pack member onto the same point, so four
-  // wolves render as one silhouette and occupy zero space. A light push
-  // apart, applied after movement, spreads them into a believable cluster
-  // without needing real collision or pathfinding.
+  // wolves render as one silhouette and occupy zero space. A push apart,
+  // applied after movement, spreads them into a believable cluster without
+  // needing real pathfinding.
+  //
+  // Two rules keep this from becoming the thing it is meant to prevent. The
+  // distance each pair wants is their own two radii, not one global number, or
+  // a golem and a dragon overlap while two slimes stand absurdly far apart. And
+  // the shove can never exceed what the monster could walk in the same tick:
+  // being slid sideways faster than its own top speed is exactly the
+  // ice-skating this is supposed to look like the opposite of.
   for (const monster of monsters) {
     if (monster.status !== "alive") continue;
+    const stats = MONSTER_STATS[monster.kind];
     let pushX = 0;
     let pushY = 0;
     for (const other of monsters) {
       if (other === monster || other.status !== "alive") continue;
+      const want = Math.max(
+        MONSTER_SEPARATION_PX,
+        separationFor(stats.bodyRadiusPx, MONSTER_STATS[other.kind].bodyRadiusPx),
+      );
       const dx = monster.x - other.x;
       const dy = monster.y - other.y;
       const d = Math.hypot(dx, dy);
-      if (d >= MONSTER_SEPARATION_PX) continue;
+      if (d >= want) continue;
       if (d < 0.01) {
         // Exactly coincident: nudge deterministically off the id so the pair
         // don't jitter against each other forever.
         pushX += monster.id < other.id ? 1 : -1;
         continue;
       }
-      const strength = (MONSTER_SEPARATION_PX - d) / MONSTER_SEPARATION_PX;
+      const strength = (want - d) / want;
       pushX += (dx / d) * strength;
       pushY += (dy / d) * strength;
     }
     if (pushX !== 0 || pushY !== 0) {
       const mag = Math.hypot(pushX, pushY) || 1;
-      const shove = Math.min(6, mag * 6);
+      const walkable = (stats.speedPxPerSec * TICK_MS) / 1000;
+      const shove = Math.min(walkable, mag * 6);
       monster.x += (pushX / mag) * shove;
       monster.y += (pushY / mag) * shove;
+    }
+  }
+
+  // --- And out of the players ---------------------------------------------
+  // The pass above is blind to players, so a monster on the far side of a
+  // crowded pack can be shoved straight through one — which is how a body ends
+  // up overlapping a player who never walked into anything.
+  //
+  // The monster yields, never the player. Displacing a player from the server
+  // would fight the client's own authority over its position, arrive a round
+  // trip late, and feel like being shoved by something invisible.
+  const playerBodies = [...players.values()].map((p) => ({
+    x: p.x,
+    y: p.y,
+    radiusPx: PLAYER_BODY_RADIUS_PX,
+  }));
+  if (playerBodies.length > 0) {
+    for (const monster of monsters) {
+      if (monster.status !== "alive") continue;
+      const clear = resolveBodyCollision(
+        monster.x,
+        monster.y,
+        MONSTER_STATS[monster.kind].bodyRadiusPx,
+        playerBodies,
+      );
+      monster.x = clear.x;
+      monster.y = clear.y;
     }
   }
 
@@ -1750,64 +2198,50 @@ setInterval(() => {
     const socket = sockets.get(playerId);
     const playerAttrs = attributes.get(playerId) ?? EMPTY_ATTRS;
 
-    // Fighting takes priority over gathering: you cannot calmly chop a tree
-    // while something is biting you.
-    let target: MonsterState | null = null;
-    let targetDist = Infinity;
-    // Reach comes from the weapon: an axe fights nose-to-nose, a bow opens up
-    // from roughly five times further out, and a dagger is shorter still than
-    // a sword. This single number is most of what makes weapons feel
-    // different to swing.
-    const reach = attackRangeFor(weaponTypeOf(playerId));
-    for (const monster of monsters) {
-      if (monster.status !== "alive") continue;
-      const d = Math.hypot(player.x - monster.x, player.y - monster.y);
-      if (d < targetDist && d <= reach) {
-        target = monster;
-        targetDist = d;
+    // Fighting is something you ordered, not something proximity decides for
+    // you. Without a standing order the player is simply standing there, and
+    // may gather or walk through a camp untouched by their own weapon — the
+    // monsters' own AI is what decides whether they get attacked back.
+    const order = attackOrders.get(playerId);
+    const target = order ? attackTargetFor(playerId, player) : null;
+
+    if (order && !target) {
+      // An order outlives a moment out of reach — chasing a fleeing monster or
+      // stepping between two pack members should not end the fight. It lapses
+      // only once nothing has been reachable for a while, which is what
+      // walking away actually looks like.
+      if (now - order.lastInReachAt > ATTACK_ORDER_LAPSE_MS) {
+        attackOrders.delete(playerId);
+        nextAttackAt.delete(playerId);
+        sendAttackState(playerId);
       }
     }
 
-    // An explicitly selected target wins over proximity, as long as it is
-    // still alive and in reach — that is the whole point of selecting one.
-    const selectedId = playerTargets.get(playerId);
-    if (selectedId) {
-      const selected = monsters.find((m) => m.id === selectedId);
-      if (!selected || selected.status !== "alive") {
-        playerTargets.set(playerId, null);
-      } else if (Math.hypot(player.x - selected.x, player.y - selected.y) <= reach) {
-        target = selected;
-      }
-    }
-
-    if (target) {
+    if (order && target) {
+      order.lastInReachAt = now;
       nextGatherAt.delete(playerId);
-      // Weapon speed scales the whole interval, so a dagger flurries and an
-      // axe lands one heavy swing in the same window. damageMultiplier moves
-      // the other way (see resolvePlayerAttack), keeping DPS comparable so
-      // the choice is burst-vs-steady rather than one weapon simply winning.
-      const interval = Math.round(
-        playerAttackIntervalMs(
-          weaponRarities.get(playerId) ?? null,
-          battlePowerLevels.get(playerId) ?? 0,
-          playerAttrs.agility,
-        ) * weaponDef(weaponTypeOf(playerId)).speedMultiplier,
-      );
+      const interval = swingIntervalFor(playerId, playerAttrs.agility);
       const readyAt = nextAttackAt.get(playerId);
       // First tick in reach only starts the clock — closing to melee has a
       // wind-up, and without it stepping in and out would rush every swing.
+      // Pressing the attack button is how you skip it (see useDefaultAttack).
       if (readyAt === undefined) {
         nextAttackAt.set(playerId, now + interval);
+        sendAttackState(playerId);
         continue;
       }
       if (now < readyAt) continue;
       nextAttackAt.set(playerId, now + interval);
 
       resolvePlayerAttack(playerId, player, target, playerAttrs, socket, now);
+      sendAttackState(playerId);
       continue;
     }
 
-    nextAttackAt.delete(playerId);
+    if (nextAttackAt.has(playerId)) {
+      nextAttackAt.delete(playerId);
+      sendAttackState(playerId);
+    }
 
     // Otherwise gather from whatever node is underfoot.
     let node: ResourceNodeState | null = null;

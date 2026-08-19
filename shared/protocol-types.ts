@@ -135,6 +135,152 @@ export const WEAPONS: Record<WeaponType, WeaponDef> = {
 
 export const WEAPON_TYPES: WeaponType[] = ["sword", "axe", "mace", "dagger", "bow", "staff", "wand"];
 
+// --- The default attack -----------------------------------------------------
+// Every weapon has one, and it is a real entry on the bar rather than an
+// invisible thing the server does on your behalf. Two reasons it belongs here
+// and not in the skill tables: it is keyed by WEAPON, not by class — a bow and
+// a dagger are both a ranger's and have nothing in common — and it has no
+// cooldown, no mana and no unlock level, so most of SkillDef would be dead
+// fields describing it.
+//
+// Its timing is the weapon's swing interval, which until now was invisible:
+// an axe swings at 1.35x the base interval and a dagger at 0.6x, and no
+// player could perceive the difference because nothing on screen counted it.
+export interface DefaultAttackDef {
+  name: string;
+  icon: string;
+  description: string;
+}
+
+export const DEFAULT_ATTACKS: Record<WeaponType, DefaultAttackDef> = {
+  fist: { name: "Jab", icon: "👊", description: "A bare-knuckle jab. Fast, and worth very little." },
+  sword: { name: "Slash", icon: "⚔️", description: "A balanced cut. The measure every other weapon is tuned against." },
+  axe: { name: "Hew", icon: "🪓", description: "One heavy chop. Slow to land, and it hurts." },
+  mace: { name: "Crush", icon: "🔨", description: "A blunt swing that lands with weight behind it." },
+  dagger: { name: "Stab", icon: "🔪", description: "A quick thrust. Little reach, but you get several in." },
+  bow: { name: "Shoot", icon: "🏹", description: "Looses an arrow. It takes time to arrive." },
+  staff: { name: "Arcane Blast", icon: "🔷", description: "Hurls a bolt of raw force at your target." },
+  wand: { name: "Zap", icon: "✨", description: "A thin beam, there and gone. Quick and light." },
+};
+
+export function defaultAttackFor(weaponType: WeaponType | undefined | null): DefaultAttackDef {
+  return DEFAULT_ATTACKS[weaponType ?? "fist"] ?? DEFAULT_ATTACKS.fist;
+}
+
+// --- The action bar ---------------------------------------------------------
+// The bar is the player's, not the game's. It used to be generated — every
+// unlocked skill in tree order, keys assigned by position — which meant there
+// was no such thing as *your* layout: learning a talent could shuffle
+// everything one slot to the right and retrain your hands for you.
+//
+// A layout is therefore stored, per weapon, and only ever changed by the
+// player. Per weapon because the skills are: a bar that survived a weapon swap
+// would be full of things you cannot cast.
+export const HOTBAR_SLOTS = 10;
+
+/** What sits in a slot: the weapon's default attack, a skill, or nothing. */
+export type HotbarEntry = "attack" | SkillId | null;
+
+export interface HotbarLayout {
+  slots: HotbarEntry[];
+  /** Lower-case key name per slot, as `KeyboardEvent.key` reports it. */
+  keys: string[];
+}
+
+export const DEFAULT_HOTBAR_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+
+export function emptyHotbar(): HotbarLayout {
+  return {
+    slots: Array.from({ length: HOTBAR_SLOTS }, () => null),
+    keys: [...DEFAULT_HOTBAR_KEYS],
+  };
+}
+
+/**
+ * Repairs anything that arrives: wrong length, unknown skill ids, duplicate
+ * keys, a skill placed twice. Runs on both sides — the client to survive a
+ * stored layout from an older build, the server because a message can say
+ * anything at all.
+ */
+export function normalizeHotbar(raw: Partial<HotbarLayout> | null | undefined): HotbarLayout {
+  const out = emptyHotbar();
+  const seen = new Set<string>();
+  for (let i = 0; i < HOTBAR_SLOTS; i++) {
+    const entry = raw?.slots?.[i] ?? null;
+    if (entry === "attack" || (entry && SKILLS[entry as SkillId])) {
+      // One slot per action: two copies of the same skill share one cooldown
+      // and just take up room.
+      if (!seen.has(entry)) {
+        seen.add(entry);
+        out.slots[i] = entry as HotbarEntry;
+      }
+    }
+    const key = String(raw?.keys?.[i] ?? "").toLowerCase();
+    // A key is one character or a named key; anything else is not bindable.
+    if (key && key.length <= 12 && !out.keys.slice(0, i).includes(key)) out.keys[i] = key;
+  }
+  // Deduplicate whatever the loop above could not, so no key ever fires two
+  // slots.
+  const used = new Set<string>();
+  for (let i = 0; i < HOTBAR_SLOTS; i++) {
+    if (used.has(out.keys[i])) out.keys[i] = "";
+    else used.add(out.keys[i]);
+  }
+  return out;
+}
+
+/**
+ * A sensible starting bar: the default attack first, then whatever has been
+ * learned, in tree order. Used only when a weapon has no stored layout, so it
+ * is a starting point rather than a thing that keeps reasserting itself.
+ */
+export function suggestedHotbar(
+  weapon: WeaponType | undefined,
+  ranks: TalentRanks,
+): HotbarLayout {
+  const layout = emptyHotbar();
+  layout.slots[0] = "attack";
+  unlockedActives(weapon, ranks).forEach((skill, i) => {
+    if (i + 1 < HOTBAR_SLOTS) layout.slots[i + 1] = skill.id;
+  });
+  return layout;
+}
+
+/** Drops anything the player can no longer use, so a refunded talent does not
+ *  leave a dead button behind. Keeps positions: the gap is the point. */
+export function pruneHotbar(
+  layout: HotbarLayout,
+  weapon: WeaponType | undefined,
+  ranks: TalentRanks,
+): HotbarLayout {
+  const usable = new Set(unlockedActives(weapon, ranks).map((s) => s.id as string));
+  return {
+    keys: [...layout.keys],
+    slots: layout.slots.map((e) => (e === "attack" || (e && usable.has(e)) ? e : null)),
+  };
+}
+
+// --- Attack orders ----------------------------------------------------------
+// You do not attack something because you happened to walk near it. Standing
+// next to a monster is not an instruction, and treating it as one meant a
+// player crossing the map picked fights they never chose — the last of the
+// idle-era "the server decides what you are doing from where you stand"
+// reasoning (Phase 40), which the rest of the game has since grown out of.
+//
+// Instead an attack order is something you give: press the default attack, or
+// any offensive skill. It then stands on its own, so a fight does not need a
+// keypress per swing or per corpse — and it lapses once nothing has been
+// within reach for a while, which is what walking away from a fight means.
+//
+// Two seconds, and the number is load-bearing. It has to outlast the gaps
+// INSIDE a fight — a target dying while you pick the next, chasing something
+// that fled, stepping between two pack members — without outlasting the walk
+// BETWEEN fights. Camps sit a few hundred pixels apart and a player crosses
+// that in a second or two, so a longer window would quietly re-engage you on
+// arrival at the next camp, which is the very thing an attack order exists to
+// prevent.
+export const ATTACK_ORDER_LAPSE_MS = 2000;
+
 // The one function that decides what you are. Everything class-derived on both
 // sides — skills, range, damage stat, mana pool — routes through here, so
 // there is exactly one place where "no weapon" and "unknown weapon" are
@@ -150,9 +296,36 @@ export function weaponDef(weaponType: WeaponType | undefined | null): WeaponDef 
 }
 
 // Effective auto-attack reach: the archetype's baseline, tuned by the weapon.
-export function attackRangeFor(weaponType: WeaponType | undefined | null): number {
+export function attackRangeFor(
+  weaponType: WeaponType | undefined | null,
+  rangePercent = 0,
+): number {
   const w = weaponDef(weaponType);
-  return Math.round(CLASSES[w.classId].attackRangePx * w.rangeMultiplier);
+  const base = CLASSES[w.classId].attackRangePx * w.rangeMultiplier;
+  return Math.round(base * (1 + rangePercent / 100));
+}
+
+// --- Where talent percentages land -----------------------------------------
+// Each of these takes the totals `talentPassives` produced. They exist so the
+// server's combat resolution and the client's stat sheet apply a bonus the same
+// way rather than each doing its own arithmetic — the same reason every other
+// formula in this file is shared.
+
+export function applyDamagePercent(damage: number, damagePercent: number): number {
+  return Math.max(1, Math.round(damage * (1 + damagePercent / 100)));
+}
+
+/** Faster attack speed means a SHORTER interval, so the percentage divides. */
+export function applyAttackSpeed(intervalMs: number, attackSpeedPercent: number): number {
+  return Math.max(200, Math.round(intervalMs / (1 + attackSpeedPercent / 100)));
+}
+
+export function applyCooldown(cooldownMs: number, cooldownPercent: number): number {
+  return Math.max(500, Math.round(cooldownMs * (1 - Math.min(60, cooldownPercent) / 100)));
+}
+
+export function applyManaCost(manaCost: number, manaCostPercent: number): number {
+  return Math.max(0, Math.round(manaCost * (1 - Math.min(70, manaCostPercent) / 100)));
 }
 
 // --- Primary attributes — earned as points on level-up, spent freely.
@@ -180,6 +353,37 @@ export function playerMaxHit(power: number, weaponBonus = 0): number {
   return playerMinHit(power) + 3 + power + weaponBonus;
 }
 
+/**
+ * How much each attribute is worth to the weapon currently in hand, so stat
+ * points can be spent on evidence rather than on guesswork.
+ *
+ * The rankings are not opinions: the primary attribute is the one
+ * `primaryStatValue` actually multiplies damage by, and the rest fall out of
+ * what the weapon does with them. A bow lives or dies on Agility because that
+ * is both its damage stat and its accuracy; a mace wants Vitality second
+ * because it is the warrior weapon that expects to be hit.
+ */
+export interface StatAdvice {
+  /** Best first, and always four entries. */
+  order: AttributeName[];
+  why: string;
+}
+
+export const WEAPON_STAT_ADVICE: Record<WeaponType, StatAdvice> = {
+  fist: { order: ["agility", "vitality", "strength", "intelligence"], why: "Fists scale off Strength but hit for very little either way — Agility keeps you alive and moving until you find a real weapon." },
+  sword: { order: ["strength", "agility", "vitality", "intelligence"], why: "Strength is your damage. Agility adds accuracy, crits and the odd double swing." },
+  axe: { order: ["strength", "vitality", "agility", "intelligence"], why: "Every swing is slow and heavy, so Strength counts double and Vitality keeps you standing between them." },
+  mace: { order: ["strength", "vitality", "agility", "intelligence"], why: "The warrior weapon that expects to be hit back. Strength for the blow, Vitality to trade." },
+  dagger: { order: ["agility", "strength", "vitality", "intelligence"], why: "Agility is damage, accuracy, crit chance and double swings all at once — nothing else comes close." },
+  bow: { order: ["agility", "vitality", "strength", "intelligence"], why: "Agility is your damage stat and your accuracy. Vitality covers what closes the distance." },
+  staff: { order: ["intelligence", "vitality", "agility", "strength"], why: "Intelligence is spell damage and the mana to cast again. Vitality, because a mage is frail." },
+  wand: { order: ["intelligence", "agility", "vitality", "strength"], why: "Intelligence for the damage, Agility for the crits a fast weapon gets more of." },
+};
+
+export function statAdviceFor(weaponType: WeaponType | undefined | null): StatAdvice {
+  return WEAPON_STAT_ADVICE[weaponType ?? "fist"] ?? WEAPON_STAT_ADVICE.fist;
+}
+
 export function primaryStatValue(cls: CharacterClass, attrs: { strength: number; agility: number; vitality: number; intelligence: number }): number {
   const stat = CLASSES[cls].primaryStat;
   return attrs[stat];
@@ -202,8 +406,8 @@ export function manaRegenAmount(intelligence = 0): number {
   return 2 + Math.floor(intelligence / 3);
 }
 
-export function playerAccuracy(agility: number): number {
-  return Math.min(95, 50 + agility * 2);
+export function playerAccuracy(agility: number, accuracyBonus = 0): number {
+  return Math.min(95, 50 + agility * 2 + accuracyBonus);
 }
 
 export function playerCritChance(agility: number): number {
@@ -295,8 +499,82 @@ export const MIN_XP_SHARE = 0.15;
 export const MAX_MELEE_ATTACKERS = 3;
 export const MELEE_RING_STEP_PX = 46;
 // How hard monsters push apart from each other, so a pack reads as several
-// bodies rather than one stacked silhouette.
+// bodies rather than one stacked silhouette. Bodies that are physically
+// larger than this push apart by their own size instead (see `separationFor`).
 export const MONSTER_SEPARATION_PX = 34;
+
+// --- Bodies occupy space -------------------------------------------------
+// Every creature is a circle on the ground. Until this existed you could walk
+// into the middle of a troll and stand there, which made positioning — the
+// thing reach and chase speed are supposed to be *about* — meaningless at
+// contact range.
+//
+// The radii are the footprint of the model the client draws, not a separate
+// gameplay number, so what you can see is what you collide with. They are
+// deliberately smaller than every attack range in the game: a body you cannot
+// reach past would make melee unplayable, so contact distance always leaves
+// the shorter weapon room to land.
+export const PLAYER_BODY_RADIUS_PX = 14;
+
+/** How far apart two bodies must stay, centre to centre. */
+export function separationFor(a: number, b: number): number {
+  return a + b;
+}
+
+export interface BodyCircle {
+  x: number;
+  y: number;
+  radiusPx: number;
+}
+
+/**
+ * Pushes a point out of every body it is overlapping and returns where it
+ * actually ends up. Resolution is by depenetration along the contact normal,
+ * which means walking into a monster slides you around it rather than sticking
+ * you to it — the same result real collision gives, without needing a solver.
+ *
+ * A few passes, because pushing out of one body can push you into another; the
+ * loop settles in one or two iterations for any realistic pack and is capped so
+ * a pathological pile-up cannot spin.
+ *
+ * Shared deliberately. The client runs it while you move, so collision feels
+ * immediate, and the server runs it on the position the client reports, so a
+ * client that skipped it gains nothing. Both sides using the same function is
+ * the only reason those two answers agree.
+ */
+export function resolveBodyCollision(
+  x: number,
+  y: number,
+  radiusPx: number,
+  bodies: readonly BodyCircle[],
+  passes = 3,
+): { x: number; y: number } {
+  let px = x;
+  let py = y;
+  for (let pass = 0; pass < passes; pass++) {
+    let moved = false;
+    for (const body of bodies) {
+      const minDistance = separationFor(radiusPx, body.radiusPx);
+      let dx = px - body.x;
+      let dy = py - body.y;
+      let d = Math.hypot(dx, dy);
+      if (d >= minDistance) continue;
+      if (d < 0.0001) {
+        // Dead centre: there is no contact normal to push along, so pick one.
+        // Any fixed direction will do as long as it is not random — a random
+        // one makes a stuck actor vibrate instead of stepping clear.
+        dx = 1;
+        dy = 0;
+        d = 1;
+      }
+      px = body.x + (dx / d) * minDistance;
+      py = body.y + (dy / d) * minDistance;
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  return { x: px, y: py };
+}
 
 // One shared cooldown across the whole hotbar, on top of each skill's own.
 // Without it every skill can be dumped in a single frame, which turns the
@@ -373,6 +651,13 @@ export interface MonsterStats {
   // physically touch you. Kiting works or doesn't per monster, by design.
   attackRangePx: number;
   speedPxPerSec: number;
+  // Ground footprint. Nothing may stand inside this, player or monster, so
+  // it is what stops a fight collapsing to everyone occupying one pixel.
+  // Sized to the model the client draws (see MONSTER_MODELS) so the hitbox
+  // matches the silhouette, and always small enough that the shortest
+  // weapon in the game still reaches past it — a body you cannot hit over
+  // is not a body, it is a wall.
+  bodyRadiusPx: number;
   // Telegraphed attack. When set, the monster does not simply hit whoever
   // is in reach: it winds up visibly for `windupMs`, then slams everything
   // within `slamRadiusPx` of where it is standing at that moment. That
@@ -412,6 +697,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 2200,
     attackRangePx: 42,
     speedPxPerSec: 105,
+    bodyRadiusPx: 16,
     // Bursts on death: the weakest enemy still punishes standing in the
     // middle of a swarm and cleaving blindly.
     deathBurstRadiusPx: 70,
@@ -433,6 +719,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 1800,
     attackRangePx: 56,
     speedPxPerSec: 150,
+    bodyRadiusPx: 16,
     // Shouts for help, so a careless pull brings the whole camp.
     alertRadiusPx: 210,
   },
@@ -456,6 +743,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 1400,
     attackRangePx: 50,
     speedPxPerSec: 200,
+    bodyRadiusPx: 18,
     // Closes the gap in one bound rather than grinding you down over a long
     // chase, which is what makes it the enemy you need an escape tool for.
     leapRangePx: 230,
@@ -479,6 +767,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 3000,
     attackRangePx: 82,
     speedPxPerSec: 92,
+    bodyRadiusPx: 26,
     // Slow enough to outrun, hits a wide area for far more than its normal
     // swing, and gives you 900ms to get out — so the fight is about reading it,
     // not out-healing it.
@@ -506,6 +795,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 2400,
     attackRangePx: 44,
     speedPxPerSec: 82,
+    bodyRadiusPx: 16,
   },
 
   // ---------------------------------------------------------------- band 2
@@ -527,6 +817,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 2000,
     attackRangePx: 46,
     speedPxPerSec: 100,
+    bodyRadiusPx: 18,
     deathBurstRadiusPx: 110,
     deathBurstDamage: 13,
   },
@@ -548,6 +839,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 1300,
     attackRangePx: 46,
     speedPxPerSec: 215,
+    bodyRadiusPx: 16,
     leapRangePx: 250,
     leapSpeedMultiplier: 3.2,
     leapDurationMs: 380,
@@ -572,6 +864,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 2000,
     attackRangePx: 52,
     speedPxPerSec: 112,
+    bodyRadiusPx: 20,
     deathBurstRadiusPx: 90,
     deathBurstDamage: 10,
   },
@@ -593,6 +886,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 1900,
     attackRangePx: 60,
     speedPxPerSec: 142,
+    bodyRadiusPx: 22,
     alertRadiusPx: 300,
   },
 
@@ -615,6 +909,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 1700,
     attackRangePx: 58,
     speedPxPerSec: 168,
+    bodyRadiusPx: 16,
   },
   // The troll's damage without the tell — fast, hard-hitting and it crits.
   demon: {
@@ -633,6 +928,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 1800,
     attackRangePx: 64,
     speedPxPerSec: 152,
+    bodyRadiusPx: 26,
   },
 
   // ---------------------------------------------------------------- band 5
@@ -654,6 +950,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 3200,
     attackRangePx: 78,
     speedPxPerSec: 70,
+    bodyRadiusPx: 28,
     windupMs: 1100,
     slamRadiusPx: 140,
     slamDamageMultiplier: 1.8,
@@ -676,6 +973,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 2600,
     attackRangePx: 95,
     speedPxPerSec: 124,
+    bodyRadiusPx: 32,
     windupMs: 950,
     slamRadiusPx: 165,
     slamDamageMultiplier: 1.9,
@@ -698,21 +996,36 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
 // Every skill names a row of the shared effect atlas, so adding one is
 // picking a school and a number rather than producing new art.
 export type SkillId =
-  // adventurer (unarmed) — deliberately thin, so finding a weapon is an
-  // obvious upgrade rather than a lateral move
-  | "haymaker" | "scrappy"
-  // warrior
-  | "cleave" | "toughness" | "charge" | "warcry" | "shieldwall" | "secondwind" | "earthshatter"
-  // ranger
-  | "powershot" | "eagleeye" | "multishot" | "poisonarrow" | "disengage" | "fleetfooted" | "rainofarrows"
-  // mage
-  | "arcanebolt" | "arcanemind" | "firebolt" | "frostnova" | "mend" | "manafont" | "chainlightning";
+  // Unarmed
+  | "haymaker" | "roar" | "gutpunch"
+  // Sword / axe / mace
+  | "cleave" | "charge" | "warcry" | "shieldwall" | "earthshatter"
+  | "riposte" | "rend" | "reckless" | "shockwave" | "concuss"
+  // Dagger / bow
+  | "powershot" | "multishot" | "poisonarrow" | "disengage" | "rainofarrows"
+  | "backstab" | "flurry"
+  // Staff / wand
+  | "arcanebolt" | "firebolt" | "frostnova" | "mend" | "chainlightning"
+  | "frostbolt" | "arcanemissiles";
 
-export type SkillKind = "damage" | "heal" | "control" | "buff" | "mobility" | "passive";
+// A skill is something you press. Passive bonuses live in the talent trees
+// now, which is why "passive" is no longer one of these.
+export type SkillKind = "damage" | "heal" | "control" | "buff" | "mobility";
 
 // What a passive contributes once unlocked. Kept as a flat bag of optional
 // modifiers so the server can total them in one pass without knowing which
 // skill supplied what.
+/**
+ * Every knob a talent is allowed to turn.
+ *
+ * Deliberately a fixed vocabulary rather than arbitrary code per node. Ninety
+ * nodes across eight trees is only maintainable if a node is *data* — a name,
+ * a rank and a bag of these — so the trees can be rebalanced by editing
+ * numbers instead of by editing behaviour. Everything here is summed across
+ * unlocked nodes by `talentPassives` and threaded into the shared formulas, so
+ * the client's stat sheet and the server's combat resolution read the same
+ * totals from the same place.
+ */
 export interface PassiveBonus {
   armor?: number;
   critChance?: number;
@@ -721,15 +1034,43 @@ export interface PassiveBonus {
   moveSpeedBonus?: number;
   healOnKill?: number;
   evasion?: number;
+  // Added with the talent trees. Percentages are whole numbers: 10 means +10%.
+  maxHpBonus?: number;
+  accuracyBonus?: number;
+  damagePercent?: number;
+  attackSpeedPercent?: number;
+  critDamagePercent?: number;
+  rangePercent?: number;
+  skillPowerPercent?: number;
+  /** Reduces mana costs. */
+  manaCostPercent?: number;
+  /** Reduces skill cooldowns. */
+  cooldownPercent?: number;
+}
+
+export const EMPTY_PASSIVES: Required<PassiveBonus> = {
+  armor: 0, critChance: 0, maxManaBonus: 0, manaRegenBonus: 0, moveSpeedBonus: 0,
+  healOnKill: 0, evasion: 0, maxHpBonus: 0, accuracyBonus: 0, damagePercent: 0,
+  attackSpeedPercent: 0, critDamagePercent: 0, rangePercent: 0, skillPowerPercent: 0,
+  manaCostPercent: 0, cooldownPercent: 0,
+};
+
+export function addPassives(
+  into: Required<PassiveBonus>,
+  from: PassiveBonus,
+  times = 1,
+): Required<PassiveBonus> {
+  for (const key of Object.keys(into) as (keyof PassiveBonus)[]) {
+    into[key] += (from[key] ?? 0) * times;
+  }
+  return into;
 }
 
 export interface SkillDef {
   id: SkillId;
-  classId: CharacterClass;
   name: string;
   icon: string;
   kind: SkillKind;
-  unlockLevel: number;
   manaCost: number;
   cooldownMs: number;
   // 0 means self-cast. Otherwise how far the target may be.
@@ -753,184 +1094,507 @@ export interface SkillDef {
 export const SKILLS: Record<SkillId, SkillDef> = {
   // ------------------------------------------------------------ adventurer
   haymaker: {
-    id: "haymaker", classId: "adventurer", name: "Haymaker", icon: "✊", kind: "damage",
-    unlockLevel: 1, manaCost: 0, cooldownMs: 6000, rangePx: 58, radiusPx: 0, power: 5,
+    id: "haymaker", name: "Haymaker", icon: "✊", kind: "damage",
+    manaCost: 0, cooldownMs: 6000, rangePx: 58, radiusPx: 0, power: 5,
     effect: "impact", sfx: "hit",
     description: "A wild swing. Free, because you have nothing better.",
   },
-  scrappy: {
-    id: "scrappy", classId: "adventurer", name: "Scrappy", icon: "🥊", kind: "passive",
-    unlockLevel: 1, manaCost: 0, cooldownMs: 0, rangePx: 0, radiusPx: 0, power: 0,
-    effect: "", sfx: "",
-    passive: { evasion: 4, moveSpeedBonus: 15 },
-    description: "Nothing to weigh you down: +4% evasion, faster on your feet.",
-  },
   // ---------------------------------------------------------------- warrior
   cleave: {
-    id: "cleave", classId: "warrior", name: "Cleave", icon: "🗡️", kind: "damage",
-    unlockLevel: 1, manaCost: 8, cooldownMs: 5000, rangePx: 0, radiusPx: 95, power: 7,
+    id: "cleave", name: "Cleave", icon: "🗡️", kind: "damage",
+    manaCost: 8, cooldownMs: 5000, rangePx: 0, radiusPx: 95, power: 7,
     effect: "slash", sfx: "crit", description: "Sweep every enemy around you.",
   },
-  toughness: {
-    id: "toughness", classId: "warrior", name: "Toughness", icon: "🛡️", kind: "passive",
-    unlockLevel: 1, manaCost: 0, cooldownMs: 0, rangePx: 0, radiusPx: 0, power: 0,
-    effect: "shield", sfx: "hit", description: "Plate sits better on you. +3 armour.",
-    passive: { armor: 3 },
-  },
   charge: {
-    id: "charge", classId: "warrior", name: "Charge", icon: "💨", kind: "mobility",
-    unlockLevel: 4, manaCost: 10, cooldownMs: 6000, rangePx: 0, radiusPx: 0, power: 180,
+    id: "charge", name: "Charge", icon: "💨", kind: "mobility",
+    manaCost: 10, cooldownMs: 6000, rangePx: 0, radiusPx: 0, power: 180,
     effect: "quake", sfx: "swing", description: "Barrel forward, closing the gap.",
   },
   warcry: {
-    id: "warcry", classId: "warrior", name: "War Cry", icon: "⚡", kind: "buff",
-    unlockLevel: 8, manaCost: 14, cooldownMs: 18000, rangePx: 260, radiusPx: 0, power: 0,
+    id: "warcry", name: "War Cry", icon: "⚡", kind: "buff",
+    manaCost: 14, cooldownMs: 18000, rangePx: 260, radiusPx: 0, power: 0,
     effect: "buff", sfx: "levelup", description: "Strike harder for a while. Targets an ally if you have one selected.",
   },
   shieldwall: {
-    id: "shieldwall", classId: "warrior", name: "Shield Wall", icon: "🔰", kind: "buff",
-    unlockLevel: 12, manaCost: 16, cooldownMs: 22000, rangePx: 0, radiusPx: 0, power: 0,
+    id: "shieldwall", name: "Shield Wall", icon: "🔰", kind: "buff",
+    manaCost: 16, cooldownMs: 22000, rangePx: 0, radiusPx: 0, power: 0,
     effect: "shield", sfx: "hit", description: "Brace. Halves incoming damage briefly.",
     selfShieldMs: true,
   },
-  secondwind: {
-    id: "secondwind", classId: "warrior", name: "Second Wind", icon: "❤️", kind: "passive",
-    unlockLevel: 16, manaCost: 0, cooldownMs: 0, rangePx: 0, radiusPx: 0, power: 0,
-    effect: "heal", sfx: "heal", description: "Recover 6 health whenever you land a killing blow.",
-    passive: { healOnKill: 6 },
-  },
   earthshatter: {
-    id: "earthshatter", classId: "warrior", name: "Earthshatter", icon: "🪨", kind: "damage",
-    unlockLevel: 20, manaCost: 26, cooldownMs: 14000, rangePx: 0, radiusPx: 150, power: 20,
+    id: "earthshatter", name: "Earthshatter", icon: "🪨", kind: "damage",
+    manaCost: 26, cooldownMs: 14000, rangePx: 0, radiusPx: 150, power: 20,
     effect: "quake", sfx: "die", description: "Split the ground. Heavy damage all around you.",
   },
 
   // ----------------------------------------------------------------- ranger
   powershot: {
-    id: "powershot", classId: "ranger", name: "Power Shot", icon: "🏹", kind: "damage",
-    unlockLevel: 1, manaCost: 8, cooldownMs: 4000, rangePx: 340, radiusPx: 0, power: 12,
+    id: "powershot", name: "Power Shot", icon: "🏹", kind: "damage",
+    manaCost: 8, cooldownMs: 4000, rangePx: 340, radiusPx: 0, power: 12,
     effect: "arrow", sfx: "swing", description: "A single heavy arrow at long range.",
   },
-  eagleeye: {
-    id: "eagleeye", classId: "ranger", name: "Eagle Eye", icon: "👁️", kind: "passive",
-    unlockLevel: 1, manaCost: 0, cooldownMs: 0, rangePx: 0, radiusPx: 0, power: 0,
-    effect: "arrow", sfx: "hit", description: "You pick your shots. +8% critical chance.",
-    passive: { critChance: 8 },
-  },
   multishot: {
-    id: "multishot", classId: "ranger", name: "Multishot", icon: "🎯", kind: "damage",
-    unlockLevel: 4, manaCost: 14, cooldownMs: 7000, rangePx: 300, radiusPx: 0, power: 9,
+    id: "multishot", name: "Multishot", icon: "🎯", kind: "damage",
+    manaCost: 14, cooldownMs: 7000, rangePx: 300, radiusPx: 0, power: 9,
     effect: "arrow", sfx: "swing", description: "Loose at three enemies at once.",
     chainTargets: 3,
   },
   poisonarrow: {
-    id: "poisonarrow", classId: "ranger", name: "Poison Arrow", icon: "🧪", kind: "control",
-    unlockLevel: 8, manaCost: 12, cooldownMs: 9000, rangePx: 320, radiusPx: 0, power: 8,
+    id: "poisonarrow", name: "Poison Arrow", icon: "🧪", kind: "control",
+    manaCost: 12, cooldownMs: 9000, rangePx: 320, radiusPx: 0, power: 8,
     effect: "poison", sfx: "cast", description: "A venomous shot that slows what it hits.",
     appliesSlow: true,
   },
   disengage: {
-    id: "disengage", classId: "ranger", name: "Disengage", icon: "🌀", kind: "mobility",
-    unlockLevel: 12, manaCost: 10, cooldownMs: 5000, rangePx: 0, radiusPx: 0, power: 200,
+    id: "disengage", name: "Disengage", icon: "🌀", kind: "mobility",
+    manaCost: 10, cooldownMs: 5000, rangePx: 0, radiusPx: 0, power: 200,
     effect: "buff", sfx: "swing", description: "Leap clear, away from whatever is closest.",
   },
-  fleetfooted: {
-    id: "fleetfooted", classId: "ranger", name: "Fleet Footed", icon: "🍃", kind: "passive",
-    unlockLevel: 16, manaCost: 0, cooldownMs: 0, rangePx: 0, radiusPx: 0, power: 0,
-    effect: "buff", sfx: "hit", description: "You move lighter. +35 speed and +4 evasion.",
-    passive: { moveSpeedBonus: 35, evasion: 4 },
-  },
   rainofarrows: {
-    id: "rainofarrows", classId: "ranger", name: "Rain of Arrows", icon: "☔", kind: "damage",
-    unlockLevel: 20, manaCost: 28, cooldownMs: 15000, rangePx: 320, radiusPx: 130, power: 16,
+    id: "rainofarrows", name: "Rain of Arrows", icon: "☔", kind: "damage",
+    manaCost: 28, cooldownMs: 15000, rangePx: 320, radiusPx: 130, power: 16,
     effect: "arrow", sfx: "crit", description: "Blanket the ground around your target.",
   },
 
   // ------------------------------------------------------------------- mage
   arcanebolt: {
-    id: "arcanebolt", classId: "mage", name: "Arcane Bolt", icon: "🔮", kind: "damage",
-    unlockLevel: 1, manaCost: 6, cooldownMs: 2500, rangePx: 300, radiusPx: 0, power: 10,
+    id: "arcanebolt", name: "Arcane Bolt", icon: "🔮", kind: "damage",
+    manaCost: 6, cooldownMs: 2500, rangePx: 300, radiusPx: 0, power: 10,
     effect: "arcane", sfx: "cast", description: "A quick bolt of raw magic.",
   },
-  arcanemind: {
-    id: "arcanemind", classId: "mage", name: "Arcane Mind", icon: "📘", kind: "passive",
-    unlockLevel: 1, manaCost: 0, cooldownMs: 0, rangePx: 0, radiusPx: 0, power: 0,
-    effect: "arcane", sfx: "hit", description: "A deeper well. +30 maximum mana.",
-    passive: { maxManaBonus: 30 },
-  },
   firebolt: {
-    id: "firebolt", classId: "mage", name: "Firebolt", icon: "🔥", kind: "damage",
-    unlockLevel: 4, manaCost: 14, cooldownMs: 5000, rangePx: 320, radiusPx: 70, power: 15,
+    id: "firebolt", name: "Firebolt", icon: "🔥", kind: "damage",
+    manaCost: 14, cooldownMs: 5000, rangePx: 320, radiusPx: 70, power: 15,
     effect: "fire", sfx: "cast", description: "Hurl fire that bursts on impact.",
   },
   frostnova: {
-    id: "frostnova", classId: "mage", name: "Frost Nova", icon: "❄️", kind: "control",
-    unlockLevel: 8, manaCost: 18, cooldownMs: 11000, rangePx: 0, radiusPx: 150, power: 6,
+    id: "frostnova", name: "Frost Nova", icon: "❄️", kind: "control",
+    manaCost: 18, cooldownMs: 11000, rangePx: 0, radiusPx: 150, power: 6,
     effect: "frost", sfx: "cast", description: "Chill everything nearby, slowing it so you can break away.",
     appliesSlow: true,
   },
   mend: {
-    id: "mend", classId: "mage", name: "Mend", icon: "✨", kind: "heal",
-    unlockLevel: 12, manaCost: 20, cooldownMs: 12000, rangePx: 260, radiusPx: 0, power: 30,
+    id: "mend", name: "Mend", icon: "✨", kind: "heal",
+    manaCost: 20, cooldownMs: 12000, rangePx: 260, radiusPx: 0, power: 30,
     effect: "heal", sfx: "heal", description: "Close wounds. Targets an ally if you have one selected.",
   },
-  manafont: {
-    id: "manafont", classId: "mage", name: "Mana Font", icon: "💧", kind: "passive",
-    unlockLevel: 16, manaCost: 0, cooldownMs: 0, rangePx: 0, radiusPx: 0, power: 0,
-    effect: "arcane", sfx: "hit", description: "Mana returns faster. +3 per tick.",
-    passive: { manaRegenBonus: 3 },
-  },
   chainlightning: {
-    id: "chainlightning", classId: "mage", name: "Chain Lightning", icon: "🌩️", kind: "damage",
-    unlockLevel: 20, manaCost: 30, cooldownMs: 13000, rangePx: 320, radiusPx: 0, power: 18,
+    id: "chainlightning", name: "Chain Lightning", icon: "🌩️", kind: "damage",
+    manaCost: 30, cooldownMs: 13000, rangePx: 320, radiusPx: 0, power: 18,
     effect: "lightning", sfx: "crit", description: "Arcs from target to target, up to four.",
     chainTargets: 4,
+  },
+  // --- Added with the talent trees, so two weapons of one archetype play
+  // --- differently instead of sharing a single spell list.
+  roar: {
+    id: "roar", name: "Roar", icon: "🗣️", kind: "buff",
+    manaCost: 0, cooldownMs: 16000, rangePx: 0, radiusPx: 0, power: 0,
+    effect: "buff", sfx: "levelup", description: "Nothing but nerve. Hit harder for a while.",
+  },
+  gutpunch: {
+    id: "gutpunch", name: "Gut Punch", icon: "🥊", kind: "control",
+    manaCost: 4, cooldownMs: 8000, rangePx: 58, radiusPx: 0, power: 6,
+    effect: "impact", sfx: "hit", description: "Wind it. Whatever you hit moves slower.",
+    appliesSlow: true,
+  },
+  riposte: {
+    id: "riposte", name: "Riposte", icon: "🤺", kind: "buff",
+    manaCost: 10, cooldownMs: 15000, rangePx: 0, radiusPx: 0, power: 0,
+    effect: "slash", sfx: "crit", description: "Read the swing and answer it. Strike harder briefly.",
+  },
+  rend: {
+    id: "rend", name: "Rend", icon: "🩸", kind: "control",
+    manaCost: 12, cooldownMs: 9000, rangePx: 64, radiusPx: 0, power: 16,
+    effect: "slash", sfx: "crit", description: "A deep cut. It labours afterwards.",
+    appliesSlow: true,
+  },
+  reckless: {
+    id: "reckless", name: "Reckless Swing", icon: "😤", kind: "buff",
+    manaCost: 12, cooldownMs: 20000, rangePx: 0, radiusPx: 0, power: 0,
+    effect: "quake", sfx: "levelup", description: "Abandon the guard. Everything lands harder for a while.",
+  },
+  shockwave: {
+    id: "shockwave", name: "Shockwave", icon: "💥", kind: "damage",
+    manaCost: 14, cooldownMs: 8000, rangePx: 0, radiusPx: 120, power: 11,
+    effect: "quake", sfx: "crit", description: "Slam the ground. Everything close feels it.",
+  },
+  concuss: {
+    id: "concuss", name: "Concuss", icon: "🌀", kind: "control",
+    manaCost: 10, cooldownMs: 10000, rangePx: 62, radiusPx: 0, power: 9,
+    effect: "impact", sfx: "hit", description: "A blow to the head. It staggers away slowed.",
+    appliesSlow: true,
+  },
+  backstab: {
+    id: "backstab", name: "Backstab", icon: "🗡️", kind: "damage",
+    manaCost: 10, cooldownMs: 6000, rangePx: 62, radiusPx: 0, power: 20,
+    effect: "slash", sfx: "crit", description: "One precise thrust where it counts.",
+  },
+  flurry: {
+    id: "flurry", name: "Flurry", icon: "🌪️", kind: "damage",
+    manaCost: 12, cooldownMs: 7000, rangePx: 66, radiusPx: 0, power: 7,
+    effect: "slash", sfx: "swing", description: "A blur of short strikes across three enemies.",
+    chainTargets: 3,
+  },
+  frostbolt: {
+    id: "frostbolt", name: "Frostbolt", icon: "🧊", kind: "control",
+    manaCost: 10, cooldownMs: 4500, rangePx: 260, radiusPx: 0, power: 11,
+    effect: "frost", sfx: "cast", description: "A shard of cold. What it hits slows.",
+    appliesSlow: true,
+  },
+  arcanemissiles: {
+    id: "arcanemissiles", name: "Arcane Missiles", icon: "🌠", kind: "damage",
+    manaCost: 16, cooldownMs: 8000, rangePx: 240, radiusPx: 0, power: 9,
+    effect: "arcane", sfx: "cast", description: "Three darts, each seeking its own target.",
+    chainTargets: 3,
   },
 };
 
 export const SKILL_IDS = Object.keys(SKILLS) as SkillId[];
 
-/** Every skill belonging to a class, in unlock order — the tree, top to bottom. */
-export function skillsForClass(cls: CharacterClass): SkillDef[] {
-  return SKILL_IDS.map((id) => SKILLS[id])
-    .filter((s) => s.classId === cls)
-    .sort((a, b) => a.unlockLevel - b.unlockLevel || a.name.localeCompare(b.name));
+// --- Talent trees -----------------------------------------------------------
+// One tree per weapon family, and the tree is what decides which skills you
+// have. Nothing unlocks itself: weapon levels hand you points, and you spend
+// them where you want.
+//
+// Why per weapon and not per class: three warrior weapons sharing one spell
+// list made an axe a sword with different numbers. A tree each is what lets an
+// axe be about heavy single blows and a mace about control and armour, while
+// both remain "a warrior" because the weapon still decides the archetype.
+//
+// A node is DATA — a name, a rank cap, and a bag of `PassiveBonus` or a single
+// `SkillId`. Roughly eighty nodes only stays maintainable if rebalancing means
+// editing numbers rather than editing behaviour, which is also why actives are
+// one rank: "do I have this skill" is a clean question, and making every skill
+// separately rankable would put a scaling rule in eighty places.
+export type TalentId = string;
+
+/** Weapon level required to reach each tier of a tree. */
+export const TALENT_TIER_LEVELS = [1, 3, 6, 10, 15];
+
+export interface TalentNode {
+  id: TalentId;
+  weapon: WeaponType;
+  name: string;
+  icon: string;
+  description: string;
+  /** Row in the tree; gated by TALENT_TIER_LEVELS[tier]. */
+  tier: number;
+  maxRank: number;
+  /** Another node in the same tree that needs at least one rank first. */
+  requires?: TalentId;
+  /** Granted at rank 1. Actives are always maxRank 1. */
+  active?: SkillId;
+  /** Applied once per rank. */
+  passive?: PassiveBonus;
 }
 
-/** The actives a character can currently use, in hotbar order. */
-export function unlockedActives(cls: CharacterClass, level: number): SkillDef[] {
-  return skillsForClass(cls).filter((s) => s.kind !== "passive" && s.unlockLevel <= level);
-}
+/** Node id to rank, for one weapon. */
+export type TalentRanks = Record<TalentId, number>;
 
-/** Totals every unlocked passive into one bag of modifiers. */
-export function passiveBonuses(cls: CharacterClass, level: number): Required<PassiveBonus> {
-  const total = {
-    armor: 0, critChance: 0, maxManaBonus: 0, manaRegenBonus: 0,
-    moveSpeedBonus: 0, healOnKill: 0, evasion: 0,
+function t(
+  weapon: WeaponType,
+  key: string,
+  tier: number,
+  name: string,
+  icon: string,
+  maxRank: number,
+  description: string,
+  extra: { active?: SkillId; passive?: PassiveBonus; requires?: string } = {},
+): TalentNode {
+  return {
+    id: `${weapon}.${key}`,
+    weapon,
+    tier,
+    name,
+    icon,
+    maxRank,
+    description,
+    active: extra.active,
+    passive: extra.passive,
+    requires: extra.requires ? `${weapon}.${extra.requires}` : undefined,
   };
-  for (const skill of skillsForClass(cls)) {
-    if (skill.kind !== "passive" || skill.unlockLevel > level || !skill.passive) continue;
-    for (const key of Object.keys(total) as (keyof PassiveBonus)[]) {
-      total[key] += skill.passive[key] ?? 0;
-    }
+}
+
+export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
+  // Bare hands: no damage to speak of, so the tree is about staying alive and
+  // getting somewhere better.
+  fist: [
+    t("fist", "grit", 0, "Grit", "\u{1FAC0}", 5, "+8 maximum health per rank.", { passive: { maxHpBonus: 8 } }),
+    t("fist", "haymaker", 0, "Haymaker", "✊", 1, "Unlocks Haymaker.", { active: "haymaker" }),
+    t("fist", "footwork", 1, "Footwork", "\u{1F463}", 5, "+3 evasion and +10 movement per rank.", { passive: { evasion: 3, moveSpeedBonus: 10 } }),
+    t("fist", "roar", 1, "Roar", "\u{1F5E3}️", 1, "Unlocks Roar.", { active: "roar" }),
+    t("fist", "calloused", 2, "Calloused", "\u{1F91C}", 5, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
+    t("fist", "gutpunch", 2, "Gut Punch", "\u{1F94A}", 1, "Unlocks Gut Punch.", { active: "gutpunch", requires: "haymaker" }),
+    t("fist", "quickhands", 3, "Quick Hands", "\u{1F4A8}", 5, "+6% attack speed per rank.", { passive: { attackSpeedPercent: 6 } }),
+    t("fist", "secondwind", 3, "Second Wind", "❤️", 4, "Recover 4 health per rank on a killing blow.", { passive: { healOnKill: 4 } }),
+    t("fist", "unbowed", 4, "Unbowed", "\u{1F6E1}️", 4, "+3 armour and +3 evasion per rank.", { passive: { armor: 3, evasion: 3 } }),
+  ],
+
+  // Sword: the baseline every other weapon is tuned against - accurate, even,
+  // and the only warrior tree with no glaring weakness.
+  sword: [
+    t("sword", "edge", 0, "Keen Edge", "⚔️", 6, "+4% damage per rank.", { passive: { damagePercent: 4 } }),
+    t("sword", "cleave", 0, "Cleave", "\u{1F5E1}️", 1, "Unlocks Cleave.", { active: "cleave" }),
+    t("sword", "temper", 1, "Tempered", "\u{1F525}", 5, "+2 armour and +6 health per rank.", { passive: { armor: 2, maxHpBonus: 6 } }),
+    t("sword", "precision", 1, "Precision", "\u{1F3AF}", 5, "+3% critical chance and +3 accuracy per rank.", { passive: { critChance: 3, accuracyBonus: 3 } }),
+    t("sword", "charge", 2, "Charge", "\u{1F4A8}", 1, "Unlocks Charge.", { active: "charge" }),
+    t("sword", "riposte", 2, "Riposte", "\u{1F93A}", 1, "Unlocks Riposte.", { active: "riposte", requires: "precision" }),
+    t("sword", "momentum", 3, "Momentum", "\u{1F300}", 5, "+5% attack speed per rank.", { passive: { attackSpeedPercent: 5 } }),
+    t("sword", "warcry", 3, "War Cry", "⚡", 1, "Unlocks War Cry.", { active: "warcry" }),
+    t("sword", "mastery", 4, "Swordmaster", "\u{1F3C6}", 4, "+6% damage and +10% critical damage per rank.", { passive: { damagePercent: 6, critDamagePercent: 10 } }),
+  ],
+
+  // Axe: the heavy hitter. Slow swings, so everything here is about making the
+  // ones that land count.
+  axe: [
+    t("axe", "heft", 0, "Heft", "\u{1FA93}", 6, "+6% damage per rank.", { passive: { damagePercent: 6 } }),
+    t("axe", "rend", 0, "Rend", "\u{1FA78}", 1, "Unlocks Rend.", { active: "rend" }),
+    t("axe", "brutality", 1, "Brutality", "\u{1F480}", 5, "+12% critical damage per rank.", { passive: { critDamagePercent: 12 } }),
+    t("axe", "thickskin", 1, "Thick Skin", "\u{1F9F1}", 5, "+3 armour per rank.", { passive: { armor: 3 } }),
+    t("axe", "charge", 2, "Charge", "\u{1F4A8}", 1, "Unlocks Charge.", { active: "charge" }),
+    t("axe", "reckless", 2, "Reckless Swing", "\u{1F624}", 1, "Unlocks Reckless Swing.", { active: "reckless", requires: "brutality" }),
+    t("axe", "sweeping", 3, "Sweeping Arc", "\u{1F33E}", 4, "+5% reach and +4% damage per rank.", { passive: { rangePercent: 5, damagePercent: 4 } }),
+    t("axe", "bloodthirst", 3, "Bloodthirst", "\u{1F377}", 5, "Recover 5 health per rank on a killing blow.", { passive: { healOnKill: 5 } }),
+    t("axe", "earthshatter", 4, "Earthshatter", "\u{1FAA8}", 1, "Unlocks Earthshatter.", { active: "earthshatter", requires: "heft" }),
+  ],
+
+  // Mace: control and staying power. The warrior tree that wants the fight to
+  // last, rather than to end early.
+  mace: [
+    t("mace", "weight", 0, "Dead Weight", "\u{1F528}", 6, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
+    t("mace", "concuss", 0, "Concuss", "\u{1F300}", 1, "Unlocks Concuss.", { active: "concuss" }),
+    t("mace", "bulwark", 1, "Bulwark", "\u{1F6E1}️", 5, "+4 armour per rank.", { passive: { armor: 4 } }),
+    t("mace", "stoneskin", 1, "Stoneskin", "\u{1F5FF}", 5, "+10 maximum health per rank.", { passive: { maxHpBonus: 10 } }),
+    t("mace", "shockwave", 2, "Shockwave", "\u{1F4A5}", 1, "Unlocks Shockwave.", { active: "shockwave" }),
+    t("mace", "shieldwall", 2, "Shield Wall", "\u{1F530}", 1, "Unlocks Shield Wall.", { active: "shieldwall", requires: "bulwark" }),
+    t("mace", "relentless", 3, "Relentless", "⏱️", 5, "+4% attack speed and +3 accuracy per rank.", { passive: { attackSpeedPercent: 4, accuracyBonus: 3 } }),
+    t("mace", "warcry", 3, "War Cry", "⚡", 1, "Unlocks War Cry.", { active: "warcry" }),
+    t("mace", "crusher", 4, "Crusher", "☄️", 4, "+8% damage and +10% critical damage per rank.", { passive: { damagePercent: 8, critDamagePercent: 10 } }),
+  ],
+
+  // Dagger: the ranger's close-quarters half. Fast, fragile, and entirely about
+  // critical hits.
+  dagger: [
+    t("dagger", "quick", 0, "Quickened", "\u{1F4A8}", 6, "+6% attack speed per rank.", { passive: { attackSpeedPercent: 6 } }),
+    t("dagger", "backstab", 0, "Backstab", "\u{1F5E1}️", 1, "Unlocks Backstab.", { active: "backstab" }),
+    t("dagger", "deadly", 1, "Deadly Aim", "\u{1F3AF}", 6, "+4% critical chance per rank.", { passive: { critChance: 4 } }),
+    t("dagger", "slippery", 1, "Slippery", "\u{1F343}", 5, "+4 evasion and +12 movement per rank.", { passive: { evasion: 4, moveSpeedBonus: 12 } }),
+    t("dagger", "flurry", 2, "Flurry", "\u{1F32A}️", 1, "Unlocks Flurry.", { active: "flurry" }),
+    t("dagger", "venom", 2, "Envenom", "\u{1F9EA}", 1, "Unlocks Poison Arrow - a coated blade works as well.", { active: "poisonarrow", requires: "deadly" }),
+    t("dagger", "opportunist", 3, "Opportunist", "\u{1F441}️", 5, "+12% critical damage per rank.", { passive: { critDamagePercent: 12 } }),
+    t("dagger", "disengage", 3, "Disengage", "\u{1F300}", 1, "Unlocks Disengage.", { active: "disengage" }),
+    t("dagger", "assassin", 4, "Assassin", "\u{1F977}", 4, "+7% damage and +4% critical chance per rank.", { passive: { damagePercent: 7, critChance: 4 } }),
+  ],
+
+  // Bow: reach. Everything here is about landing the shot before the gap closes.
+  bow: [
+    t("bow", "draw", 0, "Strong Draw", "\u{1F3F9}", 6, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
+    t("bow", "powershot", 0, "Power Shot", "\u{1F3AF}", 1, "Unlocks Power Shot.", { active: "powershot" }),
+    t("bow", "eagleeye", 1, "Eagle Eye", "\u{1F441}️", 5, "+4% critical chance and +4 accuracy per rank.", { passive: { critChance: 4, accuracyBonus: 4 } }),
+    t("bow", "longbow", 1, "Longbow", "\u{1F4CF}", 5, "+8% reach per rank.", { passive: { rangePercent: 8 } }),
+    t("bow", "multishot", 2, "Multishot", "\u{1F3AA}", 1, "Unlocks Multishot.", { active: "multishot" }),
+    t("bow", "venomtip", 2, "Venom Tip", "\u{1F9EA}", 1, "Unlocks Poison Arrow.", { active: "poisonarrow" }),
+    t("bow", "fleet", 3, "Fleet Footed", "\u{1F343}", 5, "+14 movement and +3 evasion per rank.", { passive: { moveSpeedBonus: 14, evasion: 3 } }),
+    t("bow", "disengage", 3, "Disengage", "\u{1F300}", 1, "Unlocks Disengage.", { active: "disengage" }),
+    t("bow", "marksman", 4, "Marksman", "\u{1F3C6}", 4, "+14% critical damage per rank.", { passive: { critDamagePercent: 14 } }),
+    t("bow", "rainofarrows", 4, "Rain of Arrows", "☔", 1, "Unlocks Rain of Arrows.", { active: "rainofarrows", requires: "multishot" }),
+  ],
+
+  // Staff: the mage's two-handed option - the biggest numbers and the deepest
+  // mana pool, at the cost of everything else.
+  staff: [
+    t("staff", "focus", 0, "Focus", "\u{1F537}", 6, "+6% skill power per rank.", { passive: { skillPowerPercent: 6 } }),
+    t("staff", "arcanebolt", 0, "Arcane Bolt", "\u{1F52E}", 1, "Unlocks Arcane Bolt.", { active: "arcanebolt" }),
+    t("staff", "wellspring", 1, "Wellspring", "\u{1F4A7}", 5, "+25 maximum mana and +2 mana regeneration per rank.", { passive: { maxManaBonus: 25, manaRegenBonus: 2 } }),
+    t("staff", "conduit", 1, "Conduit", "⚡", 5, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
+    t("staff", "firebolt", 2, "Firebolt", "\u{1F525}", 1, "Unlocks Firebolt.", { active: "firebolt" }),
+    t("staff", "mend", 2, "Mend", "✨", 1, "Unlocks Mend.", { active: "mend" }),
+    t("staff", "efficiency", 3, "Efficiency", "\u{1F4D8}", 5, "Spells cost 10% less mana per rank.", { passive: { manaCostPercent: 10 } }),
+    t("staff", "chainlightning", 3, "Chain Lightning", "\u{1F329}️", 1, "Unlocks Chain Lightning.", { active: "chainlightning", requires: "firebolt" }),
+    t("staff", "archmage", 4, "Archmage", "\u{1F9D9}", 4, "+10% skill power and +4% critical chance per rank.", { passive: { skillPowerPercent: 10, critChance: 4 } }),
+  ],
+
+  // Wand: the mage's sidearm. Smaller numbers, far shorter cooldowns, and the
+  // only caster tree that expects to be moving.
+  wand: [
+    t("wand", "quickcast", 0, "Quickcast", "⏩", 6, "Cooldowns 6% shorter per rank.", { passive: { cooldownPercent: 6 } }),
+    t("wand", "frostbolt", 0, "Frostbolt", "\u{1F9CA}", 1, "Unlocks Frostbolt.", { active: "frostbolt" }),
+    t("wand", "attunement", 1, "Attunement", "\u{1F539}", 5, "+18 maximum mana and +4% skill power per rank.", { passive: { maxManaBonus: 18, skillPowerPercent: 4 } }),
+    t("wand", "warding", 1, "Warding", "\u{1F6E1}️", 5, "+2 armour and +3 evasion per rank.", { passive: { armor: 2, evasion: 3 } }),
+    t("wand", "missiles", 2, "Arcane Missiles", "\u{1F320}", 1, "Unlocks Arcane Missiles.", { active: "arcanemissiles" }),
+    t("wand", "frostnova", 2, "Frost Nova", "❄️", 1, "Unlocks Frost Nova.", { active: "frostnova", requires: "frostbolt" }),
+    t("wand", "rapid", 3, "Rapid Channel", "\u{1F4A8}", 5, "+7% attack speed per rank.", { passive: { attackSpeedPercent: 7 } }),
+    t("wand", "mend", 3, "Mend", "✨", 1, "Unlocks Mend.", { active: "mend" }),
+    t("wand", "spellblade", 4, "Spellblade", "\u{1F31F}", 4, "+6% damage and +8% skill power per rank.", { passive: { damagePercent: 6, skillPowerPercent: 8 } }),
+  ],
+};
+
+const TALENTS_BY_ID = new Map<TalentId, TalentNode>();
+for (const nodes of Object.values(WEAPON_TREES)) {
+  for (const node of nodes) TALENTS_BY_ID.set(node.id, node);
+}
+
+export function talentNode(id: TalentId): TalentNode | undefined {
+  return TALENTS_BY_ID.get(id);
+}
+
+export function talentTree(weapon: WeaponType | undefined | null): TalentNode[] {
+  return WEAPON_TREES[weapon ?? "fist"] ?? WEAPON_TREES.fist;
+}
+
+/** Points already committed in one weapon's tree. */
+export function spentTalentPoints(weapon: WeaponType | undefined, ranks: TalentRanks): number {
+  let spent = 0;
+  for (const node of talentTree(weapon)) spent += Math.min(node.maxRank, ranks[node.id] ?? 0);
+  return spent;
+}
+
+/**
+ * Whether one more rank may be bought right now, and if not, why.
+ *
+ * Shared so the button the client greys out and the check the server enforces
+ * are the same rule: the client cannot offer a purchase the server will refuse,
+ * and a hand-written message cannot buy one the client would have hidden.
+ */
+export function canLearnTalent(
+  weapon: WeaponType | undefined,
+  ranks: TalentRanks,
+  nodeId: TalentId,
+  weaponLevel: number,
+): { ok: boolean; reason?: string } {
+  const node = talentNode(nodeId);
+  if (!node || node.weapon !== (weapon ?? "fist")) {
+    return { ok: false, reason: "not a talent of that weapon" };
+  }
+  const rank = ranks[nodeId] ?? 0;
+  if (rank >= node.maxRank) return { ok: false, reason: "already at full rank" };
+
+  const tierLevel = TALENT_TIER_LEVELS[node.tier] ?? 1;
+  if (weaponLevel < tierLevel) return { ok: false, reason: `needs weapon level ${tierLevel}` };
+
+  if (node.requires && (ranks[node.requires] ?? 0) < 1) {
+    const prereq = talentNode(node.requires);
+    return { ok: false, reason: `needs ${prereq?.name ?? "an earlier talent"} first` };
+  }
+
+  const available = talentPointsAtLevel(weaponLevel) - spentTalentPoints(weapon, ranks);
+  if (available < 1) return { ok: false, reason: "no talent points" };
+  return { ok: true };
+}
+
+/** Every passive bonus the learned talents add up to, for this weapon only. */
+export function talentPassives(
+  weapon: WeaponType | undefined,
+  ranks: TalentRanks,
+): Required<PassiveBonus> {
+  const total = { ...EMPTY_PASSIVES };
+  for (const node of talentTree(weapon)) {
+    const rank = Math.min(node.maxRank, ranks[node.id] ?? 0);
+    if (rank < 1 || !node.passive) continue;
+    addPassives(total, node.passive, rank);
   }
   return total;
+}
+
+/** The skills this weapon's learned talents have granted, in tree order. */
+export function unlockedActives(weapon: WeaponType | undefined, ranks: TalentRanks): SkillDef[] {
+  const out: SkillDef[] = [];
+  for (const node of talentTree(weapon)) {
+    if (!node.active || (ranks[node.id] ?? 0) < 1) continue;
+    const skill = SKILLS[node.active];
+    if (skill && !out.includes(skill)) out.push(skill);
+  }
+  return out;
+}
+
+/** Whether a skill is currently available. The server's authority on "may you
+ *  cast this", replacing the old class-and-level check. */
+export function hasActive(
+  weapon: WeaponType | undefined,
+  ranks: TalentRanks,
+  skillId: SkillId,
+): boolean {
+  return unlockedActives(weapon, ranks).some((s) => s.id === skillId);
 }
 
 // Skills scale off the class's primary attribute, so gear and stat choices
 // carry over rather than being a separate power curve, and level is in there
 // too — without it the hotbar quietly falls behind as auto-attacks keep
 // scaling through gear.
-export function skillPower(skill: SkillDef, power: number, vitality: number, level = 1): number {
+export function skillPower(
+  skill: SkillDef,
+  power: number,
+  vitality: number,
+  level = 1,
+  skillPowerPercent = 0,
+): number {
   const levelBonus = (level - 1) * 1.5;
-  if (skill.kind === "heal") return Math.round(skill.power + vitality * 2 + power + levelBonus * 2);
-  if (skill.kind === "mobility" || skill.kind === "buff" || skill.kind === "passive") return skill.power;
-  return Math.round(skill.power + power * 1.6 + levelBonus);
+  const scale = 1 + skillPowerPercent / 100;
+  // Mobility distance is not "power" in any sense a percentage should touch:
+  // scaling a dash by spell power would make an archmage teleport.
+  if (skill.kind === "mobility" || skill.kind === "buff") return skill.power;
+  if (skill.kind === "heal") {
+    return Math.round((skill.power + vitality * 2 + power + levelBonus * 2) * scale);
+  }
+  return Math.round((skill.power + power * 1.6 + levelBonus) * scale);
 }
 
 // Shield Wall's duration and how much it cuts.
 export const SHIELD_WALL_MS = 6000;
 export const SHIELD_WALL_REDUCTION = 0.5;
+
+// --- Weapon proficiency ------------------------------------------------------
+// Character level and weapon level answer different questions and are earned
+// separately on purpose.
+//
+//   Character level is WHO YOU ARE: hit points, and stat points you spend
+//   however you like. It follows you across every weapon, so switching does
+//   not throw away the character.
+//
+//   Weapon level is WHAT YOU CAN DO WITH THIS THING: talent points in that
+//   weapon's own tree, and nothing else's. Picking up a staff for the first
+//   time really does mean starting that tree at zero, which is what makes
+//   "you are whatever you're holding" a commitment rather than a costume
+//   change.
+//
+// Proficiency is earned only while the weapon is in hand, so it accumulates
+// exactly where the playing happened.
+export const MAX_WEAPON_LEVEL = 20;
+
+/** XP needed to go from `level` to `level + 1`. */
+export function weaponXpToNext(level: number): number {
+  return 30 + (level - 1) * 22;
+}
+
+/** Turns a total XP figure into a level plus progress within it. */
+export function weaponProgress(totalXp: number): {
+  level: number;
+  intoLevel: number;
+  needed: number;
+} {
+  let level = 1;
+  let remaining = Math.max(0, Math.floor(totalXp));
+  while (level < MAX_WEAPON_LEVEL && remaining >= weaponXpToNext(level)) {
+    remaining -= weaponXpToNext(level);
+    level++;
+  }
+  return { level, intoLevel: remaining, needed: weaponXpToNext(level) };
+}
+
+/**
+ * Talent points a weapon has granted by the time it reaches `level`. One per
+ * level including the first, so drawing a new weapon is immediately a choice
+ * rather than a wait.
+ *
+ * Twenty points at the cap against roughly thirty ranks per tree, which is the
+ * ratio that makes it a tree rather than a checklist: you finish a weapon with
+ * about two thirds of it, and which two thirds is the build. `tools/test/
+ * talents.mjs` asserts the gap, because the first draft of the trees fit
+ * entirely inside the budget and nobody would ever have had to choose.
+ */
+export function talentPointsAtLevel(level: number): number {
+  return Math.max(0, Math.min(MAX_WEAPON_LEVEL, level));
+}
 
 export function xpToNextLevel(level: number): number {
   return 20 + (level - 1) * 10;
@@ -938,8 +1602,8 @@ export function xpToNextLevel(level: number): number {
 
 export const PLAYER_SPAWN = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
 
-export function maxHpForLevel(level: number, vitality = 0): number {
-  return 50 + (level - 1) * 10 + vitality * VITALITY_HP_STEP;
+export function maxHpForLevel(level: number, vitality = 0, maxHpBonus = 0): number {
+  return 50 + (level - 1) * 10 + vitality * VITALITY_HP_STEP + maxHpBonus;
 }
 
 // A second thing Vitality buys, on top of max HP: how much passive regen
@@ -1085,8 +1749,12 @@ export function playerAttackIntervalMs(
 const RARITY_CRIT_DAMAGE_BONUS: Record<ItemRarity, number> = { common: 0.1, rare: 0.25, epic: 0.5 };
 export const BASE_CRIT_MULTIPLIER = 1.5;
 
-export function critDamageMultiplier(weaponRarity: ItemRarity | null): number {
-  return BASE_CRIT_MULTIPLIER + (weaponRarity ? RARITY_CRIT_DAMAGE_BONUS[weaponRarity] : 0);
+export function critDamageMultiplier(
+  weaponRarity: ItemRarity | null,
+  critDamagePercent = 0,
+): number {
+  const base = BASE_CRIT_MULTIPLIER + (weaponRarity ? RARITY_CRIT_DAMAGE_BONUS[weaponRarity] : 0);
+  return base + critDamagePercent / 100;
 }
 
 export function xpRewardFor(monsterKind: MonsterKind, armorRarity: ItemRarity | null): number {
@@ -1539,6 +2207,84 @@ export interface ManaUpdateMessage {
   payload: { mana: number; maxMana: number };
 }
 
+/** Spend one talent point. The server re-checks `canLearnTalent` before it
+ *  takes, so this is a request rather than an instruction. */
+export interface LearnTalentMessage {
+  type: "LEARN_TALENT";
+  payload: { nodeId: TalentId };
+}
+
+/** Save the player's bar for one weapon. Sent on every edit; the server
+ *  normalises and stores it. */
+export interface SetHotbarMessage {
+  type: "SET_HOTBAR";
+  payload: { weaponType: WeaponType; layout: HotbarLayout };
+}
+
+/** Refund every point in one weapon's tree. Free and unlimited on purpose —
+ *  a tree you cannot experiment with is a tree you read a guide for. */
+export interface ResetTalentsMessage {
+  type: "RESET_TALENTS";
+  payload: { weaponType: WeaponType };
+}
+
+/**
+ * Everything about the weapon currently in hand: how far along its own
+ * proficiency you are, and what you have spent in its tree.
+ *
+ * Sent whenever any of it moves — a kill, a purchase, a weapon swap. Carries
+ * the whole tree state rather than a delta because it is a few dozen small
+ * numbers and reconciling deltas for something a player edits by hand is a
+ * bug factory for no saving worth having.
+ */
+export interface WeaponProgressMessage {
+  type: "WEAPON_PROGRESS";
+  payload: {
+    weaponType: WeaponType;
+    xp: number;
+    level: number;
+    intoLevel: number;
+    needed: number;
+    pointsSpent: number;
+    pointsAvailable: number;
+    ranks: TalentRanks;
+    /** The player's bar for this weapon, already pruned of anything they can
+     *  no longer cast. */
+    hotbar: HotbarLayout;
+    /** Set when a purchase was refused, in the player's words. */
+    reason?: string;
+  };
+}
+
+/** "Swing at my target now." Also gives the standing attack order that keeps
+ *  the swings coming afterwards. */
+export interface UseAttackMessage {
+  type: "USE_ATTACK";
+  payload: Record<string, never>;
+}
+
+/**
+ * The state of the player's own weapon: whether an attack order stands, and
+ * how long until the next swing lands.
+ *
+ * Sent by the server rather than derived on the client even though every
+ * ingredient is in `shared`, because the swing clock is a running timer the
+ * server owns: it starts when you first come into reach, resets on each swing,
+ * and is thrown away when you disengage. A client re-deriving that would be
+ * re-implementing the state machine, and any drift shows up as a bar that
+ * disagrees with when you actually hit.
+ */
+export interface AttackStateMessage {
+  type: "ATTACK_STATE";
+  payload: {
+    attacking: boolean;
+    readyInMs: number;
+    intervalMs: number;
+    /** Present when a manual swing was refused, in the player's words. */
+    reason?: string;
+  };
+}
+
 export interface UpgradeGatherSpeedMessage {
   type: "UPGRADE_GATHER_SPEED";
 }
@@ -1717,7 +2463,11 @@ export type ClientToServerMessage =
   | UseTonicMessage
   | RequestLeaderboardMessage
   | SetTargetMessage
-  | UseSkillMessage;
+  | UseSkillMessage
+  | UseAttackMessage
+  | LearnTalentMessage
+  | ResetTalentsMessage
+  | SetHotbarMessage;
 export type ServerToClientMessage =
   | StateSnapshotMessage
   | WelcomeMessage
@@ -1730,6 +2480,8 @@ export type ServerToClientMessage =
   | ItemsUpdateMessage
   | StatsUpdateMessage
   | BattleResultMessage
+  | AttackStateMessage
+  | WeaponProgressMessage
   | MonsterAttackMessage
   | PotionsUpdateMessage
   | TonicsUpdateMessage

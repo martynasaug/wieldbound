@@ -6,19 +6,35 @@ recorded here so every asset stays traceable — same policy as the 2D art in
 CHARACTERS + WEAPONS
 
 Warrior.fbx            Quaternius "RPG Characters" (Nov 2020)
-Warrior_Sword.fbx      https://opengameart.org/content/lowpoly-rpg-characters
-Ranger_Bow.fbx         https://quaternius.com/  (CC0 1.0 Universal)
-Ranger_Arrow.fbx
-Rogue_Dagger.fbx       6 rigged, animated, textured fantasy characters. The
-Wizard_Staff.fbx       warrior carries 14 animation clips: Idle, Idle2,
-Cleric_Staff.fbx       Idle_Weapon, Idle_Attacking, Walk, Run, Run_Weapon,
-                       Sword_Attack, Sword_AttackFast, RecieveHit,
-                       RecieveHit_Attacking, Roll, PickUp, Death.
+Ranger.fbx             https://opengameart.org/content/lowpoly-rpg-characters
+Wizard.fbx             https://quaternius.com/  (CC0 1.0 Universal)
+Monk.fbx
+Rogue.fbx              6 rigged, animated, textured fantasy characters, all on
+                       ONE shared skeleton — every bone within about a unit in
+Warrior_Sword.fbx      three hundred of its counterpart on the other bodies.
+Ranger_Bow.fbx         That is what lets one set of armour fit all of them, and
+Ranger_Arrow.fbx       one weapon socket serve every class.
+Rogue_Dagger.fbx
+Wizard_Staff.fbx       Clip lists differ per body and the differences matter:
+Cleric_Staff.fbx       the Warrior has Sword_Attack, the Wizard Staff_Attack,
+                       the Ranger Bow_Attack_Draw/Shoot, the Rogue
+                       Dagger_Attack, the Monk plain Attack. All five share
+                       Idle, Walk, Run, RecieveHit, Roll, PickUp and Death, and
+                       all but the Monk add Idle_Weapon.
 
                        The rig ships a dedicated `WeaponR` socket bone with
                        the weapon already parented to it. That is what makes
                        "your class is whatever you are holding" a mesh swap
                        on one bone, with every animation carrying it for free.
+
+WHICH BODY IS WHICH CLASS  (see client/src/three/gear.ts)
+  adventurer = Monk      warrior = Warrior
+  ranger     = Ranger    mage    = Wizard
+
+  Rogue.fbx is not used as a body — it is loaded only to harvest its dagger,
+  which is the one weapon no other rig in the pack carries. Cleric.fbx is not
+  shipped at all: the wand is the Wizard's staff at half length, so nothing
+  needed it.
 
 MONSTERS  (*.gltf)
 

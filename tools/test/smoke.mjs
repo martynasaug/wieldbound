@@ -2,7 +2,10 @@
 // weapons of three different families, equip each, and check that the class,
 // attack range and mana the server reports change accordingly - plus that a
 // helm/cape actually reach the appearance layers other clients draw from.
-import WebSocket from "file:///C:/Users/MartynasA/idlekin-clone/node_modules/ws/index.js";
+// Plain specifier: Node walks up to the repo root node_modules, where the npm
+// workspace hoists ws. It was an absolute file:// URL into a different checkout
+// of this project, which worked only on the machine that wrote it.
+import WebSocket from "ws";
 
 const URL = "ws://localhost:8080";
 const NAME = process.argv[2] ?? `smoke-${Date.now() % 100000}`;

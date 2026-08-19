@@ -110,6 +110,105 @@ for (const migration of [
   }
 }
 
+// --- Weapon proficiency and talents -----------------------------------------
+// Two narrow tables rather than columns on `characters`: both are keyed by
+// (character, weapon) and one of them is additionally keyed by node, which is
+// a shape a wide row cannot hold without turning into JSON. Rows also mean the
+// absence of a row is the honest representation of "never touched that weapon",
+// instead of eight columns of zero on every character.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS weapon_progress (
+    characterId TEXT NOT NULL,
+    weaponType TEXT NOT NULL,
+    xp INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (characterId, weaponType)
+  );
+`);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS weapon_talents (
+    characterId TEXT NOT NULL,
+    weaponType TEXT NOT NULL,
+    nodeId TEXT NOT NULL,
+    rank INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (characterId, weaponType, nodeId)
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS weapon_hotbar (
+    characterId TEXT NOT NULL,
+    weaponType TEXT NOT NULL,
+    layout TEXT NOT NULL,
+    PRIMARY KEY (characterId, weaponType)
+  );
+`);
+
+/** The stored bar for one weapon, or null if the player has never edited it.
+ *  Stored as JSON because it is a small opaque blob the database never needs
+ *  to query into — the alternative is ten columns of nothing. */
+export function getHotbar(characterId: string, weaponType: string): unknown {
+  const row = db
+    .prepare("SELECT layout FROM weapon_hotbar WHERE characterId = ? AND weaponType = ?")
+    .get(characterId, weaponType) as { layout: string } | undefined;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.layout);
+  } catch {
+    return null;
+  }
+}
+
+export function setHotbar(characterId: string, weaponType: string, layout: unknown): void {
+  db.prepare(
+    "INSERT INTO weapon_hotbar (characterId, weaponType, layout) VALUES (?, ?, ?)" +
+      " ON CONFLICT(characterId, weaponType) DO UPDATE SET layout = excluded.layout",
+  ).run(characterId, weaponType, JSON.stringify(layout));
+}
+
+/** Total proficiency XP for one weapon. Absent rows read as zero. */
+export function getWeaponXp(characterId: string, weaponType: string): number {
+  const row = db
+    .prepare("SELECT xp FROM weapon_progress WHERE characterId = ? AND weaponType = ?")
+    .get(characterId, weaponType) as { xp: number } | undefined;
+  return row?.xp ?? 0;
+}
+
+export function addWeaponXp(characterId: string, weaponType: string, amount: number): number {
+  const next = getWeaponXp(characterId, weaponType) + Math.max(0, Math.round(amount));
+  db.prepare(
+    "INSERT INTO weapon_progress (characterId, weaponType, xp) VALUES (?, ?, ?)" +
+      " ON CONFLICT(characterId, weaponType) DO UPDATE SET xp = excluded.xp",
+  ).run(characterId, weaponType, next);
+  return next;
+}
+
+/** Every talent rank for one weapon, as node id to rank. */
+export function getTalentRanks(characterId: string, weaponType: string): Record<string, number> {
+  const rows = db
+    .prepare("SELECT nodeId, rank FROM weapon_talents WHERE characterId = ? AND weaponType = ? AND rank > 0")
+    .all(characterId, weaponType) as { nodeId: string; rank: number }[];
+  const out: Record<string, number> = {};
+  for (const row of rows) out[row.nodeId] = row.rank;
+  return out;
+}
+
+export function setTalentRank(
+  characterId: string,
+  weaponType: string,
+  nodeId: string,
+  rank: number,
+): void {
+  db.prepare(
+    "INSERT INTO weapon_talents (characterId, weaponType, nodeId, rank) VALUES (?, ?, ?, ?)" +
+      " ON CONFLICT(characterId, weaponType, nodeId) DO UPDATE SET rank = excluded.rank",
+  ).run(characterId, weaponType, nodeId, rank);
+}
+
+export function clearTalents(characterId: string, weaponType: string): void {
+  db.prepare("DELETE FROM weapon_talents WHERE characterId = ? AND weaponType = ?")
+    .run(characterId, weaponType);
+}
+
 export interface CharacterRow {
   id: string;
   name: string;

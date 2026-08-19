@@ -21,6 +21,13 @@ want to *change* an asset.
 >
 > 3D models live in `client/public/models/` and are CC0 downloads, not
 > generated; see the ASSET_CREDITS.txt there.
+>
+> `preview_doll.ps1` does have a living successor: **`client/preview/`**, served
+> at http://localhost:5173/preview/ while the dev server runs. Same purpose —
+> see the character wearing everything, so alignment bugs surface there rather
+> than in the game — but it drives the real `Actor.setAppearance`, so what it
+> shows is what the game draws. `?sheet=weapons|armour|full`, plus
+> `?spin=<radians>` and `?hidebody=1`.
 
 Everything here is PowerShell + `System.Drawing`, chosen because it needs no
 toolchain beyond Windows itself. Paths resolve from each script's own location,
@@ -37,7 +44,7 @@ Run any of these from anywhere; they write straight into `client/public/assets/`
 | `build_monsters.ps1` | `actors.png` | The 4 monsters, composed from `src/` frames into a uniform 32x36 grid |
 | `build_props.ps1` | `props.png`, `grass.png` | Every non-actor world object, flat-indexed 0..14; grass is a baked 16x16-tile mosaic under a wrapping noise field |
 | `build_fx2.ps1` | `fx.png` | 14 effect schools x 6 frames, 48px cells |
-| `build_sfx.ps1` | `assets/sfx/*.wav` | 10 cues synthesised as 16-bit WAVs — no samples, just arithmetic |
+| `build_sfx.ps1` | `assets/sfx/*.wav` | 12 cues synthesised as 16-bit WAVs — no samples, just arithmetic. `bow` and `beam` were added in M3.7 for the weapon families that do not swing |
 | `make_custom_sprites.ps1` | `src/custom/*.png` | The hand-drawn slime and wolf frames, which the 0x72 pack has no equivalent for |
 | `make_rock.ps1` | `rock.png` | Superseded by `props.png`; kept because it documents the boulder shading |
 | `build_classes.ps1` | — | **Superseded, do not run.** It rebuilds `actors.png` with 12 per-class player rows (dead since the paperdoll) *and* clobbers `weapons.png` with the old 3-family layout. Kept only for its palette-swap logic |
@@ -62,6 +69,27 @@ the check that you haven't broken one.
 
 **Still valid after the 3D rewrite** — it drives the server over a real socket
 and the server did not change, so it tests exactly what it always did.
+
+`talents.mjs` — no server needed. Checks the eight weapon talent trees: every
+granted skill exists, every prerequisite is in the same tree and an earlier
+tier, no node is inert, no skill is stranded outside every tree, each tree can
+be walked from level 1 to the cap without the points getting stuck, and — the
+one that has already earned it — that a tree does NOT fit inside its own point
+budget, because a tree you can buy entirely is a checklist.
+
+```powershell
+node tools/test/talents.mjs
+```
+
+`bodies.mjs` — no server needed, pure arithmetic over the shared rules. Asserts
+the two invariants that make body collision safe: every weapon reaches past
+every body, and every monster reaches back. Break either by nudging a radius
+and melee against that one kind stops working with no error at all, which is
+why it is a test rather than a matter of judgement.
+
+```powershell
+node tools/test/bodies.mjs
+```
 
 `smoke.mjs` — drives a real WebSocket client against a running server. Logs in,
 crafts and equips a weapon of each family, and asserts that class, mana pool and
