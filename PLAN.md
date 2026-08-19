@@ -2435,6 +2435,26 @@ crafting system to go with them.
         rather than the whole request, because a partially-stale list is the
         normal case when a drop lands mid-click
 
+- [x] **M1.6 — the forge previews too, and three things are felt rather than
+      logged.** Finishing what M1.5 started: Reforge showed what a step would
+      produce and Forge did not, which made the bench inconsistent about the one
+      thing it is for.
+      - Every forge row now says what it makes, in the same shape the reforge
+        rows use. Trivial to compute — the forge always outputs Honed, and the
+        catalogue is authored at Honed, so it is literally the base's numbers.
+        That is the payoff for having chosen 1.0 as the baseline
+      - **Essence floats over the character** when it drops. It is the one
+        material with no gathering animation and no node to stand at — it simply
+        appears off a kill — so it is the one that most needs saying
+      - **Learning a recipe gets its own sound.** It is the moment the smithy's
+        loop closes and it arrived as one line among several after a salvage; a
+        player not reading the log never noticed that salvaging taught them
+        anything
+      - Both are guarded against the opening state, and the two guards are
+        separate flags on purpose: the wallet and the recipe list arrive one
+        after the other on connect, so borrowing one flag for the other would
+        have congratulated a returning smith on everything they already knew
+
 - [ ] **M2 — remaining item work.** What a second material tier would buy, and
       whether the reforge ladder wants a failure chance at the top.
 
@@ -3868,6 +3888,11 @@ music, player-facing damage-type/resistances, more crafting recipes
 Phase 0 through 48 M1.4 complete (2026-08-20). **Latest: M1.1 through M1.4 —
 weapons that feel different, loot on the ground, matched gear, and a forge that
 teaches rather than unlocks.**
+
+M1.5 and M1.6 stopped the bench making the player do arithmetic: both Forge and
+Reforge now show what they would produce before you pay, one button clears
+Broken and Worn out of a thirty-slot bag, and essence and learned recipes are
+felt rather than logged.
 
 M1.4 replaced the forge's level gate with a learned one: a recipe comes from
 SALVAGING one, so the three smithy verbs form a loop instead of sitting as three

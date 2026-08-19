@@ -27,6 +27,8 @@ import {
   TONIC_CRAFT_COST,
   TONIC_XP_AMOUNT,
   ITEM_SLOTS,
+  PRIMARY_STAT_LABEL,
+  SECONDARY_STAT_LABEL,
   SLOT_LABEL,
   type ItemInstance,
   type ItemSlot,
@@ -38,6 +40,7 @@ import {
   canForge,
   describeCost,
   forgeCost,
+  forgePreview,
   itemBase,
   nextRarity,
   reforgeCost,
@@ -271,6 +274,18 @@ export class CraftPanel {
     if (!unlocked) {
       sub.className = "craft-row-cost short";
       sub.textContent = `Unknown — salvage one to learn it (band ${base.band})`;
+    } else {
+      // What it makes, in the same shape the reforge rows use. The forge always
+      // outputs Honed, so this is exactly the base's authored numbers — which
+      // is the whole reason the catalogue is authored at Honed.
+      const made = forgePreview(base);
+      const line = document.createElement("div");
+      line.className = "craft-row-step";
+      line.textContent =
+        `${PRIMARY_STAT_LABEL[base.slot]} ${made.statValue}` +
+        ` · ${SECONDARY_STAT_LABEL[base.slot]} ${made.bonusStatValue}` +
+        (base.twoHanded ? " · two-handed" : "");
+      sub.prepend(line);
     }
     this.row(
       base.icon,

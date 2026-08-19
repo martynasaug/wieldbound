@@ -1504,6 +1504,17 @@ export interface ReforgePreview {
   losingAffixes: number;
 }
 
+/**
+ * What the forge would hand you, for a row on the bench.
+ *
+ * Always Honed, because that is what the forge outputs — so this is simply the
+ * base's authored numbers, which is the whole reason the catalogue is authored
+ * at Honed rather than at some arbitrary tier.
+ */
+export function forgePreview(base: ItemBase): { statValue: number; bonusStatValue: number } {
+  return { statValue: basePower(base), bonusStatValue: baseGuard(base) };
+}
+
 export function reforgePreview(item: ItemInstance): ReforgePreview | null {
   const to = nextRarity(item.rarity);
   if (!to) return null;

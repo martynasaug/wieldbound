@@ -318,6 +318,11 @@ export class Game {
   private essence = 0;
   /** Base ids this character has learned to forge, by taking one apart. */
   private recipes: string[] = [];
+  /** Whether the wallet has arrived once, so the opening balance is not
+   *  mistaken for something the player just earned. */
+  private walletSeen = false;
+  /** The same, for the recipe list. */
+  private recipesSeen = false;
 
   // Targeting has two halves, and keeping them apart is the whole design.
   //
@@ -442,6 +447,23 @@ export class Game {
       // their own for the gathering paths that predate essence, but anything
       // that spends — the smithy's three verbs — reports through this.
       onMaterials: (p) => {
+        // Essence is the one material with no gathering animation and no node to
+        // stand at — it simply appears off a kill — so it is the one that most
+        // needs saying. Floated over the character in its own colour rather
+        // than left as a line in the corner.
+        // Not on the first message: a returning character's whole balance
+        // arrives at once and is not something they just earned.
+        const gained = this.walletSeen ? p.essence - this.essence : 0;
+        this.walletSeen = true;
+        if (gained > 0 && this.localActor) {
+          this.floaters.spawn(this.localActor.position, {
+            kind: "loot",
+            text: `+${gained} essence`,
+            color: "#c0a6ff",
+            headY: 3.2,
+            weight: 0.15,
+          });
+        }
         this.wood = p.wood;
         this.ore = p.ore;
         this.herb = p.herb;
@@ -449,6 +471,19 @@ export class Game {
         this.syncMaterials();
       },
       onRecipes: (p) => {
+        // Learning a recipe is the moment the smithy's loop closes, and it
+        // arrives as one line among several after a salvage. Worth a sound of
+        // its own, or a player who is not reading the log never notices that
+        // salvaging taught them anything.
+        // Its own flag, not the wallet's: the two messages arrive one after the
+        // other on connect, so borrowing `walletSeen` would already be true by
+        // the time the opening recipe set lands and a returning smith would be
+        // congratulated on everything they already knew.
+        const isNew = this.recipesSeen && p.known.length > this.recipes.length;
+        this.recipesSeen = true;
+        if (isNew) {
+          playSfx("levelup", 0.55);
+        }
         this.recipes = p.known;
         this.craftPanel.setRecipes(this.recipes);
       },
