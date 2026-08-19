@@ -14,3 +14,8 @@ server/data/
 Thumbs.db
 .vscode/
 .idea/
+
+# Fetched source SVGs for tools/art/icons.mjs. The baked output
+# (client/src/ui/icons.ts) is what the game uses and IS committed; this is just
+# a cache so re-running the generator does not re-download 120 files.
+tools/art/.icon-cache/

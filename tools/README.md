@@ -19,6 +19,10 @@ want to *change* an asset.
 > kept because they are a genuine record of how that game was built — but
 > **editing them changes nothing you can see in the running game.**
 >
+> **`icons.mjs` is the exception and is very much live** — it is Node rather
+> than PowerShell, it was added in M4.1, and it bakes the interface's entire
+> icon set. See its own section below.
+>
 > 3D models live in `client/public/models/` and are CC0 downloads, not
 > generated; see the ASSET_CREDITS.txt there.
 >
@@ -49,6 +53,66 @@ Run any of these from anywhere; they write straight into `client/public/assets/`
 | `make_rock.ps1` | `rock.png` | Superseded by `props.png`; kept because it documents the boulder shading |
 | `build_classes.ps1` | — | **Superseded, do not run.** It rebuilds `actors.png` with 12 per-class player rows (dead since the paperdoll) *and* clobbers `weapons.png` with the old 3-family layout. Kept only for its palette-swap logic |
 | `preview_doll.ps1` | `tools/art/preview.png` | Composites body + gear + weapon exactly as `WorldScene` does, so alignment bugs show up here instead of in the browser. This is how the bow grip was caught planting the bow below the character's feet |
+
+### terrain.mjs — the ground textures
+
+```powershell
+node tools/art/terrain.mjs           # download
+node tools/art/terrain.mjs --check   # report sizes and URLs, download nothing
+```
+
+Fetches grass and dirt from [Poly Haven](https://polyhaven.com) (CC0) into
+`client/public/textures/terrain/`. Three maps each at 1k: diffuse, normal, and
+"arm" — which packs ambient occlusion, roughness and metalness into R, G and B,
+and three.js reads exactly those channels, so one image serves as both
+`roughnessMap` and `metalnessMap`.
+
+Takes the `nor_gl` normal, never `nor_dx`: the DirectX convention has its green
+channel inverted and would light every bump from the wrong side. 1k is
+deliberate — the ground tiles every 6 world units, so resolution buys nothing
+past one tile, and what stops it looking repetitive is the macro variation in
+`three/terrain.ts`.
+
+### shrink_kit_textures.ps1 — make the downloaded kits affordable
+
+```powershell
+powershell -File tools/art/shrink_kit_textures.ps1
+```
+
+Both Quaternius MegaKits ship 2048x2048 atlases — bark and leaves for the nature
+kit, shared "trim" sheets for the props kit. They are stylised palette maps on
+low-poly meshes and a whole tree covers a couple of hundred pixels at this
+camera, so 2048 is about sixteen times more texel than any of it can show.
+Shrinking to 512 took the two folders from 28 MB to 7.5 MB with no visible
+difference at any zoom. Idempotent — anything already at or below the target is
+skipped, so a second run reports every file as skipped.
+
+### icons.mjs — the interface's icon set
+
+```powershell
+node tools/art/icons.mjs           # validate every name, then bake
+node tools/art/icons.mjs --check   # validate names only, write nothing
+```
+
+Fetches 120 icons from [game-icons.net](https://github.com/game-icons/icons) and
+bakes them into `client/src/ui/icons.ts`, which IS committed — the game imports
+it, so there is no network dependency at run time. `icon-map.mjs` beside it is
+the vocabulary: one semantic key per thing that needs a picture, mapped to an
+`author/name` path. Change an icon there and re-run.
+
+The source SVGs are 512x512 with a black background rect and a white glyph; only
+the glyph survives, stripped of its fill so it inherits `currentColor`. That is
+the property everything else leans on — the rarity colour that lights a slot's
+border lights its icon in the same assignment.
+
+**It validates every name against the real icon index before fetching anything**,
+and prints the correct path for each miss. This is not ceremony: 36 of the first
+116 names were wrong, nearly all of them the right icon filed under a different
+author, and a name that does not exist renders as nothing at all rather than as
+an error. Fetches are cached in `tools/art/.icon-cache/` (gitignored).
+
+`tools/test/icons.mjs` is the other half — it asserts that every key the game
+names exists in the baked set. Run it after any icon change.
 
 ### src/
 
@@ -89,6 +153,17 @@ why it is a test rather than a matter of judgement.
 
 ```powershell
 node tools/test/bodies.mjs
+```
+
+`icons.mjs` — no server needed. Checks that every icon key the game names — the
+class, weapon, default-attack and skill tables, all 73 talent nodes, plus the
+slots, materials, consumables, dock and attribute keys the panels name directly
+— exists in the baked set, and reports any icon baked but never referenced. The
+failure it exists for is silent: a mistyped key draws nothing, so the
+alternative is hunting for blank squares across four panels by eye.
+
+```powershell
+node tools/test/icons.mjs
 ```
 
 `smoke.mjs` — drives a real WebSocket client against a running server. Logs in,

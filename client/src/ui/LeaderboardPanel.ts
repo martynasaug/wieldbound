@@ -1,6 +1,7 @@
 import type { LeaderboardEntry } from "../../../shared/protocol-types";
+import { iconSvg } from "./icons";
 
-const RANK_MEDAL: Record<number, string> = { 1: "🥇", 2: "🥈", 3: "🥉" };
+const RANK_MEDAL: Record<number, string> = { 1: "rank-1", 2: "rank-2", 3: "rank-3" };
 
 export class LeaderboardPanel {
   private overlay = document.getElementById("leaderboard-overlay")!;
@@ -45,7 +46,13 @@ export class LeaderboardPanel {
 
       const rankEl = document.createElement("div");
       rankEl.className = "lb-rank";
-      rankEl.textContent = RANK_MEDAL[rank] ?? `#${rank}`;
+      const medal = RANK_MEDAL[rank];
+      if (medal) {
+        rankEl.innerHTML = iconSvg(medal);
+        rankEl.classList.add(`lb-rank-${rank}`);
+      } else {
+        rankEl.textContent = `#${rank}`;
+      }
       row.appendChild(rankEl);
 
       const nameEl = document.createElement("div");

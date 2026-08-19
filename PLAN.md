@@ -1758,7 +1758,301 @@ every rig animation carrying it for free — architecturally *cleaner* than the
       different character name after its reload, so it was reading someone
       else's bar. Server and client were both correct the whole time.
 
-- [ ] **M4 — effects, skills VFX, day/night, polish**
+- [x] **M4.1 — an interface drawn with icons, and a camera close enough to see
+      what you are wearing.** The two things the user named as the biggest
+      remaining visual weaknesses, and they turned out to be independent of each
+      other: what the interface is drawn WITH, and how far away the world is.
+
+      **Every emoji is gone.** 120 icons from game-icons.net, baked into one
+      generated module by `tools/art/icons.mjs`. Emoji were never really art —
+      they are a font, so they rendered as somebody else's drawings at somebody
+      else's weight, in full colour that fought the gold-and-leather skin, and
+      differently on every machine. Each icon is now a single 512-unit path with
+      no fill of its own, which is the whole trick: it takes `currentColor`, so
+      the same glyph is gold on the action bar, grey and faded in an empty slot,
+      and rarity-coloured in the bag without any of those needing a copy. The
+      rarity assignment that already lit a slot's border now lights its icon too,
+      for free.
+      - **Sized in `em`, so the swap needed almost no new CSS.** Every container
+        already declared a font-size back when these were emoji, and `1em` means
+        a rule saying "22px" still produces a 22px icon. Nine containers needed a
+        colour and a `display`; nothing needed re-measuring
+      - The shared tables now carry an icon KEY rather than a glyph —
+        `icon: "cleave"` instead of `icon: "🗡️"` — so `shared/` names the
+        picture and the client owns the drawing, which is the same split the file
+        already keeps for everything else
+      - Static markup names its icons with `data-icon` and is hydrated at boot,
+        so `index.html` carries no path data and a re-map is a change in one
+        generated file
+      - The leaderboard's top three get three different podiums rather than one
+        icon recoloured, so place survives being read by shape alone
+
+      **The camera came in from 14.5 units to 9, and the wheel now owns it.**
+      Measured rather than eyeballed: one world unit was 52.8 screen pixels and
+      is now 83.1, so everything is 1.57x larger by default, and the wheel spans
+      5 to 22 — a 4.4x range. Three details that matter more than the number:
+      - **Only the distance changes, never the pitch.** A view that flattened
+        toward top-down as it pulled back would change what a telegraph circle
+        and a body's footprint look like, and both are things the player reads
+        positionally. The camera slides along one fixed direction
+      - **The notch is multiplicative.** A fixed step is imperceptible when far
+        out and violent when close in; 1.12x per notch feels the same everywhere
+      - **The shadow frustum follows the zoom.** It was pinned at a fixed extent
+        sized for the old wide framing, so most of a 2048px shadow map was spent
+        on ground that was off screen — which is a large part of why armour read
+        as a soft blob up close. It now covers what the camera can see and no more
+      - Bound to the canvas, not the window, so scrolling the talent tree or the
+        bag moves that list instead of hauling the camera around behind it. The
+        chosen distance is remembered
+
+      **Two tests, and the first one paid for itself immediately.**
+      `tools/art/icons.mjs` validates every name against the real game-icons
+      index before it fetches anything — 36 of my 116 names were wrong, almost
+      all of them the right icon under the wrong author, and it printed the
+      correct path for each. `tools/test/icons.mjs` then asserts that every key
+      the game names exists in the baked set, which is the failure that is
+      otherwise completely silent: a mistyped icon renders as nothing at all.
+
+      Verified in a real browser rather than by typecheck: each window opened
+      one at a time (the rail evicts, so counting once with all four open
+      undercounts), every icon on screen measured for a non-zero box, zero emoji
+      left anywhere in the DOM, every `data-icon` hydrated, no page errors. The
+      camera checks drive the real wheel: zooming in grows the body 159px to
+      279px, both clamps hold at exactly 5 and 22, the choice reaches
+      localStorage, and scrolling over an open panel moves the camera by 0.00
+      units. Both workspaces typecheck; body, talent and smoke suites still pass.
+
+- [x] **M4.2 — a world with ground in it.** The field was one flat green plane
+      and a ring of trees standing outside it. Everything below is CC0 and, for
+      the first time on this project, all of it fetched programmatically — the
+      Stylized Nature MegaKit is a single zip from OpenGameArt rather than the
+      Google Drive folder the monsters pack came from.
+
+      **The ground is a real surface.** Poly Haven grass and dirt at 1k, tiled
+      every 6 units, with two things happening in the shader that matter more
+      than the textures do:
+      - **Dirt is mixed in under a low-frequency noise**, so the field has worn
+        patches whose shape has nothing to do with the tile grid. Sampled at a
+        deliberately incommensurate scale from the grass, because at the same
+        one the two line up and the blend reads as a single texture changing
+        colour rather than as two surfaces
+      - **A much lower-frequency tint multiplies the albedo**, drifting colour
+        over tens of metres. This is what actually defeats tiling: the repeat is
+        still there, but no two tiles are the same colour. Buying a bigger source
+        texture would not have helped, because the eye is picking up the PERIOD
+      - One "arm" image carries ambient occlusion, roughness and metalness in
+        its R, G and B, and three reads exactly those channels — so one 200 KB
+        download does the work of three maps
+
+      **4,800 plants, instanced.** Grass, clover, ferns, flowers, mushrooms and
+      pebbles across the whole play area. A tuft is forty triangles, so the
+      triangles were never the problem — two thousand Object3Ds is two thousand
+      draw calls and it does not matter how small each is.
+      - **Nothing in the scatter list is a tree, a boulder or a bush**, because
+        those three ARE the harvestable nodes. The Phase 47 rule that kept the
+        treeline outside the play bounds, applied to the inside: decor that can
+        be mistaken for a resource node is worse than no decor
+      - Split into chunks so the frustum test can reject some of it. Measured
+        across 22/32/44-unit chunks the totals ran 289 calls / 718k triangles to
+        195 calls / 1.06M — a real difference but not the order of magnitude
+        culling usually buys, and the reason is worth recording: the play area is
+        120x90 units and the camera looks across it at a shallow angle, so most
+        of the field is genuinely on screen
+      - Sizes normalise to the model's LARGEST dimension, not its height. The
+        obvious choice was height and it was wrong: a flower clump and a pebble
+        are far wider than they are tall, so pinning their height to 0.2 gave
+        them a metre of spread. That shipped, and looked exactly as bad as it
+        sounds, before the first screenshot caught it
+
+      **The nodes themselves stopped being placeholders.** Rock and bush had been
+      a bare dodecahedron and icosahedron since M1 — fine until everything around
+      them had real art. All three kinds now pick a model by a hash of their
+      server id, so each looks like itself and every player sees the same one.
+
+- [x] **M4.3 — the world has an hour.** A full day in twenty-four real minutes,
+      so one game hour is one real minute.
+
+      **The clock is derived, not sent.** It lives in `shared/protocol-types.ts`
+      and is computed from wall-clock time, so every client agrees by
+      construction and the protocol did not grow a field. Nothing about it needs
+      to be authoritative — it drives light and colour, not damage — and a
+      message carrying it is a message that can be missed or arrive late.
+      - Eight keyframes from midnight through sunrise, noon and dusk, each
+        carrying sky, light colour and intensity, hemisphere fill, star alpha and
+        exposure. A table rather than formulas per channel, because colour
+        grading is judged by eye and "make dusk more purple" should be one hex
+        value rather than tracing which cosine feeds the blue channel
+      - **One directional light for the whole cycle, on one continuous arc.** The
+        astronomically correct version — sun by day, moon opposite by night — was
+        the first attempt and it is visibly wrong: the moon rises exactly as the
+        sun sets, so the light teleports across the sky at both crossings and
+        every shadow in the world flips end for end in one frame. Measured going
+        from x=-0.90 to x=+0.91 across sunrise. The fix floors the elevation
+        instead, and a sweep of 240 samples now shows a worst step of 3.5 degrees
+      - A seeded star dome, centred on the viewer so it reads as sky, and a
+        steering keyframe at dawn because interpolating navy straight into
+        sunrise orange runs the sky through a measured #9d6c5f mud for a full
+        minute — the midpoint of two opposed hues is grey
+      - The hour, its name and a sun or moon sit on the unit frame. The icon is
+        only rewritten when it changes, rather than sixty times a second
+
+- [x] **M4.4 — every skill looks like itself.** All twenty-seven drew the same
+      thing: one camera-facing quad from `fx.png`, differing only in atlas row
+      and tint. Enough to say something happened, not what.
+
+      The same move M3.7 made for weapon attacks, one layer up — **one table says
+      how each skill is delivered** — except the shapes are real geometry, because
+      what a flat quad cannot express is exactly what distinguishes these skills.
+      A ring expanding outward along the ground is a shockwave; a quad scaling up
+      is a flash.
+      - Six shapes: **nova** (a ring racing outward), **ground** (a disc that
+        lingers), **cone** (a wedge on the facing), **pillar** (light from the
+        feet), **rain** (staggered falling streaks) and **chain** (segments
+        hopping target to target, which is what the skill does — bolts drawn to
+        each target from the caster would show a fan, and it is not one)
+      - Placement follows the skill's OWN numbers — `radiusPx`, `rangePx` — so a
+        rebalance that widens a radius widens the effect drawn for it
+      - Brief point lights on the skills that should look hot, which is worth far
+        more now that there is a night to cast them in
+      - `SKILL_FX` is `Record<SkillId, FxSpec>`, so the compiler already
+        guarantees every skill has one. That is a stronger check than any test
+        could run, and it is why there is no test for it
+
+      **One real bug, caught by looking.** The fade in `update` wrote
+      `material.opacity` every frame and used a flat 1 during the hold, silently
+      discarding the opacity every shape had just chosen. Additive blending at
+      full opacity saturates, so a frost nova and a cleave both came out white.
+      Every shape now holds at its own peak.
+
+      Verified: 27 skills across 7 distinct shapes; a real cast driven through
+      the server (learn `fist.haymaker`, press it) producing its cone; all six
+      primitives building geometry and every one of them reaped afterwards; no
+      page errors. The mid-flight "is it still alive at t+200ms" assertion was
+      deliberately removed — under SwiftShader a frame can take hundreds of
+      milliseconds, so that measures the harness rather than the game.
+
+- [x] **M4.5 — a minimap, a real smithy, and a tooltip that stops shoving the
+      page.** All three from user feedback.
+
+      **The tooltip bug was a missing stylesheet, not a missing rule.**
+      `#item-tooltip` had NO css at all — so it was a plain block in normal
+      flow, and showing it inserted a real box into the document and reflowed
+      everything below. The `left`/`top` the script set on every mousemove did
+      nothing, because static elements ignore them. The markup has been there
+      since the Phaser client and the CSS did not survive the M1 port — exactly
+      the same failure as the dock buttons losing their listeners, and just as
+      invisible to a typecheck. It is `position: fixed` now, with
+      `pointer-events: none` so it can never intercept the click on the thing it
+      describes, and it flips to the other side of the cursor near an edge —
+      which matters because the bag lives in a right-anchored rail, so the items
+      whose tooltips you most want are the ones nearest the edge it would
+      overflow.
+
+      **The workbench is a smithy.** It was a grey box with a point light beside
+      it — the last M1 placeholder on screen, and the one fixed landmark in the
+      world, since spawn is there and the difficulty bands radiate from it. Six
+      pieces from Quaternius's CC0 Fantasy Props MegaKit (an anvil on a stump, a
+      bench, a weapon stand, a barrel, a crate, a whetstone), laid out by hand
+      because a random arrangement of a bench and a barrel reads as debris, and
+      with nothing at the origin so a character cannot spawn inside the anvil.
+      The forge fire flickers on two sine waves at unrelated frequencies —
+      random flicker is what everyone reaches for and it reads as a faulty lamp,
+      because real flame varies smoothly.
+
+      **Model loading is parallel now, and that was a real bug.** Two of the six
+      pieces were missing, with no error: the loop awaited each model in turn,
+      and these six queue behind the forty-odd the ground cover fetches at the
+      same time, so the smithy took **24 seconds** to finish assembling itself.
+      Nothing depended on anything else, so the serialisation bought nothing.
+      `Promise.all` for both the station and the ground cover took it to **4.6
+      seconds**. The catch that hid it now logs.
+
+      **A minimap, top right.** Canvas, fed a plain snapshot once a frame, and
+      renderer-agnostic like the rest of `ui/` — it would survive another
+      renderer swap the way the DOM panels survived the last one. Shows resource
+      nodes by kind, monsters (brighter and ringed for what you are fighting,
+      a white ring for what you locked), other players, the workbench, the world
+      boundary, and a heading arrow.
+      - **Everything is a persisted setting**, because a minimap is a thing
+        people have habits about: circle or square, four sizes, zoom from 14 to
+        180 units by button or wheel, rotate-with-facing on or off, and a toggle
+        per layer plus grid, coordinates and opacity
+      - The grid spacing adapts to the zoom, so it stays a readable handful of
+        lines instead of a wash when zoomed out
+      - The wheel over the map stops propagating, or it would zoom the camera
+        behind it as well
+      - **The window rail yields to it.** The map writes its own height into a
+        `--minimap-bottom` custom property and the rail starts there, so the two
+        cannot overlap however large the player makes the map — and the rail
+        does not have to know the minimap exists. At XL the map is tall enough
+        to reach where the rail used to begin, so a fixed top would have put a
+        window straight over it
+
+      Verified: 21 checks through the real DOM — position clear of the dock,
+      both zoom clamps exact, a layer toggle measurably changing what is drawn,
+      shape and size switching, every setting surviving a reload and being
+      re-applied, reset restoring defaults, and the rail starting below the map
+      with an open window proven not to overlap it. Plus the tooltip suite:
+      nothing in the layout moves when one appears, and it stays on screen at
+      all three corners.
+
+- [x] **M4.6 — nameplates that say what kind of thing they name.** Every label
+      in the world was the same thing: yellow monospace text with an optional
+      red bar. A tree, a boss and another player were typographically identical,
+      so a populated field read as a wall of identical labels.
+
+      **Four treatments, deliberately not alike.** The hierarchy is the whole
+      point: an ordinary monster is bare text and a bar, an **elite** gets a
+      real framed plate, a **resource node** is a small dim pill, and the
+      **workbench** is a gold banner. Framing everything equally is exactly what
+      turns a camp into a wall of boxes — so only bosses get a frame, and the
+      thing that decides which are bosses is `guaranteedDrop`, already in the
+      table, rather than a second list to keep in step.
+
+      **Difficulty is now data.** `MonsterStats.band` (1-5) replaces what had
+      only ever been a comment above the `MonsterKind` union — the one fact
+      deciding where a monster is placed and how dangerous it is could not be
+      read by anything. The plate colours the name by it, so what you are
+      walking into arrives before it is on top of you: pale grey through green,
+      yellow and orange to red.
+
+      - **A damage ghost.** A pale bar holds the previous health for a moment and
+        then drains to the new value, so a hit reads as a chunk taken rather than
+        as a bar that is simply shorter than it was. It only ever falls — healing
+        should not leave a pale trail behind it
+      - **The telegraph moved onto the plate.** The target frame already showed
+        the wind-up; putting it over the monster's head puts it where the player
+        is already looking, which is at the thing about to hit them
+      - **Distance scales and fades them, and sets their stacking order.** Thirty
+        labels at identical size all overlapping tells you nothing about which is
+        near — scaling restores the depth cue the projection threw away, and
+        z-index from distance stops two overlapping plates stacking in map order
+      - Engaged gets a warm glow and locked gets hard brackets, which is the same
+        split the target rings already make in the world: one is derived every
+        frame, the other is a deliberate click
+      - Remote players' plates carry their real class glyph, taken from the same
+        `Appearance` their body is dressed from, so the icon and the rig cannot
+        disagree
+      - Quarter ticks on the health bar are a repeating gradient, so they cost no
+        elements; the class list is built as one string and written only when it
+        changes, since this runs for every plate every frame
+
+      Verified with 14 checks: the four kinds distinct, band colours measurably
+      apart, a border on elites and none on ordinary monsters, a plate at 55
+      units rendering at 7.8px against 11px at 8 units and sorting behind it, the
+      telegraph bar appearing only while winding up, the ghost holding 100% while
+      the fill drops to 40% and then draining, and — through the real game rather
+      than injected specs — four monster plates all carrying a band and the one
+      being fought carrying `engaged`.
+
+      **One environment trap worth recording**, which cost the most time here:
+      the band data was correct in `shared/` and the client was serving a stale
+      copy of the module, so every plate came through with `band: undefined` and
+      no colour. Vite had cached it across the many HMR reloads of that session.
+      Restarting the dev server fixed it — the same lesson as the `public/`
+      404s, one layer up.
+
+- [ ] **M4.7 — remaining polish**
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -2635,6 +2929,253 @@ music, player-facing damage-type/resistances, more crafting recipes
   lit inner bevel, a keyline inset from the frame edge and a rarity glow that
   follows `currentColor` cost about forty lines of CSS and no new assets.
 
+- Emoji were never art, and treating them as art is what made the interface the
+  weakest-looking part of the game. They are a font: rendered by somebody else's
+  drawings at somebody else's weight, in full colour that fought the
+  gold-and-leather skin the rest of the UI was carefully given, and differently
+  on every machine the game is opened on. Replacing them with single-path icons
+  is not merely a nicer picture — it makes every glyph obey `currentColor`, which
+  is what lets the rarity assignment that already lights a slot's border light
+  its icon in the same stroke.
+- Icons are sized in `em`, not in pixels. Every container had already declared a
+  font-size back when it held an emoji, so `width: 1em` means the entire existing
+  stylesheet keeps working — a rule saying "22px" still yields a 22px icon. The
+  whole 120-icon swap needed colour and `display` on nine containers and no
+  re-measuring anywhere. Worth remembering as a migration tactic: inherit the
+  units the old thing was already sized by, and the change stops being a layout
+  pass.
+- `shared/` names the picture; the client draws it. The icon fields carry a key
+  (`"cleave"`) rather than a glyph, so the wire format and the formulas stay free
+  of presentation while there is still exactly one place that decides which
+  picture a skill has — the same split the file already keeps between what a
+  skill costs and how its effect is rendered.
+- The icon generator validates every name against the real index before fetching
+  a single file, and this was not defensive over-engineering: 36 of 116 names
+  were wrong on the first run, almost all of them the right icon under the wrong
+  author. The failure mode is what justifies it — a mistyped icon name renders as
+  nothing at all, so the alternative was finding blank squares by eye across a
+  hundred keys and four panels. Same argument as the talent-tree test: when the
+  data is hand-authored and its failure is silent, assert it.
+- The camera changes distance only, never pitch. Pulling back by flattening
+  toward top-down is the cheap way to show more, and it would quietly alter what
+  a telegraph circle and a body's footprint look like — both of which the player
+  reads positionally to decide where to stand. Sliding along one fixed direction
+  keeps every composition the game was built against intact at every zoom.
+- Zoom notches are multiplicative. A fixed step is imperceptible at the far end
+  and violent at the near one, because what the eye judges is the RATIO of the
+  change and not its size in world units. The same reasoning as the aggro and
+  targeting margins: anything a human perceives relatively should be adjusted
+  relatively.
+- The shadow frustum had to follow the zoom, and this was a real bug rather than
+  polish. It was pinned at an extent sized for the old wide framing, so once the
+  camera came in most of a 2048px shadow map was being spent on ground that was
+  off screen — the armour detail M3 built was being blurred away by a shadow map
+  resolving a field nobody could see. Anything sized against the camera needs to
+  be re-derived when the camera becomes adjustable.
+- The wheel is bound to the canvas, not the window. Bound globally it would haul
+  the camera around whenever someone scrolled the talent tree or the bag, both of
+  which overflow by design — and the panels are DOM while the camera is WebGL, so
+  the two never contend if the listener simply lives on the right element.
+- `deltaY` is only trusted for its sign. Browsers report wheel deltas in pixels,
+  lines or pages depending on the device and the platform, so the magnitude is
+  not a quantity the game can reason about; the sign is the only part that means
+  the same thing everywhere.
+
+- Source files in this checkout are a mix of CRLF and LF (`core.autocrlf=true`),
+  which silently breaks multi-line find-and-replace against the CRLF ones —
+  single-line patterns match and multi-line ones do not, so a patch script
+  reports success having changed only some of what it was asked to. Normalise to
+  LF for matching and restore the file's own endings on write. Cost a confusing
+  "pattern not found" against a file whose contents visibly contained the
+  pattern.
+- `tsx watch` restarting the server while a client still holds the SQLite file
+  produces `Error: database is locked` and kills the server outright. It is a
+  race between the outgoing and incoming process, not a code fault — editing
+  `shared/protocol-types.ts` triggers it most often, since both workspaces watch
+  it. Restart `npm run dev`; do not go looking for a corrupt database.
+
+- Tiling is defeated by breaking the PERIOD, not by raising the resolution. A
+  ground texture repeated every few metres reads as wallpaper however good the
+  source image is, because what the eye locks onto is the repeat interval — so a
+  4k download would have cost eight times the bytes and fixed nothing. Two cheap
+  noise fields in the shader do fix it: one mixes in a second surface so the
+  field has patches whose shape ignores the tile grid, and one drifts the albedo
+  colour over tens of metres so no two tiles are the same colour.
+- The second surface is sampled at an incommensurate scale from the first. At
+  the same scale the two textures line up tile for tile, and the blend stops
+  reading as two materials meeting and starts reading as one material changing
+  colour — which is the entire thing the blend exists to avoid.
+- Ground cover is instanced, and the reason is draw calls rather than triangles.
+  A grass tuft is forty triangles; four thousand of them is nothing for a GPU
+  and four thousand draw calls is fatal. This is the difference between placing
+  enough plants to read as ground cover and placing enough to read as decoration
+  somebody remembered.
+- Scatter is normalised by the model's LARGEST dimension, not its height.
+  Normalising by height is the obvious reading of "how big is this plant" and it
+  is wrong for anything wider than it is tall: a flower clump pinned to 0.2 units
+  of height came out a metre across. Largest-dimension makes one number mean the
+  same thing for a grass blade and a pebble. Worth remembering as a general rule
+  for placing art you did not author — the bounding box you normalise against
+  encodes an assumption about the model's proportions.
+- Nothing scattered inside the play area may resemble a resource node. The three
+  harvestables ARE a tree, a rock and a bush, so the ground cover is deliberately
+  grass, clover, ferns, flowers, mushrooms and pebbles and nothing else. This is
+  the Phase 47 rule that kept the treeline outside the bounds, applied to the
+  inside, and it is worth more than the decor it forbids: scenery that can be
+  mistaken for something interactive teaches the player to click on scenery.
+- Chunking ground cover for frustum culling helped less than expected, and the
+  measurement is the point. Across chunk sizes of 22, 32 and 44 units the scene
+  ran between 289 calls / 718k triangles and 195 calls / 1.06M — a real trade,
+  but not the order of magnitude culling normally buys, because the play area is
+  only 120x90 units and the camera looks across it at a shallow angle. There is
+  very little off screen to reject. If the world grows, this is the first number
+  to revisit.
+- The time of day is derived from wall-clock time in `shared/`, not sent by the
+  server. It drives light and colour and nothing the server resolves, so making
+  it a message would add something that can arrive late or be missed in exchange
+  for authority nobody needs — while a shared function makes every client agree
+  by construction, exactly as every combat formula already does. It lives in
+  shared rather than the client because the server wants it the moment anything
+  is nocturnal.
+- Day and night are eight keyframes, not formulas per channel. Colour grading is
+  judged by looking at it, so the representation worth having is the one where
+  "make dusk more purple" is editing one hex value — not working out which
+  cosine feeds the blue channel. The cost is a table that has to stay ordered;
+  the benefit is that it can be tuned by anyone, including by eye.
+- One directional light for the whole cycle, on one continuous arc, even though
+  that is astronomically wrong. Sun by day and moon opposite by night is the
+  correct model and it looks broken: the moon rises exactly as the sun sets, so
+  the light jumps across the sky at both horizon crossings and every shadow in
+  the world flips end for end in a single frame — measured at x=-0.90 to x=+0.91
+  across sunrise. Flooring the elevation instead keeps the arc continuous (worst
+  step now 3.5 degrees over 240 samples). Nobody tracks which way moonlight
+  falls; everybody notices shadows snapping round.
+- Interpolating between two opposed hues passes through grey, and dawn is where
+  that shows. Navy straight into sunrise orange spent a full minute at a
+  measured #9d6c5f mud, so there is a violet keyframe in between whose only job
+  is to steer the blend around the colourful side of the wheel. A useful thing
+  to watch for anywhere two colours are lerped rather than authored.
+- Skill effects are geometry, not more atlas frames. The atlas was the right
+  call for the flash and it still plays, but every skill drawing one
+  camera-facing quad meant a nova, a chain and a cone differed only by tint —
+  and the shapes that distinguish them are precisely the ones a flat quad cannot
+  express. Same conclusion Beams reached in M3.7: a small sibling that does two
+  things exactly beats bending the atlas system to cover them.
+- Effect placement reads the skill's own `radiusPx` and `rangePx` rather than a
+  per-skill size constant. A constant is a second copy of a number that already
+  exists, and the failure mode is a rebalance widening a radius while the effect
+  drawn for it stays the old size — the same argument that made M3.7 derive a
+  projectile's timing from its real flight instead of from a matching constant.
+- `SKILL_FX` is a `Record<SkillId, FxSpec>`, so completeness is a compile error
+  rather than a test. Worth stating because the icon work in M4.1 needed the
+  opposite: icon keys are strings crossing a generated boundary, so nothing but
+  a runtime test can check them. Use the type system where the data is typed,
+  and a test where it is not.
+- A per-frame fade must respect what each effect chose. The first version wrote
+  `material.opacity = 1` for the hold phase, which silently threw away the
+  opacity every shape had just set — and with additive blending, full opacity
+  saturates, so a blue frost nova and a gold cleave both rendered white. The bug
+  is invisible in the code (the fade looks correct in isolation) and obvious in a
+  screenshot. Anything that writes a property every frame owns that property,
+  and has to be given the value rather than assuming one.
+- Do not assert on a timer mid-animation under SwiftShader. A test checking an
+  effect was still alive 200ms after creation failed while the effect was
+  provably alive for 520ms — because a frame here can take hundreds of
+  milliseconds and a `setTimeout(200)` routinely lands a second later. Creation
+  and eventual cleanup are unambiguous; the middle is a statement about the
+  harness. Same lesson as measuring motion per rendered frame in M3.5.
+
+- An element with no `position` cannot be moved, and showing it moves the page
+  instead. The item tooltip set `left`/`top` on every mousemove and had no CSS
+  at all, so those writes were silently discarded while `display: block`
+  inserted a real box into the document's flow — which is what the user saw as
+  the screen "resizing for a moment" on hover. Two failures that look like one:
+  the positioning never worked, and the reflow was the only visible symptom.
+  Worth generalising: markup that outlives its stylesheet is as broken as markup
+  that outlives its listeners, and neither shows up in a typecheck.
+- A tooltip must never take pointer events. It follows the cursor by definition,
+  so any pointer-events surface on it is a surface between the player and the
+  thing they are hovering — and the bug only appears when someone tries to click
+  what the tooltip is describing.
+- The tooltip flips sides near a screen edge rather than always offsetting
+  down-right. Not cosmetic here: the bag opens in a right-anchored rail, so the
+  items whose tooltips matter most are exactly the ones closest to the edge a
+  fixed offset would push the tooltip off.
+- Load independent models with `Promise.all`, not with `await` in a loop. The
+  smithy's six pieces were fetched one at a time behind the ground cover's
+  forty-odd, so the last two took 24 seconds to appear — long after the player
+  had walked away from spawn — and because each failure was caught per
+  iteration, nothing reported anything. Parallelising took it to 4.6 seconds.
+  The serial version bought nothing at all: the pieces do not depend on each
+  other, and the placement afterwards is pure arithmetic.
+- A catch that swallows silently is how two of six props went missing with no
+  sign anything had failed. "A missing prop is a sparser smithy, not a broken
+  station" is the right *behaviour* and the wrong *silence* — the fallback
+  should still say what it fell back from.
+- Fire flickers on summed sines, not on a random walk. Random is the obvious
+  reach and it reads as a faulty lamp, because real flame varies smoothly;
+  two waves at incommensurate frequencies vary smoothly and never settle into a
+  visible loop. Same family of reasoning as the seeded scatter: "random" is
+  rarely what the eye actually wants.
+- The minimap is fed a snapshot rebuilt every frame rather than kept in sync as
+  things change. It is a pure view of state that already exists, and an
+  incrementally-maintained copy is one more thing that can silently disagree
+  with the world — the same argument that keeps class derived from the equipped
+  weapon rather than cached. A few dozen objects a frame costs nothing.
+- The minimap publishes its height as a CSS custom property and the window rail
+  starts from it. The alternative — the minimap reaching into the rail, or the
+  rail hard-coding a gap — couples two things that have no reason to know each
+  other, and breaks the moment the map is resizable. At the XL size the map
+  reaches past where the rail used to begin, so this is load-bearing rather than
+  tidy.
+- The wheel handler on the minimap stops propagation as well as preventing
+  default. The camera's own wheel listener is on the canvas beneath it, so
+  without this, zooming the map zooms the world at the same time — the same
+  class of problem as the rebind listener needing to capture.
+- Every minimap preference is stored, and the stored blob is merged over the
+  defaults rather than trusted. A saved object from an older version is missing
+  whatever was added since, and spreading it over a full default keeps a new
+  setting from arriving as `undefined` in code that assumes a boolean.
+
+- Nameplates are styled by hierarchy, not uniformly. A field holds a dozen at
+  once, so making them all look alike is what turns a camp into a wall of
+  labels — and the fix is not smaller text, it is deciding which of them
+  deserve weight. An ordinary monster is bare text and a bar; only a boss gets
+  a frame. A frame everything has is a frame that says nothing.
+- The thing that decides which monsters are "elite" on a plate is the same flag
+  that already decides they drop loot. Two lists would drift; one fact cannot.
+- The difficulty band became a field because it was load-bearing and unreadable.
+  It had lived as a comment over the `MonsterKind` union since the roster grew
+  to thirteen — the one property that decides where a monster is placed and how
+  dangerous it is, and nothing in the code could ask for it. Colouring a plate
+  by it is a small feature; making it data is the part worth keeping.
+- The health bar keeps a ghost that trails the real value. A bar that simply
+  becomes shorter shows the new state and hides the event — you cannot tell a
+  big hit from a small one at a glance. A pale bar holding the old value for a
+  beat makes the SIZE of the hit the visible thing. It only ever falls: letting
+  it rise would leave a pale trail behind healing, which reads as damage.
+- The telegraph belongs on the nameplate as well as the target frame. The frame
+  is at the top of the screen and the thing winding up to hit you is in the
+  middle of it — and a mechanic answered by moving has to be readable without
+  looking away from where you are moving.
+- Plates scale and sort by distance from the CAMERA, not from the player.
+  Their size is a property of the view: at a close zoom the player can be
+  metres from a monster the camera is right behind, and sizing off the player
+  would shrink a label that fills a third of the screen. Distance also drives
+  z-index, or two overlapping plates stack in whatever order the map iterates.
+- The plate's class list is composed as one string and written only when it
+  differs. This runs for every plate every frame, and incremental
+  `classList.toggle` calls were the most expensive thing the HUD did — six
+  toggles times thirty plates times sixty frames, to change nothing almost
+  always.
+- Vite serves a stale copy of `shared/protocol-types.ts` after enough HMR
+  reloads, and the failure is silent: a newly added field arrives as
+  `undefined` while the source on disk plainly has it. Cost real time here —
+  the nameplate band data was correct everywhere and every plate rendered
+  uncoloured. Restart the dev server. Same family as the `public/` 404s: when
+  data that is definitely in the file is definitely not in the browser, suspect
+  the server before the code.
+
 - This machine (a fresh Windows box picking up the project) had neither Git
   nor Node.js preinstalled; both were installed via `winget` (`Git.Git`,
   `OpenJS.NodeJS`) rather than assuming either was already present. Also has
@@ -2646,8 +3187,84 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 47 M3.11 complete (2026-08-19). **Latest: M3.11 — windows
-that behave like an MMO's.** The dock icons genuinely did nothing: the markup
+Phase 0 through 47 M4.6 complete (2026-08-19). **Latest: M4.6 — nameplates that
+say what kind of thing they name.** Every label in the world used to be the same
+yellow monospace text with an optional red bar, so a tree, a boss and another
+player were typographically identical. There are four treatments now, and the
+hierarchy is the point: an ordinary monster is bare text and a bar, an elite gets
+a framed plate, a resource node is a small dim pill, the workbench is a gold
+banner. `MonsterStats.band` (1-5) became a real field — it had only ever been a
+comment over the `MonsterKind` union, despite deciding where a monster is placed
+and how dangerous it is — and the plate colours the name by it. Plus a damage
+ghost that holds the old health for a beat so a hit reads as a chunk taken, the
+telegraph bar moved onto the plate where the player is already looking, distance
+scaling and z-ordering so a crowded field has depth again, and remote players
+carrying their real class glyph. Verified with 14 checks including the ghost
+draining and, through the real game, the engaged monster carrying its class.
+**Next: M4.7 — remaining polish.**
+
+Before that, Phase 0 through 47 M4.5 (2026-08-19). **Latest: M4.5 — a minimap, a
+real smithy, and a tooltip that stops shoving the page.** All three from user
+feedback. The tooltip "resizing the screen" on hover was a missing stylesheet:
+`#item-tooltip` had no CSS at all, so it sat in normal flow (showing it reflowed
+the document) and the `left`/`top` set on every mousemove were silently
+discarded, since static elements ignore them — the markup survived the M1 port
+and its styling did not, exactly like the dock buttons losing their listeners.
+The workbench, the last M1 placeholder and the world's one fixed landmark, is
+now a six-piece smithy from the CC0 Fantasy Props MegaKit with a forge that
+flickers on summed sines. Building it exposed a real bug: two of the six pieces
+were silently missing because the loop awaited each model behind the ground
+cover's forty-odd, taking 24 seconds to finish — `Promise.all` for both took it
+to 4.6. And there is a minimap top-right: canvas, renderer-agnostic, showing
+nodes by kind, monsters with the engaged one ringed, players, the workbench and
+the world boundary, with every preference persisted — circle or square, four
+sizes, zoom 14-180 units, rotate-with-facing, and a toggle per layer. It
+publishes its own height as a CSS variable that the window rail starts from, so
+the two can never overlap however large it is made.
+**Next: M4.6 — remaining polish.**
+
+Before that, Phase 0 through 47 M4.4 (2026-08-19). **Latest: M4.2 (a world with
+ground in it), M4.3 (the world has an hour) and M4.4 (every skill looks like
+itself).** The field was a flat green plane ringed by trees; it now has a real
+tiled PBR ground that mixes grass into dirt under one noise field and drifts its
+colour under another — which is what defeats tiling, since the eye locks onto
+the repeat interval and a bigger source texture would have fixed nothing. On top
+of it sit 4,800 instanced plants from the CC0 Stylized Nature MegaKit, none of
+which is a tree, a boulder or a bush, because those three are the harvestable
+nodes and scenery that can be mistaken for something interactive teaches players
+to click on scenery. The nodes themselves stopped being placeholder polyhedra.
+A full day now runs in 24 real minutes, derived from wall-clock time in
+`shared/` so every client agrees without a message, graded through eight
+keyframes with a star dome and a clock on the unit frame. And all 27 skills got
+their own shape — nova, ground pool, cone, pillar, volley or chain, as real
+geometry rather than the single atlas quad they all used to share. Three bugs
+worth remembering: scatter normalised by height gave wide flat models a metre of
+spread, the day/night light flipped end for end at both horizon crossings until
+the arc was made continuous, and the per-frame fade overwrote each effect's
+chosen opacity so every additive shape saturated to white.
+**Next: M4.5 — remaining polish.**
+
+Before that, Phase 0 through 47 M4.1 (2026-08-19). **Latest: M4.1 — an interface
+drawn with icons, and a camera close enough to see what you are wearing.** The
+two weaknesses the user named, and they were independent. Every emoji is gone:
+120 game-icons.net glyphs baked into one generated module, each a single path
+with no fill of its own so it takes `currentColor` — the assignment that already
+lit a slot's border by rarity now lights its icon too. Sized in `em`, so the
+whole swap reused the font-sizes the containers already declared and needed
+almost no new CSS. `shared/` now carries an icon key rather than a glyph. The
+camera came in from 14.5 units to 9 — one world unit went from 52.8 to 83.1
+screen pixels, so everything is 1.57x larger — with the wheel spanning 5 to 22,
+distance-only so the pitch never changes, multiplicative notches, and a shadow
+frustum that follows the zoom instead of spending a 2048px map on off-screen
+ground. Two new tests: the icon generator validates every name against the real
+index before fetching (36 of 116 were wrong, mostly right icon/wrong author) and
+`tools/test/icons.mjs` asserts every key the game names exists. Verified in a
+real browser: zero emoji left in the DOM, every icon measured for a non-zero box,
+both zoom clamps exact, panel scrolling moves the camera 0.00 units.
+**Next: the rest of M4 — skill VFX and day/night.**
+
+Before that, M3.11 — windows
+that behave like an MMO's. The dock icons genuinely did nothing: the markup
 survived the M1 port from Phaser and its listeners did not, so all four had
 been decorative for eleven milestones. They are wired now, moved to the right
 edge, and lit while their window is open. The five full-screen dimming

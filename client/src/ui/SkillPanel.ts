@@ -14,6 +14,7 @@ import {
   type WeaponType,
 } from "../../../shared/protocol-types";
 import { beginBarDrag } from "./Hotbar";
+import { iconSvg } from "./icons";
 
 export interface WeaponProgressView {
   weaponType: WeaponType;
@@ -87,7 +88,7 @@ export class SkillPanel {
     const available = p?.pointsAvailable ?? 0;
     const ranks = p?.ranks ?? {};
 
-    this.title.textContent = `${WEAPONS[this.weapon].icon} ${weaponName} — proficiency ${level}`;
+    this.title.innerHTML = `${iconSvg(WEAPONS[this.weapon].icon, "icon title-icon")}<span>${weaponName} — proficiency ${level}</span>`;
 
     this.list.innerHTML = "";
 
@@ -156,7 +157,7 @@ export class SkillPanel {
         : `${node.name} — ${verdict.reason}`;
 
     el.innerHTML =
-      `<span class="tn-icon">${node.icon}</span>` +
+      `<span class="tn-icon">${iconSvg(node.icon)}</span>` +
       `<span class="tn-body">` +
       `<b>${node.name}</b>` +
       `<i>${kindLabel}</i>` +

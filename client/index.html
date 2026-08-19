@@ -389,7 +389,10 @@
         font-size: 13px;
       }
       .lb-row.lb-self { border-color: var(--gold-bright); background: linear-gradient(180deg, #5a4420, #3a2c16); }
-      .lb-rank { width: 28px; text-align: center; font-size: 15px; }
+      .lb-rank { width: 28px; text-align: center; font-size: 15px; display: flex; justify-content: center; }
+      .lb-rank-1 { color: #ffd257; }
+      .lb-rank-2 { color: #d8dde4; }
+      .lb-rank-3 { color: #d08a4e; }
       .lb-name { flex: 1; color: var(--parchment); }
       .lb-level { color: var(--gold-bright); font-size: 12px; }
 
@@ -431,7 +434,11 @@
       /* --- Window rail -------------------------------------------------- */
       #window-rail {
         position: absolute;
-        top: 14px;
+        /* Starts below the minimap. The minimap sets --minimap-bottom from its
+           own measured height whenever the player resizes it, so the two can
+           never overlap however large it is made — and the rail does not have
+           to know the minimap exists. */
+        top: var(--minimap-bottom, 14px);
         right: 82px;
         /* `left` matters: without it the rail shrink-wraps its contents and
            its own width becomes whatever is open, which makes "does the next
@@ -574,7 +581,8 @@
       #hotbar-wrap { position: absolute; bottom: 78px; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 8px; z-index: 6; }
       #hotbar-config {
         background: var(--slot-grad); border: 1px solid var(--gold-dim); color: var(--muted);
-        border-radius: 6px; width: 26px; height: 26px; font-size: 14px; cursor: pointer;
+        border-radius: 6px; width: 26px; height: 26px; font-size: 15px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
       }
       #hotbar-config:hover, #hotbar-config.editing { color: var(--gold-bright); border-color: var(--gold); }
       /* Edit mode makes the slots obviously mutable rather than relying on the
@@ -734,6 +742,196 @@
         display: none;
       }
       .dock-btn .dock-badge.show { display: block; }
+
+      /* --- Minimap --------------------------------------------------------
+         Top right, above the window rail, left of the dock. Everything about
+         it is a persisted setting, so this styles a range of sizes and both
+         shapes rather than one fixed box. */
+      #minimap {
+        position: absolute;
+        top: 14px;
+        right: 82px;
+        z-index: 12;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 5px;
+        font-family: Georgia, serif;
+        transition: opacity .15s;
+      }
+      #minimap .mm-frame {
+        position: relative;
+        border: 2px solid var(--gold-dim);
+        background: #26301a;
+        box-shadow: 0 5px 20px #0009, inset 0 0 22px #0007;
+        border-radius: 50%;
+        overflow: hidden;
+        line-height: 0;
+      }
+      #minimap.mm-square .mm-frame { border-radius: 8px; }
+      /* An inner keyline, the same trick the character window uses: one flat
+         stroke reads as a placeholder, two reads as a frame. */
+      #minimap .mm-frame::after {
+        content: "";
+        position: absolute; inset: 3px;
+        border: 1px solid rgba(226,176,79,.22);
+        border-radius: 50%;
+        pointer-events: none;
+      }
+      #minimap.mm-square .mm-frame::after { border-radius: 5px; }
+      #minimap .mm-canvas { display: block; cursor: crosshair; }
+      #minimap .mm-coords {
+        position: absolute; left: 0; right: 0; bottom: 6px;
+        text-align: center;
+        font: 10px monospace; color: #f0e0bb;
+        text-shadow: 0 1px 2px #000, 0 0 4px #000;
+        pointer-events: none;
+      }
+
+      #minimap .mm-bar {
+        display: flex; align-items: center; gap: 4px;
+        padding: 3px 5px;
+        background: linear-gradient(180deg, #3a2a17, #241a0f);
+        border: 1px solid var(--gold-dim);
+        border-radius: 6px;
+      }
+      #minimap .mm-zoom {
+        flex: 1; text-align: center;
+        font: 10px monospace; color: var(--gold);
+      }
+      #minimap .mm-btn {
+        width: 20px; height: 20px; flex: none;
+        display: flex; align-items: center; justify-content: center;
+        background: var(--slot-grad);
+        border: 1px solid var(--gold-dim); border-radius: 4px;
+        color: var(--gold-bright);
+        font: 13px/1 Georgia, serif; cursor: pointer; padding: 0;
+      }
+      #minimap .mm-btn:hover { border-color: var(--gold); background: #4a3a1c; }
+      #minimap .mm-btn .icon { width: 12px; height: 12px; }
+
+      /* The settings popover hangs to the LEFT: the map is already against the
+         dock on the right, so opening rightward would run it off screen. */
+      #minimap .mm-panel {
+        display: none;
+        position: absolute; top: 0; right: calc(100% + 8px);
+        width: 190px; padding: 8px 10px;
+        background: linear-gradient(180deg, #3a2a17, #211809);
+        border: 1px solid var(--gold-dim); border-radius: 7px;
+        box-shadow: 0 8px 26px #000a;
+        color: var(--parchment); font-size: 12px;
+      }
+      #minimap .mm-panel.open { display: block; }
+      #minimap .mm-panel-title {
+        color: var(--gold-bright); font-weight: bold;
+        margin-bottom: 6px; letter-spacing: .03em;
+      }
+      #minimap .mm-panel-sep {
+        height: 1px; background: var(--gold-dim); opacity: .5; margin: 7px 0;
+      }
+      #minimap .mm-row {
+        display: flex; align-items: center; gap: 7px;
+        padding: 2px 0; cursor: pointer; font-size: 11px; color: #cbbb95;
+      }
+      #minimap .mm-row-inline { justify-content: space-between; cursor: default; }
+      #minimap .mm-row input[type="checkbox"] { accent-color: #d9a441; }
+      #minimap .mm-row input[type="range"] { width: 96px; accent-color: #d9a441; }
+      #minimap .mm-seg { display: flex; gap: 3px; }
+      #minimap .mm-seg button {
+        background: var(--slot-grad); border: 1px solid var(--gold-dim);
+        border-radius: 4px; color: var(--muted);
+        font: 10px Georgia, serif; padding: 2px 6px; cursor: pointer;
+      }
+      #minimap .mm-seg button.active {
+        border-color: var(--gold-bright); color: var(--gold-bright);
+        background: linear-gradient(180deg, #5a4420, #3a2c16);
+      }
+      #minimap .mm-reset {
+        width: 100%; margin-top: 8px;
+        background: var(--slot-grad); border: 1px solid var(--gold-dim);
+        border-radius: 5px; color: var(--parchment);
+        font: 11px Georgia, serif; padding: 4px; cursor: pointer;
+      }
+      #minimap .mm-reset:hover { border-color: var(--gold); }
+
+      /* --- Item tooltip ---------------------------------------------------
+         This had NO styling at all, which is why hovering anything in the bag
+         made the whole page lurch. With no `position` it was a plain block in
+         normal flow, so `display: block` inserted a real box into the document
+         and reflowed everything below it, and the `left`/`top` the script sets
+         on every mousemove did nothing at all — static elements ignore them.
+
+         The markup has been here since the Phaser client; the CSS did not
+         survive the M1 port. Exactly the same failure as the dock buttons
+         losing their listeners, and just as invisible to typechecking. */
+      #item-tooltip {
+        display: none;
+        position: fixed;
+        z-index: 40;
+        /* Never let the tooltip intercept the click on the thing it describes. */
+        pointer-events: none;
+        max-width: 260px;
+        padding: 7px 10px;
+        background: linear-gradient(180deg, #3a2a17, #211809);
+        border: 1px solid var(--gold-dim);
+        border-radius: 6px;
+        box-shadow: 0 6px 20px #000a;
+        font: 12px Georgia, serif;
+        color: var(--parchment);
+      }
+      #item-tooltip .tt-title {
+        font-weight: bold;
+        text-transform: capitalize;
+        margin-bottom: 3px;
+        letter-spacing: .02em;
+      }
+      #item-tooltip .tt-line { font-size: 11px; color: #cbbb95; line-height: 1.45; }
+
+      /* --- Icons ------------------------------------------------------
+         Every glyph in the interface is one of these: a single 512x512 path
+         carrying no colour of its own. Two consequences worth keeping.
+
+         It takes `currentColor`, so the same icon is gold on the action bar,
+         grey-and-faded in an empty slot and rarity-coloured in the bag
+         without any of those needing their own copy — the rarity assignment
+         that already lights a slot's border lights its icon too.
+
+         And it is sized in `em`, so it inherits the font-size the container
+         already declared back when these were emoji. That is why swapping the
+         whole set over needed almost no per-container sizing: a rule saying
+         "22px" still means a 22px icon. */
+      .icon {
+        display: inline-block;
+        width: 1em; height: 1em;
+        fill: currentColor;
+        vertical-align: -0.125em;
+        flex: none;
+      }
+      /* For icons sitting inside a run of text, where the cap-height of the
+         surrounding glyphs is the thing to match rather than the line box. */
+      .icon.inline { width: .95em; height: .95em; vertical-align: -.15em; }
+
+      /* The action bar's icon fills its button rather than sitting on the
+         text baseline, so the curtain sweeping down over it covers the glyph
+         evenly instead of clipping a corner. */
+      .skill-btn .bar-icon {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--gold-bright);
+      }
+      .skill-btn.slot-empty .bar-icon { color: var(--muted); }
+      .skill-btn.skill-attack .bar-icon { color: #ffdca0; }
+
+      .dock-btn [data-icon] { display: flex; color: var(--gold-bright); }
+      .dock-btn.active [data-icon] { color: #fff0c8; }
+      .win-icon { display: inline-flex; color: var(--gold-bright); }
+      .doll-art { color: var(--gold-bright); }
+      .use-btn .use-icon { display: inline-flex; font-size: 16px; color: var(--gold-bright); }
+      .cur span.cur-icon { display: inline-flex; color: var(--gold-bright); }
+      .craft-weapon-btn .cw-icon { display: block; color: var(--gold-bright); }
+      .tn-icon { display: flex; color: var(--gold-bright); }
+      .talent-node.unavailable .tn-icon { color: var(--muted); }
+      .skills-title .title-icon { font-size: 18px; color: var(--gold-bright); margin-right: 6px; }
     </style>
   </head>
   <body>
@@ -758,7 +956,7 @@
         <div id="character-overlay" class="window">
           <div id="character-panel">
             <div class="win-title">
-              <span class="win-icon">🧙</span>
+              <span class="win-icon" data-icon="dock-character"></span>
               <span id="char-name-label">Adventurer</span>
               <span class="win-sub">Level <span id="char-level-label">1</span> · <span id="char-class-label">Adventurer</span></span>
               <button id="character-close" class="win-close">&times;</button>
@@ -772,13 +970,13 @@
                grid of grey squares. -->
           <div class="doll">
             <div class="doll-col">
-              <div class="gear-slot" data-slot="helm"><span class="gear-empty">⛑️</span></div>
-              <div class="gear-slot" data-slot="cape"><span class="gear-empty">🧣</span></div>
-              <div class="gear-slot" data-slot="armor"><span class="gear-empty">🛡️</span></div>
+              <div class="gear-slot" data-slot="helm"><span class="gear-empty" data-icon="slot-helm"></span></div>
+              <div class="gear-slot" data-slot="cape"><span class="gear-empty" data-icon="slot-cape"></span></div>
+              <div class="gear-slot" data-slot="armor"><span class="gear-empty" data-icon="slot-armor"></span></div>
             </div>
             <div class="doll-figure">
               <div class="doll-frame">
-                <div class="doll-art" id="doll-art">🧍</div>
+                <div class="doll-art" id="doll-art" data-icon="class-adventurer"></div>
               </div>
               <div class="doll-plate">
                 <div class="doll-weapon" id="doll-weapon">Unarmed</div>
@@ -787,9 +985,9 @@
               </div>
             </div>
             <div class="doll-col">
-              <div class="gear-slot" data-slot="weapon"><span class="gear-empty">⚔️</span></div>
-              <div class="gear-slot" data-slot="ring"><span class="gear-empty">💍</span></div>
-              <div class="gear-slot" data-slot="boots"><span class="gear-empty">👢</span></div>
+              <div class="gear-slot" data-slot="weapon"><span class="gear-empty" data-icon="slot-weapon"></span></div>
+              <div class="gear-slot" data-slot="ring"><span class="gear-empty" data-icon="slot-ring"></span></div>
+              <div class="gear-slot" data-slot="boots"><span class="gear-empty" data-icon="slot-boots"></span></div>
             </div>
           </div>
           <div class="char-tabs">
@@ -853,7 +1051,7 @@
         <div id="inventory-overlay" class="window">
           <div id="inventory-panel">
             <div class="win-title">
-              <span class="win-icon">🎒</span>
+              <span class="win-icon" data-icon="dock-inventory"></span>
               <span>Bags</span>
               <span class="win-sub" id="inv-capacity"></span>
               <button id="inv-sort" class="win-action" title="Sort by slot, then rarity">Sort</button>
@@ -872,7 +1070,7 @@
         <div id="craft-overlay" class="window">
           <div id="craft-panel">
             <div class="win-title">
-              <span class="win-icon">🔨</span><span>Workbench</span>
+              <span class="win-icon" data-icon="dock-craft"></span><span>Workbench</span>
               <button id="craft-close" class="win-close">&times;</button>
             </div>
             <div id="craft-grid" class="window-body"></div>
@@ -881,7 +1079,7 @@
         <div id="leaderboard-overlay" class="window">
           <div id="leaderboard-panel">
             <div class="win-title">
-              <span class="win-icon">🏆</span><span>Leaderboard</span>
+              <span class="win-icon" data-icon="dock-leaderboard"></span><span>Leaderboard</span>
               <button id="leaderboard-close" class="win-close">&times;</button>
             </div>
             <div id="leaderboard-list" class="window-body"></div>
@@ -890,7 +1088,7 @@
         <div id="skills-overlay" class="window">
           <div id="skills-panel">
             <div class="win-title">
-              <span class="win-icon">📖</span>
+              <span class="win-icon" data-icon="dock-skills"></span>
               <span id="skills-title">Talents</span>
               <button id="skills-close" class="win-close">&times;</button>
             </div>
@@ -907,20 +1105,20 @@
       </div>
       <div id="hotbar-wrap">
         <div id="hotbar"></div>
-        <button id="hotbar-config" title="Edit the bar: drag skills from the talent panel (K), drag slots to reorder, right-click to clear, click a key label to rebind">⚙</button>
+        <button id="hotbar-config" title="Edit the bar: drag skills from the talent panel (K), drag slots to reorder, right-click to clear, click a key label to rebind" data-icon="settings"></button>
       </div>
       <div id="ui-dock">
         <button id="dock-character" class="dock-btn" title="Character (C)">
-          🧙<span class="dock-key">C</span><span class="dock-badge" id="dock-character-badge"></span>
+          <span data-icon="dock-character"></span><span class="dock-key">C</span><span class="dock-badge" id="dock-character-badge"></span>
         </button>
         <button id="dock-inventory" class="dock-btn" title="Inventory (I)">
-          🎒<span class="dock-key">I</span>
+          <span data-icon="dock-inventory"></span><span class="dock-key">I</span>
         </button>
         <button id="dock-skills" class="dock-btn" title="Skills (K)">
-          📖<span class="dock-key">K</span>
+          <span data-icon="dock-skills"></span><span class="dock-key">K</span>
         </button>
         <button id="dock-leaderboard" class="dock-btn" title="Leaderboard (L)">
-          🏆<span class="dock-key">L</span>
+          <span data-icon="dock-leaderboard"></span><span class="dock-key">L</span>
         </button>
       </div>
       <div id="item-tooltip"></div>

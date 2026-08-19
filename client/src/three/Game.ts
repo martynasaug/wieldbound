@@ -52,12 +52,19 @@ import {
   type ItemRarity,
   type ItemSlot,
   type MonsterKind,
+  DAY_LENGTH_MS,
+  appearanceClass,
+  gameClock,
+  isDaytime,
+  type CharacterClass,
   type MonsterState,
   type PlayerState,
   type ResourceNodeState,
   type CraftingStationState,
   type SkillId,
 } from "../../../shared/protocol-types";
+import { SkillFx, fxFor } from "./skillfx";
+import { Minimap } from "../ui/Minimap";
 import { GameSocket } from "../net/socket";
 import { CharacterPanel } from "../ui/CharacterPanel";
 import { InventoryPanel } from "../ui/InventoryPanel";
@@ -76,6 +83,8 @@ import { ATTACK_STYLES, Projectiles, attackStyle, impactDelayMs } from "./attack
 import { playSfx, preloadSfx, toggleMuted } from "./sfx";
 import {
   PX_PER_UNIT,
+  WORLD_UNITS_H,
+  WORLD_UNITS_W,
   World,
   terrainHeight,
   toServerX,
@@ -193,6 +202,35 @@ function isMoving(prevX: number, prevY: number, x: number, y: number, wasMoving:
   return wasMoving;
 }
 
+/** The glyph on a resource node's nameplate, so kind reads without the word. */
+const NODE_PLATE_ICON: Record<ResourceNodeState["kind"], string> = {
+  tree: "wood",
+  rock: "ore",
+  bush: "herb",
+};
+
+/** Model options per harvestable kind, picked by a hash of the node's id. */
+const NODE_MODELS: Record<ResourceNodeState["kind"], string[]> = {
+  tree: [
+    "nature/CommonTree_1.gltf", "nature/CommonTree_2.gltf", "nature/CommonTree_3.gltf",
+    "nature/CommonTree_4.gltf", "nature/CommonTree_5.gltf",
+    "nature/Pine_2.gltf", "nature/Pine_4.gltf",
+  ],
+  rock: ["nature/Rock_Medium_1.gltf", "nature/Rock_Medium_2.gltf", "nature/Rock_Medium_3.gltf"],
+  // Only the flowering variant. `Bush_Common` ships textured with the kit's
+  // TWISTED tree leaves, which are a deep autumnal red — a fine plant, but it
+  // reads as dead scrub rather than as the thing you pick herbs off. It lives
+  // in the treeline instead, where red is obviously deliberate.
+  bush: ["nature/Bush_Common_Flowers.gltf"],
+};
+
+/** World-unit height range per kind, so a rock cannot come out tree-sized. */
+const NODE_HEIGHTS: Record<ResourceNodeState["kind"], [number, number]> = {
+  tree: [3.4, 4.6],
+  rock: [0.85, 1.25],
+  bush: [0.75, 1.05],
+};
+
 export class Game {
   private readonly world: World;
   private readonly hud: Hud;
@@ -263,6 +301,15 @@ export class Game {
 
   private readonly players = new Map<string, Actor>();
   private readonly playerNames = new Map<string, string>();
+  /**
+   * What each remote player is wielding, for their nameplate's glyph.
+   *
+   * Kept from the same `Appearance` their body is dressed from, so the icon on
+   * the plate and the rig on the field can never say different things — the
+   * same reason the local player rebuilds its own appearance from its items
+   * rather than from a second source.
+   */
+  private readonly playerClasses = new Map<string, CharacterClass>();
   /** Last SERVER position per remote player, so run/idle is decided from real
    *  motion rather than from the interpolated model — see `isMoving`. */
   private readonly playerMotion = new Map<string, { x: number; y: number; moving: boolean }>();
@@ -271,6 +318,11 @@ export class Game {
   private readonly nodeStates = new Map<string, ResourceNodeState>();
   private readonly stations = new Map<string, THREE.Object3D>();
   private readonly stationStates = new Map<string, CraftingStationState>();
+  /** Per-station forge fire, so it can flicker rather than burn as a flat lamp. */
+  private readonly stationEmbers = new Map<
+    string,
+    { light: THREE.PointLight; glow: THREE.Mesh }
+  >();
 
   private localActor: Actor | null = null;
   private readonly keys = new Set<string>();
@@ -280,6 +332,8 @@ export class Game {
   private readonly effects: Effects;
   private readonly indicators: Indicators;
   private readonly projectiles: Projectiles;
+  private readonly skillFx: SkillFx;
+  private readonly minimap: Minimap;
   private readonly shakeScratch = new THREE.Vector3();
   private running = false;
   /** Last moment combat traffic arrived, used to show the reach ring only while fighting. */
@@ -299,9 +353,11 @@ export class Game {
     this.name = characterName;
     this.world = new World(container);
     this.hud = new Hud(container);
+    this.minimap = new Minimap(container);
     this.effects = new Effects(this.world.scene);
     this.indicators = new Indicators(this.world.scene);
     this.projectiles = new Projectiles(this.world.scene);
+    this.skillFx = new SkillFx(this.world.scene);
 
     this.characterPanel = new CharacterPanel((stat) => this.socket.sendAllocateStat(stat));
     this.inventoryPanel = new InventoryPanel(
@@ -546,6 +602,7 @@ export class Game {
       seen.add(s.id);
       if (s.id === this.playerId) continue; // local player is predicted, not snapped
       this.playerNames.set(s.id, s.name);
+      this.playerClasses.set(s.id, appearanceClass(s.appearance));
       let actor = this.players.get(s.id);
       if (!actor) {
         actor = new Actor({ model: CLASS_BODIES.adventurer, height: PLAYER_HEIGHT });
@@ -571,6 +628,7 @@ export class Game {
       actor.dispose();
       this.players.delete(id);
       this.playerNames.delete(id);
+      this.playerClasses.delete(id);
       this.playerMotion.delete(id);
     }
   }
@@ -633,6 +691,15 @@ export class Game {
     }
   }
 
+  /**
+   * The art for each harvestable kind.
+   *
+   * These are the three things in the world a player is meant to walk up to and
+   * click, which is exactly why `scatter.ts` contains no tree, no boulder and no
+   * bush: the ground cover has to stay unmistakably scenery. Rocks and bushes
+   * used to be a bare dodecahedron and icosahedron — placeholders from M1 that
+   * outlasted their welcome once everything around them had real art.
+   */
   private async syncNodes(states: ResourceNodeState[]): Promise<void> {
     for (const s of states) {
       this.nodeStates.set(s.id, s);
@@ -662,63 +729,184 @@ export class Game {
   }
 
   private async buildNode(state: ResourceNodeState, host: THREE.Group): Promise<void> {
-    if (state.kind === "tree") {
-      // Vary the art per node, keyed off the server id so every player sees the
-      // same tree in the same place — the 2D client hashed the id for this too.
-      const options = ["Tree_1", "Tree_2", "Tree_3", "Pine_1", "Pine_2"];
-      const pick = options[hashString(state.id) % options.length];
-      const inst = await instantiate(pick, 3.2 + (hashString(state.id) % 5) * 0.22);
-      host.add(inst.object);
-      return;
+    // Every kind varies its art by a hash of the server id, so each node looks
+    // like itself and every player sees the same one — the 2D client hashed
+    // ids for exactly this too.
+    const variant = hashString(state.id);
+    const options = NODE_MODELS[state.kind];
+    const pick = options[variant % options.length];
+    const [minH, maxH] = NODE_HEIGHTS[state.kind];
+    const height = minH + ((variant >> 3) % 5) * ((maxH - minH) / 4);
+
+    const inst = await instantiate(pick, height);
+    // A node is a thing you walk up to and click, so it is always turned a
+    // different way — three rocks in a row facing identically read as one rock
+    // stamped three times.
+    inst.object.rotation.y = (variant % 360) * (Math.PI / 180);
+    host.add(inst.object);
+  }
+
+  /**
+   * The workbench, which is a small smithy rather than one object.
+   *
+   * It was a grey box with a point light next to it — the last M1 placeholder
+   * on screen, and once the ground and the treeline had real art it was the
+   * only thing left that looked unfinished. It is also the one fixed landmark
+   * in the world (spawn is here, and the difficulty bands radiate from it), so
+   * it is worth more than a single prop.
+   *
+   * Laid out by hand rather than scattered: this is a place someone built, and
+   * a random arrangement of a bench and a barrel reads as debris.
+   */
+  /**
+   * Flickers every forge fire.
+   *
+   * Two sine waves at unrelated frequencies rather than a random walk: random
+   * flicker is what everyone reaches for and it reads as a fault in the light
+   * rather than as a fire, because real flame varies smoothly. Incommensurate
+   * periods keep it from ever settling into an obvious loop.
+   */
+  /**
+   * Hands the minimap a snapshot of where everything is.
+   *
+   * Built fresh each frame rather than kept in sync incrementally: the map is
+   * a pure view of state that already exists, and an incrementally-maintained
+   * copy is one more thing that can drift out of agreement with the world —
+   * the same reasoning that keeps class derived from the equipped weapon
+   * rather than cached. A few dozen objects a frame costs nothing.
+   */
+  private updateMinimap(): void {
+    const self = this.localActor;
+    if (!self) return;
+
+    const monsters = [];
+    for (const [id, vis] of this.monsters) {
+      monsters.push({
+        x: vis.actor.position.x,
+        z: vis.actor.position.z,
+        dead: vis.dead,
+        engaged: id === this.engagedId,
+        locked: id === this.lockedId,
+      });
     }
-    if (state.kind === "rock") {
-      const geo = new THREE.DodecahedronGeometry(0.62, 0);
-      const mat = new THREE.MeshStandardMaterial({ color: 0x8a837a, roughness: 1, flatShading: true });
-      const rock = new THREE.Mesh(geo, mat);
-      rock.position.y = 0.34;
-      rock.rotation.set(0.4, hashString(state.id) % 6, 0.2);
-      rock.castShadow = true;
-      rock.receiveShadow = true;
-      host.add(rock);
-      return;
+
+    const nodes = [];
+    for (const state of this.nodeStates.values()) {
+      nodes.push({
+        x: toWorldX(state.x),
+        z: toWorldZ(state.y),
+        kind: state.kind,
+        depleted: state.status !== "available",
+      });
     }
-    const bush = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.5, 0),
-      new THREE.MeshStandardMaterial({ color: 0x4f8f3c, roughness: 1, flatShading: true }),
-    );
-    bush.position.y = 0.42;
-    bush.castShadow = true;
-    bush.receiveShadow = true;
-    host.add(bush);
+
+    const stations = [];
+    for (const state of this.stationStates.values()) {
+      stations.push({ x: toWorldX(state.x), z: toWorldZ(state.y) });
+    }
+
+    const players = [];
+    for (const actor of this.players.values()) {
+      players.push({ x: actor.position.x, z: actor.position.z });
+    }
+
+    this.minimap.setSnapshot({
+      player: { x: self.position.x, z: self.position.z, facing: self.bearing },
+      players,
+      monsters,
+      nodes,
+      stations,
+      bounds: { halfWidth: WORLD_UNITS_W / 2, halfHeight: WORLD_UNITS_H / 2 },
+    });
+  }
+
+  private updateForges(): void {
+    const t = performance.now() / 1000;
+    for (const { light, glow } of this.stationEmbers.values()) {
+      const flicker = 0.82 + Math.sin(t * 7.3) * 0.11 + Math.sin(t * 2.9) * 0.07;
+      light.intensity = 9 * flicker;
+      // The visible coal breathes with the light, or the glow and the lighting
+      // it is supposed to be casting visibly disagree.
+      glow.scale.setScalar(0.9 + flicker * 0.16);
+    }
   }
 
   private syncStations(states: CraftingStationState[]): void {
     for (const s of states) {
       this.stationStates.set(s.id, s);
       if (this.stations.has(s.id)) continue;
+
       const group = new THREE.Group();
-      const anvil = new THREE.Mesh(
-        new THREE.BoxGeometry(0.9, 0.55, 0.5),
-        new THREE.MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.7, metalness: 0.35 }),
-      );
-      anvil.position.y = 0.5;
-      anvil.castShadow = true;
-      anvil.receiveShadow = true;
-      group.add(anvil);
-
-      const embers = new THREE.PointLight(0xff8b30, 9, 9, 2);
-      embers.position.set(0.9, 0.7, 0);
-      group.add(embers);
-      const glow = new THREE.Mesh(
-        new THREE.SphereGeometry(0.16, 12, 12),
-        new THREE.MeshBasicMaterial({ color: 0xffb257 }),
-      );
-      glow.position.copy(embers.position);
-      group.add(glow);
-
       group.position.set(toWorldX(s.x), 0, toWorldZ(s.y));
       this.world.scene.add(group);
       this.stations.set(s.id, group);
+
+      // The forge fire, built first so the station is lit even while the models
+      // are still loading — a dark hole at spawn for a second reads as a bug.
+      const embers = new THREE.PointLight(0xff8b30, 9, 9, 2);
+      // Beside the anvil, at about the height of a forge's coals.
+      embers.position.set(1.5, 0.55, -0.9);
+      group.add(embers);
+      const glow = new THREE.Mesh(
+        new THREE.SphereGeometry(0.13, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0xffb257, fog: false }),
+      );
+      glow.position.copy(embers.position);
+      group.add(glow);
+      this.stationEmbers.set(s.id, { light: embers, glow });
+
+      void this.buildStation(group);
+    }
+  }
+
+  /** Places the smithy's pieces. Each is loaded and seated independently. */
+  private async buildStation(group: THREE.Group): Promise<void> {
+    // model, HEIGHT in world units, position, y-rotation.
+    //
+    // `instantiate` scales a model to a given height, so anything much wider
+    // than it is tall comes out oversized: the bench at 1.15 units tall was
+    // nearly three units long and dwarfed the player. Same trap the ground
+    // cover hit — the dimension you normalise against encodes an assumption
+    // about the model's proportions. These are tuned against a player, who
+    // stands about 1.7 units.
+    //
+    // Nothing sits at the origin. The station's own position is where players
+    // spawn and where they stand to craft, so leaving it clear is what stops a
+    // character materialising inside the anvil.
+    const pieces: [string, number, [number, number, number], number][] = [
+      ["props/Anvil_Log.gltf", 0.85, [0.75, 0, -0.55], 0.5],
+      ["props/Workbench.gltf", 0.72, [-1.25, 0, -0.35], 1.15],
+      ["props/WeaponStand.gltf", 1.0, [0.35, 0, -1.75], -0.35],
+      ["props/Barrel.gltf", 0.8, [1.5, 0, 0.85], 0.3],
+      ["props/Crate_Wooden.gltf", 0.5, [-1.15, 0, 1.15], -0.7],
+      ["props/Whetstone.gltf", 0.3, [0.15, 0, 1.15], 1.9],
+    ];
+
+    // Loaded in parallel, placed in order. Awaiting each in turn made the
+    // smithy assemble itself over about twenty-four seconds, because these six
+    // queue behind the forty-odd models the ground cover is fetching at the
+    // same time — so the last pieces appeared long after the player had walked
+    // away from spawn. They do not depend on each other, so nothing was being
+    // bought by loading them one at a time.
+    const loaded = await Promise.all(
+      pieces.map(([model, height]) =>
+        instantiate(model, height).catch((err) => {
+          // A missing prop is a sparser smithy, not a broken station — but it
+          // is still worth saying so. Swallowing this silently is how two of
+          // the six went missing with no sign that anything had failed.
+          console.warn(`[station] ${model} did not load:`, err);
+          return null;
+        }),
+      ),
+    );
+
+    for (let i = 0; i < pieces.length; i++) {
+      const inst = loaded[i];
+      if (!inst) continue;
+      const [, , [x, y, z], rotY] = pieces[i];
+      inst.object.position.set(x, y, z);
+      inst.object.rotation.y = rotY;
+      group.add(inst.object);
     }
   }
 
@@ -911,6 +1099,71 @@ export class Game {
     }, IMPACT_DELAY_MS);
   }
 
+  /**
+   * Draws the geometry half of a skill's effect: the ring, cone, disc, pillar,
+   * volley or chain that says what KIND of thing just happened.
+   *
+   * Placement follows the skill's own numbers rather than a per-skill constant,
+   * so a rebalance that widens a radius widens the effect drawn for it — the
+   * same rule M3.7 established when it derived a projectile's timing from its
+   * real flight rather than from a matching constant.
+   */
+  private playSkillShape(
+    skill: (typeof SKILLS)[SkillId],
+    hits: { monsterId: string }[],
+  ): void {
+    const self = this.localActor;
+    if (!self) return;
+    const fx = fxFor(skill.id);
+    const at = self.position;
+    const radius = Math.max(1.2, skill.radiusPx / PX_PER_UNIT);
+    const reach = Math.max(1.6, skill.rangePx / PX_PER_UNIT);
+
+    // Where an area skill lands: on what it hit, or at the caster's feet when
+    // it hit nothing — the same fallback the server uses when resolving one.
+    const first = hits.length > 0 ? this.monsters.get(hits[0].monsterId)?.actor.position : undefined;
+    const centre = first ?? at;
+
+    switch (fx.shape) {
+      case "nova":
+        this.skillFx.nova(at.x, 0, at.z, radius, fx.color);
+        break;
+      case "ground":
+        this.skillFx.ground(centre.x, 0, centre.z, radius, fx.color);
+        break;
+      case "cone": {
+        const facing = self.facingVector();
+        this.skillFx.cone(at.x, 0, at.z, Math.atan2(facing.x, facing.z), reach, fx.color);
+        break;
+      }
+      case "pillar":
+        this.skillFx.pillar(at.x, 0, at.z, fx.color);
+        break;
+      case "rain":
+        this.skillFx.rain(centre.x, 0, centre.z, radius, fx.color);
+        break;
+      case "chain": {
+        // Hops caster -> first -> second -> ..., which is what the skill
+        // actually does; drawing a bolt to each target from the caster would
+        // show a fan and the skill is not one.
+        let from = new THREE.Vector3(at.x, at.y + 1.1, at.z);
+        for (const hit of hits) {
+          const vis = this.monsters.get(hit.monsterId);
+          if (!vis) continue;
+          const to = new THREE.Vector3(vis.actor.position.x, vis.actor.position.y + 0.9, vis.actor.position.z);
+          this.projectiles.beam(from, to, fx.color, 220);
+          from = to;
+        }
+        break;
+      }
+      case "none":
+      default:
+        break;
+    }
+
+    if (fx.light) this.skillFx.flash(centre.x, 0, centre.z, fx.color);
+  }
+
   private onSkillResult(p: {
     skillId: SkillId;
     ok: boolean;
@@ -945,6 +1198,11 @@ export class Game {
 
     const school: EffectName = isEffectName(skill.effect) ? skill.effect : "arcane";
     const self = this.localActor;
+
+    // The skill's own signature shape, on top of the atlas flash below. This is
+    // what makes a nova, a cone and a chain look like three different things
+    // rather than three tints of the same flash.
+    this.playSkillShape(skill, p.hits);
 
     if (skill.kind === "mobility") {
       // Resolved client-side by design: movement is already client-authoritative
@@ -1269,6 +1527,20 @@ export class Game {
       this.pointerX = e.clientX;
       this.pointerY = e.clientY;
     });
+    // The wheel zooms. Bound to the canvas rather than the window so scrolling
+    // a panel that has overflowed — the talent tree and the bag both do — moves
+    // that list instead of hauling the camera around behind it.
+    this.world.renderer.domElement.addEventListener(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+        // deltaY is reported in wildly different units per device and per
+        // browser (pixels, lines, pages), so only its SIGN is trustworthy.
+        this.world.zoomBy(Math.sign(e.deltaY));
+      },
+      { passive: false },
+    );
+
     this.world.renderer.domElement.addEventListener("pointerleave", () => {
       this.pointerX = -1;
       this.pointerY = -1;
@@ -1631,6 +1903,9 @@ export class Game {
     this.hotbar.update(this.mana);
     this.effects.update(this.world.camera);
     this.projectiles.update();
+    this.skillFx.update();
+    this.updateForges();
+    this.updateMinimap();
     // Derived before anything draws, so the ring, the frame and the nameplate
     // all agree within a single frame.
     this.updateTargeting();
@@ -1640,6 +1915,8 @@ export class Game {
 
     this.fadeOccluders();
     this.drawPlates();
+    const hour = this.world.updateDayNight();
+    this.hud.setClock(hour.name, gameClock(hour.clock * DAY_LENGTH_MS), isDaytime(hour.clock * DAY_LENGTH_MS));
     this.world.render();
     requestAnimationFrame(this.loop);
   };
@@ -1859,42 +2136,78 @@ export class Game {
   private drawPlates(): void {
     this.hud.beginPlates();
 
+    // Distance is measured to the camera rather than to the player, because it
+    // drives how big the label is ON SCREEN and that is a property of the view.
+    // At a close zoom the player is metres from a monster the camera is right
+    // behind, and sizing off the player would shrink it for no visible reason.
+    const eye = this.world.camera.position;
+    const rangeTo = (x: number, z: number) => Math.hypot(x - eye.x, z - eye.z);
+
     for (const [id, actor] of this.players) {
       if (!actor.loaded) continue;
       const p = actor.position;
       this.hud.plate(id, this.world.project(p.x, p.y + 2.05, p.z), {
+        kind: "player",
         name: this.playerNames.get(id) ?? "player",
+        icon: `class-${this.playerClasses.get(id) ?? "adventurer"}`,
+        distance: rangeTo(p.x, p.z),
       });
     }
 
     for (const [id, vis] of this.monsters) {
       if (!vis.actor.loaded || vis.dead) continue;
       const p = vis.actor.position;
-      const spec = MONSTER_MODELS[vis.kind];
-      this.hud.plate(id, this.world.project(p.x, p.y + spec.height + 0.4, p.z), {
+      const model = MONSTER_MODELS[vis.kind];
+      const stats = MONSTER_STATS[vis.kind];
+      // Only the kinds that telegraph have a windup, and only they set the
+      // flag — so the bar appears exactly when there is something to time.
+      const windupMs = stats.windupMs;
+      const windup =
+        vis.state.windingUp && windupMs
+          ? (performance.now() - vis.windupStartedAt) / windupMs
+          : undefined;
+
+      this.hud.plate(id, this.world.project(p.x, p.y + model.height + 0.4, p.z), {
+        kind: "monster",
         name: MONSTER_LABELS[vis.kind],
         hp: vis.state.hp,
         maxHp: vis.state.maxHp,
-        targeted: id === this.engagedId || id === this.lockedId,
+        band: stats.band,
+        // Bosses are the ones that already guarantee a drop, so the frame and
+        // the reward are the same fact rather than two lists to keep in step.
+        elite: stats.guaranteedDrop,
+        engaged: id === this.engagedId,
+        locked: id === this.lockedId,
+        windup,
+        distance: rangeTo(p.x, p.z),
       });
     }
 
     // Label height follows the art: a bush label floating at treetop height
     // reads as belonging to nothing.
-    const NODE_LABEL_Y: Record<ResourceNodeState["kind"], number> = { tree: 3.6, rock: 1.0, bush: 1.1 };
+    const NODE_LABEL_Y: Record<ResourceNodeState["kind"], number> = { tree: 4.4, rock: 1.4, bush: 1.4 };
     for (const [id, state] of this.nodeStates) {
       const obj = this.nodes.get(id);
       if (!obj) continue;
       this.hud.plate(
         `node-${id}`,
         this.world.project(obj.position.x, NODE_LABEL_Y[state.kind], obj.position.z, 34),
-        { name: NODE_LABELS[state.kind] },
+        {
+          kind: "node",
+          name: NODE_LABELS[state.kind],
+          icon: NODE_PLATE_ICON[state.kind],
+          dim: state.status !== "available",
+          distance: rangeTo(obj.position.x, obj.position.z),
+        },
       );
     }
 
     for (const [id, obj] of this.stations) {
-      this.hud.plate(`st-${id}`, this.world.project(obj.position.x, 1.5, obj.position.z), {
+      this.hud.plate(`st-${id}`, this.world.project(obj.position.x, 1.9, obj.position.z), {
+        kind: "station",
         name: STATION_LABEL,
+        icon: "dock-craft",
+        distance: rangeTo(obj.position.x, obj.position.z),
       });
     }
 

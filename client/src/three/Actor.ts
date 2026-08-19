@@ -431,6 +431,11 @@ export class Actor {
 
   /** Unit vector the actor is currently facing, in world XZ. Lets skills and
    *  dashes aim somewhere sensible when there is no target and no input. */
+  /** Compass bearing in radians, the same angle `facingVector` is built from. */
+  get bearing(): number {
+    return this.facing;
+  }
+
   facingVector(): { x: number; z: number } {
     return { x: Math.sin(this.facing), z: Math.cos(this.facing) };
   }

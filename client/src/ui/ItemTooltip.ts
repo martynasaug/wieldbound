@@ -23,15 +23,42 @@ const SECONDARY_STAT_SUFFIX: Record<ItemInstance["slot"], string> = {
 
 const el = document.getElementById("item-tooltip")!;
 
+const CURSOR_GAP = 16;
+
+/**
+ * Places the tooltip beside the cursor, flipping to the other side when it
+ * would otherwise run off screen.
+ *
+ * Worth doing rather than always offsetting down-right: the bag lives in a
+ * right-anchored rail, so the items whose tooltips matter most are the ones
+ * closest to the edge the tooltip would overflow.
+ */
+function place(x: number, y: number): void {
+  // Measured after the content is written, or this reads the previous item's box.
+  const width = el.offsetWidth;
+  const height = el.offsetHeight;
+
+  let left = x + CURSOR_GAP;
+  if (left + width > window.innerWidth - 8) left = x - CURSOR_GAP - width;
+  left = Math.max(8, left);
+
+  let top = y + CURSOR_GAP;
+  if (top + height > window.innerHeight - 8) top = y - CURSOR_GAP - height;
+  top = Math.max(8, top);
+
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
+}
+
 function attachTooltip(target: HTMLElement, renderContent: () => void): void {
-  target.addEventListener("mouseenter", () => {
+  target.addEventListener("mouseenter", (e) => {
     renderContent();
     el.style.display = "block";
+    // Position immediately: mouseenter fires before any mousemove, so without
+    // this the tooltip appears for one frame wherever it was last shown.
+    place(e.clientX, e.clientY);
   });
-  target.addEventListener("mousemove", (e) => {
-    el.style.left = `${e.clientX + 16}px`;
-    el.style.top = `${e.clientY + 16}px`;
-  });
+  target.addEventListener("mousemove", (e) => place(e.clientX, e.clientY));
   target.addEventListener("mouseleave", () => {
     el.style.display = "none";
   });

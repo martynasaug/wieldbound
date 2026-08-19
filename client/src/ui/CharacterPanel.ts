@@ -11,27 +11,28 @@ import {
   type WeaponType,
 } from "../../../shared/protocol-types";
 import { attachItemTooltip } from "./ItemTooltip";
+import { iconEl, iconSvg } from "./icons";
 
 const RARITY_HEX: Record<ItemRarity, string> = { common: "#9e9e9e", rare: "#42a5f5", epic: "#ab47bc" };
 // Driven off the shared slot list rather than a copy, so the next slot to be
 // added shows up here without anyone remembering to add it.
 const SLOT_ICON: Record<ItemSlot, string> = {
-  weapon: "⚔️",
-  helm: "⛑️",
-  armor: "🛡️",
-  cape: "🧣",
-  boots: "👢",
-  ring: "💍",
+  weapon: "slot-weapon",
+  helm: "slot-helm",
+  armor: "slot-armor",
+  cape: "slot-cape",
+  boots: "slot-boots",
+  ring: "slot-ring",
 };
 const ATTRS: AttributeName[] = ["strength", "agility", "vitality", "intelligence"];
 // Deliberately a figure rather than a weapon: the weapon name is written
 // directly underneath, and repeating it as the portrait wastes the one place
 // in the window that could show WHO you are rather than what you carry.
 const CLASS_ART: Record<string, string> = {
-  adventurer: "🧍",
-  warrior: "🤺",
-  ranger: "🏇",
-  mage: "🧙",
+  adventurer: "class-adventurer",
+  warrior: "class-warrior",
+  ranger: "class-ranger",
+  mage: "class-mage",
 };
 
 export interface CharacterStats {
@@ -151,7 +152,7 @@ export class CharacterPanel {
     this.weapon = weapon;
     const cls = classForWeapon(weapon);
     this.classEl.textContent = cls.charAt(0).toUpperCase() + cls.slice(1);
-    this.dollArt.textContent = CLASS_ART[cls] ?? "🧍";
+    this.dollArt.innerHTML = iconSvg(CLASS_ART[cls] ?? "class-adventurer", "icon");
     this.dollWeapon.textContent = weapon ? WEAPONS[weapon].name : "Unarmed";
     this.dollProf.textContent =
       proficiency === null
@@ -174,7 +175,7 @@ export class CharacterPanel {
         el.classList.remove("filled");
         const ghost = document.createElement("span");
         ghost.className = "gear-empty";
-        ghost.textContent = SLOT_ICON[slot];
+        ghost.innerHTML = iconSvg(SLOT_ICON[slot]);
         el.appendChild(ghost);
         el.title = `${slot} — empty`;
         continue;
@@ -184,11 +185,10 @@ export class CharacterPanel {
       el.style.borderColor = RARITY_HEX[item.rarity];
       el.style.color = RARITY_HEX[item.rarity];
       el.classList.add("filled");
-      const icon = document.createElement("span");
-      icon.textContent = item.slot === "weapon" && item.weaponType
-        ? WEAPONS[item.weaponType].icon
-        : SLOT_ICON[slot];
-      el.appendChild(icon);
+      const icon = iconEl(
+        item.slot === "weapon" && item.weaponType ? WEAPONS[item.weaponType].icon : SLOT_ICON[slot],
+      );
+      if (icon) el.appendChild(icon);
       const lvl = document.createElement("span");
       lvl.className = "gear-lvl";
       lvl.textContent = String(item.statValue);

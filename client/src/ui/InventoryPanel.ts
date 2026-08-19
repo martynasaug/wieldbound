@@ -13,17 +13,18 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { attachItemTooltip, attachMaterialTooltip } from "./ItemTooltip";
+import { iconEl, iconSvg } from "./icons";
 
 const SLOT_ICON: Record<ItemSlot, string> = {
-  weapon: "⚔️",
-  helm: "⛑️",
-  armor: "🛡️",
-  cape: "🧣",
-  boots: "👢",
-  ring: "💍",
+  weapon: "slot-weapon",
+  helm: "slot-helm",
+  armor: "slot-armor",
+  cape: "slot-cape",
+  boots: "slot-boots",
+  ring: "slot-ring",
 };
 const RARITY_HEX: Record<ItemRarity, string> = { common: "#9e9e9e", rare: "#42a5f5", epic: "#ab47bc" };
-const MATERIAL_ICON: Record<GatherableResource, string> = { wood: "🪵", ore: "🪨", herb: "🌿" };
+const MATERIAL_ICON: Record<GatherableResource, string> = { wood: "wood", ore: "ore", herb: "herb" };
 const MATERIAL_LABEL: Record<GatherableResource, string> = { wood: "Wood", ore: "Ore", herb: "Herb" };
 const MATERIALS: GatherableResource[] = ["wood", "ore", "herb"];
 
@@ -138,11 +139,14 @@ export class InventoryPanel {
       }
       cell.classList.add("filled");
       cell.style.borderColor = RARITY_HEX[item.rarity];
+      // The icon takes the same colour through currentColor, so one assignment
+      // rarity-tints the border and the glyph together.
+      cell.style.color = RARITY_HEX[item.rarity];
 
-      const icon = document.createElement("span");
-      icon.textContent =
-        item.slot === "weapon" && item.weaponType ? WEAPONS[item.weaponType].icon : SLOT_ICON[item.slot];
-      cell.appendChild(icon);
+      const icon = iconEl(
+        item.slot === "weapon" && item.weaponType ? WEAPONS[item.weaponType].icon : SLOT_ICON[item.slot],
+      );
+      if (icon) cell.appendChild(icon);
 
       const qty = document.createElement("span");
       qty.className = "bag-qty";
@@ -155,7 +159,7 @@ export class InventoryPanel {
       // shares a gesture with equipping: its own button, its own price on it.
       const sell = document.createElement("button");
       sell.className = "bag-sell";
-      sell.textContent = `${sellValueFor(item.rarity)}🪵`;
+      sell.innerHTML = `${sellValueFor(item.rarity)}${iconSvg("wood", "icon inline")}`;
       sell.title = `Sell for ${sellValueFor(item.rarity)} wood`;
       sell.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -174,19 +178,19 @@ export class InventoryPanel {
     for (const resource of MATERIALS) {
       const el = document.createElement("div");
       el.className = "cur";
-      el.innerHTML = `<span class="cur-icon">${MATERIAL_ICON[resource]}</span>${this.materials[resource]}`;
+      el.innerHTML = `<span class="cur-icon">${iconSvg(MATERIAL_ICON[resource])}</span>${this.materials[resource]}`;
       attachMaterialTooltip(el, MATERIAL_LABEL[resource], this.materials[resource]);
       this.materialsEl.appendChild(el);
     }
 
     this.consumablesEl.innerHTML = "";
     this.consumablesEl.appendChild(
-      this.useButton("🧪", this.potions, `Health Potion — heals ${POTION_HEAL_AMOUNT} HP.`, () =>
+      this.useButton("potion", this.potions, `Health Potion — heals ${POTION_HEAL_AMOUNT} HP.`, () =>
         this.onUsePotion(),
       ),
     );
     this.consumablesEl.appendChild(
-      this.useButton("📜", this.tonics, `XP Tonic — grants ${TONIC_XP_AMOUNT} XP.`, () =>
+      this.useButton("tonic", this.tonics, `XP Tonic — grants ${TONIC_XP_AMOUNT} XP.`, () =>
         this.onUseTonic(),
       ),
     );
@@ -195,7 +199,7 @@ export class InventoryPanel {
   private useButton(icon: string, count: number, title: string, onUse: () => void): HTMLElement {
     const button = document.createElement("button");
     button.className = "use-btn";
-    button.innerHTML = `<span>${icon}</span><b>${count}</b>`;
+    button.innerHTML = `<span class="use-icon">${iconSvg(icon)}</span><b>${count}</b>`;
     button.title = count > 0 ? `${title} Click to use.` : `${title} You have none.`;
     button.disabled = count <= 0;
     button.addEventListener("click", onUse);

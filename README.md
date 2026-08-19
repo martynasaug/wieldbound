@@ -60,6 +60,30 @@ first run at `server/data/wieldbound.db`.
   arrive, a staff throws a bolt, a wand fires a beam, and an axe lands heavier
   and later than a dagger. Bare hands are a real (weak) archetype rather than
   a broken state.
+- **A world with ground in it** — a tiled PBR surface that mixes grass into
+  dirt under one noise field and drifts its colour under another, so the tiling
+  has no findable period, scattered with 4,800 instanced plants. None of that
+  scatter is a tree, a boulder or a bush, because those three are the things you
+  can harvest and scenery must never look interactive.
+- **A minimap you can actually set up** — top right, showing resource nodes by
+  kind, monsters with the one you are fighting ringed, other players, the
+  workbench and the world boundary. Circle or square, four sizes, zoom by wheel
+  or button, rotate-with-facing, and a toggle for every layer — all of it
+  remembered. It tells the window rail how tall it is, so the two never collide.
+- **Nameplates with a hierarchy** — an ordinary monster is bare text and a health
+  bar, a boss gets a framed plate, a resource node is a small dim pill and the
+  workbench is a gold banner. Names are coloured by the monster's difficulty
+  band, the bar keeps a pale ghost so you can see the size of a hit rather than
+  just the result, a telegraphed attack winds up on the plate itself, and
+  everything scales and sorts by distance so a crowded camp still has depth.
+- **A day that passes** — 24 real minutes end to end, graded through eight
+  keyframes from midnight to dusk, with a star dome and a clock on your unit
+  frame. The hour is derived from wall-clock time in `shared/`, so every client
+  sees the same sky without the server sending anything.
+- **A shape per skill** — a nova rings outward, a poison pool lingers, a cleave
+  sweeps a wedge, a heal throws light up from the feet, arrows fall as a volley
+  and chain lightning hops target to target. Real geometry, sized from each
+  skill's own radius and range rather than from a constant beside it.
 - **13 monster kinds** in five difficulty bands radiating from spawn, so
   walking further from the workbench *is* the progression. Each kind has a
   verb rather than a bigger stat line — one bursts on death, one outruns you,
@@ -67,7 +91,10 @@ first run at `server/data/wieldbound.db`.
   chip damage.
 - **MMO-style windows** — the dock sits on the right and its panels open there
   too, laid out side by side so the bag and the character sheet can be open at
-  once without covering each other or the world.
+  once without covering each other or the world. Every icon in the interface is
+  a real drawing rather than an emoji, and the mouse wheel zooms the camera
+  between a close view that shows your armour and a wide one that shows the
+  camp you are walking into.
 - **An action bar you own** — ten slots, and only you change them: drag a
   learned skill out of the talent panel, drag slots to reorder, right-click to
   clear, click a key label to rebind. Saved per weapon, because the skills are.
@@ -95,12 +122,14 @@ client/   Three.js + Vite + TypeScript
   src/three/   the renderer: Game (orchestrator), World (scene/terrain/camera),
                Actor (animated model), gear (bodies, weapons, armour),
                attacks (per-weapon delivery + projectiles),
+               terrain (the ground shader), scatter (instanced ground cover),
+               daynight (the hour), skillfx (a shape per skill),
                effects, indicators, hud, sfx, assets
   preview/     dev-only contact sheet of every body, weapon, style and rarity,
                at http://localhost:5173/preview/ — not part of the game bundle
   src/ui/      DOM panels — bag, character paperdoll, workbench, talent tree,
-               leaderboard, combat log, target frame, action bar.
-               Renderer-agnostic.
+               leaderboard, combat log, target frame, action bar, minimap,
+               icons (120 baked single-path glyphs). Renderer-agnostic.
   src/net/     socket.ts — renderer-agnostic too
 server/   Node + ws + node:sqlite
 shared/   protocol-types.ts — message shapes AND the game's formulas,
@@ -116,6 +145,23 @@ combat with.
 and a decisions log explaining the non-obvious calls.
 
 ## Art and audio
+
+Interface icons are 120 single-path glyphs from
+[game-icons.net](https://game-icons.net) (CC BY 3.0), baked into
+`client/src/ui/icons.ts` by `tools/art/icons.mjs` and credited in
+[`client/public/assets/ICON_CREDITS.txt`](client/public/assets/ICON_CREDITS.txt).
+They carry no fill of their own, so every one of them takes `currentColor` from
+whatever is drawing it — which is how a bag slot tints its item's icon by rarity
+with the same assignment that colours its border. Re-run the generator to change
+the set; it validates every name against the real icon index before it writes.
+
+The workbench's smithy — anvil, bench, weapon stand, barrel, crate, whetstone —
+is Quaternius's CC0 "Fantasy Props MegaKit".
+
+Ground textures are CC0 from [Poly Haven](https://polyhaven.com), fetched by
+`tools/art/terrain.mjs`. The nature kit — trees, boulders, bushes and every
+plant in the ground cover — is Quaternius's CC0 "Stylized Nature MegaKit",
+downscaled by `tools/art/shrink_nature_textures.ps1`.
 
 3D models are CC0 (Quaternius) — see
 [`client/public/models/ASSET_CREDITS.txt`](client/public/models/ASSET_CREDITS.txt).
@@ -139,7 +185,9 @@ The renderer was rewritten from Phaser to Three.js in Phase 47. Milestones M1
 effects, sound, UI), M3 (gear and class on the character), M3.5 (bodies
 collide, no ice-skating), M3.6 (targeting and skill freedom), M3.7 (each weapon
 family fights like itself), M3.8 (the default attack as a real action) and M3.9
-(a talent tree per weapon), M3.10 (a real RPG interface) and M3.11 (MMO-style
-window rail) are done. **M4 —
-skill VFX, day/night and polish** — is next. See [`PLAN.md`](PLAN.md) for the
-full picture.
+(a talent tree per weapon), M3.10 (a real RPG interface), M3.11 (MMO-style
+window rail), M4.1 (real icons, and a camera you can zoom), M4.2 (a world with
+ground in it), M4.3 (a day/night cycle), M4.4 (a shape per skill), M4.5 (a
+minimap and a real smithy) and M4.6 (nameplates) are done. **M4.7 — remaining
+polish** — is next. See [`PLAN.md`](PLAN.md) for the full
+picture.

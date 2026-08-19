@@ -4,6 +4,9 @@
 import * as THREE from "three";
 import { WORLD_WIDTH, WORLD_HEIGHT } from "../../../shared/protocol-types";
 import { instantiate } from "./assets";
+import { createTerrainMaterial } from "./terrain";
+import { buildGroundCover } from "./scatter";
+import { DayNight } from "./daynight";
 
 // Server positions are in pixels from the 2D game; the simulation still runs in
 // that space and every formula in shared/ is written against it. Rendering
@@ -47,15 +50,61 @@ export function terrainHeight(x: number, z: number): number {
   return h * ease;
 }
 
+// How close and how far the camera may sit from the player.
+//
+// The default came down from 14.5: at that distance a player stands about fifty
+// pixels tall, which is why the armour and weapon work of M3 was barely legible
+// in play even though the models carry the detail. Close enough now to read
+// gear, far enough to still see a telegraph land beside you — and the wheel
+// covers the rest.
+export const CAMERA_MIN_DISTANCE = 5;
+export const CAMERA_MAX_DISTANCE = 22;
+export const CAMERA_DEFAULT_DISTANCE = 9;
+
+const CAMERA_STORAGE_KEY = "wieldbound.cameraDistance";
+
+function loadCameraDistance(): number {
+  try {
+    const raw = Number(localStorage.getItem(CAMERA_STORAGE_KEY));
+    if (Number.isFinite(raw) && raw > 0) {
+      return Math.max(CAMERA_MIN_DISTANCE, Math.min(CAMERA_MAX_DISTANCE, raw));
+    }
+  } catch {
+    // Private-browsing modes throw on storage access; the default is fine.
+  }
+  return CAMERA_DEFAULT_DISTANCE;
+}
+
+function saveCameraDistance(distance: number): void {
+  try {
+    localStorage.setItem(CAMERA_STORAGE_KEY, String(distance));
+  } catch {
+    // Failing to remember the zoom is not worth breaking a frame over.
+  }
+}
+
 export class World {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
   /** Scenery outside the play area. Held separately so it can be faded when it hides the player. */
   readonly decor = new THREE.Group();
+  /** Instanced ground cover inside the play area. Never faded, never interactive. */
+  readonly groundCover = new THREE.Group();
 
   private readonly sun: THREE.DirectionalLight;
-  private readonly cameraOffset = new THREE.Vector3(0, 9.5, 11);
+  private readonly fill: THREE.HemisphereLight;
+  /** The hour, and everything it changes: sun angle, colour, sky, fog, stars. */
+  readonly dayNight = new DayNight();
+  // The camera looks along a fixed direction and only its DISTANCE changes, so
+  // zooming never alters the pitch the game is composed for — a view that
+  // flattened toward top-down as it pulled back would change what a telegraph
+  // circle and a body's footprint look like, and those are things the player
+  // reads positionally.
+  private readonly cameraDir = new THREE.Vector3(0, 9.5, 11).normalize();
+  /** Eased toward targetDistance, so a wheel notch glides rather than jumps. */
+  private distance = loadCameraDistance();
+  private targetDistance = this.distance;
   private readonly lookTarget = new THREE.Vector3();
   private readonly desiredLook = new THREE.Vector3();
 
@@ -71,12 +120,14 @@ export class World {
     container.appendChild(this.renderer.domElement);
 
     this.camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 400);
-    this.camera.position.copy(this.cameraOffset);
+    this.camera.position.copy(this.cameraDir).multiplyScalar(this.distance);
 
     this.scene.background = new THREE.Color(0x9fb8cf);
     this.scene.fog = new THREE.Fog(0x9fb8cf, 40, 110);
 
-    this.scene.add(new THREE.HemisphereLight(0xbcd7ff, 0x4a5233, 0.8));
+    this.fill = new THREE.HemisphereLight(0xbcd7ff, 0x4a5233, 0.8);
+    this.scene.add(this.fill);
+    this.scene.add(this.dayNight.stars);
 
     this.sun = new THREE.DirectionalLight(0xffe9c4, 2.0);
     this.sun.castShadow = true;
@@ -108,10 +159,7 @@ export class World {
     }
     geo.computeVertexNormals();
 
-    const ground = new THREE.Mesh(
-      geo,
-      new THREE.MeshStandardMaterial({ color: 0x6f9440, roughness: 0.97, metalness: 0 }),
-    );
+    const ground = new THREE.Mesh(geo, createTerrainMaterial(span));
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
@@ -123,7 +171,20 @@ export class World {
    * bounds where it could be confused with a resource node.
    */
   async buildDecor(): Promise<void> {
-    const treeModels = ["Tree_1", "Tree_2", "Tree_3", "Pine_1", "Pine_2", "Pine_3", "Birch_1", "Birch_2", "DeadTree_1"];
+    // All from the same kit as the ground cover. Mixing these with the older
+    // tree pack put two different stylisations of "tree" in one frame, which
+    // reads as a mistake even when neither is bad on its own.
+    const treeModels = [
+      "nature/CommonTree_1.gltf", "nature/CommonTree_2.gltf", "nature/CommonTree_3.gltf",
+      "nature/CommonTree_4.gltf", "nature/CommonTree_5.gltf",
+      "nature/Pine_1.gltf", "nature/Pine_2.gltf", "nature/Pine_3.gltf",
+      "nature/Pine_4.gltf", "nature/Pine_5.gltf",
+      "nature/TwistedTree_1.gltf", "nature/TwistedTree_2.gltf", "nature/TwistedTree_3.gltf",
+      "nature/DeadTree_1.gltf", "nature/DeadTree_2.gltf", "nature/DeadTree_3.gltf",
+      // The red-leaved bush, which is too autumnal to pass as a herb bush but
+      // breaks up the treeline nicely.
+      "nature/Bush_Common.gltf",
+    ];
     const protos = await Promise.all(
       treeModels.map((m) => instantiate(m, 1).catch(() => null)),
     );
@@ -161,6 +222,41 @@ export class World {
       border.add(tree);
     }
     this.scene.add(border);
+
+    // Ground cover fills the INSIDE, where the treeline deliberately never
+    // goes. Added to its own group rather than to `decor`, because decor is
+    // faded when it stands between the camera and the player and ankle-height
+    // plants never can.
+    const cover = await buildGroundCover(this.groundCover, {
+      halfWidth: PLAY_HALF_W,
+      halfHeight: PLAY_HALF_H,
+    });
+    this.scene.add(this.groundCover);
+    console.info(
+      `[world] ground cover: ${cover.instances} plants, ${cover.drawCalls} instanced meshes ` +
+        `across ${cover.chunks} chunks (only the chunks in view are drawn)`,
+    );
+  }
+
+  /**
+   * One wheel notch in or out.
+   *
+   * Clamped rather than free: past the near end the camera ends up inside the
+   * character, and past the far end the fog the scene is lit with starts eating
+   * the world. The choice is remembered, because how close someone likes to
+   * play is a preference rather than a per-session accident.
+   */
+  zoomBy(notches: number): void {
+    // Multiplicative, so a notch feels the same size at every distance. A fixed
+    // step is imperceptible when far out and violent when close in.
+    const next = this.targetDistance * Math.pow(1.12, notches);
+    this.targetDistance = Math.max(CAMERA_MIN_DISTANCE, Math.min(CAMERA_MAX_DISTANCE, next));
+    saveCameraDistance(this.targetDistance);
+  }
+
+  /** How far the camera sits from the player right now. Read by the tests. */
+  get cameraDistance(): number {
+    return this.distance;
   }
 
   /** Keeps the camera and the shadow frustum trailing the player. */
@@ -169,18 +265,43 @@ export class World {
     const ease = Math.min(1, dtSeconds * 8);
     this.lookTarget.lerp(this.desiredLook, ease);
 
+    // Zoom eases on the same clock as the follow, which is why it is applied
+    // here rather than in the wheel handler.
+    this.distance += (this.targetDistance - this.distance) * Math.min(1, dtSeconds * 9);
+
     this.camera.position.set(
-      this.lookTarget.x + this.cameraOffset.x,
-      this.lookTarget.y + this.cameraOffset.y,
-      this.lookTarget.z + this.cameraOffset.z,
+      this.lookTarget.x + this.cameraDir.x * this.distance,
+      this.lookTarget.y + this.cameraDir.y * this.distance,
+      this.lookTarget.z + this.cameraDir.z * this.distance,
     );
     this.camera.lookAt(this.lookTarget);
 
     // A world-sized shadow map would be uselessly coarse, so the sun rides
     // along and only ever covers what is on screen.
-    this.sun.position.set(this.lookTarget.x + 14, 24, this.lookTarget.z + 10);
+    // The shadow map covers what the camera can see and no more. Pinned to the
+    // old wide framing it spent most of its resolution on ground that was off
+    // screen, which is a large part of why armour read as a soft blob up close.
+    const extent = Math.max(11, Math.min(34, this.distance * 1.85));
+    this.sun.shadow.camera.left = -extent;
+    this.sun.shadow.camera.right = extent;
+    this.sun.shadow.camera.top = extent;
+    this.sun.shadow.camera.bottom = -extent;
+    this.sun.shadow.camera.updateProjectionMatrix();
+    // The light's DIRECTION is the hour's; only its distance is ours. It has to
+    // stay far enough out that the shadow frustum's near plane clears anything
+    // tall standing beside the player.
+    const dir = this.dayNight.lightDirection;
+    this.sun.position.set(
+      this.lookTarget.x + dir.x * 42,
+      dir.y * 42,
+      this.lookTarget.z + dir.z * 42,
+    );
     this.sun.target.position.set(this.lookTarget.x, 0, this.lookTarget.z);
     this.sun.target.updateMatrixWorld();
+
+    // The star dome is centred on the viewer, which is what makes it read as
+    // sky: a fixed dome would visibly slide as the player crossed the field.
+    this.dayNight.stars.position.set(this.lookTarget.x, 0, this.lookTarget.z);
   }
 
   /**
@@ -208,6 +329,12 @@ export class World {
       x: (v.x * 0.5 + 0.5) * window.innerWidth,
       y: (-v.y * 0.5 + 0.5) * window.innerHeight,
     };
+  }
+
+  /** Applies the hour to the scene. Called once a frame, before render. */
+  updateDayNight(): { name: string; clock: number } {
+    const phase = this.dayNight.update(this.scene, this.renderer, this.sun, this.fill);
+    return { name: phase.name, clock: this.dayNight.clock };
   }
 
   render(): void {

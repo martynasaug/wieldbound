@@ -20,6 +20,55 @@ export const GATHER_DURATION_MS = 3000;
 export const GATHER_LEVEL_STEP_MS = 400;
 export const GATHER_DURATION_FLOOR_MS = 500;
 
+// --- The clock ------------------------------------------------------------
+// The world has a time of day, and it is DERIVED rather than sent.
+//
+// Nothing about the cycle needs to be authoritative — it drives light and
+// colour, not damage — so a message carrying it would be a message that can be
+// missed, arrive late, or drift between two clients watching the same field.
+// Computing it from wall-clock time instead means every client agrees by
+// construction, exactly as every combat formula in this file does, and the
+// protocol did not have to grow a field. It lives here rather than in the
+// client because the server will want it the moment anything is nocturnal.
+//
+// Twenty-four real minutes to the day, so one game hour is one real minute:
+// long enough that noon is a state you play in rather than a moment you catch,
+// short enough to see a sunset without arranging your evening around it.
+export const DAY_LENGTH_MS = 24 * 60 * 1000;
+
+/** 0 at midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset. Always in [0, 1). */
+export function timeOfDay(nowMs: number = Date.now()): number {
+  const t = (nowMs % DAY_LENGTH_MS) / DAY_LENGTH_MS;
+  return t < 0 ? t + 1 : t;
+}
+
+/** The same clock as a 0..24 hour, for anything that wants to say the time. */
+export function gameHour(nowMs: number = Date.now()): number {
+  return timeOfDay(nowMs) * 24;
+}
+
+/** Formatted as HH:MM, for the interface. */
+export function gameClock(nowMs: number = Date.now()): string {
+  const hour = gameHour(nowMs);
+  const h = Math.floor(hour);
+  const m = Math.floor((hour - h) * 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/**
+ * How high the sun stands, -1 (midnight) to 1 (noon). Zero is the horizon, so
+ * the sign of this is exactly "is it daytime" and both the lighting and any
+ * future night-time rule can read the same number.
+ */
+export function sunElevation(nowMs: number = Date.now()): number {
+  return Math.sin((timeOfDay(nowMs) - 0.25) * Math.PI * 2);
+}
+
+/** True while the sun is above the horizon. */
+export function isDaytime(nowMs: number = Date.now()): boolean {
+  return sunElevation(nowMs) > 0;
+}
+
 // --- Classes --------------------------------------------------------------
 // CLASS IS NOT CHOSEN — IT IS WORN.
 //
@@ -61,7 +110,7 @@ export const CLASSES: Record<CharacterClass, ClassDef> = {
   adventurer: {
     id: "adventurer",
     name: "Adventurer",
-    icon: "✊",
+    icon: "class-adventurer",
     blurb: "Bare hands. Pick up a weapon and you become something.",
     primaryStat: "strength",
     attackRangePx: 54,
@@ -71,7 +120,7 @@ export const CLASSES: Record<CharacterClass, ClassDef> = {
   warrior: {
     id: "warrior",
     name: "Warrior",
-    icon: "🗡️",
+    icon: "class-warrior",
     blurb: "Swords, axes and maces. Highest health, has to be in the thick of it.",
     primaryStat: "strength",
     attackRangePx: 62,
@@ -81,7 +130,7 @@ export const CLASSES: Record<CharacterClass, ClassDef> = {
   ranger: {
     id: "ranger",
     name: "Ranger",
-    icon: "🏹",
+    icon: "class-ranger",
     blurb: "Bows and daggers. Strikes from far outside anything's reach.",
     primaryStat: "agility",
     attackRangePx: 300,
@@ -91,7 +140,7 @@ export const CLASSES: Record<CharacterClass, ClassDef> = {
   mage: {
     id: "mage",
     name: "Mage",
-    icon: "🪄",
+    icon: "class-mage",
     blurb: "Staves and wands. Frail, but the widest and loudest spell book.",
     primaryStat: "intelligence",
     attackRangePx: 250,
@@ -123,14 +172,14 @@ export interface WeaponDef {
 }
 
 export const WEAPONS: Record<WeaponType, WeaponDef> = {
-  fist: { type: "fist", name: "Fists", icon: "✊", classId: "adventurer", rangeMultiplier: 1, speedMultiplier: 0.8, damageMultiplier: 0.6 },
-  sword: { type: "sword", name: "Sword", icon: "🗡️", classId: "warrior", rangeMultiplier: 1, speedMultiplier: 1, damageMultiplier: 1 },
-  axe: { type: "axe", name: "Axe", icon: "🪓", classId: "warrior", rangeMultiplier: 1.05, speedMultiplier: 1.35, damageMultiplier: 1.45 },
-  mace: { type: "mace", name: "Mace", icon: "🔨", classId: "warrior", rangeMultiplier: 0.95, speedMultiplier: 1.2, damageMultiplier: 1.25 },
-  dagger: { type: "dagger", name: "Dagger", icon: "🔪", classId: "ranger", rangeMultiplier: 0.2, speedMultiplier: 0.6, damageMultiplier: 0.7 },
-  bow: { type: "bow", name: "Bow", icon: "🏹", classId: "ranger", rangeMultiplier: 1, speedMultiplier: 1, damageMultiplier: 1 },
-  staff: { type: "staff", name: "Staff", icon: "🪄", classId: "mage", rangeMultiplier: 1, speedMultiplier: 1, damageMultiplier: 1 },
-  wand: { type: "wand", name: "Wand", icon: "✨", classId: "mage", rangeMultiplier: 0.8, speedMultiplier: 0.7, damageMultiplier: 0.75 },
+  fist: { type: "fist", name: "Fists", icon: "fist", classId: "adventurer", rangeMultiplier: 1, speedMultiplier: 0.8, damageMultiplier: 0.6 },
+  sword: { type: "sword", name: "Sword", icon: "sword", classId: "warrior", rangeMultiplier: 1, speedMultiplier: 1, damageMultiplier: 1 },
+  axe: { type: "axe", name: "Axe", icon: "axe", classId: "warrior", rangeMultiplier: 1.05, speedMultiplier: 1.35, damageMultiplier: 1.45 },
+  mace: { type: "mace", name: "Mace", icon: "mace", classId: "warrior", rangeMultiplier: 0.95, speedMultiplier: 1.2, damageMultiplier: 1.25 },
+  dagger: { type: "dagger", name: "Dagger", icon: "dagger", classId: "ranger", rangeMultiplier: 0.2, speedMultiplier: 0.6, damageMultiplier: 0.7 },
+  bow: { type: "bow", name: "Bow", icon: "bow", classId: "ranger", rangeMultiplier: 1, speedMultiplier: 1, damageMultiplier: 1 },
+  staff: { type: "staff", name: "Staff", icon: "staff", classId: "mage", rangeMultiplier: 1, speedMultiplier: 1, damageMultiplier: 1 },
+  wand: { type: "wand", name: "Wand", icon: "wand", classId: "mage", rangeMultiplier: 0.8, speedMultiplier: 0.7, damageMultiplier: 0.75 },
 };
 
 export const WEAPON_TYPES: WeaponType[] = ["sword", "axe", "mace", "dagger", "bow", "staff", "wand"];
@@ -153,14 +202,14 @@ export interface DefaultAttackDef {
 }
 
 export const DEFAULT_ATTACKS: Record<WeaponType, DefaultAttackDef> = {
-  fist: { name: "Jab", icon: "👊", description: "A bare-knuckle jab. Fast, and worth very little." },
-  sword: { name: "Slash", icon: "⚔️", description: "A balanced cut. The measure every other weapon is tuned against." },
-  axe: { name: "Hew", icon: "🪓", description: "One heavy chop. Slow to land, and it hurts." },
-  mace: { name: "Crush", icon: "🔨", description: "A blunt swing that lands with weight behind it." },
-  dagger: { name: "Stab", icon: "🔪", description: "A quick thrust. Little reach, but you get several in." },
-  bow: { name: "Shoot", icon: "🏹", description: "Looses an arrow. It takes time to arrive." },
-  staff: { name: "Arcane Blast", icon: "🔷", description: "Hurls a bolt of raw force at your target." },
-  wand: { name: "Zap", icon: "✨", description: "A thin beam, there and gone. Quick and light." },
+  fist: { name: "Jab", icon: "attack-jab", description: "A bare-knuckle jab. Fast, and worth very little." },
+  sword: { name: "Slash", icon: "attack-slash", description: "A balanced cut. The measure every other weapon is tuned against." },
+  axe: { name: "Hew", icon: "attack-hew", description: "One heavy chop. Slow to land, and it hurts." },
+  mace: { name: "Crush", icon: "attack-crush", description: "A blunt swing that lands with weight behind it." },
+  dagger: { name: "Stab", icon: "attack-stab", description: "A quick thrust. Little reach, but you get several in." },
+  bow: { name: "Shoot", icon: "attack-shoot", description: "Looses an arrow. It takes time to arrive." },
+  staff: { name: "Arcane Blast", icon: "attack-arcaneblast", description: "Hurls a bolt of raw force at your target." },
+  wand: { name: "Zap", icon: "attack-zap", description: "A thin beam, there and gone. Quick and light." },
 };
 
 export function defaultAttackFor(weaponType: WeaponType | undefined | null): DefaultAttackDef {
@@ -627,6 +676,16 @@ export type MonsterKind =
   | "dragon";
 
 export interface MonsterStats {
+  /**
+   * Which difficulty ring this kind belongs to, 1 (clearable at level 1) to 5
+   * (the far corners).
+   *
+   * This was only ever a comment above the `MonsterKind` union, which meant the
+   * one fact that decides where a monster is placed and how dangerous it is
+   * could not be read by anything. Nameplates colour by it, so a player can see
+   * what they are walking into before it is on top of them.
+   */
+  band: 1 | 2 | 3 | 4 | 5;
   maxHp: number;
   minHit: number;
   maxHit: number;
@@ -682,6 +741,7 @@ export interface MonsterStats {
 
 export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   slime: {
+    band: 1,
     maxHp: 15,
     minHit: 1,
     maxHit: 3,
@@ -704,6 +764,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     deathBurstDamage: 6,
   },
   goblin: {
+    band: 2,
     maxHp: 35,
     minHit: 3,
     maxHit: 7,
@@ -728,6 +789,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   // high for its tier. A "death by a thousand cuts" pack fight instead of
   // a slow tank-and-spank, contrasting with the troll's opposite profile.
   wolf: {
+    band: 3,
     maxHp: 22,
     minHit: 1,
     maxHit: 4,
@@ -752,6 +814,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     leapCooldownMs: 7000,
   },
   troll: {
+    band: 4,
     maxHp: 150,
     minHit: 8,
     maxHit: 16,
@@ -780,6 +843,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   // Slower and meatier than a slime but with no trick at all — the kind you
   // learn the attack rhythm on.
   mushnub: {
+    band: 1,
     maxHp: 22,
     minHit: 2,
     maxHit: 4,
@@ -802,6 +866,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   // The slime's lesson taken seriously: a much bigger death burst, so clearing
   // a cluster with AoE while standing in it genuinely hurts.
   spikyblob: {
+    band: 2,
     maxHp: 30,
     minHit: 3,
     maxHit: 5,
@@ -824,6 +889,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   // Faster than the player and it leaps, but folds immediately once caught.
   // The answer is Frost Nova or a wall, not out-running it.
   armabee: {
+    band: 2,
     maxHp: 26,
     minHit: 3,
     maxHit: 6,
@@ -849,6 +915,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   // ---------------------------------------------------------------- band 3
   // Armoured enough that low hit-bands scrape off it, and it bursts on death.
   cactoro: {
+    band: 3,
     maxHp: 60,
     minHit: 5,
     maxHit: 9,
@@ -871,6 +938,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   // The goblin's shout, with a much wider radius and a body behind it. Pulling
   // one carelessly brings a camp that can actually kill you.
   orcbrute: {
+    band: 3,
     maxHp: 90,
     minHit: 7,
     maxHit: 12,
@@ -894,6 +962,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   // Answers accuracy rather than damage: 38 evasion means a low-Agility build
   // simply cannot land on it, whatever its gear says.
   ghost: {
+    band: 4,
     maxHp: 45,
     minHit: 6,
     maxHit: 10,
@@ -913,6 +982,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   },
   // The troll's damage without the tell — fast, hard-hitting and it crits.
   demon: {
+    band: 4,
     maxHp: 130,
     minHit: 10,
     maxHit: 16,
@@ -935,6 +1005,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   // Armour 14 is the point: it subtracts from every hit, so chip damage does
   // nothing and you need a real weapon rather than a fast one.
   golem: {
+    band: 5,
     maxHp: 240,
     minHit: 11,
     maxHit: 19,
@@ -958,6 +1029,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   // The apex: it telegraphs AND closes the gap, so neither standing still nor
   // running is a whole answer on its own.
   dragon: {
+    band: 5,
     maxHp: 340,
     minHit: 15,
     maxHit: 25,
@@ -1094,92 +1166,92 @@ export interface SkillDef {
 export const SKILLS: Record<SkillId, SkillDef> = {
   // ------------------------------------------------------------ adventurer
   haymaker: {
-    id: "haymaker", name: "Haymaker", icon: "✊", kind: "damage",
+    id: "haymaker", name: "Haymaker", icon: "haymaker", kind: "damage",
     manaCost: 0, cooldownMs: 6000, rangePx: 58, radiusPx: 0, power: 5,
     effect: "impact", sfx: "hit",
     description: "A wild swing. Free, because you have nothing better.",
   },
   // ---------------------------------------------------------------- warrior
   cleave: {
-    id: "cleave", name: "Cleave", icon: "🗡️", kind: "damage",
+    id: "cleave", name: "Cleave", icon: "cleave", kind: "damage",
     manaCost: 8, cooldownMs: 5000, rangePx: 0, radiusPx: 95, power: 7,
     effect: "slash", sfx: "crit", description: "Sweep every enemy around you.",
   },
   charge: {
-    id: "charge", name: "Charge", icon: "💨", kind: "mobility",
+    id: "charge", name: "Charge", icon: "charge", kind: "mobility",
     manaCost: 10, cooldownMs: 6000, rangePx: 0, radiusPx: 0, power: 180,
     effect: "quake", sfx: "swing", description: "Barrel forward, closing the gap.",
   },
   warcry: {
-    id: "warcry", name: "War Cry", icon: "⚡", kind: "buff",
+    id: "warcry", name: "War Cry", icon: "warcry", kind: "buff",
     manaCost: 14, cooldownMs: 18000, rangePx: 260, radiusPx: 0, power: 0,
     effect: "buff", sfx: "levelup", description: "Strike harder for a while. Targets an ally if you have one selected.",
   },
   shieldwall: {
-    id: "shieldwall", name: "Shield Wall", icon: "🔰", kind: "buff",
+    id: "shieldwall", name: "Shield Wall", icon: "shieldwall", kind: "buff",
     manaCost: 16, cooldownMs: 22000, rangePx: 0, radiusPx: 0, power: 0,
     effect: "shield", sfx: "hit", description: "Brace. Halves incoming damage briefly.",
     selfShieldMs: true,
   },
   earthshatter: {
-    id: "earthshatter", name: "Earthshatter", icon: "🪨", kind: "damage",
+    id: "earthshatter", name: "Earthshatter", icon: "earthshatter", kind: "damage",
     manaCost: 26, cooldownMs: 14000, rangePx: 0, radiusPx: 150, power: 20,
     effect: "quake", sfx: "die", description: "Split the ground. Heavy damage all around you.",
   },
 
   // ----------------------------------------------------------------- ranger
   powershot: {
-    id: "powershot", name: "Power Shot", icon: "🏹", kind: "damage",
+    id: "powershot", name: "Power Shot", icon: "powershot", kind: "damage",
     manaCost: 8, cooldownMs: 4000, rangePx: 340, radiusPx: 0, power: 12,
     effect: "arrow", sfx: "swing", description: "A single heavy arrow at long range.",
   },
   multishot: {
-    id: "multishot", name: "Multishot", icon: "🎯", kind: "damage",
+    id: "multishot", name: "Multishot", icon: "multishot", kind: "damage",
     manaCost: 14, cooldownMs: 7000, rangePx: 300, radiusPx: 0, power: 9,
     effect: "arrow", sfx: "swing", description: "Loose at three enemies at once.",
     chainTargets: 3,
   },
   poisonarrow: {
-    id: "poisonarrow", name: "Poison Arrow", icon: "🧪", kind: "control",
+    id: "poisonarrow", name: "Poison Arrow", icon: "poisonarrow", kind: "control",
     manaCost: 12, cooldownMs: 9000, rangePx: 320, radiusPx: 0, power: 8,
     effect: "poison", sfx: "cast", description: "A venomous shot that slows what it hits.",
     appliesSlow: true,
   },
   disengage: {
-    id: "disengage", name: "Disengage", icon: "🌀", kind: "mobility",
+    id: "disengage", name: "Disengage", icon: "disengage", kind: "mobility",
     manaCost: 10, cooldownMs: 5000, rangePx: 0, radiusPx: 0, power: 200,
     effect: "buff", sfx: "swing", description: "Leap clear, away from whatever is closest.",
   },
   rainofarrows: {
-    id: "rainofarrows", name: "Rain of Arrows", icon: "☔", kind: "damage",
+    id: "rainofarrows", name: "Rain of Arrows", icon: "rainofarrows", kind: "damage",
     manaCost: 28, cooldownMs: 15000, rangePx: 320, radiusPx: 130, power: 16,
     effect: "arrow", sfx: "crit", description: "Blanket the ground around your target.",
   },
 
   // ------------------------------------------------------------------- mage
   arcanebolt: {
-    id: "arcanebolt", name: "Arcane Bolt", icon: "🔮", kind: "damage",
+    id: "arcanebolt", name: "Arcane Bolt", icon: "arcanebolt", kind: "damage",
     manaCost: 6, cooldownMs: 2500, rangePx: 300, radiusPx: 0, power: 10,
     effect: "arcane", sfx: "cast", description: "A quick bolt of raw magic.",
   },
   firebolt: {
-    id: "firebolt", name: "Firebolt", icon: "🔥", kind: "damage",
+    id: "firebolt", name: "Firebolt", icon: "firebolt", kind: "damage",
     manaCost: 14, cooldownMs: 5000, rangePx: 320, radiusPx: 70, power: 15,
     effect: "fire", sfx: "cast", description: "Hurl fire that bursts on impact.",
   },
   frostnova: {
-    id: "frostnova", name: "Frost Nova", icon: "❄️", kind: "control",
+    id: "frostnova", name: "Frost Nova", icon: "frostnova", kind: "control",
     manaCost: 18, cooldownMs: 11000, rangePx: 0, radiusPx: 150, power: 6,
     effect: "frost", sfx: "cast", description: "Chill everything nearby, slowing it so you can break away.",
     appliesSlow: true,
   },
   mend: {
-    id: "mend", name: "Mend", icon: "✨", kind: "heal",
+    id: "mend", name: "Mend", icon: "mend", kind: "heal",
     manaCost: 20, cooldownMs: 12000, rangePx: 260, radiusPx: 0, power: 30,
     effect: "heal", sfx: "heal", description: "Close wounds. Targets an ally if you have one selected.",
   },
   chainlightning: {
-    id: "chainlightning", name: "Chain Lightning", icon: "🌩️", kind: "damage",
+    id: "chainlightning", name: "Chain Lightning", icon: "chainlightning", kind: "damage",
     manaCost: 30, cooldownMs: 13000, rangePx: 320, radiusPx: 0, power: 18,
     effect: "lightning", sfx: "crit", description: "Arcs from target to target, up to four.",
     chainTargets: 4,
@@ -1187,62 +1259,62 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   // --- Added with the talent trees, so two weapons of one archetype play
   // --- differently instead of sharing a single spell list.
   roar: {
-    id: "roar", name: "Roar", icon: "🗣️", kind: "buff",
+    id: "roar", name: "Roar", icon: "roar", kind: "buff",
     manaCost: 0, cooldownMs: 16000, rangePx: 0, radiusPx: 0, power: 0,
     effect: "buff", sfx: "levelup", description: "Nothing but nerve. Hit harder for a while.",
   },
   gutpunch: {
-    id: "gutpunch", name: "Gut Punch", icon: "🥊", kind: "control",
+    id: "gutpunch", name: "Gut Punch", icon: "gutpunch", kind: "control",
     manaCost: 4, cooldownMs: 8000, rangePx: 58, radiusPx: 0, power: 6,
     effect: "impact", sfx: "hit", description: "Wind it. Whatever you hit moves slower.",
     appliesSlow: true,
   },
   riposte: {
-    id: "riposte", name: "Riposte", icon: "🤺", kind: "buff",
+    id: "riposte", name: "Riposte", icon: "riposte", kind: "buff",
     manaCost: 10, cooldownMs: 15000, rangePx: 0, radiusPx: 0, power: 0,
     effect: "slash", sfx: "crit", description: "Read the swing and answer it. Strike harder briefly.",
   },
   rend: {
-    id: "rend", name: "Rend", icon: "🩸", kind: "control",
+    id: "rend", name: "Rend", icon: "rend", kind: "control",
     manaCost: 12, cooldownMs: 9000, rangePx: 64, radiusPx: 0, power: 16,
     effect: "slash", sfx: "crit", description: "A deep cut. It labours afterwards.",
     appliesSlow: true,
   },
   reckless: {
-    id: "reckless", name: "Reckless Swing", icon: "😤", kind: "buff",
+    id: "reckless", name: "Reckless Swing", icon: "reckless", kind: "buff",
     manaCost: 12, cooldownMs: 20000, rangePx: 0, radiusPx: 0, power: 0,
     effect: "quake", sfx: "levelup", description: "Abandon the guard. Everything lands harder for a while.",
   },
   shockwave: {
-    id: "shockwave", name: "Shockwave", icon: "💥", kind: "damage",
+    id: "shockwave", name: "Shockwave", icon: "shockwave", kind: "damage",
     manaCost: 14, cooldownMs: 8000, rangePx: 0, radiusPx: 120, power: 11,
     effect: "quake", sfx: "crit", description: "Slam the ground. Everything close feels it.",
   },
   concuss: {
-    id: "concuss", name: "Concuss", icon: "🌀", kind: "control",
+    id: "concuss", name: "Concuss", icon: "concuss", kind: "control",
     manaCost: 10, cooldownMs: 10000, rangePx: 62, radiusPx: 0, power: 9,
     effect: "impact", sfx: "hit", description: "A blow to the head. It staggers away slowed.",
     appliesSlow: true,
   },
   backstab: {
-    id: "backstab", name: "Backstab", icon: "🗡️", kind: "damage",
+    id: "backstab", name: "Backstab", icon: "backstab", kind: "damage",
     manaCost: 10, cooldownMs: 6000, rangePx: 62, radiusPx: 0, power: 20,
     effect: "slash", sfx: "crit", description: "One precise thrust where it counts.",
   },
   flurry: {
-    id: "flurry", name: "Flurry", icon: "🌪️", kind: "damage",
+    id: "flurry", name: "Flurry", icon: "flurry", kind: "damage",
     manaCost: 12, cooldownMs: 7000, rangePx: 66, radiusPx: 0, power: 7,
     effect: "slash", sfx: "swing", description: "A blur of short strikes across three enemies.",
     chainTargets: 3,
   },
   frostbolt: {
-    id: "frostbolt", name: "Frostbolt", icon: "🧊", kind: "control",
+    id: "frostbolt", name: "Frostbolt", icon: "frostbolt", kind: "control",
     manaCost: 10, cooldownMs: 4500, rangePx: 260, radiusPx: 0, power: 11,
     effect: "frost", sfx: "cast", description: "A shard of cold. What it hits slows.",
     appliesSlow: true,
   },
   arcanemissiles: {
-    id: "arcanemissiles", name: "Arcane Missiles", icon: "🌠", kind: "damage",
+    id: "arcanemissiles", name: "Arcane Missiles", icon: "arcanemissiles", kind: "damage",
     manaCost: 16, cooldownMs: 8000, rangePx: 240, radiusPx: 0, power: 9,
     effect: "arcane", sfx: "cast", description: "Three darts, each seeking its own target.",
     chainTargets: 3,
@@ -1319,113 +1391,113 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
   // Bare hands: no damage to speak of, so the tree is about staying alive and
   // getting somewhere better.
   fist: [
-    t("fist", "grit", 0, "Grit", "\u{1FAC0}", 5, "+8 maximum health per rank.", { passive: { maxHpBonus: 8 } }),
-    t("fist", "haymaker", 0, "Haymaker", "✊", 1, "Unlocks Haymaker.", { active: "haymaker" }),
-    t("fist", "footwork", 1, "Footwork", "\u{1F463}", 5, "+3 evasion and +10 movement per rank.", { passive: { evasion: 3, moveSpeedBonus: 10 } }),
-    t("fist", "roar", 1, "Roar", "\u{1F5E3}️", 1, "Unlocks Roar.", { active: "roar" }),
-    t("fist", "calloused", 2, "Calloused", "\u{1F91C}", 5, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
-    t("fist", "gutpunch", 2, "Gut Punch", "\u{1F94A}", 1, "Unlocks Gut Punch.", { active: "gutpunch", requires: "haymaker" }),
-    t("fist", "quickhands", 3, "Quick Hands", "\u{1F4A8}", 5, "+6% attack speed per rank.", { passive: { attackSpeedPercent: 6 } }),
-    t("fist", "secondwind", 3, "Second Wind", "❤️", 4, "Recover 4 health per rank on a killing blow.", { passive: { healOnKill: 4 } }),
-    t("fist", "unbowed", 4, "Unbowed", "\u{1F6E1}️", 4, "+3 armour and +3 evasion per rank.", { passive: { armor: 3, evasion: 3 } }),
+    t("fist", "grit", 0, "Grit", "grit", 5, "+8 maximum health per rank.", { passive: { maxHpBonus: 8 } }),
+    t("fist", "haymaker", 0, "Haymaker", "haymaker", 1, "Unlocks Haymaker.", { active: "haymaker" }),
+    t("fist", "footwork", 1, "Footwork", "footwork", 5, "+3 evasion and +10 movement per rank.", { passive: { evasion: 3, moveSpeedBonus: 10 } }),
+    t("fist", "roar", 1, "Roar", "roar", 1, "Unlocks Roar.", { active: "roar" }),
+    t("fist", "calloused", 2, "Calloused", "calloused", 5, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
+    t("fist", "gutpunch", 2, "Gut Punch", "gutpunch", 1, "Unlocks Gut Punch.", { active: "gutpunch", requires: "haymaker" }),
+    t("fist", "quickhands", 3, "Quick Hands", "quickhands", 5, "+6% attack speed per rank.", { passive: { attackSpeedPercent: 6 } }),
+    t("fist", "secondwind", 3, "Second Wind", "secondwind", 4, "Recover 4 health per rank on a killing blow.", { passive: { healOnKill: 4 } }),
+    t("fist", "unbowed", 4, "Unbowed", "unbowed", 4, "+3 armour and +3 evasion per rank.", { passive: { armor: 3, evasion: 3 } }),
   ],
 
   // Sword: the baseline every other weapon is tuned against - accurate, even,
   // and the only warrior tree with no glaring weakness.
   sword: [
-    t("sword", "edge", 0, "Keen Edge", "⚔️", 6, "+4% damage per rank.", { passive: { damagePercent: 4 } }),
-    t("sword", "cleave", 0, "Cleave", "\u{1F5E1}️", 1, "Unlocks Cleave.", { active: "cleave" }),
-    t("sword", "temper", 1, "Tempered", "\u{1F525}", 5, "+2 armour and +6 health per rank.", { passive: { armor: 2, maxHpBonus: 6 } }),
-    t("sword", "precision", 1, "Precision", "\u{1F3AF}", 5, "+3% critical chance and +3 accuracy per rank.", { passive: { critChance: 3, accuracyBonus: 3 } }),
-    t("sword", "charge", 2, "Charge", "\u{1F4A8}", 1, "Unlocks Charge.", { active: "charge" }),
-    t("sword", "riposte", 2, "Riposte", "\u{1F93A}", 1, "Unlocks Riposte.", { active: "riposte", requires: "precision" }),
-    t("sword", "momentum", 3, "Momentum", "\u{1F300}", 5, "+5% attack speed per rank.", { passive: { attackSpeedPercent: 5 } }),
-    t("sword", "warcry", 3, "War Cry", "⚡", 1, "Unlocks War Cry.", { active: "warcry" }),
-    t("sword", "mastery", 4, "Swordmaster", "\u{1F3C6}", 4, "+6% damage and +10% critical damage per rank.", { passive: { damagePercent: 6, critDamagePercent: 10 } }),
+    t("sword", "edge", 0, "Keen Edge", "edge", 6, "+4% damage per rank.", { passive: { damagePercent: 4 } }),
+    t("sword", "cleave", 0, "Cleave", "cleave", 1, "Unlocks Cleave.", { active: "cleave" }),
+    t("sword", "temper", 1, "Tempered", "temper", 5, "+2 armour and +6 health per rank.", { passive: { armor: 2, maxHpBonus: 6 } }),
+    t("sword", "precision", 1, "Precision", "precision", 5, "+3% critical chance and +3 accuracy per rank.", { passive: { critChance: 3, accuracyBonus: 3 } }),
+    t("sword", "charge", 2, "Charge", "charge", 1, "Unlocks Charge.", { active: "charge" }),
+    t("sword", "riposte", 2, "Riposte", "riposte", 1, "Unlocks Riposte.", { active: "riposte", requires: "precision" }),
+    t("sword", "momentum", 3, "Momentum", "momentum", 5, "+5% attack speed per rank.", { passive: { attackSpeedPercent: 5 } }),
+    t("sword", "warcry", 3, "War Cry", "warcry", 1, "Unlocks War Cry.", { active: "warcry" }),
+    t("sword", "mastery", 4, "Swordmaster", "mastery", 4, "+6% damage and +10% critical damage per rank.", { passive: { damagePercent: 6, critDamagePercent: 10 } }),
   ],
 
   // Axe: the heavy hitter. Slow swings, so everything here is about making the
   // ones that land count.
   axe: [
-    t("axe", "heft", 0, "Heft", "\u{1FA93}", 6, "+6% damage per rank.", { passive: { damagePercent: 6 } }),
-    t("axe", "rend", 0, "Rend", "\u{1FA78}", 1, "Unlocks Rend.", { active: "rend" }),
-    t("axe", "brutality", 1, "Brutality", "\u{1F480}", 5, "+12% critical damage per rank.", { passive: { critDamagePercent: 12 } }),
-    t("axe", "thickskin", 1, "Thick Skin", "\u{1F9F1}", 5, "+3 armour per rank.", { passive: { armor: 3 } }),
-    t("axe", "charge", 2, "Charge", "\u{1F4A8}", 1, "Unlocks Charge.", { active: "charge" }),
-    t("axe", "reckless", 2, "Reckless Swing", "\u{1F624}", 1, "Unlocks Reckless Swing.", { active: "reckless", requires: "brutality" }),
-    t("axe", "sweeping", 3, "Sweeping Arc", "\u{1F33E}", 4, "+5% reach and +4% damage per rank.", { passive: { rangePercent: 5, damagePercent: 4 } }),
-    t("axe", "bloodthirst", 3, "Bloodthirst", "\u{1F377}", 5, "Recover 5 health per rank on a killing blow.", { passive: { healOnKill: 5 } }),
-    t("axe", "earthshatter", 4, "Earthshatter", "\u{1FAA8}", 1, "Unlocks Earthshatter.", { active: "earthshatter", requires: "heft" }),
+    t("axe", "heft", 0, "Heft", "heft", 6, "+6% damage per rank.", { passive: { damagePercent: 6 } }),
+    t("axe", "rend", 0, "Rend", "rend", 1, "Unlocks Rend.", { active: "rend" }),
+    t("axe", "brutality", 1, "Brutality", "brutality", 5, "+12% critical damage per rank.", { passive: { critDamagePercent: 12 } }),
+    t("axe", "thickskin", 1, "Thick Skin", "thickskin", 5, "+3 armour per rank.", { passive: { armor: 3 } }),
+    t("axe", "charge", 2, "Charge", "charge", 1, "Unlocks Charge.", { active: "charge" }),
+    t("axe", "reckless", 2, "Reckless Swing", "reckless", 1, "Unlocks Reckless Swing.", { active: "reckless", requires: "brutality" }),
+    t("axe", "sweeping", 3, "Sweeping Arc", "sweeping", 4, "+5% reach and +4% damage per rank.", { passive: { rangePercent: 5, damagePercent: 4 } }),
+    t("axe", "bloodthirst", 3, "Bloodthirst", "bloodthirst", 5, "Recover 5 health per rank on a killing blow.", { passive: { healOnKill: 5 } }),
+    t("axe", "earthshatter", 4, "Earthshatter", "earthshatter", 1, "Unlocks Earthshatter.", { active: "earthshatter", requires: "heft" }),
   ],
 
   // Mace: control and staying power. The warrior tree that wants the fight to
   // last, rather than to end early.
   mace: [
-    t("mace", "weight", 0, "Dead Weight", "\u{1F528}", 6, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
-    t("mace", "concuss", 0, "Concuss", "\u{1F300}", 1, "Unlocks Concuss.", { active: "concuss" }),
-    t("mace", "bulwark", 1, "Bulwark", "\u{1F6E1}️", 5, "+4 armour per rank.", { passive: { armor: 4 } }),
-    t("mace", "stoneskin", 1, "Stoneskin", "\u{1F5FF}", 5, "+10 maximum health per rank.", { passive: { maxHpBonus: 10 } }),
-    t("mace", "shockwave", 2, "Shockwave", "\u{1F4A5}", 1, "Unlocks Shockwave.", { active: "shockwave" }),
-    t("mace", "shieldwall", 2, "Shield Wall", "\u{1F530}", 1, "Unlocks Shield Wall.", { active: "shieldwall", requires: "bulwark" }),
-    t("mace", "relentless", 3, "Relentless", "⏱️", 5, "+4% attack speed and +3 accuracy per rank.", { passive: { attackSpeedPercent: 4, accuracyBonus: 3 } }),
-    t("mace", "warcry", 3, "War Cry", "⚡", 1, "Unlocks War Cry.", { active: "warcry" }),
-    t("mace", "crusher", 4, "Crusher", "☄️", 4, "+8% damage and +10% critical damage per rank.", { passive: { damagePercent: 8, critDamagePercent: 10 } }),
+    t("mace", "weight", 0, "Dead Weight", "weight", 6, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
+    t("mace", "concuss", 0, "Concuss", "concuss", 1, "Unlocks Concuss.", { active: "concuss" }),
+    t("mace", "bulwark", 1, "Bulwark", "bulwark", 5, "+4 armour per rank.", { passive: { armor: 4 } }),
+    t("mace", "stoneskin", 1, "Stoneskin", "stoneskin", 5, "+10 maximum health per rank.", { passive: { maxHpBonus: 10 } }),
+    t("mace", "shockwave", 2, "Shockwave", "shockwave", 1, "Unlocks Shockwave.", { active: "shockwave" }),
+    t("mace", "shieldwall", 2, "Shield Wall", "shieldwall", 1, "Unlocks Shield Wall.", { active: "shieldwall", requires: "bulwark" }),
+    t("mace", "relentless", 3, "Relentless", "relentless", 5, "+4% attack speed and +3 accuracy per rank.", { passive: { attackSpeedPercent: 4, accuracyBonus: 3 } }),
+    t("mace", "warcry", 3, "War Cry", "warcry", 1, "Unlocks War Cry.", { active: "warcry" }),
+    t("mace", "crusher", 4, "Crusher", "crusher", 4, "+8% damage and +10% critical damage per rank.", { passive: { damagePercent: 8, critDamagePercent: 10 } }),
   ],
 
   // Dagger: the ranger's close-quarters half. Fast, fragile, and entirely about
   // critical hits.
   dagger: [
-    t("dagger", "quick", 0, "Quickened", "\u{1F4A8}", 6, "+6% attack speed per rank.", { passive: { attackSpeedPercent: 6 } }),
-    t("dagger", "backstab", 0, "Backstab", "\u{1F5E1}️", 1, "Unlocks Backstab.", { active: "backstab" }),
-    t("dagger", "deadly", 1, "Deadly Aim", "\u{1F3AF}", 6, "+4% critical chance per rank.", { passive: { critChance: 4 } }),
-    t("dagger", "slippery", 1, "Slippery", "\u{1F343}", 5, "+4 evasion and +12 movement per rank.", { passive: { evasion: 4, moveSpeedBonus: 12 } }),
-    t("dagger", "flurry", 2, "Flurry", "\u{1F32A}️", 1, "Unlocks Flurry.", { active: "flurry" }),
-    t("dagger", "venom", 2, "Envenom", "\u{1F9EA}", 1, "Unlocks Poison Arrow - a coated blade works as well.", { active: "poisonarrow", requires: "deadly" }),
-    t("dagger", "opportunist", 3, "Opportunist", "\u{1F441}️", 5, "+12% critical damage per rank.", { passive: { critDamagePercent: 12 } }),
-    t("dagger", "disengage", 3, "Disengage", "\u{1F300}", 1, "Unlocks Disengage.", { active: "disengage" }),
-    t("dagger", "assassin", 4, "Assassin", "\u{1F977}", 4, "+7% damage and +4% critical chance per rank.", { passive: { damagePercent: 7, critChance: 4 } }),
+    t("dagger", "quick", 0, "Quickened", "quick", 6, "+6% attack speed per rank.", { passive: { attackSpeedPercent: 6 } }),
+    t("dagger", "backstab", 0, "Backstab", "backstab", 1, "Unlocks Backstab.", { active: "backstab" }),
+    t("dagger", "deadly", 1, "Deadly Aim", "deadly", 6, "+4% critical chance per rank.", { passive: { critChance: 4 } }),
+    t("dagger", "slippery", 1, "Slippery", "slippery", 5, "+4 evasion and +12 movement per rank.", { passive: { evasion: 4, moveSpeedBonus: 12 } }),
+    t("dagger", "flurry", 2, "Flurry", "flurry", 1, "Unlocks Flurry.", { active: "flurry" }),
+    t("dagger", "venom", 2, "Envenom", "venom", 1, "Unlocks Poison Arrow - a coated blade works as well.", { active: "poisonarrow", requires: "deadly" }),
+    t("dagger", "opportunist", 3, "Opportunist", "opportunist", 5, "+12% critical damage per rank.", { passive: { critDamagePercent: 12 } }),
+    t("dagger", "disengage", 3, "Disengage", "disengage", 1, "Unlocks Disengage.", { active: "disengage" }),
+    t("dagger", "assassin", 4, "Assassin", "assassin", 4, "+7% damage and +4% critical chance per rank.", { passive: { damagePercent: 7, critChance: 4 } }),
   ],
 
   // Bow: reach. Everything here is about landing the shot before the gap closes.
   bow: [
-    t("bow", "draw", 0, "Strong Draw", "\u{1F3F9}", 6, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
-    t("bow", "powershot", 0, "Power Shot", "\u{1F3AF}", 1, "Unlocks Power Shot.", { active: "powershot" }),
-    t("bow", "eagleeye", 1, "Eagle Eye", "\u{1F441}️", 5, "+4% critical chance and +4 accuracy per rank.", { passive: { critChance: 4, accuracyBonus: 4 } }),
-    t("bow", "longbow", 1, "Longbow", "\u{1F4CF}", 5, "+8% reach per rank.", { passive: { rangePercent: 8 } }),
-    t("bow", "multishot", 2, "Multishot", "\u{1F3AA}", 1, "Unlocks Multishot.", { active: "multishot" }),
-    t("bow", "venomtip", 2, "Venom Tip", "\u{1F9EA}", 1, "Unlocks Poison Arrow.", { active: "poisonarrow" }),
-    t("bow", "fleet", 3, "Fleet Footed", "\u{1F343}", 5, "+14 movement and +3 evasion per rank.", { passive: { moveSpeedBonus: 14, evasion: 3 } }),
-    t("bow", "disengage", 3, "Disengage", "\u{1F300}", 1, "Unlocks Disengage.", { active: "disengage" }),
-    t("bow", "marksman", 4, "Marksman", "\u{1F3C6}", 4, "+14% critical damage per rank.", { passive: { critDamagePercent: 14 } }),
-    t("bow", "rainofarrows", 4, "Rain of Arrows", "☔", 1, "Unlocks Rain of Arrows.", { active: "rainofarrows", requires: "multishot" }),
+    t("bow", "draw", 0, "Strong Draw", "draw", 6, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
+    t("bow", "powershot", 0, "Power Shot", "powershot", 1, "Unlocks Power Shot.", { active: "powershot" }),
+    t("bow", "eagleeye", 1, "Eagle Eye", "eagleeye", 5, "+4% critical chance and +4 accuracy per rank.", { passive: { critChance: 4, accuracyBonus: 4 } }),
+    t("bow", "longbow", 1, "Longbow", "longbow", 5, "+8% reach per rank.", { passive: { rangePercent: 8 } }),
+    t("bow", "multishot", 2, "Multishot", "multishot", 1, "Unlocks Multishot.", { active: "multishot" }),
+    t("bow", "venomtip", 2, "Venom Tip", "venomtip", 1, "Unlocks Poison Arrow.", { active: "poisonarrow" }),
+    t("bow", "fleet", 3, "Fleet Footed", "fleet", 5, "+14 movement and +3 evasion per rank.", { passive: { moveSpeedBonus: 14, evasion: 3 } }),
+    t("bow", "disengage", 3, "Disengage", "disengage", 1, "Unlocks Disengage.", { active: "disengage" }),
+    t("bow", "marksman", 4, "Marksman", "marksman", 4, "+14% critical damage per rank.", { passive: { critDamagePercent: 14 } }),
+    t("bow", "rainofarrows", 4, "Rain of Arrows", "rainofarrows", 1, "Unlocks Rain of Arrows.", { active: "rainofarrows", requires: "multishot" }),
   ],
 
   // Staff: the mage's two-handed option - the biggest numbers and the deepest
   // mana pool, at the cost of everything else.
   staff: [
-    t("staff", "focus", 0, "Focus", "\u{1F537}", 6, "+6% skill power per rank.", { passive: { skillPowerPercent: 6 } }),
-    t("staff", "arcanebolt", 0, "Arcane Bolt", "\u{1F52E}", 1, "Unlocks Arcane Bolt.", { active: "arcanebolt" }),
-    t("staff", "wellspring", 1, "Wellspring", "\u{1F4A7}", 5, "+25 maximum mana and +2 mana regeneration per rank.", { passive: { maxManaBonus: 25, manaRegenBonus: 2 } }),
-    t("staff", "conduit", 1, "Conduit", "⚡", 5, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
-    t("staff", "firebolt", 2, "Firebolt", "\u{1F525}", 1, "Unlocks Firebolt.", { active: "firebolt" }),
-    t("staff", "mend", 2, "Mend", "✨", 1, "Unlocks Mend.", { active: "mend" }),
-    t("staff", "efficiency", 3, "Efficiency", "\u{1F4D8}", 5, "Spells cost 10% less mana per rank.", { passive: { manaCostPercent: 10 } }),
-    t("staff", "chainlightning", 3, "Chain Lightning", "\u{1F329}️", 1, "Unlocks Chain Lightning.", { active: "chainlightning", requires: "firebolt" }),
-    t("staff", "archmage", 4, "Archmage", "\u{1F9D9}", 4, "+10% skill power and +4% critical chance per rank.", { passive: { skillPowerPercent: 10, critChance: 4 } }),
+    t("staff", "focus", 0, "Focus", "focus", 6, "+6% skill power per rank.", { passive: { skillPowerPercent: 6 } }),
+    t("staff", "arcanebolt", 0, "Arcane Bolt", "arcanebolt", 1, "Unlocks Arcane Bolt.", { active: "arcanebolt" }),
+    t("staff", "wellspring", 1, "Wellspring", "wellspring", 5, "+25 maximum mana and +2 mana regeneration per rank.", { passive: { maxManaBonus: 25, manaRegenBonus: 2 } }),
+    t("staff", "conduit", 1, "Conduit", "conduit", 5, "+5% damage per rank.", { passive: { damagePercent: 5 } }),
+    t("staff", "firebolt", 2, "Firebolt", "firebolt", 1, "Unlocks Firebolt.", { active: "firebolt" }),
+    t("staff", "mend", 2, "Mend", "mend", 1, "Unlocks Mend.", { active: "mend" }),
+    t("staff", "efficiency", 3, "Efficiency", "efficiency", 5, "Spells cost 10% less mana per rank.", { passive: { manaCostPercent: 10 } }),
+    t("staff", "chainlightning", 3, "Chain Lightning", "chainlightning", 1, "Unlocks Chain Lightning.", { active: "chainlightning", requires: "firebolt" }),
+    t("staff", "archmage", 4, "Archmage", "archmage", 4, "+10% skill power and +4% critical chance per rank.", { passive: { skillPowerPercent: 10, critChance: 4 } }),
   ],
 
   // Wand: the mage's sidearm. Smaller numbers, far shorter cooldowns, and the
   // only caster tree that expects to be moving.
   wand: [
-    t("wand", "quickcast", 0, "Quickcast", "⏩", 6, "Cooldowns 6% shorter per rank.", { passive: { cooldownPercent: 6 } }),
-    t("wand", "frostbolt", 0, "Frostbolt", "\u{1F9CA}", 1, "Unlocks Frostbolt.", { active: "frostbolt" }),
-    t("wand", "attunement", 1, "Attunement", "\u{1F539}", 5, "+18 maximum mana and +4% skill power per rank.", { passive: { maxManaBonus: 18, skillPowerPercent: 4 } }),
-    t("wand", "warding", 1, "Warding", "\u{1F6E1}️", 5, "+2 armour and +3 evasion per rank.", { passive: { armor: 2, evasion: 3 } }),
-    t("wand", "missiles", 2, "Arcane Missiles", "\u{1F320}", 1, "Unlocks Arcane Missiles.", { active: "arcanemissiles" }),
-    t("wand", "frostnova", 2, "Frost Nova", "❄️", 1, "Unlocks Frost Nova.", { active: "frostnova", requires: "frostbolt" }),
-    t("wand", "rapid", 3, "Rapid Channel", "\u{1F4A8}", 5, "+7% attack speed per rank.", { passive: { attackSpeedPercent: 7 } }),
-    t("wand", "mend", 3, "Mend", "✨", 1, "Unlocks Mend.", { active: "mend" }),
-    t("wand", "spellblade", 4, "Spellblade", "\u{1F31F}", 4, "+6% damage and +8% skill power per rank.", { passive: { damagePercent: 6, skillPowerPercent: 8 } }),
+    t("wand", "quickcast", 0, "Quickcast", "quickcast", 6, "Cooldowns 6% shorter per rank.", { passive: { cooldownPercent: 6 } }),
+    t("wand", "frostbolt", 0, "Frostbolt", "frostbolt", 1, "Unlocks Frostbolt.", { active: "frostbolt" }),
+    t("wand", "attunement", 1, "Attunement", "attunement", 5, "+18 maximum mana and +4% skill power per rank.", { passive: { maxManaBonus: 18, skillPowerPercent: 4 } }),
+    t("wand", "warding", 1, "Warding", "warding", 5, "+2 armour and +3 evasion per rank.", { passive: { armor: 2, evasion: 3 } }),
+    t("wand", "missiles", 2, "Arcane Missiles", "arcanemissiles", 1, "Unlocks Arcane Missiles.", { active: "arcanemissiles" }),
+    t("wand", "frostnova", 2, "Frost Nova", "frostnova", 1, "Unlocks Frost Nova.", { active: "frostnova", requires: "frostbolt" }),
+    t("wand", "rapid", 3, "Rapid Channel", "rapid", 5, "+7% attack speed per rank.", { passive: { attackSpeedPercent: 7 } }),
+    t("wand", "mend", 3, "Mend", "mend", 1, "Unlocks Mend.", { active: "mend" }),
+    t("wand", "spellblade", 4, "Spellblade", "spellblade", 4, "+6% damage and +8% skill power per rank.", { passive: { damagePercent: 6, skillPowerPercent: 8 } }),
   ],
 };
 

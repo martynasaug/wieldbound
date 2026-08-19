@@ -1,4 +1,5 @@
 import { Game } from "./three/Game";
+import { hydrateIcons } from "./ui/icons";
 
 // A thrown error inside Phaser's create() leaves a black canvas and nothing
 // else — the failure is completely silent unless you have devtools open.
@@ -51,4 +52,8 @@ playButton.addEventListener("click", handlePlay);
 nameInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") handlePlay();
 });
+// The static markup names its icons; this puts the glyphs in. Runs before
+// anything is shown, so no panel ever renders with empty icon slots.
+hydrateIcons();
+
 nameInput.focus();

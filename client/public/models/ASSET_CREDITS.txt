@@ -70,6 +70,65 @@ Pine_*.fbx             https://opengameart.org/content/lowpoly-textured-trees
 Birch_*.fbx            (CC0). Animal-Crossing-style stylised trees, with
 DeadTree_1.fbx         seasonal leaf texture variants in ../textures/.
 
+NATURE  (nature/*.gltf)
+
+Quaternius "Stylized Nature MegaKit", CC0 1.0 Universal.
+https://opengameart.org/content/stylized-nature-megakit
+
+  41 models: 16 trees (CommonTree, Pine, TwistedTree, DeadTree), 3 boulders,
+  5 pebbles, 2 bushes, 4 grasses, clover, fern, plants, flowers and mushrooms.
+
+  WHAT USES WHAT
+    Resource nodes  tree -> CommonTree/Pine, rock -> Rock_Medium,
+                    bush -> Bush_Common_Flowers      (three/Game.ts NODE_MODELS)
+    Treeline        every tree, outside the play bounds  (three/World.ts)
+    Ground cover    everything ankle-height, instanced   (three/scatter.ts)
+
+  Bush_Common is textured with the kit's TWISTED tree leaves, which are a deep
+  autumnal red. It is treeline decor rather than the herb bush for that reason —
+  as a harvestable it reads as dead scrub.
+
+  Unlike the monsters pack, this one IS fetchable programmatically: it is a
+  single zip served directly from opengameart.org.
+
+  The textures were downscaled from 2048 to 512 by
+  tools/art/shrink_nature_textures.ps1 — they are stylised palette atlases on
+  low-poly meshes, and at this camera 2048 is about sixteen times more texel
+  than any of it can resolve. 42 MB of PNG became 4.4 MB with no visible
+  difference at any zoom the camera allows.
+
+PROPS  (props/*.gltf)
+
+Quaternius "Fantasy Props MegaKit", CC0 1.0 Universal.
+https://opengameart.org/content/fantasy-props-megakit
+
+  6 models forming the crafting station's smithy: Anvil_Log, Workbench,
+  WeaponStand, Barrel, Crate_Wooden, Whetstone.  (three/Game.ts buildStation)
+
+  This kit shares three "trim" atlases across every prop — furniture, metal and
+  props — each with a BaseColor, Normal and ORM (occlusion/roughness/metalness)
+  map. So six models cost nine textures rather than eighteen, and adding more
+  props from the same kit costs no new textures at all.
+
+  Also downscaled 2048 -> 512 by tools/art/shrink_kit_textures.ps1.
+
+  Fetchable programmatically, like the nature kit: one zip from opengameart.org.
+
+GROUND  (../textures/terrain/*.jpg)
+
+Poly Haven, CC0. Fetched by tools/art/terrain.mjs.
+  grass_*  <- leafy_grass      dirt_*  <- dirt
+
+  Three maps each at 1k: diffuse, OpenGL-convention normal, and "arm" — which
+  packs ambient occlusion, roughness and metalness into R, G and B. three.js
+  reads exactly those channels, so one image serves as both roughnessMap and
+  metalnessMap. The nor_gl variant matters: nor_dx has its green channel
+  inverted and would light every bump from the wrong side.
+
+  1k is deliberate. The ground tiles every 6 world units, so resolution buys
+  nothing past one tile — what stops it looking repetitive is the macro
+  variation three/terrain.ts mixes in, not a larger source image.
+
 TEXTURES
 
 ../textures/*.png      Shipped with the packs above. Material names mostly

@@ -9,6 +9,7 @@ import {
   type SkillId,
   type WeaponType,
 } from "../../../shared/protocol-types";
+import { iconSvg } from "./icons";
 
 export const ATTACK_SLOT = "attack";
 export type BarAction = typeof ATTACK_SLOT | SkillId;
@@ -264,18 +265,18 @@ export class Hotbar {
       slot.keyLabel.classList.toggle("rebinding", this.rebinding === slot.index);
 
       if (!entry) {
-        slot.icon.textContent = "";
+        slot.icon.innerHTML = "";
         slot.button.title = this.editing ? "Empty — drag a skill here from the talent panel (K)" : "";
         continue;
       }
       if (entry === ATTACK_SLOT) {
         const attack = defaultAttackFor(this.weapon);
-        slot.icon.textContent = attack.icon;
+        slot.icon.innerHTML = iconSvg(attack.icon);
         slot.button.title = `${attack.name} (${key || "unbound"})\n${attack.description}`;
       } else {
         const skill = SKILLS[entry];
         const cost = skill.manaCost > 0 ? ` — ${skill.manaCost} mana` : "";
-        slot.icon.textContent = skill.icon;
+        slot.icon.innerHTML = iconSvg(skill.icon);
         slot.button.title = `${skill.name} (${key || "unbound"})${cost}\n${skill.description}`;
       }
     }

@@ -14,6 +14,7 @@ import {
   type ItemSlot,
   type WeaponType,
 } from "../../../shared/protocol-types";
+import { iconSvg } from "./icons";
 
 interface ConsumableCost {
   wood: number;
@@ -115,7 +116,7 @@ export class CraftPanel {
       const button = document.createElement("button");
       button.className = "craft-weapon-btn";
       button.classList.toggle("active", type === this.weaponType);
-      button.innerHTML = `<span class="cw-icon">${def.icon}</span><span class="cw-name">${def.name}</span>`;
+      button.innerHTML = `<span class="cw-icon">${iconSvg(def.icon)}</span><span class="cw-name">${def.name}</span>`;
       button.title = `${def.name} — ${CLASSES[classForWeapon(type)].name}`;
       button.addEventListener("click", () => {
         this.weaponType = type;
