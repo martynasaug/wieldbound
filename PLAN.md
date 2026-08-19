@@ -2554,6 +2554,18 @@ crafting system to go with them.
       and the suite checks the ratio rather than the number: the gather upgrade
       runs from about four gathers early to forty-six late.
 
+- [x] **M1.12 — the drop plate answers "is that worth walking to?"** Two marks
+      on loot lying in the world, both reusing rules that already existed.
+      - The same conservative **upgrade mark** the bag uses — nothing given up
+        and something gained — because this is read at a distance where the
+        tooltip cannot help, and a mark that appears on sidegrades is one
+        players learn to ignore
+      - **Reserved drops are dimmed**, not hidden. Knowing what fell is worth
+        something even while somebody else has first claim on it, and the claim
+        lapses in a moment anyway
+      - `isUpgrade` moved no code: it lives in `ui/items.ts` because it decides
+        whether to draw a mark, which is presentation rather than a rule
+
 - [ ] **M2 — remaining item work.** What a second material tier would buy, and
       whether consumables belong in the catalogue rather than beside it.
 

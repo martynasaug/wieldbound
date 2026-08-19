@@ -82,6 +82,9 @@ import { CLASS_BODIES } from "./gear";
 import { Hud } from "./hud";
 import { Floaters, type FloatSpec } from "./floaters";
 import { Drops } from "./drops";
+// `isUpgrade` is presentation, not a rule: it decides whether to draw a mark,
+// and lives beside the other things that decide how an item is shown.
+import { isUpgrade } from "../ui/items";
 import { Effects, isEffectName, type EffectName } from "./effects";
 import { Indicators } from "./indicators";
 import { ATTACK_STYLES, Projectiles, attackStyle, impactDelayMs } from "./attacks";
@@ -2467,14 +2470,25 @@ export class Game {
     // place a player reads an item from across a field, so it carries the same
     // colour the bag slot will — and its own icon, since "a Runed something"
     // is not worth walking over and a Runed Claymore is.
+    const now = Date.now();
     for (const drop of this.dropStates) {
       const x = toWorldX(drop.x);
       const z = toWorldZ(drop.y);
+      // Whether it is worth walking to, on the label. The same conservative
+      // rule the bag uses — nothing given up and something gained — because a
+      // mark that appears on sidegrades is one players learn to ignore, and
+      // this one is read at a distance where the tooltip cannot help.
+      const better = isUpgrade(drop.item, this.items);
+      // Somebody else's, for now. Dimmed rather than hidden: knowing what fell
+      // is worth something even when you cannot pick it up yet, and it comes
+      // free in a moment anyway.
+      const mine = drop.ownerId === this.playerId || now >= drop.freeAt;
       this.hud.plate(`drop-${drop.id}`, this.world.project(x, 1.35, z, 48), {
         kind: "drop",
-        name: itemShortName(drop.item),
+        name: (better ? "▲ " : "") + itemShortName(drop.item),
         icon: itemBase(drop.item.baseId).icon,
         tint: RARITIES[drop.item.rarity]?.color,
+        dim: !mine,
         distance: rangeTo(x, z),
       });
     }

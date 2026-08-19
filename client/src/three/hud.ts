@@ -289,6 +289,10 @@ const STYLE = `
   font-weight: bold;
   letter-spacing: .01em;
 }
+/* Reserved for somebody else, for now. Dimmed rather than hidden: knowing what
+   fell is worth something even when you cannot take it yet, and it comes free
+   in a moment anyway. */
+#hud3d .plate-drop.dim .pn { opacity: .45; }
 
 /* --- the workbench ------------------------------------------------------ */
 #hud3d .plate-station .pn {
