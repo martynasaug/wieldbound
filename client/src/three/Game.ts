@@ -101,6 +101,7 @@ import {
   PALETTE_SETS,
   activeSets,
   canForge,
+  eligibleAffixes,
   forgeCost,
   gearPassives,
   hitBandOf,
@@ -419,7 +420,7 @@ export class Game {
     );
     this.craftPanel = new CraftPanel(
       (stationId, baseId) => this.socket.sendForgeItem(stationId, baseId),
-      (stationId, itemId) => this.socket.sendReforgeItem(stationId, itemId),
+      (stationId, itemId, affix) => this.socket.sendReforgeItem(stationId, itemId, affix),
       (itemId) => this.salvageItem(itemId),
       (itemIds) => this.socket.sendSalvageMany(itemIds),
       (stationId) => this.socket.sendCraftPotion(stationId),
@@ -638,6 +639,7 @@ export class Game {
       PALETTE_SETS,
       activeSets,
       canForge,
+      eligibleAffixes,
       gearPassives,
       itemName,
       itemPassives,

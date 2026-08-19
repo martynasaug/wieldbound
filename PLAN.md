@@ -2503,8 +2503,28 @@ crafting system to go with them.
         obeys it; the explanation is sent from the handler, because the
         explanation belongs to the person who was surprised
 
+- [x] **M1.9 — cutting a rune.** The reforge ladder was a pure sink: pay more
+      each step, re-roll, hope. Steep costs made it a decision about WHICH item
+      to invest in, and nothing at all about what you wanted out of it.
+      - **At Runed and Enchanted the player names one affix.** That is what
+        makes the ladder's names mean something — a Runed item is one somebody
+        cut the marks into deliberately, rather than one where the dice came up
+        violet
+      - Below that a reforge is still a re-roll, so the climb turns from a
+        gamble into a decision. A ladder that is all gamble is a slot machine; a
+        ladder that is all choice is a shopping list. It should be one and then
+        the other
+      - **Never a way past the rules.** The chosen affix has to be one the item
+        could have rolled anyway — right slot, right band — and choosing one
+        does not add a slot. Validated where the roll happens rather than at the
+        message handler, so the forge, the loot table and the bench all obey it
+        by construction
+      - The selection survives the panel redrawing under it, which it does on
+        every materials update. Losing a choice mid-decision is the kind of
+        thing nobody reports and everybody notices
+
 - [ ] **M2 — remaining item work.** What a second material tier would buy, and
-      whether the reforge ladder wants a failure chance at the top.
+      whether consumables belong in the catalogue rather than beside it.
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -3934,6 +3954,17 @@ music, player-facing damage-type/resistances, more crafting recipes
   against an unbiased roll is scale-free and is precisely what the weight sets,
   so it holds for all thirteen kinds without any of them being chosen to satisfy
   it.
+
+- The reforge ladder is a gamble that becomes a decision. Every step below Runed
+  re-rolls; the top two let the player name one affix. All gamble is a slot
+  machine and all choice is a shopping list — the interesting shape is one and
+  then the other, and it is also what makes the ladder's own names mean
+  something, since a Runed item is one somebody cut the marks into on purpose.
+- A choice is never a way past a rule. The rune the player names has to be one
+  the item could have rolled anyway, and naming one does not add a slot. The
+  check lives where the roll happens rather than at the message handler, so the
+  forge, the loot table and the bench obey it by construction rather than by
+  three separate remembering.
 
 - A test that shares a world with a live game must assert on IDENTITY, not on
   counts. Something is usually hitting the character, so a stray real damage

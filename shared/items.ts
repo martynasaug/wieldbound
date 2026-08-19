@@ -991,19 +991,51 @@ export function rollBase(
 }
 
 /** The affixes an item of this base and quality rolls. */
+/** Which affixes may appear on this base at all. */
+export function eligibleAffixes(base: ItemBase): AffixDef[] {
+  return AFFIXES.filter(
+    (a) => a.minBand <= base.band && (!a.slots || a.slots.includes(base.slot)),
+  );
+}
+
+/**
+ * Whether the player gets to name one of the affixes at this quality.
+ *
+ * The top two steps only, and that is what makes the ladder's names mean
+ * something: a Runed item is one somebody cut the marks into deliberately. Below
+ * that a reforge is still a re-roll, so the climb is a gamble that becomes a
+ * decision — which is a far better shape than either being true the whole way
+ * up. A ladder that is all gamble is a slot machine; one that is all choice is
+ * a shopping list.
+ */
+export function canChooseAffix(rarity: ItemRarity): boolean {
+  return rarity === "runed" || rarity === "enchanted";
+}
+
 export function rollAffixes(
   base: ItemBase,
   rarity: ItemRarity,
   random: () => number = Math.random,
+  /** One the player has asked for. Ignored unless the quality allows it and
+   *  the affix could have rolled on this item anyway — the choice is which of
+   *  its own affixes it gets, never a way past the eligibility rules. */
+  chosen?: string,
 ): string[] {
   const count = RARITIES[rarity]?.affixes ?? 0;
   if (count <= 0) return [];
-  const eligible = AFFIXES.filter(
-    (a) => a.minBand <= base.band && (!a.slots || a.slots.includes(base.slot)),
-  );
+  const eligible = eligibleAffixes(base);
   const picked: string[] = [];
   const pool = [...eligible];
-  for (let i = 0; i < count && pool.length > 0; i++) {
+
+  if (chosen && canChooseAffix(rarity)) {
+    const idx = pool.findIndex((a) => a.id === chosen);
+    if (idx >= 0) {
+      picked.push(pool[idx].id);
+      pool.splice(idx, 1);
+    }
+  }
+
+  while (picked.length < count && pool.length > 0) {
     const idx = Math.floor(random() * pool.length);
     picked.push(pool[idx].id);
     // Removed rather than re-rolled: two copies of "Keen" on one item is a
@@ -1022,6 +1054,7 @@ export function rollItem(
   base: ItemBase,
   rarity: ItemRarity,
   random: () => number = Math.random,
+  chosenAffix?: string,
 ): Omit<ItemInstance, "id" | "equipped"> {
   const power = RARITIES[rarity]?.power ?? 1;
   // A tenth either way, so two of the same item are not literally identical
@@ -1033,7 +1066,7 @@ export function rollItem(
     rarity,
     statValue: Math.max(0, Math.round(basePower(base) * power * jitter())),
     bonusStatValue: Math.max(0, Math.round(baseGuard(base) * power * jitter())),
-    affixes: rollAffixes(base, rarity, random),
+    affixes: rollAffixes(base, rarity, random, chosenAffix),
     weaponType: base.weaponType,
     style: base.style,
   };
@@ -1643,11 +1676,12 @@ export function nextRarity(from: ItemRarity): ItemRarity | null {
 export function reforgeItem(
   item: ItemInstance,
   random: () => number = Math.random,
+  chosenAffix?: string,
 ): ItemInstance | null {
   const to = nextRarity(item.rarity);
   if (!to) return null;
   const base = itemBase(item.baseId);
-  const rolled = rollItem(base, to, random);
+  const rolled = rollItem(base, to, random, chosenAffix);
   return { ...item, ...rolled, id: item.id, equipped: item.equipped };
 }
 

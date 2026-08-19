@@ -2060,7 +2060,11 @@ wss.on("connection", (socket) => {
         return;
       }
 
-      const next = reforgeItem(item);
+      // The chosen affix is passed through rather than trusted: `rollAffixes`
+      // ignores anything the quality does not allow or the item could not have
+      // rolled, so a hand-written message naming an archmage's affix on a band-1
+      // cap simply gets a normal roll.
+      const next = reforgeItem(item, Math.random, msg.payload.affix);
       if (!next) return;
       const saved = replaceItemRolls(id, item.id, next);
       if (!saved) return;

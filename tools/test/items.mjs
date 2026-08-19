@@ -50,6 +50,8 @@ import {
   salvageYield,
   MONSTER_LOOT,
   PALETTE_SETS,
+  canChooseAffix,
+  eligibleAffixes,
   activeSets,
   feelNotes,
   hitBandOf,
@@ -471,6 +473,73 @@ section("9b. the reforge preview");
 
   check("an Enchanted item has no preview",
     reforgePreview({ ...item, rarity: "enchanted" }) === null);
+}
+
+// --- 9c. cutting a rune ------------------------------------------------------
+// The top two steps let the player name one affix, which is what makes "Runed"
+// mean somebody cut the marks in deliberately. It must be a choice among the
+// item's OWN affixes, never a way past the eligibility rules.
+section("9c. cutting a rune");
+{
+  const base = ITEM_BASES.claymore;
+  const options = eligibleAffixes(base);
+  check("a band-5 weapon has affixes to choose from", options.length > 3, `${options.length}`);
+
+  // Honoured at the top.
+  for (const rarity of ["runed", "enchanted"]) {
+    let held = 0;
+    for (let i = 0; i < 300; i++) {
+      if (rollAffixes(base, rarity, rand, "keen").includes("keen")) held++;
+    }
+    check(`a rune cut at ${rarity} is always there`, held === 300, `${held}/300`);
+  }
+
+  // Ignored below it — the climb is a gamble until it is a decision.
+  for (const rarity of ["honed", "tempered", "forged"]) {
+    let held = 0;
+    for (let i = 0; i < 300; i++) {
+      if (rollAffixes(base, rarity, rand, "keen").includes("keen")) held++;
+    }
+    check(`a rune cannot be cut at ${rarity}`, held < 300, `${held}/300 — should be chance, not certainty`);
+    check(`${rarity} does not allow a choice`, !canChooseAffix(rarity));
+  }
+
+  // Never a way past eligibility: an affix this item could not have rolled is
+  // simply ignored, and the roll comes out normal.
+  const ringOnly = AFFIXES.find((a) => a.slots && !a.slots.includes("weapon"));
+  if (ringOnly) {
+    let leaked = 0;
+    for (let i = 0; i < 300; i++) {
+      if (rollAffixes(base, "enchanted", rand, ringOnly.id).includes(ringOnly.id)) leaked++;
+    }
+    check("an ineligible rune is refused rather than granted", leaked === 0,
+      `${ringOnly.id} appeared ${leaked} times`);
+  }
+  // A high-band affix on a low-band item, likewise.
+  const lowBase = ITEM_BASES.paddedcap;
+  const highAffix = AFFIXES.find((a) => a.minBand > lowBase.band && !a.slots);
+  if (highAffix) {
+    let leaked = 0;
+    for (let i = 0; i < 300; i++) {
+      if (rollAffixes(lowBase, "enchanted", rand, highAffix.id).includes(highAffix.id)) leaked++;
+    }
+    check("nor can a rune outrank the item it is cut into", leaked === 0,
+      `${highAffix.id} appeared ${leaked} times on a band-${lowBase.band} item`);
+  }
+
+  // And the count still holds — choosing one does not add a slot.
+  for (let i = 0; i < 200; i++) {
+    const rolled = rollAffixes(base, "enchanted", rand, "keen");
+    check("cutting a rune does not add an affix slot",
+      rolled.length === RARITIES.enchanted.affixes, `${rolled.length}`);
+    check("and never duplicates it", new Set(rolled).size === rolled.length);
+  }
+
+  // Through reforgeItem, which is what the bench actually calls.
+  const worn = { id: "x", equipped: false, ...rollItem(base, "forged", rand) };
+  const runed = reforgeItem(worn, rand, "cruel");
+  check("reforging into Runed honours the cut", runed.affixes.includes("cruel"),
+    runed.affixes.join(", "));
 }
 
 // --- 10. affix totals reach the passive vocabulary --------------------------

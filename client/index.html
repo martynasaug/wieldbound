@@ -435,6 +435,21 @@
         cursor: pointer;
       }
       .smith-shelf.active { color: var(--gold-bright); border-color: var(--gold); background: #3d2c18; }
+      /* The rune picker. Only appears on the two steps that allow it, so it is
+         styled to read as part of the row rather than as a control the row
+         always had. */
+      .smith-rune {
+        display: block;
+        margin-top: 5px;
+        max-width: 100%;
+        background: #2a1f10;
+        border: 1px solid var(--gold-dim);
+        border-radius: 4px;
+        color: var(--parchment);
+        font: 11px Georgia, serif;
+        padding: 3px 5px;
+      }
+      .smith-rune:focus { outline: 1px solid var(--gold); }
       .smith-note {
         padding: 14px 4px;
         font-size: 12px; font-style: italic; color: var(--muted);

@@ -170,8 +170,8 @@ export class GameSocket {
   }
 
   /** One step up the ladder on something already owned. */
-  sendReforgeItem(stationId: string, itemId: string): void {
-    this.send({ type: "REFORGE_ITEM", payload: { stationId, itemId } });
+  sendReforgeItem(stationId: string, itemId: string, affix?: string): void {
+    this.send({ type: "REFORGE_ITEM", payload: { stationId, itemId, affix } });
   }
 
   sendCraftPotion(stationId: string): void {

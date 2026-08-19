@@ -1983,7 +1983,20 @@ export interface ForgeItemMessage {
 // one happened to roll six steps earlier.
 export interface ReforgeItemMessage {
   type: "REFORGE_ITEM";
-  payload: { stationId: string; itemId: string };
+  payload: {
+    stationId: string;
+    itemId: string;
+    /**
+     * One affix the player has asked for.
+     *
+     * Honoured only at the top two steps and only if it could have rolled on
+     * that item anyway — the choice is which of its own affixes it gets, never
+     * a way past the eligibility rules. Validated server-side for exactly that
+     * reason: the client greys the impossible options, and a hand-written
+     * message can still name one.
+     */
+    affix?: string;
+  };
 }
 
 // SALVAGE asks WHAT IS IT WORTH IN PARTS. Replaces selling for wood, which

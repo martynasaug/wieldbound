@@ -36,8 +36,11 @@ import {
 import {
   ITEM_BASES,
   MATERIALS,
+  affixSummary,
   canAfford,
+  canChooseAffix,
   canForge,
+  eligibleAffixes,
   describeCost,
   forgeCost,
   forgePreview,
@@ -77,10 +80,13 @@ export class CraftPanel {
    *  column is a list nobody reads to the bottom of; one slot at a time is a
    *  shelf. */
   private slotFilter: ItemSlot = "weapon";
+  /** Which rune the player has asked for, per item. Kept across re-renders so
+   *  choosing one does not reset when the panel redraws on a materials update. */
+  private readonly chosenAffix = new Map<string, string>();
 
   constructor(
     private readonly onForge: (stationId: string, baseId: string) => void,
-    private readonly onReforge: (stationId: string, itemId: string) => void,
+    private readonly onReforge: (stationId: string, itemId: string, affix?: string) => void,
     private readonly onSalvage: (itemId: string) => void,
     private readonly onSalvageMany: (itemIds: string[]) => void,
     private readonly onCraftPotion: (stationId: string) => void,
@@ -342,6 +348,35 @@ export class CraftPanel {
         ` → <span style="color:${rarityColor(to)}">${rarityName(to)}</span>`;
       sub.prepend(step);
 
+      // At the top two steps the player names one of the affixes, which is
+      // what makes "Runed" mean somebody cut the marks in deliberately rather
+      // than "the dice came up violet". Below that a reforge is still a
+      // re-roll, so the climb turns from a gamble into a decision — a better
+      // shape than either being true the whole way up.
+      let chosen = this.chosenAffix.get(item.id);
+      if (canChooseAffix(to)) {
+        const options = eligibleAffixes(base);
+        const picker = document.createElement("select");
+        picker.className = "smith-rune";
+        const none = document.createElement("option");
+        none.value = "";
+        none.textContent = "cut no rune — roll them all";
+        picker.appendChild(none);
+        for (const affix of options) {
+          const opt = document.createElement("option");
+          opt.value = affix.id;
+          opt.textContent = `${affix.label} — ${affixSummary(affix, base.band)}`;
+          if (affix.id === chosen) opt.selected = true;
+          picker.appendChild(opt);
+        }
+        picker.addEventListener("change", () => {
+          if (picker.value) this.chosenAffix.set(item.id, picker.value);
+          else this.chosenAffix.delete(item.id);
+          chosen = picker.value || undefined;
+        });
+        sub.appendChild(picker);
+      }
+
       this.row(
         itemIcon(item),
         itemShortName(item) + (item.equipped ? " (worn)" : ""),
@@ -350,7 +385,9 @@ export class CraftPanel {
         "Reforge",
         canAfford(cost, this.materials).ok && !!this.stationId,
         () => {
-          if (this.stationId) this.onReforge(this.stationId, item.id);
+          if (this.stationId) {
+            this.onReforge(this.stationId, item.id, this.chosenAffix.get(item.id));
+          }
         },
       );
     }
