@@ -97,10 +97,13 @@ import { instantiate, whenLoadsSettle } from "./assets";
 import {
   ITEM_BASES,
   forgeCost,
+  hitBandOf,
   itemName,
   itemPassives,
+  reachOf,
   reforgeCost,
   salvageYield,
+  swingIntervalOf,
 } from "../../../shared/items";
 
 const PLAYER_HEIGHT = 1.8;
@@ -1488,6 +1491,18 @@ export class Game {
     this.refreshStats();
   }
 
+  /**
+   * How far the player can currently reach, item tuning included.
+   *
+   * Four places read this — the target ring, the indicator, the auto-attack
+   * test and the minimap — and all four used to call the family-only helper,
+   * which meant a spear drew a ring it could not actually hit to once items
+   * gained their own reach.
+   */
+  private reach(): number {
+    return reachOf(equippedBySlot(this.items).weapon ?? null, this.passives().rangePercent);
+  }
+
   private syncMaterials(): void {
     const wallet = { wood: this.wood, ore: this.ore, herb: this.herb, essence: this.essence };
     this.inventoryPanel.setMaterials(wallet);
@@ -1524,7 +1539,9 @@ export class Game {
   private refreshStats(): void {
     const gear = equippedBySlot(this.items);
     const cls = classForWeapon(this.appearance.weaponType);
-    const wpn = weaponDef(this.appearance.weaponType);
+    // The item itself, not just its family: a claymore and an arming sword are
+    // both swords and swing nothing alike.
+    const held = gear.weapon ?? null;
     const power = primaryStatValue(cls, {
       strength: this.strength,
       agility: this.agility,
@@ -1540,20 +1557,19 @@ export class Game {
       moveSpeedPxPerSec: this.moveSpeed(),
       xpBonusPercent: xpBonusPercent(this.armorRarity),
       gatherTimeSec: gatherDurationForLevel(this.gatherLevel, this.agility) / 1000,
+      // Through the same resolvers the server swings with, so the sheet cannot
+      // quote a number combat does not use — which is the whole reason these
+      // live in shared rather than being computed twice.
       battleTimeSec:
-        applyAttackSpeed(
-          playerAttackIntervalMs(this.weaponRarity, this.battlePowerLevel, this.agility) *
-            wpn.speedMultiplier,
+        swingIntervalOf(
+          held,
+          this.weaponRarity,
+          this.battlePowerLevel,
+          this.agility,
           talents.attackSpeedPercent,
         ) / 1000,
-      minHit: applyDamagePercent(
-        Math.round(playerMinHit(power) * wpn.damageMultiplier),
-        talents.damagePercent,
-      ),
-      maxHit: applyDamagePercent(
-        Math.round(playerMaxHit(power, gearDamageBonus(gear)) * wpn.damageMultiplier),
-        talents.damagePercent,
-      ),
+      minHit: hitBandOf(held, power, gearDamageBonus(gear), talents.damagePercent).min,
+      maxHit: hitBandOf(held, power, gearDamageBonus(gear), talents.damagePercent).max,
       accuracy:
         playerAccuracy(this.agility, talents.accuracyBonus) + this.equippedBonusStatValue("ring"),
       critChance: playerCritChance(this.agility) + gearCritChance(gear) + talents.critChance,
@@ -1853,7 +1869,7 @@ export class Game {
    *      marker that appears as you approach a camp
    */
   private updateTargeting(): void {
-    const reach = attackRangeFor(this.appearance.weaponType);
+    const reach = this.reach();
     const locked = this.lockedId ? this.monsters.get(this.lockedId) : undefined;
     const lockedAlive = locked && !locked.dead && locked.state.status === "alive";
     if (this.lockedId && !lockedAlive) {
@@ -1954,7 +1970,7 @@ export class Game {
    * the next one" even when you never clicked at all.
    */
   private cycleTarget(): void {
-    const reach = attackRangeFor(this.appearance.weaponType);
+    const reach = this.reach();
     const limit = Math.max(ENGAGE_RADIUS_PX, reach * 1.2);
     const near = this.aliveMonsters()
       .filter(([, v]) => this.distanceTo(v) <= limit)
@@ -2062,7 +2078,7 @@ export class Game {
     const self = this.localActor;
     if (!self) return;
 
-    const reach = attackRangeFor(this.appearance.weaponType);
+    const reach = this.reach();
 
     // Target ring, doubling as a range readout. Drawn around whatever is
     // actually being fought, chosen or not.
@@ -2356,7 +2372,7 @@ export class Game {
     const shownId = this.lockedId ?? this.engagedId;
     const t = shownId ? this.monsters.get(shownId) : null;
     if (t && !t.dead) {
-      const range = attackRangeFor(this.appearance.weaponType);
+      const range = this.reach();
       const dist = this.distanceTo(t);
       // "locked" is worth saying out loud: it is the difference between the
       // game having picked this for you and you having insisted on it.

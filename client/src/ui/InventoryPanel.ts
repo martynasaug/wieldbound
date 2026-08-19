@@ -168,7 +168,7 @@ export class InventoryPanel {
       });
       cell.appendChild(salvage);
 
-      attachItemTooltip(cell, item);
+      attachItemTooltip(cell, item, this.items);
       this.grid.appendChild(cell);
     }
     this.renderFooter();

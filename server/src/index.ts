@@ -125,6 +125,9 @@ import {
   rollItem,
   rollRarity,
   rollRarityWithFloor,
+  hitBandOf,
+  reachOf,
+  swingIntervalOf,
 } from "../../shared/items.ts";
 import {
   loadOrCreateCharacter,
@@ -1170,14 +1173,16 @@ function swingIntervalFor(playerId: string, agility: number): number {
   // lands one heavy swing in the same window. damageMultiplier moves the other
   // way (see resolvePlayerAttack), keeping DPS comparable so the choice is
   // burst-vs-steady rather than one weapon simply winning.
-  const base = Math.round(
-    playerAttackIntervalMs(
-      weaponRarities.get(playerId) ?? null,
-      battlePowerLevels.get(playerId) ?? 0,
-      agility,
-    ) * weaponDef(weaponTypeOf(playerId)).speedMultiplier,
+  // One resolver, so the item's own tuning arrives with the family's: a
+  // claymore is slower than an arming sword and both are slower than a dagger,
+  // and the client's stat sheet computes it the same way.
+  return swingIntervalOf(
+    equippedItems.get(playerId)?.weapon ?? null,
+    weaponRarities.get(playerId) ?? null,
+    battlePowerLevels.get(playerId) ?? 0,
+    agility,
+    passivesOf(playerId).attackSpeedPercent,
   );
-  return applyAttackSpeed(base, passivesOf(playerId).attackSpeedPercent);
 }
 
 /** Tells one client where its swing clock stands. Cheap enough to send on
@@ -1207,7 +1212,10 @@ function sendAttackState(playerId: string, reason?: string): void {
  * it can never disagree about who is being hit.
  */
 function attackTargetFor(playerId: string, player: LivePlayer): MonsterState | null {
-  const reach = attackRangeFor(weaponTypeOf(playerId), passivesOf(playerId).rangePercent);
+  const reach = reachOf(
+    equippedItems.get(playerId)?.weapon ?? null,
+    passivesOf(playerId).rangePercent,
+  );
   const selectedId = playerTargets.get(playerId);
   if (selectedId) {
     const selected = monsters.find((m) => m.id === selectedId);
@@ -1303,20 +1311,19 @@ function resolvePlayerAttack(
   const swingCount = Math.random() * 100 < doubleAttackChance(attrs.agility) ? 2 : 1;
 
   for (let swing = 0; swing < swingCount && !monsterDefeated; swing++) {
-    // The weapon's damage multiplier scales the hit band. It is the inverse
-    // of its speed multiplier, so a slow axe hits proportionally harder and
-    // total DPS stays in the same neighbourhood across families.
-    const wpnDamage = weaponDef(weaponTypeOf(playerId)).damageMultiplier;
+    // The hit band this particular weapon swings for — family multiplier times
+    // the item's own, resolved in one place so a rebalance of either moves the
+    // server and the character sheet together.
+    const band = hitBandOf(
+      equippedItems.get(playerId)?.weapon ?? null,
+      powerOf(playerId, attrs),
+      totalDamageBonus,
+      passives.damagePercent,
+    );
     const playerAttack = resolveHit({
       attackerAccuracy: totalAccuracy,
-      attackerMinHit: applyDamagePercent(
-        Math.round(playerMinHit(powerOf(playerId, attrs)) * wpnDamage),
-        passives.damagePercent,
-      ),
-      attackerMaxHit: applyDamagePercent(
-        Math.round(playerMaxHit(powerOf(playerId, attrs), totalDamageBonus) * wpnDamage),
-        passives.damagePercent,
-      ),
+      attackerMinHit: band.min,
+      attackerMaxHit: band.max,
       attackerCritChance: critChance,
       attackerCritMultiplier: critMultiplier,
       defenderEvasion: monsterStats.evasion,

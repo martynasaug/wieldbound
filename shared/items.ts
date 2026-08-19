@@ -45,6 +45,13 @@ import {
   RARITIES,
   RARITY_ORDER,
   addPassives,
+  applyAttackSpeed,
+  applyDamagePercent,
+  attackRangeFor,
+  playerAttackIntervalMs,
+  playerMaxHit,
+  playerMinHit,
+  weaponDef,
   type EquippedGear,
   type GearStyle,
   type ItemInstance,
@@ -885,6 +892,118 @@ export function itemScore(item: ItemInstance): number {
   const base = itemBase(item.baseId);
   const affixWeight = (item.affixes?.length ?? 0) * 4;
   return item.statValue * 2 + item.bonusStatValue + affixWeight + base.band * 3;
+}
+
+// --- How a particular weapon feels ------------------------------------------
+// Three numbers decide what swinging a thing is like — how far it reaches, how
+// often, and how hard — and each of them is a FAMILY multiplier times an ITEM
+// multiplier.
+//
+// The family part has always existed: an axe swings at 1.35x the base interval
+// and hits for 1.45x, which is what makes an axe an axe rather than a sword
+// with a different picture. The item part is what stops nine swords being one
+// sword: a claymore is slower and heavier than an arming sword, a falchion
+// quicker and lighter, a spear reaches past both.
+//
+// THEY RESOLVE HERE AND NOWHERE ELSE. The family multipliers used to be read
+// inline at six call sites — `weaponDef(x).speedMultiplier` on the server, the
+// same again on the client's stat sheet, `attackRangeFor` reaching into the
+// table itself — and adding a second factor to each of those would have been
+// six edits nobody was reminded about. That is precisely how helm and cape once
+// came to roll stats no combat formula ever read. One resolver per number, and
+// the server's swing timer and the character sheet cannot disagree about what a
+// Bloodclaim Claymore does.
+
+/** The family's multipliers times the item's own. */
+export function weaponFeel(item: ItemInstance | null | undefined): Required<WeaponMods> {
+  const family = weaponDef(item?.weaponType);
+  const mods = item ? itemBase(item.baseId).mods : undefined;
+  return {
+    range: family.rangeMultiplier * (mods?.range ?? 1),
+    speed: family.speedMultiplier * (mods?.speed ?? 1),
+    damage: family.damageMultiplier * (mods?.damage ?? 1),
+  };
+}
+
+/**
+ * How far this particular weapon reaches, in world pixels.
+ *
+ * `attackRangeFor` already folds in the family; this multiplies the item on top
+ * and then divides the family back out, because applying `feel.range` to a
+ * number that already contains `rangeMultiplier` would square it. Written as a
+ * ratio rather than by reaching past `attackRangeFor` into the class table, so
+ * there is still exactly one place that knows a class's base reach.
+ */
+export function reachOf(
+  item: ItemInstance | null | undefined,
+  rangePercent = 0,
+): number {
+  const base = attackRangeFor(item?.weaponType, rangePercent);
+  const mods = item ? itemBase(item.baseId).mods : undefined;
+  return Math.round(base * (mods?.range ?? 1));
+}
+
+/** How often it swings, in milliseconds, after everything that touches that. */
+export function swingIntervalOf(
+  item: ItemInstance | null | undefined,
+  weaponRarity: ItemRarity | null,
+  battlePowerLevel: number,
+  agility: number,
+  attackSpeedPercent = 0,
+): number {
+  const base = playerAttackIntervalMs(weaponRarity, battlePowerLevel, agility);
+  return applyAttackSpeed(Math.round(base * weaponFeel(item).speed), attackSpeedPercent);
+}
+
+/**
+ * The hit band this weapon swings for.
+ *
+ * The damage multiplier is roughly the inverse of the speed one, so a slow
+ * weapon hits proportionally harder and total damage per second stays in the
+ * same neighbourhood — the choice is burst against steady rather than one
+ * weapon simply winning.
+ */
+export function hitBandOf(
+  item: ItemInstance | null | undefined,
+  power: number,
+  bonusDamage = 0,
+  damagePercent = 0,
+): { min: number; max: number } {
+  const feel = weaponFeel(item);
+  return {
+    min: applyDamagePercent(Math.round(playerMinHit(power) * feel.damage), damagePercent),
+    max: applyDamagePercent(
+      Math.round(playerMaxHit(power, bonusDamage) * feel.damage),
+      damagePercent,
+    ),
+  };
+}
+
+/**
+ * How this weapon differs from the plain member of its family, for a tooltip.
+ *
+ * Reads off the same numbers the game resolves with rather than off the flavour
+ * text, so a rebalance cannot leave an item describing itself wrongly. Only
+ * differences worth a player's attention are reported: a five per cent nudge is
+ * noise, and listing it would bury the claymore's fifty.
+ */
+export function feelNotes(item: ItemInstance | null | undefined): string[] {
+  const mods = item ? itemBase(item.baseId).mods : undefined;
+  if (!mods) return [];
+  const notes: string[] = [];
+  const pct = (v: number) => `${Math.round(Math.abs(v - 1) * 100)}%`;
+  if (mods.range && Math.abs(mods.range - 1) >= 0.1) {
+    notes.push(mods.range > 1 ? `${pct(mods.range)} more reach` : `${pct(mods.range)} less reach`);
+  }
+  if (mods.speed && Math.abs(mods.speed - 1) >= 0.1) {
+    notes.push(mods.speed > 1 ? `${pct(mods.speed)} slower` : `${pct(mods.speed)} faster`);
+  }
+  if (mods.damage && Math.abs(mods.damage - 1) >= 0.1) {
+    notes.push(
+      mods.damage > 1 ? `${pct(mods.damage)} harder hitting` : `${pct(mods.damage)} lighter`,
+    );
+  }
+  return notes;
 }
 
 // --- The smithy -------------------------------------------------------------

@@ -23,8 +23,10 @@ import {
 import {
   AFFIXES_BY_ID,
   affixSummary,
+  feelNotes,
   itemBase,
   itemName,
+  itemScore,
   itemShortName,
 } from "../../../shared/items";
 import { iconSvg } from "./icons";
@@ -94,8 +96,55 @@ export function itemAffixLines(item: ItemInstance): ItemLine[] {
     .map((affix) => ({ label: affix.label, value: affixSummary(affix, base.band) }));
 }
 
+/**
+ * How this item compares with what is already worn in its slot.
+ *
+ * The one question a bag is actually asked — "is this better than mine?" — and
+ * until now the player answered it by opening two tooltips and doing the
+ * subtraction themselves. Reported per number rather than as one verdict,
+ * because "better" is not a fact: a claymore is more damage and less speed, and
+ * which of those wins is the player's call.
+ */
+export interface ItemComparison {
+  /** Positive means the hovered item is ahead. */
+  deltas: { label: string; delta: number; suffix: string }[];
+  /** Crude overall ordering, for the one-word summary. */
+  scoreDelta: number;
+  againstName: string;
+}
+
+export function compareToEquipped(
+  item: ItemInstance,
+  equipped: ItemInstance[],
+): ItemComparison | null {
+  const worn = equipped.find((i) => i.equipped && i.slot === item.slot);
+  // Nothing to compare against, or it IS the thing being compared against.
+  if (!worn || worn.id === item.id) return null;
+
+  const deltas: ItemComparison["deltas"] = [];
+  if (item.statValue !== worn.statValue) {
+    deltas.push({
+      label: PRIMARY_STAT_LABEL[item.slot],
+      delta: item.statValue - worn.statValue,
+      suffix: "",
+    });
+  }
+  if (item.bonusStatValue !== worn.bonusStatValue) {
+    deltas.push({
+      label: SECONDARY_STAT_LABEL[item.slot],
+      delta: item.bonusStatValue - worn.bonusStatValue,
+      suffix: SECONDARY_SUFFIX[item.slot],
+    });
+  }
+  return {
+    deltas,
+    scoreDelta: itemScore(item) - itemScore(worn),
+    againstName: itemShortName(worn),
+  };
+}
+
 /** Everything a tooltip needs, assembled once so every surface agrees. */
-export function itemDetails(item: ItemInstance): {
+export function itemDetails(item: ItemInstance, equipped: ItemInstance[] = []): {
   name: string;
   color: string;
   quality: string;
@@ -104,7 +153,9 @@ export function itemDetails(item: ItemInstance): {
   flavour: string;
   stats: ItemLine[];
   affixes: ItemLine[];
+  feel: string[];
   twoHanded: boolean;
+  comparison: ItemComparison | null;
 } {
   const base = itemBase(item.baseId);
   return {
@@ -118,7 +169,11 @@ export function itemDetails(item: ItemInstance): {
     flavour: base.flavour,
     stats: itemStatLines(item),
     affixes: itemAffixLines(item),
+    // Read off the same multipliers combat resolves with, so a rebalance cannot
+    // leave an item describing itself wrongly.
+    feel: feelNotes(item),
     twoHanded: !!base.twoHanded,
+    comparison: compareToEquipped(item, equipped),
   };
 }
 

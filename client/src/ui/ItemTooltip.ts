@@ -52,9 +52,13 @@ function attachTooltip(target: HTMLElement, renderContent: () => void): void {
  * All of it comes out of `itemDetails`, so the tooltip cannot describe an item
  * differently from the bag slot it is hovering over.
  */
-export function attachItemTooltip(target: HTMLElement, item: ItemInstance): void {
+export function attachItemTooltip(
+  target: HTMLElement,
+  item: ItemInstance,
+  equipped: ItemInstance[] = [],
+): void {
   attachTooltip(target, () => {
-    const d = itemDetails(item);
+    const d = itemDetails(item, equipped);
     el.innerHTML = "";
 
     const title = document.createElement("div");
@@ -83,6 +87,38 @@ export function attachItemTooltip(target: HTMLElement, item: ItemInstance): void
       row.className = "tt-affix";
       row.textContent = `${affix.label} — ${affix.value}`;
       el.appendChild(row);
+    }
+
+    // How it SWINGS, which no number in the rolls above expresses. A claymore
+    // and an arming sword can roll identical bonus damage and play nothing
+    // alike, and this is the only place that says so.
+    if (d.feel.length) {
+      const row = document.createElement("div");
+      row.className = "tt-feel";
+      row.textContent = d.feel.join(" · ");
+      el.appendChild(row);
+    }
+
+    // Against what is already worn. Per number rather than as one verdict:
+    // "better" is not a fact when an item trades damage for speed.
+    if (d.comparison) {
+      const head = document.createElement("div");
+      head.className = "tt-cmp-head";
+      head.textContent = `Compared with ${d.comparison.againstName}`;
+      el.appendChild(head);
+      if (d.comparison.deltas.length === 0) {
+        const same = document.createElement("div");
+        same.className = "tt-cmp";
+        same.textContent = "the same numbers";
+        el.appendChild(same);
+      }
+      for (const delta of d.comparison.deltas) {
+        const row = document.createElement("div");
+        row.className = `tt-cmp ${delta.delta > 0 ? "up" : "down"}`;
+        const sign = delta.delta > 0 ? "+" : "";
+        row.textContent = `${sign}${delta.delta}${delta.suffix} ${delta.label.toLowerCase()}`;
+        el.appendChild(row);
+      }
     }
 
     if (item.equipped) {

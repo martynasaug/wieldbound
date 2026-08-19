@@ -45,6 +45,10 @@ import {
   rollRarity,
   rollRarityWithFloor,
   salvageYield,
+  feelNotes,
+  hitBandOf,
+  reachOf,
+  swingIntervalOf,
 } from "../../shared/items.ts";
 
 const MODEL_DIR = path.resolve(import.meta.dirname, "../../client/public/models");
@@ -321,6 +325,63 @@ check("an enchanted item contributes something",
 check("its totals use the shared passive vocabulary",
   Object.keys(totals).every((k) => k in totals));
 console.log(`  ${itemName(loaded)} -> ${loaded.affixes.join(", ") || "no affixes"}`);
+
+// --- 11. how a weapon feels ------------------------------------------------
+// The per-item multipliers are the whole reason nine swords are not one sword
+// with different pictures, and until they were wired into the resolvers they
+// were data nothing read. These check they reach the numbers combat uses.
+section("11. weapons feel different");
+const inst = (baseId, rarity = "honed") => ({
+  id: "x", equipped: true, ...rollItem(ITEM_BASES[baseId], rarity, () => 0.5),
+});
+
+const arming = inst("armingsword");
+const claymore = inst("claymore");
+const spear = inst("boarspear");
+const dirk = inst("dirk");
+
+check("a claymore swings slower than an arming sword",
+  swingIntervalOf(claymore, "honed", 0, 0) > swingIntervalOf(arming, "honed", 0, 0),
+  `${swingIntervalOf(claymore, "honed", 0, 0)}ms vs ${swingIntervalOf(arming, "honed", 0, 0)}ms`);
+check("and hits harder for it",
+  hitBandOf(claymore, 10).max > hitBandOf(arming, 10).max,
+  `${hitBandOf(claymore, 10).max} vs ${hitBandOf(arming, 10).max}`);
+check("a spear reaches further than a sword",
+  reachOf(spear) > reachOf(arming), `${reachOf(spear)} vs ${reachOf(arming)}`);
+check("a dagger is quicker than a sword",
+  swingIntervalOf(dirk, "honed", 0, 0) < swingIntervalOf(arming, "honed", 0, 0),
+  `${swingIntervalOf(dirk, "honed", 0, 0)}ms vs ${swingIntervalOf(arming, "honed", 0, 0)}ms`);
+check("and reaches less far", reachOf(dirk) < reachOf(arming),
+  `${reachOf(dirk)} vs ${reachOf(arming)}`);
+
+// Damage per second must stay in the same neighbourhood across the whole
+// catalogue, or the choice between weapons is not a choice.
+const dps = [];
+for (const base of bases.filter((b) => b.slot === "weapon")) {
+  const item = inst(base.id);
+  const band = hitBandOf(item, 12);
+  const interval = swingIntervalOf(item, "honed", 0, 0);
+  dps.push({ id: base.id, dps: ((band.min + band.max) / 2) / (interval / 1000) });
+}
+dps.sort((a, b) => a.dps - b.dps);
+const spread = dps[dps.length - 1].dps / dps[0].dps;
+console.log(`  dps spans ${dps[0].dps.toFixed(1)} (${dps[0].id}) to ${dps[dps.length - 1].dps.toFixed(1)} (${dps[dps.length - 1].id})`);
+check("no weapon is more than twice the damage per second of the weakest",
+  spread < 2.2, `spread ${spread.toFixed(2)}x`);
+
+// Unarmed must still resolve rather than throwing — it is a real archetype.
+check("fists resolve with no item at all",
+  reachOf(null) > 0 && swingIntervalOf(null, null, 0, 0) > 0 && hitBandOf(null, 5).max > 0,
+  `reach ${reachOf(null)}, interval ${swingIntervalOf(null, null, 0, 0)}ms`);
+
+// And the tooltip's description of a weapon must be read off those same
+// multipliers, not written by hand.
+const notes = feelNotes(claymore);
+check("a claymore describes itself as slower and harder hitting",
+  notes.some((n) => n.includes("slower")) && notes.some((n) => n.includes("harder")),
+  notes.join(", "));
+check("a plain sword has nothing to say about itself", feelNotes(arming).length === 0,
+  feelNotes(arming).join(", "));
 
 // --- done -------------------------------------------------------------------
 console.log(
