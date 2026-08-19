@@ -2358,8 +2358,42 @@ crafting system to go with them.
         Worn dagger is noise, and noise is what stops a player reading the
         corner at all
 
-- [ ] **M2 — remaining item work.** Whether 78 bases is enough, set bonuses, and
-      a look at whether the forge should teach recipes rather than gate them.
+- [x] **M1.3 — matched gear, and the catalogue grown to 107.** The catalogue
+      keeps three independent axes and two of them meant something: mesh decided
+      the shape, quality decided the numbers, and **palette decided nothing at
+      all** — the one axis a player could SEE and had no reason to care about.
+      - Wearing three pieces of one material is worth something now, five is
+        worth more, and it is a choice a player can see on their own character
+        rather than read off a sheet. That visibility is why it hangs off
+        palette rather than a hidden set id: you can tell across a field whether
+        someone is wearing a matched kit
+      - **Twelve sets, named for what the material reads as** — Ironclad,
+        Blackglass, Rimeward, Bloodwrought. A player guessing what obsidian
+        rewards from its name should be right
+      - Deliberately modest, and the test enforces it: a full matched kit is
+        +10 armour and +9% damage, which loses to a mixed set one quality step
+        higher. It is a tiebreaker with a look, never a second progression
+      - Totalled into `gearPassives` beside affixes, so it reaches combat through
+        the same funnel talents already use and needs no new plumbing anywhere
+      - The sheet shows unreached tiers too, greyed: "three of five Blackglass"
+        is only useful if you can see what the fifth would buy
+
+      **The test refused eight of the twelve sets on the first run**, and it was
+      right to: a five-piece bonus is not a bonus if the catalogue only has that
+      material in two slots. So **29 base items were added** — every one the
+      piece its kit was missing, since a Silver Circlet with nothing silver to
+      wear under it was a promise the catalogue did not keep. 78 to 107, and
+      "every palette a set is written for exists in at least five slots" is now
+      a rule the suite checks rather than trusts.
+
+      One systemic fix fell out of it: **band 1's budget went from 3 to 4**,
+      because at 3 the lightest slots multiplied down to a primary of 1 — and a
+      stat of 1 cannot get worse, which made Broken indistinguishable from Honed
+      on those items and the bottom of the ladder meaningless for them. The
+      floor of the system has to leave room for the system to move.
+
+- [ ] **M2 — remaining item work.** Whether the forge should teach recipes
+      rather than gate them by level, and what a second material tier would buy.
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -3732,6 +3766,28 @@ music, player-facing damage-type/resistances, more crafting recipes
   page under it and the run dies with "execution context was destroyed", which
   reads like a product fault and is not one.
 
+- Palette had to mean something or it should not have been an axis. Mesh decided
+  the shape and quality decided the numbers; the third axis was the only one a
+  player could SEE and the only one with no reason to care about. Matched gear
+  hangs off palette rather than a hidden set id precisely because of that
+  visibility — you can tell across a field whether someone is wearing a kit.
+- A set bonus is a tiebreaker with a look, never a second progression. A full
+  matched kit is worth less than one step up the quality ladder, and the test
+  asserts the ceiling rather than trusting the tuning — the moment a set beats
+  numbers, the palette axis stops being a choice and becomes the whole game.
+- A set nobody can assemble is content that does not exist. The first run of the
+  matched-gear test refused eight of twelve sets because the catalogue only had
+  those materials in two or three slots, which is exactly the silent failure
+  worth catching: nothing throws, the bonus simply never fires. The fix was 29
+  more base items, not weaker thresholds.
+- The floor of a system has to leave room for the system to move. Band 1's
+  budget was 3, which multiplied down to a primary of 1 on the lightest slots —
+  and a stat of 1 cannot get worse, so Broken and Honed were identical on those
+  items and the bottom of the ladder did nothing for them. Raised to 4.
+- One vocabulary for what a modifier does. Affixes and set bonuses both grant
+  `PassiveBonus`, and both now render through `passiveSummary`, so two sources
+  that give armour say "armour" the same way in the same order everywhere.
+
 - A test that shares a world with a live game must assert on IDENTITY, not on
   counts. Something is usually hitting the character, so a stray real damage
   number lands mid-probe and "six elements" becomes seven. And a test character
@@ -3750,7 +3806,32 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M1 complete (2026-08-19). **Latest: Phase 48 M1 — the item
+Phase 0 through 48 M1.3 complete (2026-08-20). **Latest: M1.1 through M1.3 —
+weapons that feel different, loot on the ground, and matched gear.**
+
+M1.1 closed a promise the data made and the game did not keep: 37 weapons
+carried per-item range/speed/damage multipliers and nothing read them, so a
+Bloodclaim Claymore played exactly like an Arming Sword. The family multipliers
+had been read inline at six call sites, so adding a second factor to each would
+have been six edits nobody was reminded about — one resolver per number instead
+(`reachOf`, `swingIntervalOf`, `hitBandOf`). Measured across all 37, damage per
+second spans 1.6x, tight enough that the choice is genuine. The tooltip also
+compares against what is worn, per number rather than as one verdict.
+
+M1.2 put loot on the ground. A kill leaves the item's own mesh where the monster
+fell, turning, on a disc of its quality's colour; walk over it and it is yours.
+Reserved for whoever the threat table credited, then free. A full bag now delays
+a drop instead of destroying it.
+
+M1.3 gave the palette axis mechanical meaning — it decided what an item was made
+of and nothing else, the one axis a player could see and had no reason to care
+about. Twelve matched sets, deliberately modest (a full kit loses to a mixed set
+one quality step higher), totalled into `gearPassives` beside affixes. The test
+refused eight of the twelve on the first run because the catalogue only had
+those materials in two or three slots, so **29 more base items** were added:
+**107 now**.
+
+Before that, Phase 0 through 48 M1 (2026-08-19). **Latest: Phase 48 M1 — the item
 system, replaced.** User brief: delete every item in the game, add a lot of new
 ones each with its own model and stats, a seven-step rarity ladder named Broken
 through Enchanted, and a whole new crafting system.

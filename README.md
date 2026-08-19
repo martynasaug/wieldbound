@@ -113,7 +113,7 @@ first run at `server/data/wieldbound.db`.
   proficiency is what you can do with the thing in your hand, and it is earned
   only while holding it. Stat points come with per-weapon advice, since which
   attribute multiplies your damage depends on what you are wielding.
-- **Items** — a catalogue of **78 named things**, each with its own model,
+- **Items** — a catalogue of **107 named things**, each with its own model,
   palette, difficulty band and flavour. Seven qualities that are conditions
   rather than colours — Broken, Worn, Honed, Tempered, Forged, Runed,
   Enchanted — where Broken is genuinely *worse* than baseline and Honed is
@@ -125,7 +125,11 @@ first run at `server/data/wieldbound.db`.
   the ladder cannot be reached by gathering alone.
 - **Loot lands on the ground** — a kill leaves the item's own model where the
   monster fell, turning, lit by its quality. Walk over it to take it. It is
-  reserved for whoever earned the kill for a while, then anyone may have it. Four of the slots show on the character:
+  reserved for whoever earned the kill for a while, then anyone may have it.
+- **Matched gear** — twelve sets, one per material, so dressing in one thing is
+  worth something. Deliberately modest: a full matched kit loses to a mixed set
+  one quality step higher. It is a tiebreaker with a look, not a second
+  progression. Four of the slots show on the character:
   style picks the mesh, rarity only tints it, so a plate chestpiece and a
   leather one take the same epic gold and stay recognisably plate and leather.
 - **Plus** gathering, levels and attributes, consumables, a leaderboard, a

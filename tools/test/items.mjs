@@ -45,8 +45,11 @@ import {
   rollRarity,
   rollRarityWithFloor,
   salvageYield,
+  PALETTE_SETS,
+  activeSets,
   feelNotes,
   hitBandOf,
+  setPassives,
   reachOf,
   swingIntervalOf,
 } from "../../shared/items.ts";
@@ -233,8 +236,26 @@ for (const b of [bases[0], bases[Math.floor(bases.length / 2)], bases[bases.leng
   }
   const broken = rollItem(b, "broken", fixed);
   const honed = rollItem(b, "honed", fixed);
-  check(`${b.id} Broken is worse than Honed`, broken.statValue < honed.statValue,
+  check(`${b.id} Broken is never better than Honed`, broken.statValue <= honed.statValue,
     `${broken.statValue} vs ${honed.statValue}`);
+}
+
+// Across the whole catalogue: Broken must never beat Honed, and must be
+// strictly worse wherever there is room for it to be — a base whose Honed
+// primary is 1 has nowhere to go, and that is itself worth catching, because it
+// means the ladder does nothing for that item.
+{
+  const fixed = () => 0.5;
+  let degenerate = [];
+  for (const b of bases) {
+    const broken = rollItem(b, "broken", fixed).statValue;
+    const honed = rollItem(b, "honed", fixed).statValue;
+    check(`${b.id}: Broken never beats Honed`, broken <= honed, `${broken} vs ${honed}`);
+    if (honed >= 2 && broken >= honed) degenerate.push(b.id);
+    if (honed < 2) degenerate.push(`${b.id}(honed=${honed})`);
+  }
+  check("no base has a primary too small for the ladder to move",
+    degenerate.length === 0, degenerate.join(", "));
 }
 
 // --- 8. weapons -------------------------------------------------------------
@@ -325,6 +346,52 @@ check("an enchanted item contributes something",
 check("its totals use the shared passive vocabulary",
   Object.keys(totals).every((k) => k in totals));
 console.log(`  ${itemName(loaded)} -> ${loaded.affixes.join(", ") || "no affixes"}`);
+
+// --- 11b. matched gear ------------------------------------------------------
+// Palette was the one axis a player could SEE and had no reason to care about.
+// These check that dressing in one material is worth something, that it is not
+// worth so much it beats numbers, and that a set nobody can assemble does not
+// exist.
+section("11b. matched gear");
+const wearable = ITEM_SLOTS.filter((s) => s !== "weapon");
+for (const [palette, set] of Object.entries(PALETTE_SETS)) {
+  const owners = bases.filter((b) => b.art.palette === palette);
+  const slots = new Set(owners.map((b) => b.slot));
+  const top = set.tiers[set.tiers.length - 1].need;
+  // A set needing five pieces from four slots can never be worn.
+  check(`${set.name} can actually be assembled`, slots.size >= top,
+    `${set.name} needs ${top} pieces and ${palette} exists in ${slots.size} slot(s): ${[...slots].join(", ")}`);
+  check(`${set.name} tiers ascend`,
+    set.tiers.every((t, i) => i === 0 || t.need > set.tiers[i - 1].need));
+  for (const tier of set.tiers) {
+    check(`${set.name} ${tier.need}-piece gives something`,
+      Object.values(tier.bonus).some((v) => v !== 0));
+  }
+}
+
+// A full matched set must not outweigh the numbers on the gear itself.
+{
+  const steelBases = bases.filter((b) => b.art.palette === "steel");
+  const worn = {};
+  for (const b of steelBases) if (!worn[b.slot]) worn[b.slot] = { id: b.id, equipped: true, ...rollItem(b, "honed", () => 0.5) };
+  const totals = setPassives(worn);
+  const live = activeSets(worn);
+  console.log(`  steel: ${Object.keys(worn).length} slots -> ${live.map((s) => s.name + " " + s.count).join(", ") || "nothing"}`);
+  check("wearing a matched kit grants something",
+    Object.values(totals).some((v) => v !== 0), JSON.stringify(totals));
+  // Deliberately modest: a matched set of Worn gear should lose to a mixed set
+  // of Forged, or the palette axis stops being cosmetic and starts being the
+  // whole game.
+  check("but never more than a quality step is worth",
+    (totals.damagePercent ?? 0) <= 15 && (totals.armor ?? 0) <= 12,
+    `damage ${totals.damagePercent}%, armour ${totals.armor}`);
+}
+
+// Nothing equipped means no sets, and one piece is not a near-miss worth
+// listing.
+check("an empty paperdoll has no sets", activeSets(undefined).length === 0);
+check("one lone piece is not reported",
+  activeSets({ helm: { id: "x", equipped: true, ...rollItem(ITEM_BASES.ironcap, "honed", () => 0.5) } }).length === 0);
 
 // --- 11. how a weapon feels ------------------------------------------------
 // The per-item multipliers are the whole reason nine swords are not one sword

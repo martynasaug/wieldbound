@@ -23,12 +23,14 @@ import {
 import {
   AFFIXES_BY_ID,
   affixSummary,
+  passiveSummary,
   feelNotes,
   itemBase,
   itemName,
   itemScore,
   itemShortName,
 } from "../../../shared/items";
+import type { PassiveBonus } from "../../../shared/protocol-types";
 import { iconSvg } from "./icons";
 
 export function rarityColor(rarity: ItemRarity): string {
@@ -70,6 +72,18 @@ export { itemName, itemShortName };
 export interface ItemLine {
   label: string;
   value: string;
+}
+
+/**
+ * A `PassiveBonus` as one readable line.
+ *
+ * Shares `PASSIVE_LABEL` with the affix summaries by going through
+ * `affixSummary`'s own vocabulary — there is one set of words for what a
+ * modifier does, so a set bonus and an affix that both grant armour say
+ * "armour" in the same place.
+ */
+export function describeBonus(bonus: PassiveBonus): string {
+  return passiveSummary(bonus);
 }
 
 /** The two rolled numbers, labelled by what they actually do. */

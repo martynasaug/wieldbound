@@ -3,6 +3,7 @@ import {
   MAX_WEAPON_LEVEL,
   WEAPONS,
   classForWeapon,
+  equippedBySlot,
   statAdviceFor,
   type AttributeName,
   type ItemInstance,
@@ -16,7 +17,8 @@ import { iconEl, iconSvg } from "./icons";
 // Rarity colours, slot icons and item names all come from one place now — see
 // ui/items.ts. Four panels each carrying their own copy of the palette is how
 // two of them came to disagree about what colour a tier was.
-import { SLOT_ICON, itemIcon, itemShortName, rarityColor } from "./items";
+import { SLOT_ICON, describeBonus, itemIcon, itemShortName, rarityColor } from "./items";
+import { activeSets } from "../../../shared/items";
 const ATTRS: AttributeName[] = ["strength", "agility", "vitality", "intelligence"];
 // Deliberately a figure rather than a weapon: the weapon name is written
 // directly underneath, and repeating it as the portrait wastes the one place
@@ -87,6 +89,7 @@ export class CharacterPanel {
   private weapon: WeaponType | undefined = undefined;
   /** Last item list seen, so the figure can name what is actually in the hand. */
   private equipped: ItemInstance[] = [];
+  private setsEl = document.getElementById("doll-sets")!;
 
   constructor(private readonly onAllocate: (stat: AttributeName) => void) {
     this.closeButton.addEventListener("click", () => this.close());
@@ -175,9 +178,40 @@ export class CharacterPanel {
         : "Unarmed";
   }
 
+  /**
+   * Matched gear, under the figure.
+   *
+   * Unreached tiers are drawn too, greyed: "three of five Blackglass" is only
+   * useful if the player can see what the fifth would buy. Nothing here is
+   * reported until they are one piece away, or a character wearing one of
+   * everything gets a list of twelve materials, which is not information.
+   */
+  private renderSets(): void {
+    const sets = activeSets(equippedBySlot(this.equipped));
+    this.setsEl.innerHTML = "";
+    for (const set of sets) {
+      const box = document.createElement("div");
+      box.className = "doll-set";
+
+      const name = document.createElement("div");
+      name.className = "doll-set-name";
+      name.innerHTML = `${set.name} <b>${set.count} worn</b>`;
+      box.appendChild(name);
+
+      for (const tier of set.tiers) {
+        const row = document.createElement("div");
+        row.className = `doll-set-tier${tier.active ? " on" : ""}`;
+        row.textContent = `${tier.need}: ${describeBonus(tier.bonus)}`;
+        box.appendChild(row);
+      }
+      this.setsEl.appendChild(box);
+    }
+  }
+
   setEquipped(items: ItemInstance[]): void {
     this.equipped = items;
     this.refreshWeaponName();
+    this.renderSets();
     for (const slot of ITEM_SLOTS) {
       const el = this.gearSlots.get(slot);
       if (!el) continue;

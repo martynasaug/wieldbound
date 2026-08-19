@@ -71,8 +71,16 @@ import {
 // the things in the fourth ring drop.
 export type ItemBand = 1 | 2 | 3 | 4 | 5;
 
-/** Primary stat an item of this band is worth, before slot and item tuning. */
-const BAND_POWER: Record<ItemBand, number> = { 1: 3, 2: 6, 3: 10, 4: 15, 5: 22 };
+/**
+ * Primary stat an item of this band is worth, before slot and item tuning.
+ *
+ * Band 1 is 4 rather than 3 for a reason worth recording: at 3, the lightest
+ * slots multiplied down to a primary of 1 — and a stat of 1 cannot get any
+ * worse, which makes Broken indistinguishable from Honed on those items and the
+ * bottom of the ladder meaningless for them. The floor of the whole system has
+ * to leave room for the system to move. `tools/test/items.mjs` checks it.
+ */
+const BAND_POWER: Record<ItemBand, number> = { 1: 4, 2: 6, 3: 10, 4: 15, 5: 22 };
 
 /**
  * How much of a band's power each slot carries.
@@ -555,6 +563,115 @@ const RING_BASES: ItemBase[] = [
     "No join, no seam, and nobody will explain how it was made."),
 ];
 
+// --- Filling out the materials ----------------------------------------------
+// Added when matched gear arrived and the test refused eight of the twelve
+// sets: a five-piece bonus is not a bonus if the catalogue only has that
+// material in two slots. So every palette a set is written for now exists in at
+// least five, which is a rule `tools/test/items.mjs` checks rather than trusts.
+//
+// They are not filler. Each one is the piece its kit was missing — a silver
+// circlet with nothing silver to wear under it was a promise the catalogue did
+// not keep.
+const KIT_BASES: ItemBase[] = [
+  // ---------------------------------------------------------------- silver
+  g("silvermail", "Silvered Mail", "armor", 4, "chain", "armor-chain", "silver",
+    "Rings washed bright. It does not tarnish and nobody knows why."),
+  g("silvergreaves", "Silvered Greaves", "boots", 4, "plated", "boots-plated", "silver",
+    "You can see the road in them, upside down."),
+  g("silvermantle", "Silvered Mantle", "cape", 4, "mantle", "cape-mantle", "silver",
+    "Thread-of-silver at the hem, worn thin at the shoulder."),
+  g("silverring", "Silver Band", "ring", 3, null, "ring-band", "silver",
+    "Plain, cold, and slightly too large for whoever it was made for."),
+  g("silverbuckler", "Silvered Buckler", "offhand", 4, null, "offhand-shield", "silver",
+    "Small enough to be quick, bright enough to be seen.",
+    { art: { model: "weapons/Shield_Round_2", palette: "silver", scale: 0.5, lay: "flat" } }),
+
+  // ------------------------------------------------------------------ gold
+  g("gildedcrown", "Gilded Crown", "helm", 5, "circlet", "helm-circlet", "gold",
+    "Somebody was crowned in this. It did not help them.",
+    { power: 0.5, guard: 1.9 }),
+  g("gildedplate", "Gilded Plate", "armor", 5, "plate", "armor-plate", "gold",
+    "Parade armour that has clearly been in a fight.",
+    { power: 1.25, guard: 0.7 }),
+  g("gildedsandals", "Gilded Sandals", "boots", 4, "low", "boots-low", "gold",
+    "Impractical, and the straps are real gold thread."),
+
+  // -------------------------------------------------------------- obsidian
+  g("blackglassmail", "Blackglass Mail", "armor", 5, "scale", "armor-scale", "obsidian",
+    "Scales that drink the light. Cold even in the sun.",
+    { power: 1.2, guard: 0.85 }),
+  g("blackglassboots", "Blackglass Treads", "boots", 5, "wrapped", "boots-wrapped", "obsidian",
+    "They make no sound at all, which takes some getting used to.",
+    { power: 0.8, guard: 1.6 }),
+  g("blackglassring", "Blackglass Ring", "ring", 5, null, "ring-rune", "obsidian",
+    "A band of something that is not stone and is not metal."),
+
+  // ------------------------------------------------------------------ bone
+  g("bonehelm", "Bone Helm", "helm", 3, "horned", "helm-horned", "bone",
+    "It still has the horns. That was not an accident."),
+  g("bonecuirass", "Bone Cuirass", "armor", 3, "brigandine", "armor-brigandine", "bone",
+    "Plates of something's ribs, laced into leather.",
+    { power: 1.05, guard: 0.95 }),
+  g("bonecloak", "Charnel Cloak", "cape", 4, "cloak", "cape-cloak", "bone",
+    "Weighted at the hem with small pale things."),
+
+  // ----------------------------------------------------------------- frost
+  g("rimehelm", "Rimeward Helm", "helm", 5, "full", "helm-full", "frost",
+    "The visor has frost on the inside.",
+    { power: 1.2, guard: 0.75 }),
+  g("rimerobe", "Rimeward Robe", "armor", 5, "robe", "armor-robe", "frost",
+    "It never quite dries, and it is never quite wet.",
+    { power: 0.6, guard: 1.85 }),
+  g("rimeboots", "Rimeward Boots", "boots", 5, "tall", "boots-tall", "frost",
+    "Where you stood is still cold an hour later.",
+    { power: 0.8, guard: 1.65 }),
+  g("rimering", "Rimewrought Ring", "ring", 4, null, "ring-gem", "frost",
+    "A pale stone that will not warm to the touch."),
+
+  // --------------------------------------------------------------- verdant
+  g("wardenjerkin", "Warden's Jerkin", "armor", 4, "leather", "armor-leather", "verdant",
+    "Dyed in something that grew, and it still smells faintly of it."),
+
+  // --------------------------------------------------------------- crimson
+  g("bloodwroughthelm", "Bloodwrought Helm", "helm", 5, "full", "helm-full", "crimson",
+    "The red is not paint and does not wash out.",
+    { power: 1.25, guard: 0.7 }),
+
+  // ---------------------------------------------------------------- arcane
+  g("weavewornboots", "Weaveworn Slippers", "boots", 4, "low", "boots-low", "arcane",
+    "They leave no prints, which is either useful or unsettling.",
+    { power: 0.7, guard: 1.7 }),
+
+  // ------------------------------------------------------------------ iron
+  g("ironcloak", "Ironweave Cloak", "cape", 3, "cape", "cape-cape", "iron",
+    "Rings sewn between the layers. Heavy, and it has stopped things."),
+
+  // ----------------------------------------------------------------- steel
+  g("steelring", "Steel Signet", "ring", 4, null, "ring-signet", "steel",
+    "The seal of a garrison that no longer musters."),
+
+  // ---------------------------------------------------------------- bronze
+  g("bronzehelm", "Bronze Cap", "helm", 2, "cap", "helm-cap", "bronze",
+    "Older than the iron beside it, and it has outlasted three owners."),
+  g("bronzeboots", "Bronze-shod Boots", "boots", 3, "plated", "boots-plated", "bronze",
+    "Plated at the toe, which is where things land."),
+  g("bronzering", "Bronze Torc", "ring", 2, null, "ring-band", "bronze",
+    "Not really a ring. It is worn on the arm and nobody has objected."),
+
+  // ------------------------------------------------------------------ wood
+  g("woodcap", "Woodsman's Cap", "helm", 2, "hood", "helm-hood", "wood",
+    "Waxed canvas, and one repair too many.",
+    { power: 0.8, guard: 1.4 }),
+  g("woodring", "Carved Ring", "ring", 1, null, "ring-bone", "wood",
+    "Whittled over one long winter."),
+  g("woodoffhand", "Bundled Kindling", "offhand", 1, null, "offhand-quiver", "wood",
+    "Strapped at the hip. Better than an empty hand, marginally.",
+    // Not 0.5: a band-1 off-hand at half power rounds to 1, and a stat of 1 is
+    // a stat that cannot get worse — which makes Broken indistinguishable from
+    // Honed on it, and the bottom of the ladder meaningless for that one item.
+    { art: { build: "quiver", palette: "wood" }, power: 0.9, guard: 1.4 }),
+];
+
 /** Every base item in the game, by id. */
 export const ITEM_BASES: Record<string, ItemBase> = Object.fromEntries(
   [
@@ -565,6 +682,7 @@ export const ITEM_BASES: Record<string, ItemBase> = Object.fromEntries(
     ...BOOTS_BASES,
     ...CAPE_BASES,
     ...RING_BASES,
+    ...KIT_BASES,
   ].map((b) => [b.id, b]),
 );
 
@@ -674,9 +792,14 @@ export function affixBonus(affix: AffixDef, band: ItemBand): PassiveBonus {
   return out;
 }
 
-/** How an affix reads in a tooltip, e.g. "+3 armour, +15 health". */
-export function affixSummary(affix: AffixDef, band: ItemBand): string {
-  const bonus = affixBonus(affix, band);
+/**
+ * How a bag of modifiers reads, e.g. "+3 armour, +15 maximum health".
+ *
+ * One vocabulary for what a modifier DOES, shared by affixes, set bonuses and
+ * anything else that ever grants a `PassiveBonus` — so two sources that both
+ * give armour say "armour" the same way, in the same order, everywhere.
+ */
+export function passiveSummary(bonus: PassiveBonus): string {
   const parts: string[] = [];
   for (const key of Object.keys(bonus) as (keyof PassiveBonus)[]) {
     const v = bonus[key] ?? 0;
@@ -684,6 +807,11 @@ export function affixSummary(affix: AffixDef, band: ItemBand): string {
     parts.push(`${v > 0 ? "+" : ""}${v}${PASSIVE_UNIT[key]} ${PASSIVE_LABEL[key]}`);
   }
   return parts.join(", ");
+}
+
+/** How an affix reads in a tooltip, at the band of the item carrying it. */
+export function affixSummary(affix: AffixDef, band: ItemBand): string {
+  return passiveSummary(affixBonus(affix, band));
 }
 
 const PASSIVE_LABEL: Record<keyof PassiveBonus, string> = {
@@ -868,6 +996,10 @@ export function gearPassives(eq: EquippedGear | undefined): Required<PassiveBonu
     const item = eq[slot];
     if (item) addPassives(total, itemPassives(item));
   }
+  // Matched gear totals in here rather than anywhere else, so a set bonus is
+  // the same kind of thing as an affix all the way down and reaches combat
+  // through the funnel talents already use.
+  addPassives(total, setPassives(eq));
   return total;
 }
 
@@ -1004,6 +1136,197 @@ export function feelNotes(item: ItemInstance | null | undefined): string[] {
     );
   }
   return notes;
+}
+
+// --- Matched gear -----------------------------------------------------------
+// The catalogue keeps three independent axes — mesh, palette, quality — and two
+// of them already mean something mechanically. Palette did not: it decided what
+// an item was made of and nothing else, which made it the one axis a player
+// could see and had no reason to care about.
+//
+// So dressing in one material is worth something. Three pieces of Obsidian is a
+// choice against three pieces of whatever happened to roll highest, and it is a
+// choice the player can SEE on their own character rather than one they have to
+// read off a sheet. That visibility is the whole reason this hangs off palette
+// rather than off a hidden "set id": you can tell at a glance across a field
+// whether someone is wearing a matched kit.
+//
+// Deliberately weak per piece and never a substitute for numbers — a matched
+// set of Worn gear should lose to a mixed set of Forged. It is a tiebreaker
+// with a look, not a second progression.
+
+export interface SetTier {
+  /** How many equipped pieces of the palette this tier needs. */
+  need: number;
+  bonus: PassiveBonus;
+}
+
+export interface PaletteSet {
+  name: string;
+  /** What wearing it is FOR, in one line, for the character sheet. */
+  blurb: string;
+  tiers: SetTier[];
+}
+
+/**
+ * What each material rewards.
+ *
+ * Chosen to match what the material reads as rather than to balance a spread:
+ * iron and steel protect, obsidian and crimson are about hurting things, bone
+ * and bronze are about lasting, arcane and frost are about casting. A player
+ * who guesses from the name should be right.
+ */
+export const PALETTE_SETS: Partial<Record<PaletteId, PaletteSet>> = {
+  iron: {
+    name: "Ironclad",
+    blurb: "Plain metal, honestly worked. It stops things.",
+    tiers: [
+      { need: 3, bonus: { armor: 3, maxHpBonus: 12 } },
+      { need: 5, bonus: { armor: 5, maxHpBonus: 20 } },
+    ],
+  },
+  steel: {
+    name: "Tempered Guard",
+    blurb: "A soldier's kit: something to hide behind and something to hit with.",
+    tiers: [
+      { need: 3, bonus: { armor: 4, damagePercent: 3 } },
+      { need: 5, bonus: { armor: 6, damagePercent: 6, accuracyBonus: 4 } },
+    ],
+  },
+  bronze: {
+    name: "Old Campaign",
+    blurb: "Softer than steel and it has lasted longer than most of it.",
+    tiers: [
+      { need: 3, bonus: { maxHpBonus: 18, healOnKill: 3 } },
+      { need: 5, bonus: { maxHpBonus: 30, healOnKill: 6 } },
+    ],
+  },
+  silver: {
+    name: "Silvered",
+    blurb: "Bright enough to be seen coming, and it lands anyway.",
+    tiers: [
+      { need: 3, bonus: { accuracyBonus: 6, critChance: 3 } },
+      { need: 5, bonus: { accuracyBonus: 10, critChance: 6 } },
+    ],
+  },
+  gold: {
+    name: "Regalia",
+    blurb: "Worth more than it protects, which is rather the point.",
+    tiers: [
+      { need: 3, bonus: { critDamagePercent: 12, maxManaBonus: 10 } },
+      { need: 5, bonus: { critDamagePercent: 22, maxManaBonus: 18 } },
+    ],
+  },
+  obsidian: {
+    name: "Blackglass",
+    blurb: "Nothing about it reflects. Things that hunt at night wore this.",
+    tiers: [
+      { need: 3, bonus: { critChance: 4, evasion: 4 } },
+      { need: 5, bonus: { critChance: 7, evasion: 7, critDamagePercent: 12 } },
+    ],
+  },
+  bone: {
+    name: "Ossuary",
+    blurb: "Taken from things that did not need it any more.",
+    tiers: [
+      { need: 3, bonus: { maxHpBonus: 14, healOnKill: 4 } },
+      { need: 5, bonus: { maxHpBonus: 24, healOnKill: 8, armor: 3 } },
+    ],
+  },
+  verdant: {
+    name: "Green Wardens",
+    blurb: "Cut for moving through country nobody has a map of.",
+    tiers: [
+      { need: 3, bonus: { moveSpeedBonus: 14, evasion: 4 } },
+      { need: 5, bonus: { moveSpeedBonus: 24, evasion: 7, attackSpeedPercent: 4 } },
+    ],
+  },
+  crimson: {
+    name: "Bloodwrought",
+    blurb: "It wants the fight to be short.",
+    tiers: [
+      { need: 3, bonus: { damagePercent: 6, healOnKill: 3 } },
+      { need: 5, bonus: { damagePercent: 11, healOnKill: 6, critDamagePercent: 10 } },
+    ],
+  },
+  frost: {
+    name: "Rimeward",
+    blurb: "Cold to hold. Whatever it is doing, it is doing it slowly.",
+    tiers: [
+      { need: 3, bonus: { skillPowerPercent: 6, manaRegenBonus: 1 } },
+      { need: 5, bonus: { skillPowerPercent: 11, manaRegenBonus: 2, cooldownPercent: 6 } },
+    ],
+  },
+  arcane: {
+    name: "Weaveworn",
+    blurb: "The stitching is not thread and does not come loose.",
+    tiers: [
+      { need: 3, bonus: { maxManaBonus: 16, manaCostPercent: 8 } },
+      { need: 5, bonus: { maxManaBonus: 28, manaCostPercent: 14, skillPowerPercent: 8 } },
+    ],
+  },
+  wood: {
+    name: "Woodsfolk",
+    blurb: "Whatever was to hand. It gets you to the next thing.",
+    tiers: [
+      { need: 3, bonus: { moveSpeedBonus: 10, maxHpBonus: 8 } },
+      { need: 5, bonus: { moveSpeedBonus: 18, maxHpBonus: 14 } },
+    ],
+  },
+};
+
+export interface ActiveSet {
+  palette: PaletteId;
+  name: string;
+  blurb: string;
+  /** Equipped pieces of this palette. */
+  count: number;
+  /** Tiers, with whether each is reached — the sheet shows both, so a player\n   *  can see what one more piece would buy. */
+  tiers: { need: number; bonus: PassiveBonus; active: boolean }[];
+}
+
+/**
+ * Which materials the player is wearing enough of, best first.
+ *
+ * Counts EVERY equipped slot, including the two that are held. A shield and a
+ * sword of the same material are as much a matched kit as two boots are, and
+ * excluding them would have made the off-hand the one slot that could not
+ * contribute to the thing it most obviously looks like it should.
+ */
+export function activeSets(eq: EquippedGear | undefined): ActiveSet[] {
+  if (!eq) return [];
+  const counts = new Map<PaletteId, number>();
+  for (const slot of ITEM_SLOTS) {
+    const item = eq[slot];
+    if (!item) continue;
+    const palette = itemBase(item.baseId).art.palette;
+    counts.set(palette, (counts.get(palette) ?? 0) + 1);
+  }
+
+  const out: ActiveSet[] = [];
+  for (const [palette, count] of counts) {
+    const set = PALETTE_SETS[palette];
+    if (!set) continue;
+    const tiers = set.tiers.map((t) => ({ ...t, active: count >= t.need }));
+    // Reported even when nothing is reached yet, but only once the player is
+    // one piece away — a list of twelve materials they own one of each of is
+    // not information.
+    if (count < set.tiers[0].need - 1) continue;
+    out.push({ palette, name: set.name, blurb: set.blurb, count, tiers });
+  }
+  return out.sort((a, b) => b.count - a.count);
+}
+
+/** What matched gear adds up to. Totalled into the same bag as talents and
+ *  affixes, so it reaches combat through the one funnel they already use. */
+export function setPassives(eq: EquippedGear | undefined): Required<PassiveBonus> {
+  const total = { ...EMPTY_PASSIVES };
+  for (const set of activeSets(eq)) {
+    for (const tier of set.tiers) {
+      if (tier.active) addPassives(total, tier.bonus);
+    }
+  }
+  return total;
 }
 
 // --- The smithy -------------------------------------------------------------

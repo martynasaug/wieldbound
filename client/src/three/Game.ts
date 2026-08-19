@@ -98,7 +98,10 @@ import {
 import { instantiate, whenLoadsSettle } from "./assets";
 import {
   ITEM_BASES,
+  PALETTE_SETS,
+  activeSets,
   forgeCost,
+  gearPassives,
   hitBandOf,
   itemBase,
   itemShortName,
@@ -589,6 +592,9 @@ export class Game {
       // constantly, and neither is answerable from the item instance alone.
       ITEM_BASES,
       RARITIES,
+      PALETTE_SETS,
+      activeSets,
+      gearPassives,
       itemName,
       itemPassives,
       forgeCost,

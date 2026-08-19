@@ -156,6 +156,20 @@
       }
       .doll-weapon { font-size: 14px; color: var(--gold-bright); letter-spacing: .02em; }
       .doll-prof { font-size: 11px; color: var(--muted); margin-top: 1px; }
+      /* Matched gear. Deliberately quiet: a set is a tiebreaker with a look,
+         never a second progression, and the panel should say so by weight. */
+      .doll-sets { margin-top: 7px; display: flex; flex-direction: column; gap: 4px; }
+      .doll-set {
+        border-left: 2px solid var(--gold-dim);
+        padding-left: 7px;
+        text-align: left;
+      }
+      .doll-set-name { font-size: 11.5px; color: var(--gold-bright); }
+      .doll-set-name b { font-weight: normal; color: var(--muted); font-size: 10.5px; }
+      .doll-set-tier { font-size: 10.5px; color: #6f6a62; line-height: 1.4; }
+      /* A tier you have reached. The unreached ones stay visible so a player
+         can see what one more piece would buy. */
+      .doll-set-tier.on { color: #9ad4ff; }
       .doll-power {
         display: flex; align-items: baseline; justify-content: center; gap: 6px;
         margin-top: 5px; padding-top: 5px; border-top: 1px solid rgba(106,81,43,.5);
@@ -1165,6 +1179,11 @@
                 <div class="doll-weapon" id="doll-weapon">Unarmed</div>
                 <div class="doll-prof" id="doll-prof"></div>
                 <div class="doll-power"><span>Gear</span><b id="doll-power">0</b></div>
+                <!-- Matched gear. Lives under the figure rather than in the
+                     statistics tab because it is a fact about what you are
+                     WEARING, and the figure is where the player is already
+                     looking to see that. -->
+                <div class="doll-sets" id="doll-sets"></div>
               </div>
             </div>
             <div class="doll-col">
