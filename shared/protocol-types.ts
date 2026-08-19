@@ -1993,6 +1993,20 @@ export interface SalvageItemMessage {
   payload: { itemId: string };
 }
 
+/**
+ * Several at once.
+ *
+ * The bag holds thirty and loot is frequent, so clearing out the bottom of the
+ * ladder one confirmation at a time is a chore the game invented for itself.
+ * The CLIENT decides which — it is the side that knows what the player was
+ * looking at — and the server validates every one, so a list naming an equipped
+ * item or somebody else's simply loses those entries rather than the request.
+ */
+export interface SalvageManyMessage {
+  type: "SALVAGE_MANY";
+  payload: { itemIds: string[] };
+}
+
 /** Every material, in one message. Wood, ore and herb each had their own
  *  update; essence made that four, and four messages to say one thing is three
  *  chances for the client's idea of the wallet to drift from the server's. */
@@ -2638,6 +2652,7 @@ export type ClientToServerMessage =
   | UpgradeBattlePowerMessage
   | EquipItemMessage
   | SalvageItemMessage
+  | SalvageManyMessage
   | AllocateStatMessage
   | ForgeItemMessage
   | ReforgeItemMessage

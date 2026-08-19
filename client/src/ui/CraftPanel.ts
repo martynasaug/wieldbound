@@ -41,6 +41,7 @@ import {
   itemBase,
   nextRarity,
   reforgeCost,
+  reforgePreview,
   salvageYield,
   type ItemBase,
   type Material,
@@ -78,6 +79,7 @@ export class CraftPanel {
     private readonly onForge: (stationId: string, baseId: string) => void,
     private readonly onReforge: (stationId: string, itemId: string) => void,
     private readonly onSalvage: (itemId: string) => void,
+    private readonly onSalvageMany: (itemIds: string[]) => void,
     private readonly onCraftPotion: (stationId: string) => void,
     private readonly onCraftTonic: (stationId: string) => void,
   ) {
@@ -299,6 +301,25 @@ export class CraftPanel {
       if (!cost) continue;
 
       const sub = this.costLine(cost);
+
+      // What it becomes, so the decision can be made without arithmetic. The
+      // numbers are exact; the affixes are not previewable because reforging
+      // re-rolls them, so this says how MANY there will be rather than
+      // pretending to know which.
+      const preview = reforgePreview(item);
+      if (preview) {
+        const gain = document.createElement("div");
+        gain.className = "craft-row-step";
+        const parts = [
+          `${item.statValue} → ${preview.statValue}`,
+          preview.affixCount !== preview.losingAffixes
+            ? `${preview.losingAffixes} → ${preview.affixCount} affixes`
+            : `${preview.affixCount} affix${preview.affixCount === 1 ? "" : "es"}, re-rolled`,
+        ];
+        gain.textContent = parts.join(" · ");
+        sub.prepend(gain);
+      }
+
       const step = document.createElement("div");
       step.className = "craft-row-step";
       step.innerHTML =
@@ -331,6 +352,33 @@ export class CraftPanel {
     if (bag.length === 0) {
       this.note("Nothing spare in the bag. Equipped items cannot be salvaged.");
       return;
+    }
+
+    // One button for the bottom of the ladder. The bag holds thirty and loot is
+    // frequent, so clearing out Broken and Worn one row at a time is a chore
+    // the game invented for itself. Deliberately stops there: anything Honed or
+    // better is a real item and deserves a deliberate click, and a "salvage
+    // everything" button would eventually cost somebody an Enchanted.
+    const junk = bag.filter((i) => i.rarity === "broken" || i.rarity === "worn");
+    if (junk.length > 0) {
+      const yielded: MaterialCost = {};
+      for (const item of junk) {
+        for (const [k, v] of Object.entries(salvageYield(item))) {
+          yielded[k as Material] = (yielded[k as Material] ?? 0) + (v ?? 0);
+        }
+      }
+      const sub = document.createElement("div");
+      sub.className = "craft-row-cost";
+      sub.textContent = `Returns ${describeCost(yielded)}`;
+      this.row(
+        "salvage",
+        `Break down ${junk.length} Broken and Worn`,
+        "#a09079",
+        sub,
+        "Salvage all",
+        true,
+        () => this.onSalvageMany(junk.map((i) => i.id)),
+      );
     }
     for (const item of bag) {
       const yielded = salvageYield(item);

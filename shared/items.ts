@@ -1486,6 +1486,38 @@ export function reforgeCost(base: ItemBase, from: ItemRarity): MaterialCost | nu
   return cost;
 }
 
+/**
+ * What one step up the ladder would produce, near enough to decide by.
+ *
+ * The primary and secondary are exact — they are the base's numbers times the
+ * new quality, and the jitter is a tenth either way. The affixes are NOT
+ * previewable, because reforging re-rolls them, so this reports how MANY there
+ * will be rather than pretending to know which. Saying "2 affixes, re-rolled"
+ * is honest; showing the ones it happens to have now is not.
+ */
+export interface ReforgePreview {
+  to: ItemRarity;
+  statValue: number;
+  bonusStatValue: number;
+  affixCount: number;
+  /** Affixes it has now, which are about to be thrown away. */
+  losingAffixes: number;
+}
+
+export function reforgePreview(item: ItemInstance): ReforgePreview | null {
+  const to = nextRarity(item.rarity);
+  if (!to) return null;
+  const base = itemBase(item.baseId);
+  const power = RARITIES[to]?.power ?? 1;
+  return {
+    to,
+    statValue: Math.round(basePower(base) * power),
+    bonusStatValue: Math.round(baseGuard(base) * power),
+    affixCount: RARITIES[to]?.affixes ?? 0,
+    losingAffixes: item.affixes?.length ?? 0,
+  };
+}
+
 export function nextRarity(from: ItemRarity): ItemRarity | null {
   const i = rarityIndex(from);
   return i >= RARITY_ORDER.length - 1 ? null : RARITY_ORDER[i + 1];

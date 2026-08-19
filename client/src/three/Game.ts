@@ -416,6 +416,7 @@ export class Game {
       (stationId, baseId) => this.socket.sendForgeItem(stationId, baseId),
       (stationId, itemId) => this.socket.sendReforgeItem(stationId, itemId),
       (itemId) => this.salvageItem(itemId),
+      (itemIds) => this.socket.sendSalvageMany(itemIds),
       (stationId) => this.socket.sendCraftPotion(stationId),
       (stationId) => this.socket.sendCraftTonic(stationId),
     );

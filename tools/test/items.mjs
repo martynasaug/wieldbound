@@ -40,6 +40,7 @@ import {
   itemPassives,
   reforgeCost,
   reforgeItem,
+  reforgePreview,
   rollAffixes,
   rollBase,
   rollItem,
@@ -356,6 +357,38 @@ check("learning a band-1 recipe changes nothing, since it was never locked",
 const everything = forgeableBases(bases.map((b) => b.id));
 check("knowing every recipe unlocks the whole catalogue",
   everything.length === bases.length, `${everything.length}/${bases.length}`);
+
+// --- 9b. the reforge preview ------------------------------------------------
+// The bench shows what a step up would produce, and a preview that disagrees
+// with what actually happens is worse than no preview.
+section("9b. the reforge preview");
+{
+  const item = { id: "x", equipped: false, ...rollItem(sample, "honed", rand) };
+  const preview = reforgePreview(item);
+  check("a reforgeable item has a preview", !!preview);
+  check("it names the quality the reforge produces", preview.to === "tempered", preview.to);
+
+  // Reforged for real, many times, and the preview must sit inside the spread
+  // the jitter allows — it is the midpoint, not a promise.
+  let low = Infinity;
+  let high = -Infinity;
+  for (let i = 0; i < 400; i++) {
+    const after = reforgeItem(item, rand);
+    low = Math.min(low, after.statValue);
+    high = Math.max(high, after.statValue);
+    check("every reforge lands at the previewed quality", after.rarity === preview.to);
+    check("and with the previewed number of affixes",
+      after.affixes.length === preview.affixCount,
+      `${after.affixes.length} vs ${preview.affixCount}`);
+  }
+  check("the previewed value sits inside what actually rolls",
+    preview.statValue >= low && preview.statValue <= high,
+    `preview ${preview.statValue}, rolls ${low}-${high}`);
+  console.log(`  a honed longsword reforged: preview ${preview.statValue}, rolls ${low}-${high}`);
+
+  check("an Enchanted item has no preview",
+    reforgePreview({ ...item, rarity: "enchanted" }) === null);
+}
 
 // --- 10. affix totals reach the passive vocabulary --------------------------
 section("10. affixes reach the stat sheet");

@@ -2415,6 +2415,26 @@ crafting system to go with them.
         representation of "never seen one". Enforced on the server as well as
         greyed on the client, the same split `canLearnTalent` already makes
 
+- [x] **M1.5 — the bench stops making you do arithmetic.** Two things the
+      smithy asked of the player that it should have been doing itself.
+      - **Reforge shows what a step up produces** before you pay for it: the new
+        quality, the new primary, and how the affix count changes. The numbers
+        are exact; the affixes are NOT previewed, because reforging re-rolls
+        them — so it says how MANY there will be rather than pretending to know
+        which. "Two affixes, re-rolled" is honest; showing the ones it has now
+        is not. The suite reforges four hundred times and checks the preview
+        sits inside what actually rolls
+      - **One button clears the bottom of the ladder.** The bag holds thirty and
+        loot is frequent, so salvaging Broken and Worn one confirmation at a
+        time was a chore the game invented for itself. It stops at Worn on
+        purpose: anything Honed or better is a real item and deserves a
+        deliberate click, and a "salvage everything" button would eventually
+        cost somebody an Enchanted
+      - The client chooses which — it is the side that knows what the player was
+        looking at — and the server re-validates every id, dropping bad entries
+        rather than the whole request, because a partially-stale list is the
+        normal case when a drop lands mid-click
+
 - [ ] **M2 — remaining item work.** What a second material tier would buy, and
       whether the reforge ladder wants a failure chance at the top.
 

@@ -153,6 +153,12 @@ export class GameSocket {
     this.send({ type: "SALVAGE_ITEM", payload: { itemId } });
   }
 
+  /** Several at once. The bag holds thirty and loot is frequent. */
+  sendSalvageMany(itemIds: string[]): void {
+    if (itemIds.length === 0) return;
+    this.send({ type: "SALVAGE_MANY", payload: { itemIds } });
+  }
+
   sendAllocateStat(stat: AttributeName): void {
     this.send({ type: "ALLOCATE_STAT", payload: { stat } });
   }

@@ -1914,6 +1914,40 @@ wss.on("connection", (socket) => {
       return;
     }
 
+    if (msg.type === "SALVAGE_MANY" && id) {
+      // Capped, and every entry re-validated: the list arrives from the client
+      // and can say anything, including ids belonging to somebody else or to
+      // something being worn. Bad entries are dropped rather than failing the
+      // whole request, because a partially-stale list is the normal case when
+      // a drop lands mid-click.
+      const wanted = msg.payload.itemIds.slice(0, INVENTORY_CAP);
+      const total: Record<string, number> = {};
+      let count = 0;
+      let learnedAny = false;
+      for (const itemId of wanted) {
+        const one = salvageItem(id, itemId);
+        if (!one) continue;
+        count++;
+        if (one.learned) learnedAny = true;
+        for (const [k, v] of Object.entries(one.yielded)) {
+          total[k] = (total[k] ?? 0) + (v ?? 0);
+        }
+      }
+      if (count === 0) return;
+
+      const items = listItems(id);
+      equippedItems.set(id, computeEquipped(items));
+      sendItemsUpdate(socket, id, items);
+      sendMaterials(socket, id);
+      if (learnedAny) sendRecipes(socket, id);
+      sendInfo(
+        socket,
+        `Salvaged ${count} item${count === 1 ? "" : "s"}: ${describeCost(total)}.`,
+        "#c9b47a",
+      );
+      return;
+    }
+
     if (msg.type === "SALVAGE_ITEM" && id) {
       const result = salvageItem(id, msg.payload.itemId);
       if (!result) return;
