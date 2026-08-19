@@ -77,6 +77,7 @@ import { ATTACK_SLOT, Hotbar, type BarAction } from "../ui/Hotbar";
 import { Actor } from "./Actor";
 import { CLASS_BODIES } from "./gear";
 import { Hud } from "./hud";
+import { Floaters, type FloatSpec } from "./floaters";
 import { Effects, isEffectName, type EffectName } from "./effects";
 import { Indicators } from "./indicators";
 import { ATTACK_STYLES, Projectiles, attackStyle, impactDelayMs } from "./attacks";
@@ -92,7 +93,7 @@ import {
   toWorldX,
   toWorldZ,
 } from "./World";
-import { instantiate } from "./assets";
+import { instantiate, whenLoadsSettle } from "./assets";
 
 const PLAYER_HEIGHT = 1.8;
 
@@ -237,6 +238,9 @@ const NODE_MODELS: Record<ResourceNodeState["kind"], string[]> = {
   bush: ["nature/Bush_Common_Flowers.gltf"],
 };
 
+/** Longest the first load may hold the screen, however much is still in flight. */
+const LOAD_CEILING_MS = 25000;
+
 /** World-unit height range per kind, so a rock cannot come out tree-sized. */
 const NODE_HEIGHTS: Record<ResourceNodeState["kind"], [number, number]> = {
   tree: [3.4, 4.6],
@@ -247,6 +251,7 @@ const NODE_HEIGHTS: Record<ResourceNodeState["kind"], [number, number]> = {
 export class Game {
   private readonly world: World;
   private readonly hud: Hud;
+  private readonly floaters: Floaters;
   private readonly socket: GameSocket;
 
   private readonly characterPanel: CharacterPanel;
@@ -366,6 +371,7 @@ export class Game {
     this.name = characterName;
     this.world = new World(container);
     this.hud = new Hud(container);
+    this.floaters = new Floaters(container);
     this.minimap = new Minimap(container);
     this.effects = new Effects(this.world.scene);
     this.indicators = new Indicators(this.world.scene);
@@ -414,6 +420,15 @@ export class Game {
         this.syncMaterials();
       },
       onXpUpdate: (p) => {
+        // XP was the one reward with no acknowledgement anywhere in the world —
+        // it moved a bar in the corner and nothing else. A kill should say what
+        // it was worth where the player is looking, which is at the corpse.
+        const gained = p.leveledUp ? 0 : p.xp - this.xp;
+        if (gained > 0 && this.localActor) {
+          this.floaters.spawn(this.localActor.position, {
+            kind: "xp", text: `+${gained} XP`, headY: 2.6, weight: 0.1,
+          });
+        }
         this.xp = p.xp;
         this.level = p.level;
         this.hud.setXp(this.xp, xpToNextLevel(this.level), this.level);
@@ -515,8 +530,6 @@ export class Game {
       ATTACK_STYLES,
       impactDelayMs,
     };
-    await this.world.buildDecor();
-
     // Starts as the bare-handed body; WELCOME's appearance re-dresses it, and
     // swaps the rig outright if the saved character is already holding something.
     // `interpolate: false` because this actor's position is recomputed exactly
@@ -528,13 +541,39 @@ export class Game {
       interpolate: false,
     });
     this.localActor.setAppearance(this.appearance);
-    await this.localActor.load();
+
+    // Everything here used to run in a queue: the decor's forty-odd models,
+    // then the character's rig, then the socket. None of the three depends on
+    // either of the others, so the queue was pure waiting — the same mistake the
+    // smithy's six props made inside one loop (M4.5), one level further up.
+    //
+    // Connecting FIRST matters most: the handshake, the character row and the
+    // first snapshot all travel while the models download, so the world is
+    // already populated the moment there is something to draw it into, instead
+    // of appearing a beat after the ground does.
+    this.bindInput();
+    preloadSfx();
+    this.socket.connect();
+
+    const decor = this.world.buildDecor();
+    const body = this.localActor.load();
+    await Promise.all([decor, body]);
+    // The models have parsed; their textures have not necessarily arrived, and
+    // a first frame that repaints itself twenty megabytes at a time is exactly
+    // what a loading screen exists to hide.
+    //
+    // Raced against a ceiling, though. A fetch that never settles — a proxy
+    // holding a connection open, a file that 404s into an HTML page — would
+    // otherwise leave the player watching a loading screen forever, and a world
+    // missing one plant is enormously better than a world that never appears.
+    await Promise.race([
+      whenLoadsSettle(),
+      new Promise<void>((resolve) => window.setTimeout(resolve, LOAD_CEILING_MS)),
+    ]);
+
     this.world.scene.add(this.localActor.root);
     this.localActor.snapTo(toWorldX(this.playerX), 0, toWorldZ(this.playerY));
 
-    preloadSfx();
-    this.bindInput();
-    this.socket.connect();
     this.loop();
   }
 
@@ -655,7 +694,16 @@ export class Game {
         // Far camps cost nothing at all — no model, no skeleton, no update.
         if (distance > MONSTER_SPAWN_RADIUS_PX) continue;
         const spec = MONSTER_MODELS[s.kind];
-        const actor = new Actor({ model: spec.model, height: spec.height });
+        // Seeded from the server id, so every client sees this particular
+        // mushnub breathing at the same point in its loop as every other client
+        // does — and so a camp of four is four creatures rather than one
+        // animation played four times.
+        const actor = new Actor({
+          model: spec.model,
+          height: spec.height,
+          variance: (hashString(s.id) % 1000) / 1000,
+          idleGlance: true,
+        });
         vis = { actor, kind: s.kind, state: s, dead: false, windingUp: false, windupStartedAt: 0, moving: false };
         this.monsters.set(s.id, vis);
         void actor.load().then(() => this.world.scene.add(actor.root));
@@ -935,13 +983,16 @@ export class Game {
     // from spraying numbers, while a potion or a Mend always shows.
     if (delta >= 8 && this.localActor) {
       const at = this.localActor.position;
-      this.floatOver(this.localActor, `+${delta}`, "#7ed957");
+      this.floatOnPlayer(this.localActor, { kind: "heal", text: `+${delta}` }, delta);
       this.effects.play("heal", at.x, at.y + 1.0, at.z, { scale: 2.4, tint: 0x7ed957, durationMs: 620 });
       playSfx("heal");
     }
     if (p.defeated) {
       this.combatLog.push("You were defeated.", "#ff6b6b");
       this.hud.toast("You were defeated.", "#ff6b6b");
+      // The fight is over, so the numbers describing it should not outlive it
+      // and drift over the respawn.
+      this.floaters.clear();
       this.localActor?.play("die");
       if (p.x !== undefined && p.y !== undefined) {
         this.playerX = p.x;
@@ -988,7 +1039,7 @@ export class Game {
       const target = this.monsters.get(p.monsterId);
       if (!p.playerHit) {
         this.combatLog.push(`You miss the ${label}.`, "#9a8d76");
-        if (target) this.floatOver(target.actor, "MISS", "#cfc4ad");
+        if (target) this.floatOnMonster(target, { kind: "miss", text: "Miss" });
         playSfx("miss");
         return;
       }
@@ -1008,8 +1059,11 @@ export class Game {
         const size = Math.max(1.6, MONSTER_MODELS[target.kind].height * 1.3);
 
         target.actor.flash(p.playerCrit ? 0xffd85e : 0xffffff, p.playerCrit ? 190 : 120);
-        this.floatOver(target.actor, p.playerCrit ? `CRIT ${p.playerDamage}` : `${p.playerDamage}`,
-          p.playerCrit ? "#ffd85e" : "#ffffff");
+        this.floatOnMonster(
+          target,
+          { kind: "hit", text: `${p.playerDamage}`, crit: p.playerCrit },
+          p.playerDamage,
+        );
         // The mark the weapon leaves: an arc for blades, a shockwave for a
         // mace, an arcane bloom for a staff. Weight scales with the family, so
         // an axe lands visibly heavier than a dagger.
@@ -1101,7 +1155,7 @@ export class Game {
       if (this.localActor) {
         const at = this.localActor.position;
         this.localActor.flash(0xff6b6b, 130);
-        this.floatOver(this.localActor, `-${p.damage}`, p.crit ? "#ff8f5e" : "#ff6b6b");
+        this.floatOnPlayer(this.localActor, { kind: "taken", text: `-${p.damage}`, crit: p.crit }, p.damage);
         this.effects.play("impact", at.x, at.y + 1.0, at.z, {
           scale: p.crit ? 1.9 : 1.35,
           tint: 0xff7a5a,
@@ -1244,7 +1298,7 @@ export class Game {
           durationMs: 620,
         });
       }
-      if (p.healed && on) this.floatOver(on, `+${p.healed}`, "#7ed957");
+      if (p.healed && on) this.floatOnPlayer(on, { kind: "heal", text: `+${p.healed}` }, p.healed);
       if (p.buffMs) this.hud.toast(`${skill.name} active`, "#ffd873");
       return;
     }
@@ -1294,12 +1348,11 @@ export class Game {
       }
 
       if (!hit.hit) {
-        this.floatOver(vis.actor, "MISS", "#cfc4ad");
+        this.floatOnMonster(vis, { kind: "miss", text: "Miss" });
         continue;
       }
       vis.actor.flash(hit.crit ? 0xffd85e : 0x9ad4ff, 150);
-      this.floatOver(vis.actor, hit.crit ? `CRIT ${hit.damage}` : `${hit.damage}`,
-        hit.crit ? "#ffd85e" : "#9ad4ff");
+      this.floatOnMonster(vis, { kind: "skill", text: `${hit.damage}`, crit: hit.crit }, hit.damage);
       playSfx(hit.crit ? "crit" : "hit", 0.8);
     }
 
@@ -1348,10 +1401,35 @@ export class Game {
     this.socket.sendMove(this.playerX, this.playerY);
   }
 
-  private floatOver(actor: Actor, text: string, color: string): void {
-    const p = actor.position;
-    const screen = this.world.project(p.x, p.y + 2.0, p.z);
-    if (screen) this.hud.floatText(screen.x, screen.y, text, color);
+  /**
+   * Combat text over a monster. The weight is the share of THAT monster's
+   * health the hit took, which is what lets the same number be drawn loud on a
+   * slime and quiet on a dragon — the one piece of information a flat number
+   * cannot carry on its own.
+   */
+  /** Bound once: the loop passes it every frame and a fresh closure per frame
+   *  is a per-frame allocation for nothing. */
+  private readonly projectForFloat = (x: number, y: number, z: number) =>
+    this.world.project(x, y, z, 90);
+
+  private floatOnMonster(vis: MonsterVisual, spec: Omit<FloatSpec, "weight" | "headY">, damage = 0): void {
+    const maxHp = Math.max(1, vis.state.maxHp);
+    this.floaters.spawn(vis.actor.position, {
+      ...spec,
+      weight: damage > 0 ? damage / maxHp : undefined,
+      // Above the model rather than at a fixed height, for the same reason the
+      // impact effect is: a slime is 0.8 units tall and a dragon 3.4.
+      headY: MONSTER_MODELS[vis.kind].height + 0.45,
+    });
+  }
+
+  /** Combat text over a player — yours or an ally's. */
+  private floatOnPlayer(actor: Actor, spec: Omit<FloatSpec, "weight" | "headY">, amount = 0): void {
+    this.floaters.spawn(actor.position, {
+      ...spec,
+      weight: amount > 0 ? amount / Math.max(1, this.maxHp) : undefined,
+      headY: 2.05,
+    });
   }
 
   // --------------------------------------------------------------------- ui
@@ -1917,6 +1995,9 @@ export class Game {
     this.effects.update(this.world.camera);
     this.projectiles.update();
     this.skillFx.update();
+    // After the actors have moved and before the frame is drawn, so a number
+    // never lags the body it came off by a frame.
+    this.floaters.update(this.projectForFloat);
     this.updateForges();
     this.updateMinimap();
     // Derived before anything draws, so the ring, the frame and the nameplate

@@ -16,6 +16,7 @@
 // boundary stops being findable.
 
 import * as THREE from "three";
+import { trackLoad } from "./assets";
 
 const TEXTURE_PATH = "/textures/terrain";
 
@@ -37,7 +38,10 @@ function loadSurface(name: string, repeat: number): {
 } {
   const loader = new THREE.TextureLoader();
   const get = (suffix: string, srgb: boolean) => {
-    const t = loader.load(`${TEXTURE_PATH}/${name}_${suffix}.jpg`);
+    // Counted by the shared loader, or the loading screen would fill while the
+    // heaviest six files in the game were still on the wire.
+    const done = trackLoad(`${name}_${suffix}.jpg`);
+    const t = loader.load(`${TEXTURE_PATH}/${name}_${suffix}.jpg`, done, undefined, done);
     t.wrapS = THREE.RepeatWrapping;
     t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(repeat, repeat);

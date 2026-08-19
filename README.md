@@ -129,12 +129,14 @@ client/   Three.js + Vite + TypeScript
                attacks (per-weapon delivery + projectiles),
                terrain (the ground shader), scatter (instanced ground cover),
                daynight (the hour), skillfx (a shape per skill),
-               effects, indicators, hud, sfx, assets
+               floaters (anchored combat text),
+               effects, indicators, hud, sfx, assets (models + load progress)
   preview/     dev-only contact sheet of every body, weapon, style and rarity,
                at http://localhost:5173/preview/ — not part of the game bundle
   src/ui/      DOM panels — bag, character paperdoll, workbench, talent tree,
                leaderboard, combat log, target frame, action bar, minimap,
-               icons (120 baked single-path glyphs). Renderer-agnostic.
+               loading screen, icons (120 baked single-path glyphs).
+               Renderer-agnostic.
   src/net/     socket.ts — renderer-agnostic too
 server/   Node + ws + node:sqlite
 shared/   protocol-types.ts — message shapes AND the game's formulas,
@@ -193,6 +195,7 @@ family fights like itself), M3.8 (the default attack as a real action) and M3.9
 (a talent tree per weapon), M3.10 (a real RPG interface), M3.11 (MMO-style
 window rail), M4.1 (real icons, and a camera you can zoom), M4.2 (a world with
 ground in it), M4.3 (a day/night cycle), M4.4 (a shape per skill), M4.5 (a
-minimap and a real smithy), M4.6 (nameplates) and M4.7 (unit frames) are done.
-**M4.8 — remaining polish** — is next. See [`PLAN.md`](PLAN.md) for the full
+minimap and a real smithy), M4.6 (nameplates), M4.7 (unit frames) and M4.8
+(combat text, a loading screen, monster idle variety) are done.
+**M4.9 — remaining polish** — is next. See [`PLAN.md`](PLAN.md) for the full
 picture.

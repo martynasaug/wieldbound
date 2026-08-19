@@ -6,9 +6,10 @@
 // gold/parchment theme the rest of the UI already uses, lays itself out, and
 // stays crisp at any DPI.
 //
-// Nameplates and floating combat text are DOM too, positioned from projected
-// world coordinates each frame — the standard MMO approach, and it keeps text
-// out of the 3D pipeline entirely.
+// Nameplates are DOM too, positioned from projected world coordinates each
+// frame — the standard MMO approach, and it keeps text out of the 3D pipeline
+// entirely. Floating combat text used to live here as well; it grew its own
+// per-frame anchoring and arc and moved to `floaters.ts`.
 
 import { iconSvg } from "../ui/icons";
 
@@ -287,16 +288,6 @@ const STYLE = `
   box-shadow: 0 2px 8px #0009;
 }
 
-#hud3d .float {
-  position: absolute; transform: translate(-50%, -50%);
-  font: bold 15px Georgia, serif; text-shadow: 0 1px 2px #000, 0 0 6px #0008;
-  animation: hud3dFloat 1.15s ease-out forwards;
-}
-@keyframes hud3dFloat {
-  0%   { opacity: 0; transform: translate(-50%, -30%) scale(.85); }
-  18%  { opacity: 1; transform: translate(-50%, -60%) scale(1.08); }
-  100% { opacity: 0; transform: translate(-50%, -190%) scale(1); }
-}
 #hud3d .toasts { position: absolute; left: 14px; bottom: 190px; display: flex; flex-direction: column; gap: 5px; }
 #hud3d .toast {
   background: linear-gradient(#3a2a17, #241a0f); border: 1px solid var(--gold, #d9a441);
@@ -544,17 +535,6 @@ export class Hud {
     el.textContent = text;
     this.toastHost.appendChild(el);
     setTimeout(() => el.remove(), 4200);
-  }
-
-  floatText(screenX: number, screenY: number, text: string, color: string): void {
-    const el = document.createElement("div");
-    el.className = "float";
-    el.style.color = color;
-    el.style.left = `${screenX}px`;
-    el.style.top = `${screenY}px`;
-    el.textContent = text;
-    this.root.appendChild(el);
-    setTimeout(() => el.remove(), 1250);
   }
 
   // --- nameplates: call begin, then plate() per visible actor, then end ---

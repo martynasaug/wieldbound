@@ -68,10 +68,122 @@ const texLoader = new THREE.TextureLoader();
 const textureCache = new Map<string, THREE.Texture>();
 const modelCache = new Map<string, Promise<THREE.Group>>();
 
+// --- What is in flight ------------------------------------------------------
+// The client fetches roughly fifty models and twenty megabytes of texture
+// before the first frame is worth showing, and until now it did that behind a
+// blank page with nothing to say for itself. A loading screen needs a number,
+// and the only honest number is one this layer produces: a hardcoded "47
+// models" is a constant that goes stale the first time a model is added, and it
+// cannot know about the textures each one drags in behind it.
+//
+// So the counters live where the fetches are. `total` GROWS as work is
+// discovered — dressing an FBX starts its textures — which means the bar can
+// move backwards in percentage terms early on. That is honest, and the
+// alternative (guess the total, then round the last 20% away) is the thing
+// every loading bar is mistrusted for.
+export interface LoadProgress {
+  done: number;
+  total: number;
+  /** The most recent thing to start, for the line under the bar. */
+  label: string;
+}
+
+const progress: LoadProgress = { done: 0, total: 0, label: "" };
+const progressListeners = new Set<(p: LoadProgress) => void>();
+let settleWaiters: (() => void)[] = [];
+
+function beginLoad(label: string): void {
+  progress.total++;
+  progress.label = label;
+  emitProgress();
+}
+
+function endLoad(): void {
+  progress.done++;
+  emitProgress();
+  // Deliberately deferred a turn: finishing one model synchronously starts its
+  // textures, so resolving on the same tick would report "settled" in the gap
+  // between the two.
+  if (progress.done >= progress.total && settleWaiters.length) {
+    queueMicrotask(() => {
+      if (progress.done < progress.total) return;
+      const waiting = settleWaiters;
+      settleWaiters = [];
+      for (const w of waiting) w();
+    });
+  }
+}
+
+function emitProgress(): void {
+  for (const fn of progressListeners) fn(progress);
+}
+
+/** Subscribe to load progress. Returns an unsubscribe. */
+export function onLoadProgress(fn: (p: LoadProgress) => void): () => void {
+  progressListeners.add(fn);
+  fn(progress);
+  return () => progressListeners.delete(fn);
+}
+
+/**
+ * Registers one fetch this module does not own, and returns the "it finished"
+ * callback. The terrain's six Poly Haven maps are the single heaviest thing the
+ * client downloads and they are loaded straight off a `TextureLoader` there —
+ * so without this the bar would fill while the largest download was still
+ * running, which is worse than having no bar.
+ */
+export function trackLoad(label: string): () => void {
+  beginLoad(label);
+  let settled = false;
+  return () => {
+    if (settled) return;
+    settled = true;
+    endLoad();
+  };
+}
+
+export function loadProgress(): LoadProgress {
+  return progress;
+}
+
+/**
+ * Resolves when nothing is in flight.
+ *
+ * Awaiting the models alone is not enough: a texture is requested while its
+ * model is being dressed and is not awaited by anything, so a scene can finish
+ * "loading" and then visibly repaint as twenty megabytes of albedo arrive one
+ * by one. This is what lets the loading screen come down on a frame that is
+ * actually finished.
+ */
+export function whenLoadsSettle(): Promise<void> {
+  if (progress.total > 0 && progress.done >= progress.total) return Promise.resolve();
+  return new Promise((resolve) => settleWaiters.push(resolve));
+}
+
+// A debug handle for the load itself, alongside `__wieldbound` and
+// `__wieldboundRules`. A load that never finishes is otherwise completely
+// opaque — the screen simply sits there — and this is what can say which file
+// is still outstanding.
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__wieldboundLoad = {
+    progress: () => ({ ...progress }),
+    onLoadProgress,
+    whenLoadsSettle,
+  };
+}
+
 function texture(name: string): THREE.Texture {
   let t = textureCache.get(name);
   if (!t) {
-    t = texLoader.load(`${TEXTURE_PATH}/${name}.png`);
+    beginLoad(`${name}.png`);
+    t = texLoader.load(
+      `${TEXTURE_PATH}/${name}.png`,
+      endLoad,
+      undefined,
+      // A missing texture leaves the material untextured, which is a look, not
+      // a hang — but it must still count as finished or the bar never fills.
+      endLoad,
+    );
     t.colorSpace = THREE.SRGBColorSpace;
     textureCache.set(name, t);
   }
@@ -138,8 +250,12 @@ export function loadModel(name: string): Promise<THREE.Group> {
   if (!p) {
     const isGltf = name.endsWith(".gltf") || name.endsWith(".glb");
     const url = `${MODEL_PATH}/${name}${isGltf ? "" : ".fbx"}`;
+    beginLoad(name);
     p = new Promise<THREE.Group>((resolve, reject) => {
-      const fail = (err: unknown) => reject(new Error(`failed to load ${name}: ${String(err)}`));
+      const fail = (err: unknown) => {
+        endLoad();
+        reject(new Error(`failed to load ${name}: ${String(err)}`));
+      };
       if (isGltf) {
         gltfLoader.load(
           url,
@@ -149,6 +265,7 @@ export function loadModel(name: string): Promise<THREE.Group> {
             // so they have to be carried across or instantiate() finds none.
             group.animations = gltf.animations;
             dressGltf(group);
+            endLoad();
             resolve(group);
           },
           undefined,
@@ -158,7 +275,11 @@ export function loadModel(name: string): Promise<THREE.Group> {
         fbxLoader.load(
           url,
           (group) => {
+            // Dressed before the load is counted off, because dressing is what
+            // discovers the textures — counting first would let the total
+            // momentarily equal the done count and settle the loader early.
             dressFbx(group);
+            endLoad();
             resolve(group);
           },
           undefined,

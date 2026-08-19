@@ -61,6 +61,29 @@ export interface ActorOptions {
    * else in the game is measured from.
    */
   interpolate?: boolean;
+  /**
+   * Stable 0..1 seed for this actor's idle, from a hash of its server id.
+   *
+   * A camp is four of the same model playing the same clip started at the same
+   * moment, and the result is four bodies breathing in lockstep — which reads
+   * as one animation applied four times rather than as four creatures. This
+   * offsets where in the loop each one starts and how fast it runs it.
+   *
+   * Seeded rather than random because every client has to see the same camp:
+   * two players standing side by side watching different mushnubs breathe in
+   * different orders is a small thing, and it is exactly the kind of small
+   * thing that makes a world feel like a local hallucination.
+   */
+  variance?: number;
+  /**
+   * Whether this actor looks around while idle. Monsters only.
+   *
+   * A player's facing is not decoration: a skill fired with nothing in range
+   * uses it to decide which way the effect goes, and a character that slowly
+   * turned on its own while its owner was reading a panel would aim somewhere
+   * they did not choose. Nothing reads a monster's facing except the eye.
+   */
+  idleGlance?: boolean;
 }
 
 export class Actor {
@@ -79,6 +102,14 @@ export class Actor {
 
   private facing = 0;
   private targetFacing = 0;
+  /** 0..1, stable per actor. Drives everything in this file that must differ
+   *  between two copies of the same model. */
+  private readonly variance: number;
+  private readonly idleGlance: boolean;
+  /** When this actor next glances somewhere while standing still. */
+  private nextGlanceAt = 0;
+  /** Facing it has chosen to idle at, so a glance eases rather than snaps. */
+  private idleFacing: number | null = null;
   private readonly facingOffset: number;
   private readonly interpolate: boolean;
 
@@ -132,6 +163,9 @@ export class Actor {
   constructor(private readonly options: ActorOptions) {
     this.facingOffset = options.facingOffset ?? 0;
     this.interpolate = options.interpolate ?? true;
+    this.variance = options.variance ?? Math.random();
+    this.idleGlance = options.idleGlance ?? false;
+    this.nextGlanceAt = performance.now() + this.glanceDelay();
     this.bodyModel = options.model;
     this.root.add(this.pivot);
   }
@@ -481,6 +515,21 @@ export class Actor {
       next.fadeIn(FADE_MS / 1000);
     }
 
+    // Where in the loop this actor's idle sits, and how fast it runs it. Set on
+    // every entry into idle rather than once at load, because the actor returns
+    // to idle constantly — after every swing, every stagger and every stop —
+    // and a phase applied only at load would be lost the first time it moved.
+    if (anim === "idle") {
+      next.time = next.getClip().duration * this.variance;
+      // A narrow band. Wider is more obviously varied and starts to look like
+      // the creatures are different sizes, since a slower loop reads as heavier.
+      next.setEffectiveTimeScale(0.9 + this.variance * 0.2);
+    } else if (anim === "run") {
+      // Run is not phase-offset: a pack chasing you is supposed to move
+      // together. Only the rate varies, so their footfalls are not identical.
+      next.setEffectiveTimeScale(0.94 + this.variance * 0.12);
+    }
+
     this.currentAnim = anim;
     if (anim === "attack" || anim === "hit") {
       const clip = next.getClip();
@@ -502,6 +551,7 @@ export class Actor {
   update(dtSeconds: number): void {
     this.mixer?.update(dtSeconds);
     this.applyEmissive();
+    this.updateGlance();
 
     // Ease toward the server position. Snapshots arrive every ~100ms, so without
     // this every actor visibly steps rather than moves. Skipped entirely for the
@@ -520,7 +570,10 @@ export class Actor {
     let delta = this.targetFacing - this.facing;
     while (delta > Math.PI) delta -= Math.PI * 2;
     while (delta < -Math.PI) delta += Math.PI * 2;
-    this.facing += delta * Math.min(1, dtSeconds * 14);
+    // A glance is a slow head-turn; being knocked around or chasing something
+    // is not. One rate for both made an idle creature snap round like a turret.
+    const turnRate = this.idleFacing !== null ? 2.4 : 14;
+    this.facing += delta * Math.min(1, dtSeconds * turnRate);
     this.pivot.rotation.y = this.facing + this.facingOffset;
 
     // Hand control back to idle/run once a one-shot has finished.
@@ -530,6 +583,44 @@ export class Actor {
         this.play(this.baseAnim, false);
       }
     }
+  }
+
+  /**
+   * Idle creatures look around. Nothing else in the world turns an actor that
+   * is standing still — facing is only written when something moves — so a camp
+   * that has never been disturbed holds whatever heading it spawned with,
+   * forever, all of it identical.
+   *
+   * Deliberately a change of FACING rather than a second animation: it works on
+   * every model in the game whatever clips its pack shipped with, and turning
+   * to look at something is the single most legible thing an idle creature can
+   * do.
+   */
+  private updateGlance(): void {
+    if (!this.idleGlance) return;
+    if (this.baseAnim !== "idle" || this.currentAnim === "die") {
+      // Anything that moves or fights owns the facing again, and the next
+      // glance is deferred so a monster does not turn away the instant it
+      // stops chasing you.
+      this.idleFacing = null;
+      this.nextGlanceAt = performance.now() + this.glanceDelay();
+      return;
+    }
+    const now = performance.now();
+    if (now < this.nextGlanceAt) return;
+    this.nextGlanceAt = now + this.glanceDelay();
+
+    // Around the heading it is already idling at, not around wherever it last
+    // happened to face, so repeated glances wander instead of drifting off in
+    // one direction.
+    if (this.idleFacing === null) this.idleFacing = this.targetFacing;
+    const swing = (Math.random() - 0.5) * 1.9;
+    this.targetFacing = this.idleFacing + swing;
+  }
+
+  /** Seeded, so two monsters in a camp are never due to glance at once. */
+  private glanceDelay(): number {
+    return 2600 + this.variance * 3400 + Math.random() * 2600;
   }
 
   dispose(): void {

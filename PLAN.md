@@ -2102,7 +2102,110 @@ every rig animation carrying it for free — architecturally *cleaner* than the
       does differ, and that the CSS variable equals the measured height plus its
       offsets.
 
-- [ ] **M4.8 — remaining polish**
+- [x] **M4.8 — the numbers, the wait, and four monsters breathing in
+      lockstep.** Three loose ends, and each was the oldest thing left in its
+      own corner of the game.
+
+      **Floating combat text was the last of the 2D client still on screen.**
+      One CSS class, one keyframe animation, a colour per call, projected once
+      at spawn and then left to slide up the screen while the world moved out
+      from under it. Rebuilt as a per-frame system (`floaters.ts`), because all
+      three of its problems come from being fire-and-forget:
+      - **It is anchored now.** A number over a monster belongs to that monster,
+        and it is re-projected from that body every frame. Two steps sideways
+        used to leave damage numbers hanging over empty grass
+      - **Size carries the hit's weight relative to what it hit.** Damage over
+        the victim's maximum health, curved by a square root: ten damage is a
+        third of a slime and a rounding error on a dragon, and a flat number in
+        a flat size claims those are the same event. This is the part that is a
+        design idea rather than a paint job
+      - **A volley no longer stacks.** Floats on one anchor fan out to
+        alternating sides, lift by index, and are staggered 55ms apart, so a
+        cleave into a pack reads as a sweep of five hits instead of as one
+        number that happens to be thicker. Cleared and re-fanned per anchor, so
+        the count is per body rather than global
+      - **Six treatments, and the split is by direction rather than by school.**
+        Warm white is your weapon, blue is your spells, red is what is being
+        done to you, green heals, gold is XP, and a miss is small grey italic.
+        Mid-fight the question is "am I winning", and colour answers it before
+        the digits are read. Crits are gold in both directions, larger, glowing,
+        with a small letterspaced CRIT above the number and a harder spawn punch
+      - **Text about YOU always drifts left.** The player is centre screen and
+        whatever is hitting them is a metre away, so the two anchors produce two
+        columns of numbers in the same place. Giving "what you are taking" a
+        lane of its own separates it by position as well as by colour
+      - Capped at 26 live, pooled, and cleared on death so numbers do not
+        outlive the fight and drift over the respawn. XP gained now floats too —
+        it used to move a bar in the corner and nothing else
+
+      **The first load has a screen, and it is shorter.** ~50 models and 22MB of
+      texture behind a blank page, which on a cold cache reads as "it is broken".
+      - **The number is produced by the loader, not guessed.** `assets.ts` counts
+        what it is actually fetching and publishes it; a hardcoded asset count
+        goes stale the first time a model is added and cannot know about the
+        textures each model drags in behind it. The consequence is that the
+        total GROWS during the load, so the bar is held monotonic in the view
+        rather than in the data
+      - The terrain's six Poly Haven maps are the heaviest download in the game
+        and are fetched by `terrain.ts` off its own loader, so there is a
+        `trackLoad` hook for fetches this module does not own. Without it the
+        bar filled while the biggest files were still on the wire
+      - **`whenLoadsSettle` waits for textures, not just models.** A model
+        resolves when it has parsed; its texture is requested during dressing
+        and is awaited by nothing, so the screen would otherwise lift onto a
+        world that repaints itself twenty megabytes at a time
+      - **The three halves of start-up now run at once.** Decor, the character
+        rig and the socket were a queue, and none depends on the others — the
+        same mistake the smithy's six props made inside one loop in M4.5, one
+        level up. Connecting first matters most: measured, the socket is open at
+        +109ms and the last asset request goes out at +654ms, so the character
+        row and the first snapshot arrive while the models download. The screen
+        lifts onto a world with 32 monsters already in it
+      - Raced against a 25s ceiling, because a fetch that never settles would
+        otherwise mean a loading screen that never lifts
+      - The line under the bar says which part of the world is being built —
+        "raising the treeline", "waking the camps" — rather than
+        `nature/Pebble_Square_2.gltf`. The exact filename is on
+        `__wieldboundLoad`, which is what a stuck load actually needs
+
+      **A camp of four mushnubs was one animation played four times.** Every
+      actor now carries a variance seed hashed from its server id, so every
+      client sees the same camp:
+      - The idle clip starts at `seed * duration` and runs at 0.9-1.1x. Set on
+        every entry into idle rather than once at load, because an actor returns
+        to idle constantly and a phase applied at load is lost the first time it
+        moves. Run is rate-varied but NOT phase-offset — a pack chasing you is
+        supposed to move together
+      - **Idle monsters look around.** Nothing else in the game turns an actor
+        that is standing still (facing is only written when something moves), so
+        an undisturbed camp held its spawn heading forever. A slow head-turn
+        every few seconds, on a seeded interval, easing at 2.4 rad/s instead of
+        the 14 that combat uses — one rate for both made an idle creature snap
+        round like a turret
+      - **Monsters only.** A player's facing decides which way a skill fired
+        into empty air goes, so a character that turned on its own while its
+        owner read a panel would aim somewhere they did not choose
+
+      Verified with 44 checks across three new headless suites. The floaters one
+      measures the six colours apart, a heavy hit against a scratch (17px vs
+      32.8px), a crit against a plain hit of the same weight, five simultaneous
+      hits spanning 110-148px rather than one point, and a float moving 700+px
+      when only the camera moves. The idle one reads the real mixer: eight
+      slimes at phases 0.05 to 0.90 of the same clip, eight different rates all
+      inside 0.88-1.12, facings that change on their own and not together, and
+      the player's facing unmoved after nine seconds. The loading one drives a
+      cold context and asserts the bar advances, never retreats, names a phase
+      rather than a filename, and that the world is standing when it lifts.
+
+      **Two harness lessons, both about measuring a thing that expires.** A
+      float lives 1150ms and a `page.evaluate` round trip under SwiftShader can
+      take longer than that, so anything spawned in one call and measured in the
+      next is measuring the reaper. And polling the loading bar from outside
+      returns nothing but its final state, because the main thread is saturated
+      parsing models and every evaluate queues behind that — the trace has to be
+      recorded inside the page.
+
+- [ ] **M4.9 — remaining polish**
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -3257,6 +3360,96 @@ music, player-facing damage-type/resistances, more crafting recipes
   player was about to fight. When an icon is large enough to be identified, it
   has to be right; category glyphs work at 12px and fail at 28.
 
+- Floating combat text is anchored to a body, not to a point on the screen. It
+  was projected once at spawn and then animated in CSS, which is correct in a 2D
+  game where the camera is the screen and wrong the moment the camera can move —
+  two steps sideways and the numbers are hanging over empty grass. The cost is a
+  per-frame re-projection for a couple of dozen elements, which is nothing; the
+  benefit is that a number keeps belonging to the thing it describes.
+- A damage number's SIZE is its share of the victim's health, not its absolute
+  value. Ten damage is a third of a slime and a rounding error on a dragon, and
+  drawing both the same is throwing away the only thing the number is for. The
+  curve is a square root deliberately: the difference between 2% and 12% of a
+  health bar is worth showing and the difference between 60% and 70% is not.
+- Combat text is coloured by DIRECTION, not by damage school. A palette per
+  school is the obvious reading and it answers a question nobody is asking —
+  mid-fight the only question is "am I winning", so warm white is your weapon,
+  blue is your spells and red is what is being done to you. Crits are gold in
+  both directions, because a crit is an event before it is a number.
+- Text about the player always drifts left, everything else fans both ways. The
+  player is at the centre of the screen and whatever is hitting them is a metre
+  from them, so two anchors that close produce two columns of numbers in the same
+  place. A lane of its own separates "what you are taking" by position as well as
+  by colour, and that is the reading that must never be searched for.
+- A volley is staggered in time as well as spread in space. Five numbers arriving
+  on one frame is a single event however far apart they are placed; 55ms between
+  them turns a cleave into a sweep, which is what the skill actually is. Capped
+  at six steps, or a chain into a crowded pack would still be introducing numbers
+  a second and a half after the blow landed.
+- Most of the fan offset is applied immediately and only the rest drifts in.
+  Easing the whole thing from zero starts a volley stacked on one point, and that
+  first frame is exactly when a cleave into a pack most needs to be readable.
+- The loading bar's total is produced by the loader and is allowed to grow. A
+  hardcoded "47 models" goes stale the first time a model is added and cannot
+  know about the textures each model drags in behind it, so the counters live
+  where the fetches are — and dressing an FBX discovers more work, which means
+  the denominator moves. The honesty is kept in the data and the monotonicity is
+  applied in the view: the bar slows down, it never retreats.
+- Waiting for models is not waiting for the load. A model's promise resolves when
+  it has parsed; the textures it needs are requested during dressing and are
+  awaited by nothing, so a scene can finish "loading" and then visibly repaint
+  itself twenty megabytes at a time. `whenLoadsSettle` is what lets the screen
+  come down on a frame that is actually finished.
+- Start-up's three halves are independent, so they run at once — and the socket
+  goes first. Decor, the character rig and the connection had been a queue, which
+  is the same mistake the smithy's six props made inside one loop in M4.5, one
+  level up. Connecting first is the part that shows: the handshake and the first
+  snapshot travel while the models download, so the world is populated the
+  instant there is somewhere to draw it, rather than arriving a beat after the
+  ground does.
+- The loading screen names a phase, not a file. `nature/Pebble_Square_2.gltf` is
+  the honest string and the wrong one to show somebody who pressed Play; "raising
+  the treeline" is what they want to know. The exact name stays on
+  `__wieldboundLoad`, which is what a stuck load actually needs, and that split —
+  one string for the player, one for the console — is the same one `shared/`
+  already keeps between naming a picture and drawing it.
+- Idle animation phase is seeded from the server id, not randomised. A camp is
+  four copies of one model playing one clip started at one moment, and the result
+  reads as an animation applied four times rather than as four creatures. Seeding
+  rather than randomising is what keeps two players standing side by side from
+  watching the same camp breathe in different orders — a small thing, and exactly
+  the kind of small thing that makes a world feel like a local hallucination.
+- The phase is applied on every entry into idle, not once at load. An actor
+  returns to idle constantly — after every swing, every stagger, every stop — so
+  a phase set at load is lost the first time anything moves. Run is rate-varied
+  but deliberately NOT phase-offset: a pack chasing you is supposed to move
+  together.
+- Idle creatures look around by turning, not by playing a second clip. Nothing
+  in the game writes an actor's facing while it is standing still, so an
+  undisturbed camp held its spawn heading forever. A head-turn works on every
+  model whatever clips its pack happened to ship with, and it is the most legible
+  thing an idle creature can do. It needs its own slower turn rate — the 14 rad/s
+  combat uses makes an idle monster snap round like a turret.
+- Only monsters glance. A player's facing is not decoration: a skill fired with
+  nothing in range uses it to decide which way the effect goes, so a character
+  that turned on its own while its owner was reading a panel would aim somewhere
+  they did not choose. Nothing reads a monster's facing except the eye.
+- Do not measure something that expires across a `page.evaluate` boundary. A
+  float lives 1150ms and a round trip plus two frames under SwiftShader can take
+  longer than that, so a test that spawns in one call and reads in the next is
+  measuring the reaper. Spawn and read in one evaluate, and wait for the elements
+  to be PLACED rather than for a fixed time.
+- Polling the page during a heavy load returns only its final state. The main
+  thread is saturated parsing models, so every `page.evaluate` queues behind that
+  and all of them resolve at the end — twenty samples of the loading bar all read
+  100%. The trace has to be recorded inside the page, which is what the
+  `__wieldboundLoad` handle is for.
+- Tests that share a world with a live game must assert on identity, not on
+  counts. Something is usually hitting the character, so a stray real damage
+  number lands in the middle of a probe and "six elements" becomes seven.
+  Capturing the specific nodes the probe created removes the race — and it has to
+  deduplicate, because retired floats are pooled and the same node comes back.
+
 - This machine (a fresh Windows box picking up the project) had neither Git
   nor Node.js preinstalled; both were installed via `winget` (`Git.Git`,
   `OpenJS.NodeJS`) rather than assuming either was already present. Also has
@@ -3268,7 +3461,32 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 47 M4.7 complete (2026-08-19). **Latest: M4.7 — the unit frames,
+Phase 0 through 47 M4.8 complete (2026-08-19). **Latest: M4.8 — the numbers, the
+wait, and four monsters breathing in lockstep.** Three loose ends, each the
+oldest thing left in its corner. Floating combat text was the last of the 2D
+client still on screen — one class, one keyframe, projected once at spawn and
+then left to slide up a screen the world was moving under. It is a per-frame
+system now: anchored to the body it came off and re-projected every frame, sized
+by the hit's share of the victim's health (ten damage is a third of a slime and
+nothing to a dragon), and fanned, lifted and staggered so a cleave into a pack
+reads as five hits rather than one thicker number. Six treatments split by
+direction rather than school, because mid-fight the only question is whether you
+are winning; text about you keeps a lane of its own to the left, since the player
+and the thing hitting them are a metre apart on screen. The first load has a
+screen, and it is shorter: `assets.ts` counts what it is actually fetching rather
+than a hardcoded total, waits for textures and not only for models, and the
+decor, the character rig and the socket now run at once instead of in a queue —
+the socket opens at +109ms against a last asset request at +654ms, so the screen
+lifts onto a world with 32 monsters already in it. And a camp of four mushnubs
+stopped being one animation played four times: every actor carries a variance
+seed hashed from its server id that offsets where in the idle loop it sits and
+how fast it runs it, and idle monsters now turn their heads on a seeded interval
+— monsters only, since a player's facing decides where a skill goes. 44 checks
+across three new headless suites, including the real mixer showing eight slimes
+at phases 0.05 through 0.90 of the same clip.
+**Next: M4.9 — remaining polish.**
+
+Before that, Phase 0 through 47 M4.7 (2026-08-19). **Latest: M4.7 — the unit frames,
 and a layout bug I had shipped.** The target frame was drawing over the player
 frame's clock row: it carried a hardcoded `top: 122px`, correct until M4.3's
 world clock added a row to the frame above it. A fixed offset against a

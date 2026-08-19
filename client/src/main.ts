@@ -1,5 +1,6 @@
 import { Game } from "./three/Game";
 import { hydrateIcons } from "./ui/icons";
+import { LoadingScreen, randomHint } from "./ui/LoadingScreen";
 
 // A thrown error inside Phaser's create() leaves a black canvas and nothing
 // else — the failure is completely silent unless you have devtools open.
@@ -39,8 +40,22 @@ function startGame(characterName: string): void {
   gameFrame.style.width = "100%";
   gameFrame.style.height = "100%";
 
+  // Shown before the Game is even constructed, so the very first thing that
+  // happens after Play is something appearing rather than a blank page holding
+  // still for several seconds. Its own removal is deferred to `finish`, which
+  // only runs once the world is standing.
+  const loading = new LoadingScreen(document.body, randomHint());
+
   const game = new Game(gameFrame, characterName);
-  void game.start().catch((e) => showFatal(String((e as Error)?.stack ?? e)));
+  void game
+    .start()
+    .then(() => loading.finish())
+    .catch((e) => {
+      // The screen comes down on failure too, or the error report it is meant
+      // to make visible is behind it.
+      loading.finish();
+      showFatal(String((e as Error)?.stack ?? e));
+    });
 }
 
 function handlePlay(): void {
