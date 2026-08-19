@@ -5,6 +5,10 @@ import {
   INVENTORY_CAP,
   INTERACTION_RANGE_PX,
   LOOT_DROP_CHANCE,
+  LOOT_PICKUP_RANGE_PX,
+  LOOT_RESERVED_MS,
+  LOOT_LIFETIME_MS,
+  type DroppedItemState,
   MONSTER_STATS,
   PLAYER_SPAWN,
   WORLD_WIDTH,
@@ -1493,14 +1497,87 @@ function sendInfo(socket: WebSocket, text: string, color: string): void {
   socket.send(JSON.stringify(update));
 }
 
+// --- Loot on the ground -----------------------------------------------------
+// Everything currently lying in the world, by id. Server memory only, like
+// monsters and nodes: a drop lives a couple of minutes and persisting it would
+// mean a restart leaving items scattered across a world nobody is standing in.
+const drops = new Map<string, DroppedItemState>();
+let dropCounter = 0;
+
+/**
+ * Puts an item on the ground where the monster fell.
+ *
+ * Deliberately NOT straight into the bag. A kill is the one moment an item
+ * system has the player's whole attention, and spending it on a line of text
+ * was a waste of the only art the item has. It also gives the bag-full case an
+ * honest answer — the drop waits rather than being destroyed.
+ */
+function dropOnGround(ownerId: string, item: ItemInstance, x: number, y: number): void {
+  const now = Date.now();
+  const id = `drop-${++dropCounter}`;
+  // Scattered slightly, so two drops from one pack are not one pile.
+  const angle = Math.random() * Math.PI * 2;
+  const spread = 14 + Math.random() * 18;
+  drops.set(id, {
+    id,
+    x: clamp(x + Math.cos(angle) * spread, 0, WORLD_WIDTH),
+    y: clamp(y + Math.sin(angle) * spread, 0, WORLD_HEIGHT),
+    item,
+    ownerId,
+    freeAt: now + LOOT_RESERVED_MS,
+    expiresAt: now + LOOT_LIFETIME_MS,
+  });
+}
+
+/**
+ * Walk over it and it is yours. Proximity, like everything else in this game —
+ * gathering, combat and the workbench are all decided by where you are standing,
+ * and a pick-up key would be the only thing that was not.
+ */
+function collectDrops(now: number): void {
+  for (const [id, drop] of drops) {
+    if (now >= drop.expiresAt) {
+      drops.delete(id);
+      continue;
+    }
+    const free = now >= drop.freeAt;
+    for (const player of players.values()) {
+      if (!free && player.id !== drop.ownerId) continue;
+      if (Math.hypot(player.x - drop.x, player.y - drop.y) > LOOT_PICKUP_RANGE_PX) continue;
+
+      const socket = sockets.get(player.id);
+      if (listItems(player.id).length >= INVENTORY_CAP) {
+        // The drop stays where it is rather than being destroyed, which is what
+        // makes a full bag a delay instead of a loss.
+        if (socket) {
+          sendInfo(socket, `Bag is full (${INVENTORY_CAP}/${INVENTORY_CAP}) — salvage something.`, "#ef5350");
+        }
+        continue;
+      }
+
+      const stored = addItem(player.id, {
+        baseId: drop.item.baseId,
+        slot: drop.item.slot,
+        rarity: drop.item.rarity,
+        statValue: drop.item.statValue,
+        bonusStatValue: drop.item.bonusStatValue,
+        affixes: drop.item.affixes,
+        weaponType: drop.item.weaponType,
+        style: drop.item.style,
+      });
+      drops.delete(id);
+      if (socket) {
+        sendLootUpdate(socket, stored);
+        sendItemsUpdate(socket, player.id, listItems(player.id));
+      }
+      break;
+    }
+  }
+}
+
 function maybeDropLoot(playerId: string, socket: WebSocket, monster: MonsterState): void {
   const guaranteed = MONSTER_STATS[monster.kind].guaranteedDrop;
   if (!guaranteed && Math.random() > LOOT_DROP_CHANCE) return;
-
-  if (listItems(playerId).length >= INVENTORY_CAP) {
-    sendInfo(socket, `Bag is full (${INVENTORY_CAP}/${INVENTORY_CAP}) — a drop was lost! Sell some items.`, "#ef5350");
-    return;
-  }
 
   // WHAT drops is decided by where the player is fighting, not by a flat roll
   // over every item in the game. The monster's own difficulty band is the
@@ -1513,10 +1590,11 @@ function maybeDropLoot(playerId: string, socket: WebSocket, monster: MonsterStat
   const band = MONSTER_STATS[monster.kind].band;
   const base = rollBase(band);
   const quality = guaranteed ? rollRarityWithFloor(BOSS_MIN_RARITY) : rollRarity();
-  const item = addItem(playerId, rollItem(base, quality));
-
-  sendLootUpdate(socket, item);
-  sendItemsUpdate(socket, playerId, listItems(playerId));
+  const rolled = rollItem(base, quality);
+  // On the ground, not in the bag. It is reserved for the player the threat
+  // table credited with the kill — the same answer the experience split uses —
+  // and goes free after a while so nobody's drop becomes somebody else's litter.
+  dropOnGround(playerId, { ...rolled, id: `pending-${dropCounter}`, equipped: false }, monster.x, monster.y);
 }
 
 /**
@@ -2059,6 +2137,10 @@ wss.on("connection", (socket) => {
 setInterval(() => {
   const now = Date.now();
 
+  // Anything lying on the ground that somebody is now standing on, and anything
+  // that has been lying there too long.
+  collectDrops(now);
+
   for (const node of nodes) {
     if (node.status === "depleted" && now >= (nodeRespawnAt.get(node.id) ?? 0)) {
       node.status = "available";
@@ -2557,7 +2639,14 @@ setInterval(() => {
   }));
   const snapshot: ServerToClientMessage = {
     type: "STATE_SNAPSHOT",
-    payload: { serverTime: now, players: playerStates, nodes, monsters, stations },
+    payload: {
+      serverTime: now,
+      players: playerStates,
+      nodes,
+      monsters,
+      stations,
+      drops: [...drops.values()],
+    },
   };
   const data = JSON.stringify(snapshot);
   for (const socket of sockets.values()) {

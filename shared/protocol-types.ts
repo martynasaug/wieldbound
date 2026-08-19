@@ -2293,6 +2293,32 @@ export interface MonsterState {
   windingUp: boolean;
 }
 
+// --- Loot on the ground -----------------------------------------------------
+// A drop used to teleport into the bag with a line in the combat log, which is
+// the one moment an item system has the player's whole attention and it was
+// spending it on text. A kill leaves something ON THE GROUND now: the item's own
+// model where the monster fell, turning, lit by its quality.
+//
+// It is reserved for whoever earned it — the threat table already decided that,
+// and it is the same answer the experience split uses — and then goes free, so a
+// drop nobody wanted is not litter that only one person can clear.
+export const LOOT_PICKUP_RANGE_PX = 46;
+export const LOOT_RESERVED_MS = 25000;
+export const LOOT_LIFETIME_MS = 150000;
+
+export interface DroppedItemState {
+  id: string;
+  x: number;
+  y: number;
+  item: ItemInstance;
+  /** Who it belongs to until `freeAt`. */
+  ownerId: string;
+  /** After this, anyone may take it. */
+  freeAt: number;
+  /** When it disappears, so the client can fade it rather than popping it. */
+  expiresAt: number;
+}
+
 export interface StateSnapshotMessage {
   type: "STATE_SNAPSHOT";
   payload: {
@@ -2301,6 +2327,8 @@ export interface StateSnapshotMessage {
     nodes: ResourceNodeState[];
     monsters: MonsterState[];
     stations: CraftingStationState[];
+    /** Everything lying on the ground within sight. */
+    drops: DroppedItemState[];
   };
 }
 

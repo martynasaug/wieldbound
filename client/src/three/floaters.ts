@@ -64,6 +64,12 @@ const STYLE = `
 #floaters .k-taken { color: #ff6b6b; }
 #floaters .k-heal  { color: #7ed957; }
 #floaters .k-xp    { color: #ffd873; }
+/* Loot takes its colour from the item's quality, set inline, so this rule only
+   carries what the quality does not decide. */
+#floaters .k-loot {
+  letter-spacing: .02em;
+  text-shadow: 0 0 12px currentColor;
+}
 #floaters .k-miss  {
   color: #b9ab8d; font-weight: normal; font-style: italic;
   letter-spacing: .08em;
@@ -80,7 +86,7 @@ const STYLE = `
 }
 `;
 
-export type FloatKind = "hit" | "skill" | "taken" | "heal" | "miss" | "xp";
+export type FloatKind = "hit" | "skill" | "taken" | "heal" | "miss" | "xp" | "loot";
 
 /**
  * A live position in the world. Held by reference deliberately: `Actor.root
@@ -107,6 +113,15 @@ export interface FloatSpec {
   weight?: number;
   /** Height above the anchor's own origin to spawn at, in world units. */
   headY?: number;
+  /**
+   * Overrides the kind's colour.
+   *
+   * Exists for exactly one caller: loot, whose colour is the item's quality and
+   * so cannot be a class in this stylesheet. Everything else takes its colour
+   * from what KIND of event it is, which is the property the six treatments
+   * were built around and the reason they read at a glance.
+   */
+  color?: string;
 }
 
 interface Float {
@@ -167,6 +182,7 @@ export class Floaters {
     const el = this.pool.pop() ?? document.createElement("div");
     const crit = !!spec.crit;
     el.className = `f k-${spec.kind}${crit ? " crit" : ""}`;
+    el.style.color = spec.color ?? "";
     el.innerHTML = crit ? `<b>CRIT</b>${escapeText(spec.text)}` : escapeText(spec.text);
 
     // Size. The weight is the share of the victim's health this took, and it is

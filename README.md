@@ -122,7 +122,10 @@ first run at `server/data/wieldbound.db`.
 - **A smithy with three verbs** — Forge a named thing from the catalogue,
   Reforge one step up the ladder, or Salvage anything down into materials.
   Plus **essence**, a fourth material that only comes off kills, so the top of
-  the ladder cannot be reached by gathering alone. Four of the slots show on the character:
+  the ladder cannot be reached by gathering alone.
+- **Loot lands on the ground** — a kill leaves the item's own model where the
+  monster fell, turning, lit by its quality. Walk over it to take it. It is
+  reserved for whoever earned the kill for a while, then anyone may have it. Four of the slots show on the character:
   style picks the mesh, rarity only tints it, so a plate chestpiece and a
   leather one take the same epic gold and stay recognisably plate and leather.
 - **Plus** gathering, levels and attributes, consumables, a leaderboard, a

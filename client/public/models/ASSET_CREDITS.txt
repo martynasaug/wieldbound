@@ -162,3 +162,10 @@ https://opengameart.org/content/lowpoly-medieval-weapons
 
   The FBX are copied through unconverted: 835 KB for all 23, and the client
   already loads FBX for the character rigs.
+
+  Pouch_Large and Chest_Wood were added later for ground loot — what a drop
+  looks like when the item itself has no model (a ring is invisible, and armour
+  is a procedural shape authored against a body). Both use only the three trim
+  atlases already here, which tools/art/props.mjs checks before copying anything:
+  a model wanting a fourth atlas is refused rather than quietly dragging two
+  megabytes of texture in behind it.

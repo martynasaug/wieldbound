@@ -61,6 +61,7 @@ import {
   type PlayerState,
   type ResourceNodeState,
   type CraftingStationState,
+  type DroppedItemState,
   type SkillId,
 } from "../../../shared/protocol-types";
 import { SkillFx, fxFor } from "./skillfx";
@@ -78,6 +79,7 @@ import { Actor } from "./Actor";
 import { CLASS_BODIES } from "./gear";
 import { Hud } from "./hud";
 import { Floaters, type FloatSpec } from "./floaters";
+import { Drops } from "./drops";
 import { Effects, isEffectName, type EffectName } from "./effects";
 import { Indicators } from "./indicators";
 import { ATTACK_STYLES, Projectiles, attackStyle, impactDelayMs } from "./attacks";
@@ -98,6 +100,8 @@ import {
   ITEM_BASES,
   forgeCost,
   hitBandOf,
+  itemBase,
+  itemShortName,
   itemName,
   itemPassives,
   reachOf,
@@ -263,6 +267,9 @@ export class Game {
   private readonly world: World;
   private readonly hud: Hud;
   private readonly floaters: Floaters;
+  private readonly drops: Drops;
+  /** Last snapshot's drops, for the plates and the minimap. */
+  private dropStates: DroppedItemState[] = [];
   private readonly socket: GameSocket;
 
   private readonly characterPanel: CharacterPanel;
@@ -385,6 +392,7 @@ export class Game {
     this.world = new World(container);
     this.hud = new Hud(container);
     this.floaters = new Floaters(container);
+    this.drops = new Drops(this.world.scene);
     this.minimap = new Minimap(container);
     this.effects = new Effects(this.world.scene);
     this.indicators = new Indicators(this.world.scene);
@@ -474,8 +482,27 @@ export class Game {
         // Named, and coloured by its quality — "Found honed weapon" was the
         // anonymity the catalogue exists to remove, still leaking out of the
         // one line the player reads at the moment something drops.
-        this.combatLog.push(`Found ${itemName(p.item)}.`, RARITIES[p.item.rarity]?.color ?? "#c9b47a");
-        this.hud.toast(itemName(p.item), RARITIES[p.item.rarity]?.color ?? "#c9b47a");
+        const colour = RARITIES[p.item.rarity]?.color ?? "#c9b47a";
+        this.combatLog.push(`Found ${itemName(p.item)}.`, colour);
+        // Over the character, where they are looking, rather than only in a
+        // corner. Picking something up is now a thing that happens in the
+        // world — you walked to it — so the acknowledgement belongs there too.
+        if (this.localActor) {
+          this.floaters.spawn(this.localActor.position, {
+            kind: "loot",
+            text: itemShortName(p.item),
+            color: colour,
+            headY: 2.9,
+            weight: 0.45,
+          });
+        }
+        // The toast stays for the top two qualities only: a line in the corner
+        // for every Worn dagger is noise, and noise is what makes a player stop
+        // reading the corner at all.
+        if (RARITIES[p.item.rarity]?.glow) {
+          this.hud.toast(itemName(p.item), colour);
+          playSfx("levelup", 0.7);
+        }
       },
       onHpUpdate: (p) => this.onHpUpdate(p),
       onItemsUpdate: (p) => {
@@ -672,6 +699,7 @@ export class Game {
     nodes: ResourceNodeState[];
     monsters: MonsterState[];
     stations: CraftingStationState[];
+    drops?: DroppedItemState[];
   }): void {
     this.syncPlayers(p.players);
     this.syncMonsters(p.monsters);
@@ -684,6 +712,10 @@ export class Game {
     );
     this.syncNodes(p.nodes);
     this.syncStations(p.stations);
+    // Optional on the wire so a client can outlive a server that predates
+    // ground loot; the empty list is the honest reading of "no drops".
+    this.dropStates = p.drops ?? [];
+    this.drops.sync(this.dropStates, (x, y) => ({ x: toWorldX(x), z: toWorldZ(y) }));
   }
 
   private syncPlayers(states: PlayerState[]): void {
@@ -909,7 +941,16 @@ export class Game {
       players.push({ x: actor.position.x, z: actor.position.z });
     }
 
+    // Loot carries its quality's colour onto the map, so a violet dot at the
+    // edge means the same thing there as it does on the plate and in the bag.
+    const dropBlips = this.dropStates.map((d) => ({
+      x: toWorldX(d.x),
+      z: toWorldZ(d.y),
+      color: RARITIES[d.item.rarity]?.color ?? "#dfe6e4",
+    }));
+
     this.minimap.setSnapshot({
+      drops: dropBlips,
       player: { x: self.position.x, z: self.position.z, facing: self.bearing },
       players,
       monsters,
@@ -2052,6 +2093,7 @@ export class Game {
     this.effects.update(this.world.camera);
     this.projectiles.update();
     this.skillFx.update();
+    this.drops.update(performance.now());
     // After the actors have moved and before the frame is drawn, so a number
     // never lags the body it came off by a frame.
     this.floaters.update(this.projectForFloat);
@@ -2361,6 +2403,22 @@ export class Game {
         name: STATION_LABEL,
         icon: "dock-craft",
         distance: rangeTo(obj.position.x, obj.position.z),
+      });
+    }
+
+    // Loot on the ground, named and coloured by its quality. This is the one
+    // place a player reads an item from across a field, so it carries the same
+    // colour the bag slot will — and its own icon, since "a Runed something"
+    // is not worth walking over and a Runed Claymore is.
+    for (const drop of this.dropStates) {
+      const x = toWorldX(drop.x);
+      const z = toWorldZ(drop.y);
+      this.hud.plate(`drop-${drop.id}`, this.world.project(x, 1.35, z, 48), {
+        kind: "drop",
+        name: itemShortName(drop.item),
+        icon: itemBase(drop.item.baseId).icon,
+        tint: RARITIES[drop.item.rarity]?.color,
+        distance: rangeTo(x, z),
       });
     }
 

@@ -278,6 +278,18 @@ const STYLE = `
 }
 #hud3d .plate-node.dim .pn { opacity: .38; }
 
+/* --- loot on the ground -------------------------------------------------
+   Between an ordinary monster's bare text and a boss's framed plate: a drop
+   gets a dark backing so it stays readable against grass, and takes its
+   colour from the item's quality rather than from this stylesheet. */
+#hud3d .plate-drop .pn {
+  padding: .12em .5em;
+  border-radius: .3em;
+  background: rgba(14, 10, 5, .72);
+  font-weight: bold;
+  letter-spacing: .01em;
+}
+
 /* --- the workbench ------------------------------------------------------ */
 #hud3d .plate-station .pn {
   color: #ffd873;
@@ -312,7 +324,7 @@ const STYLE = `
 const HUD_FRAME_RECT = { w: 300, h: 130 };
 
 /** Which of the four nameplate treatments something gets. */
-export type PlateKind = "monster" | "player" | "node" | "station";
+export type PlateKind = "monster" | "player" | "node" | "station" | "drop";
 
 export interface PlateSpec {
   kind: PlateKind;
@@ -335,6 +347,9 @@ export interface PlateSpec {
   dim?: boolean;
   /** Icon key drawn left of the name. */
   icon?: string;
+  /** Overrides the name's colour. Drops use it to carry their quality, which is
+   *  the one fact a player needs to read about loot from across a field. */
+  tint?: string;
 }
 
 /**
@@ -361,6 +376,8 @@ interface PlateState {
   name: string;
   icon: string;
   cls: string;
+  /** Last colour written. Same reasoning as the name. */
+  tint?: string;
   /** Highest recent health fraction, for the damage ghost to drain from. */
   ghost: number;
   ghostAt: number;
@@ -572,6 +589,7 @@ export class Hud {
         name: "",
         icon: "",
         cls: "",
+        tint: undefined,
         ghost: 1,
         ghostAt: 0,
       };
@@ -611,6 +629,13 @@ export class Hud {
       st.name = spec.name;
       st.icon = icon;
       st.nameEl.innerHTML = (icon ? iconSvg(icon, "icon") : "") + `<span>${spec.name}</span>`;
+    }
+    // Written only on change, like the name and the class list: this runs for
+    // every plate every frame, and assigning an unchanged colour sixty times a
+    // second is one of the cheapest things in the HUD to get wrong.
+    if (spec.tint !== st.tint) {
+      st.tint = spec.tint;
+      st.nameEl.style.color = spec.tint ?? "";
     }
 
     if (spec.maxHp && spec.maxHp > 0 && spec.hp !== undefined) {

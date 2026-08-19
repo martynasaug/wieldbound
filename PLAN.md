@@ -2305,8 +2305,61 @@ crafting system to go with them.
       off-hand, and salvage; and the preview contact sheets for every weapon,
       every off-hand and the seven-step ladder.
 
-- [ ] **M2 — remaining item work.** Ground loot as a physical object, per-item
-      attack timing from `WeaponMods`, and a look at whether 78 is enough.
+- [x] **M1.1 — weapons finally feel different, and the bag answers "is this
+      better than mine?"** Two gaps in M1, and the first was a promise the data
+      made that the game did not keep: thirty-seven weapons carried per-item
+      range/speed/damage multipliers and nothing read them, so a Bloodclaim
+      Claymore played exactly like an Arming Sword.
+      - The FAMILY multipliers were being read inline at six call sites —
+        `weaponDef(x).speedMultiplier` on the server, the same on the client's
+        stat sheet, `attackRangeFor` reaching into the table itself. Adding a
+        second factor to each would have been six edits nobody was reminded
+        about, which is exactly how helm and cape once came to roll stats no
+        combat formula read. One resolver per number instead — `reachOf`,
+        `swingIntervalOf`, `hitBandOf` — and the server's swing timer and the
+        character sheet cannot disagree about what a claymore does
+      - The client's four reach call sites went the same way behind one
+        accessor. A spear had been drawing a ring it could not hit to
+      - **Measured across all 37 weapons, damage per second spans 1.6x** from
+        the weakest to the strongest, which is tight enough that the choice
+        between them is genuine rather than a ranking
+      - The tooltip compares against what is worn in that slot, per number
+        rather than as one verdict — "better" is not a fact when an item trades
+        damage for speed — and says how a weapon SWINGS, read off the same
+        multipliers combat resolves with so a rebalance cannot leave an item
+        describing itself wrongly
+
+- [x] **M1.2 — loot on the ground.** A kill put an item straight into the bag
+      and a line in the combat log. That is the one moment an item system has
+      the player's whole attention, and it was spending it on text — while the
+      item's model, the thing the entire catalogue exists to show, went unseen
+      until the bag was opened.
+      - A drop is a real object now: **the item's own mesh** where the monster
+        fell, turning, floating, on a disc of its quality's colour, with a beam
+        for the top two qualities only. It reuses `buildHeldItem`, so the
+        claymore on the grass is the same object you will be holding a second
+        later and nothing in `drops.ts` knows how to build a weapon
+      - **Things with no model get a pouch.** A ring is invisible and armour is
+        a procedural shape authored against a body, so neither can lie on grass.
+        `tools/art/props.mjs` pulls two more props out of the kit already in
+        use, and **refuses any model that would need a fourth trim atlas** —
+        which is what keeps "add a prop" free rather than two megabytes of
+        texture
+      - **Walk over it and it is yours.** Proximity, like gathering, combat and
+        the workbench; a pick-up key would have been the only thing in the game
+        that was not. Reserved for whoever the threat table credited with the
+        kill — the same answer the experience split uses — then free, so a drop
+        nobody wanted is not litter only one person can clear
+      - A full bag now DELAYS a drop instead of destroying it, which is the
+        honest behaviour and was impossible while loot went straight to the bag
+      - Named plates in the item's quality colour, blips on the minimap in the
+        same colour, and the name floating over your character on pickup. The
+        corner toast is now reserved for the top two qualities: a line for every
+        Worn dagger is noise, and noise is what stops a player reading the
+        corner at all
+
+- [ ] **M2 — remaining item work.** Whether 78 bases is enough, set bonuses, and
+      a look at whether the forge should teach recipes rather than gate them.
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -3634,6 +3687,51 @@ music, player-facing damage-type/resistances, more crafting recipes
   their own hex table, and the 3D tinting a fifth. A value duplicated per call
   site is a value that drifts, and nobody notices until two panels disagree
   about what colour a tier is.
+- Every number a weapon contributes resolves in ONE function. The family
+  multipliers had been read inline at six call sites, and adding per-item tuning
+  to each would have been six edits nobody was reminded about — the same shape
+  as the bug that left helm and cape rolling stats no formula read. `reachOf`,
+  `swingIntervalOf` and `hitBandOf` are the only places that know how a weapon
+  turns into a number, which is what stops the character sheet quoting something
+  the fight does not use.
+- A tooltip compares per NUMBER, never as one verdict. "Better" is not a fact
+  when an item trades damage for speed, and a green arrow claiming otherwise
+  makes the decision for a player who might reasonably disagree with it.
+- What a weapon's description says is read off the multipliers combat resolves
+  with, not written by hand. Hand-written flavour about how something swings is
+  a second copy of a number, and it goes stale the first time anything is
+  rebalanced.
+- Loot lands on the GROUND. A kill is the one moment an item system has the
+  player's whole attention, and spending it on a line of text wasted the only
+  art the item has — the model went unseen until the bag was opened. It also
+  gives a full bag an honest answer: the drop waits rather than being destroyed.
+- A drop is picked up by walking over it, because everything else in this game
+  is decided by where you are standing. Gathering, combat and the workbench are
+  all proximity; a pick-up key would have been the only exception, and an
+  exception is a thing players have to be taught.
+- A drop is reserved for whoever the threat table credited, then goes free. The
+  table already decided who earned the kill — it is the same fact the experience
+  split reads — and letting the reservation lapse is what stops a drop nobody
+  wanted becoming litter only one person can clear.
+- The drop's model is `buildHeldItem`, unchanged. The claymore on the grass is
+  the same object you will be holding a second later, and `drops.ts` knows
+  nothing about how a weapon is built. Anything with no model — rings, armour —
+  gets a pouch rather than a second art path invented for it.
+- A new prop is refused if it would need a fourth trim atlas. The whole kit
+  shares three, every model already in the repo uses those three, and that is
+  the entire reason adding a prop is free. `tools/art/props.mjs` checks it rather
+  than trusting it.
+- The corner toast is for the top two qualities only. A line for every Worn
+  dagger is noise, and noise is what makes a player stop reading the corner at
+  all — the same argument that gives only bosses a framed nameplate.
+- A patch script that aborts a batch must say the whole batch was dropped. Three
+  edits went missing here because one mismatched and the failure message named
+  only that one, so two unrelated changes silently never happened and were found
+  by a test much later.
+- Do not edit client files while a browser suite is running. Vite reloads the
+  page under it and the run dies with "execution context was destroyed", which
+  reads like a product fault and is not one.
+
 - A test that shares a world with a live game must assert on IDENTITY, not on
   counts. Something is usually hitting the character, so a stray real damage
   number lands mid-probe and "six elements" becomes seven. And a test character

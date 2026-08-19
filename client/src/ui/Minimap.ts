@@ -40,6 +40,8 @@ export interface MinimapSnapshot {
   monsters: MinimapMonster[];
   nodes: MinimapNode[];
   stations: Blip[];
+  /** Loot on the ground, each carrying its quality's colour. */
+  drops: { x: number; z: number; color: string }[];
   /** Half-extents of the playable rectangle, for the boundary outline. */
   bounds: { halfWidth: number; halfHeight: number };
 }
@@ -56,6 +58,7 @@ export interface MinimapSettings {
   showNodes: boolean;
   showPlayers: boolean;
   showStations: boolean;
+  showDrops: boolean;
   showGrid: boolean;
   showCoords: boolean;
   opacity: number;
@@ -72,6 +75,7 @@ const DEFAULTS: MinimapSettings = {
   showNodes: true,
   showPlayers: true,
   showStations: true,
+  showDrops: true,
   showGrid: true,
   showCoords: true,
   opacity: 1,
@@ -195,6 +199,7 @@ export class Minimap {
       ["showNodes", "Resources"],
       ["showPlayers", "Players"],
       ["showStations", "Workbench"],
+      ["showDrops", "Loot"],
       ["showGrid", "Grid"],
       ["showCoords", "Coordinates"],
       ["rotate", "Rotate with facing"],
@@ -359,6 +364,17 @@ export class Minimap {
       for (const st of snap.stations) {
         const [px, py] = project(st.x, st.z);
         this.diamond(ctx, px, py, 4.6, COLORS.station);
+      }
+    }
+
+    // Drawn above the nodes and below the monsters: loot is worth walking to
+    // and is not worth walking INTO something for. Each takes the item's own
+    // quality colour, which is the same colour its plate and its bag slot use —
+    // so a violet dot at the edge of the map means the same thing everywhere.
+    if (s.showDrops) {
+      for (const d of snap.drops) {
+        const [px, py] = project(d.x, d.z);
+        this.diamond(ctx, px, py, 3.2, d.color);
       }
     }
 
