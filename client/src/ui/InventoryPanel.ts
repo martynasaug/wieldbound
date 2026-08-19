@@ -13,7 +13,7 @@ import {
 } from "../../../shared/protocol-types";
 import { attachItemTooltip, attachMaterialTooltip } from "./ItemTooltip";
 import { iconEl, iconSvg } from "./icons";
-import { itemIcon, itemShortName, rarityColor, rarityGlows, SLOT_ICON } from "./items";
+import { isUpgrade, itemIcon, itemShortName, rarityColor, rarityGlows, SLOT_ICON } from "./items";
 import {
   itemScore,
   MATERIAL_ICON,
@@ -153,6 +153,18 @@ export class InventoryPanel {
       qty.className = "bag-qty";
       qty.textContent = String(item.statValue);
       cell.appendChild(qty);
+
+      // A mark for things that are straightforwardly better than what is worn.
+      // Only when there is nothing to trade off — a mark that appears on
+      // sidegrades is a mark players learn to ignore, and the tooltip is where
+      // the honest per-number comparison lives.
+      if (isUpgrade(item, this.items)) {
+        const up = document.createElement("span");
+        up.className = "bag-up";
+        up.textContent = "▲";
+        up.title = "Better than what you are wearing";
+        cell.appendChild(up);
+      }
 
       cell.addEventListener("click", () => this.onEquip(item.id));
 

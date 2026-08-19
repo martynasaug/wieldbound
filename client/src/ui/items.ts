@@ -127,6 +127,39 @@ export interface ItemComparison {
   againstName: string;
 }
 
+/**
+ * Whether this is straightforwardly better than what is worn in its slot.
+ *
+ * Deliberately conservative, and it answers a different question from the
+ * tooltip's per-number comparison. The tooltip refuses to give a verdict
+ * because "better" is not a fact when an item trades damage for speed; this is
+ * only for the small mark on a bag slot, so it fires only when there is nothing
+ * to trade off — every number is at least equal and the score is clearly ahead.
+ * A mark that appears on sidegrades is a mark players learn to ignore.
+ */
+export function isUpgrade(item: ItemInstance, equipped: ItemInstance[]): boolean {
+  const worn = equipped.find((i) => i.equipped && i.slot === item.slot);
+  // Nothing worn in that slot is always an upgrade — the slot is empty.
+  if (!worn) return !item.equipped;
+  if (worn.id === item.id) return false;
+
+  // Compared on what the player actually GETS, never on the band. `itemScore`
+  // adds the band, which is right for ordering a bag and wrong here: a band-3
+  // base with rolls identical to a band-1 one plays exactly the same, and
+  // marking it an upgrade is a claim the numbers do not support.
+  const affixes = item.affixes?.length ?? 0;
+  const wornAffixes = worn.affixes?.length ?? 0;
+  if (item.statValue < worn.statValue) return false;
+  if (item.bonusStatValue < worn.bonusStatValue) return false;
+  if (affixes < wornAffixes) return false;
+  // Nothing given up, and at least one thing gained.
+  return (
+    item.statValue > worn.statValue ||
+    item.bonusStatValue > worn.bonusStatValue ||
+    affixes > wornAffixes
+  );
+}
+
 export function compareToEquipped(
   item: ItemInstance,
   equipped: ItemInstance[],

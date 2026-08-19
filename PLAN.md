@@ -2485,6 +2485,24 @@ crafting system to go with them.
       and is exactly what `AFFINITY_WEIGHT` sets — so the test asserts the knob
       rather than a symptom of it, and holds for all thirteen kinds.
 
+- [x] **M1.8 — two things the player was working out by hand.**
+      - **Bag slots mark straightforward upgrades.** Deliberately conservative,
+        and it answers a DIFFERENT question from the tooltip's per-number
+        comparison: the tooltip refuses to give a verdict because "better" is
+        not a fact when an item trades damage for speed, so the mark fires only
+        when there is nothing to trade off — every number at least equal and one
+        of them ahead. A mark that appears on sidegrades is a mark players learn
+        to ignore
+      - It compares what the player actually GETS, never the band. The first
+        version used `itemScore`, which adds the band for bag ordering — so a
+        band-3 base with rolls identical to a band-1 one was marked an upgrade,
+        which is a claim the numbers do not support since the two play the same
+      - **The two-handed rule explains itself.** `equipItem` empties the
+        off-hand silently, which from the player's side is a shield vanishing
+        for no stated reason. The rule stays in the equipment where every path
+        obeys it; the explanation is sent from the handler, because the
+        explanation belongs to the person who was surprised
+
 - [ ] **M2 — remaining item work.** What a second material tier would buy, and
       whether the reforge ladder wants a failure chance at the top.
 

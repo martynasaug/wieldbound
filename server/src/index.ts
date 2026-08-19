@@ -1874,8 +1874,30 @@ wss.on("connection", (socket) => {
       // Nothing is gated: any character can equip any weapon, because doing so
       // IS the class change. What used to be a rejection is now the feature.
       const before = classOf(id);
+      const offhandBefore = equippedItems.get(id)?.offhand ?? null;
+      const weaponBefore = equippedItems.get(id)?.weapon ?? null;
       const result = equipItem(id, msg.payload.itemId);
       if (!result) return;
+
+      // Two hands are two hands, and `equipItem` enforces that silently — which
+      // from the player's side is a shield disappearing for no stated reason.
+      // Said out loud here rather than in the rule itself: the rule belongs to
+      // the equipment, the explanation belongs to the person who was surprised.
+      const nowWorn = (slot: ItemSlot) =>
+        result.items.find((i) => i.slot === slot && i.equipped) ?? null;
+      if (offhandBefore && !nowWorn("offhand")) {
+        sendInfo(
+          socket,
+          `${itemName(offhandBefore)} put away — both hands are on your weapon.`,
+          "#c9b47a",
+        );
+      } else if (weaponBefore && !nowWorn("weapon")) {
+        sendInfo(
+          socket,
+          `${itemName(weaponBefore)} put away — you cannot hold it and an off-hand.`,
+          "#c9b47a",
+        );
+      }
 
       weaponRarities.set(id, result.weaponRarity);
       armorRarities.set(id, result.armorRarity);
