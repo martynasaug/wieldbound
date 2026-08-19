@@ -1,25 +1,5 @@
-import { SECONDARY_STAT_LABEL, type ItemInstance, type ItemRarity } from "../../../shared/protocol-types";
-
-const RARITY_HEX: Record<ItemRarity, string> = { common: "#9e9e9e", rare: "#42a5f5", epic: "#ab47bc" };
-// Labels for the primary roll. Helm reads as a lesser chest piece and cape
-// as a lesser pair of boots, which is what the numbers actually do — see
-// gearArmor/gearEvasion in shared.
-const SLOT_STAT_LABEL: Record<ItemInstance["slot"], string> = {
-  weapon: "Bonus damage",
-  armor: "Damage reduction",
-  helm: "Damage reduction",
-  cape: "Evasion",
-  boots: "Evasion",
-  ring: "Bonus damage",
-};
-const SECONDARY_STAT_SUFFIX: Record<ItemInstance["slot"], string> = {
-  weapon: "%",
-  armor: "%",
-  helm: "%",
-  cape: " px/s",
-  boots: " px/s",
-  ring: "%",
-};
+import type { ItemInstance } from "../../../shared/protocol-types";
+import { itemDetails } from "./items";
 
 const el = document.getElementById("item-tooltip")!;
 
@@ -64,35 +44,59 @@ function attachTooltip(target: HTMLElement, renderContent: () => void): void {
   });
 }
 
+/**
+ * The whole of an item, in the order a player reads one: what it is, what
+ * quality it is in, what it does, what was rolled onto it, and last the line
+ * that is only there to be enjoyed.
+ *
+ * All of it comes out of `itemDetails`, so the tooltip cannot describe an item
+ * differently from the bag slot it is hovering over.
+ */
 export function attachItemTooltip(target: HTMLElement, item: ItemInstance): void {
   attachTooltip(target, () => {
+    const d = itemDetails(item);
     el.innerHTML = "";
 
     const title = document.createElement("div");
     title.className = "tt-title";
-    title.textContent = `${item.rarity} ${item.slot}`;
-    title.style.color = RARITY_HEX[item.rarity];
+    title.textContent = d.name;
+    title.style.color = d.color;
     el.appendChild(title);
 
-    const statLine = document.createElement("div");
-    statLine.className = "tt-line";
-    statLine.textContent = `${SLOT_STAT_LABEL[item.slot]}: +${item.statValue}`;
-    el.appendChild(statLine);
+    const sub = document.createElement("div");
+    sub.className = "tt-sub";
+    sub.textContent = `${d.quality} · ${d.kind}${d.twoHanded ? " · two-handed" : ""}`;
+    sub.style.color = d.color;
+    el.appendChild(sub);
 
-    if (item.bonusStatValue > 0) {
-      const bonusLine = document.createElement("div");
-      bonusLine.className = "tt-line";
-      bonusLine.textContent = `${SECONDARY_STAT_LABEL[item.slot]}: +${item.bonusStatValue}${SECONDARY_STAT_SUFFIX[item.slot]}`;
-      el.appendChild(bonusLine);
+    for (const line of d.stats) {
+      const row = document.createElement("div");
+      row.className = "tt-line";
+      row.textContent = `${line.label}: ${line.value}`;
+      el.appendChild(row);
+    }
+
+    // Affixes are set apart rather than listed with the rolls: they are the
+    // part of an item that is not true of every copy of it.
+    for (const affix of d.affixes) {
+      const row = document.createElement("div");
+      row.className = "tt-affix";
+      row.textContent = `${affix.label} — ${affix.value}`;
+      el.appendChild(row);
     }
 
     if (item.equipped) {
       const equippedLine = document.createElement("div");
       equippedLine.className = "tt-line";
-      equippedLine.style.color = "#66bb6a";
+      equippedLine.style.color = "#7ed957";
       equippedLine.textContent = "Equipped";
       el.appendChild(equippedLine);
     }
+
+    const flavour = document.createElement("div");
+    flavour.className = "tt-flavour";
+    flavour.textContent = d.flavour;
+    el.appendChild(flavour);
   });
 }
 

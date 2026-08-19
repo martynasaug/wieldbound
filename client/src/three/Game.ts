@@ -12,6 +12,7 @@ import {
   MONSTER_LABELS,
   MONSTER_STATS,
   NODE_LABELS,
+  RARITIES,
   SKILLS,
   STATION_LABEL,
   WORLD_WIDTH,
@@ -39,7 +40,6 @@ import {
   playerMinHit,
   primaryStatValue,
   regenAmountForVitality,
-  sellValueFor,
   hasActive,
   talentPassives,
   applyAttackSpeed,
@@ -94,6 +94,14 @@ import {
   toWorldZ,
 } from "./World";
 import { instantiate, whenLoadsSettle } from "./assets";
+import {
+  ITEM_BASES,
+  forgeCost,
+  itemName,
+  itemPassives,
+  reforgeCost,
+  salvageYield,
+} from "../../../shared/items";
 
 const PLAYER_HEIGHT = 1.8;
 
@@ -292,6 +300,8 @@ export class Game {
   private wood = 0;
   private ore = 0;
   private herb = 0;
+  /** The fourth material, off kills rather than out of the ground. */
+  private essence = 0;
 
   // Targeting has two halves, and keeping them apart is the whole design.
   //
@@ -381,13 +391,14 @@ export class Game {
     this.characterPanel = new CharacterPanel((stat) => this.socket.sendAllocateStat(stat));
     this.inventoryPanel = new InventoryPanel(
       (itemId) => this.socket.sendEquipItem(itemId),
-      (itemId) => this.sellItem(itemId),
+      (itemId) => this.salvageItem(itemId),
       () => this.socket.sendUsePotion(),
       () => this.socket.sendUseTonic(),
     );
     this.craftPanel = new CraftPanel(
-      (stationId, slot, rarity, weaponType) =>
-        this.socket.sendCraftItem(stationId, slot, rarity, weaponType),
+      (stationId, baseId) => this.socket.sendForgeItem(stationId, baseId),
+      (stationId, itemId) => this.socket.sendReforgeItem(stationId, itemId),
+      (itemId) => this.salvageItem(itemId),
       (stationId) => this.socket.sendCraftPotion(stationId),
       (stationId) => this.socket.sendCraftTonic(stationId),
     );
@@ -407,6 +418,16 @@ export class Game {
       onInventoryUpdate: (p) => {
         this.wood = p.wood;
         this.gatherLevel = p.gatherLevel;
+        this.syncMaterials();
+      },
+      // One message for the whole wallet. Wood, ore and herb each still have
+      // their own for the gathering paths that predate essence, but anything
+      // that spends — the smithy's three verbs — reports through this.
+      onMaterials: (p) => {
+        this.wood = p.wood;
+        this.ore = p.ore;
+        this.herb = p.herb;
+        this.essence = p.essence;
         this.syncMaterials();
       },
       onHerbUpdate: (p) => {
@@ -447,7 +468,11 @@ export class Game {
         }
       },
       onLootUpdate: (p) => {
-        this.combatLog.push(`Found ${p.item.rarity} ${p.item.slot}.`, "#c9b47a");
+        // Named, and coloured by its quality — "Found honed weapon" was the
+        // anonymity the catalogue exists to remove, still leaking out of the
+        // one line the player reads at the moment something drops.
+        this.combatLog.push(`Found ${itemName(p.item)}.`, RARITIES[p.item.rarity]?.color ?? "#c9b47a");
+        this.hud.toast(itemName(p.item), RARITIES[p.item.rarity]?.color ?? "#c9b47a");
       },
       onHpUpdate: (p) => this.onHpUpdate(p),
       onItemsUpdate: (p) => {
@@ -529,6 +554,16 @@ export class Game {
       MONSTER_STATS,
       ATTACK_STYLES,
       impactDelayMs,
+      // The catalogue too, since "why is this item called that" and "what does
+      // this affix actually give me" are questions a console session asks
+      // constantly, and neither is answerable from the item instance alone.
+      ITEM_BASES,
+      RARITIES,
+      itemName,
+      itemPassives,
+      forgeCost,
+      reforgeCost,
+      salvageYield,
     };
     // Starts as the bare-handed body; WELCOME's appearance re-dresses it, and
     // swaps the rig outright if the saved character is already holding something.
@@ -1438,6 +1473,10 @@ export class Game {
     this.appearance = appearanceFromItems(this.items);
     this.inventoryPanel.setItems(this.items);
     this.characterPanel.setEquipped(this.items);
+    // The bench lists the bag twice — Reforge and Salvage both read it — so it
+    // has to hear about every change, not only about the ones made at the bench.
+    this.craftPanel.setItems(this.items);
+    this.craftPanel.setLevel(this.level);
     this.craftPanel.setEquippedWeapon(this.appearance.weaponType);
     // Which attributes are worth points depends on what is in your hand.
     this.characterPanel.setWeapon(this.appearance.weaponType, this.weaponProgress?.level ?? null);
@@ -1450,8 +1489,9 @@ export class Game {
   }
 
   private syncMaterials(): void {
-    this.inventoryPanel.setMaterials(this.wood, this.ore, this.herb);
-    this.craftPanel.setResources(this.wood, this.ore, this.herb);
+    const wallet = { wood: this.wood, ore: this.ore, herb: this.herb, essence: this.essence };
+    this.inventoryPanel.setMaterials(wallet);
+    this.craftPanel.setMaterials(wallet);
   }
 
   /**
@@ -1528,16 +1568,12 @@ export class Game {
   }
 
   // Logged from the still-cached item before the server round-trip confirms it,
-  // so the line reads in the log at the moment the player clicks.
-  private sellItem(itemId: string): void {
+  // so the line reads in the log at the moment the player clicks. What it
+  // actually yields is the server's answer and arrives as an INFO line.
+  private salvageItem(itemId: string): void {
     const item = this.items.find((i) => i.id === itemId);
-    if (item) {
-      this.combatLog.push(
-        `Sold ${item.rarity} ${item.slot} for ${sellValueFor(item.rarity)} wood.`,
-        "#e2b04f",
-      );
-    }
-    this.socket.sendSellItem(itemId);
+    if (item) this.combatLog.push(`Salvaged ${itemName(item)}.`, "#c9b47a");
+    this.socket.sendSalvageItem(itemId);
   }
 
   private equippedBonusStatValue(slot: ItemSlot): number {
@@ -1750,7 +1786,12 @@ export class Game {
         if (!s) return;
         const dist = Math.hypot(this.playerX - s.x, this.playerY - s.y);
         if (dist <= INTERACTION_RANGE_PX) {
-          this.craftPanel.setResources(this.wood, this.ore, this.herb);
+          // The bench needs three things the moment it opens: what you can
+          // spend, what you own (Reforge and Salvage both list the bag), and
+          // what level you are (which recipes are learned).
+          this.syncMaterials();
+          this.craftPanel.setItems(this.items);
+          this.craftPanel.setLevel(this.level);
           this.craftPanel.open(id);
         } else {
           this.hud.toast("Too far from the workbench.", "#c98d5e");

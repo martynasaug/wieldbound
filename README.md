@@ -113,8 +113,16 @@ first run at `server/data/wieldbound.db`.
   proficiency is what you can do with the thing in your hand, and it is earned
   only while holding it. Stat points come with per-weapon advice, since which
   attribute multiplies your damage depends on what you are wielding.
-- **Gear** — six slots, three rarities, two rolled stats per item, crafting,
-  selling, and an inventory cap. Four of the slots show on the character:
+- **Items** — a catalogue of **78 named things**, each with its own model,
+  palette, difficulty band and flavour. Seven qualities that are conditions
+  rather than colours — Broken, Worn, Honed, Tempered, Forged, Runed,
+  Enchanted — where Broken is genuinely *worse* than baseline and Honed is
+  exactly it. Affixes on top, seven slots including an off-hand, and
+  two-handed weapons that empty it.
+- **A smithy with three verbs** — Forge a named thing from the catalogue,
+  Reforge one step up the ladder, or Salvage anything down into materials.
+  Plus **essence**, a fourth material that only comes off kills, so the top of
+  the ladder cannot be reached by gathering alone. Four of the slots show on the character:
   style picks the mesh, rarity only tints it, so a plate chestpiece and a
   leather one take the same epic gold and stay recognisably plate and leather.
 - **Plus** gathering, levels and attributes, consumables, a leaderboard, a
@@ -143,10 +151,13 @@ shared/   protocol-types.ts — message shapes AND the game's formulas,
           imported by both sides so they cannot disagree about the rules
 ```
 
-`shared/protocol-types.ts` is worth reading first: hit resolution, stat
-curves, monster stats, skills, loot tables and gear aggregation all live
-there, so the client's stat sheet computes exactly what the server resolves
-combat with.
+`shared/protocol-types.ts` is worth reading first: hit resolution, stat curves,
+monster stats, skills and gear aggregation all live there, so the client's stat
+sheet computes exactly what the server resolves combat with.
+`shared/items.ts` sits beside it and owns the *content* — every base item, the
+quality ladder, the affix tables and the smithy's costs. The dependency runs one
+way (items imports protocol-types, never the reverse), so one file is the wire
+format and the other is the catalogue.
 
 [`PLAN.md`](PLAN.md) is the running build log — every phase, what was built,
 and a decisions log explaining the non-obvious calls.
@@ -196,6 +207,7 @@ family fights like itself), M3.8 (the default attack as a real action) and M3.9
 window rail), M4.1 (real icons, and a camera you can zoom), M4.2 (a world with
 ground in it), M4.3 (a day/night cycle), M4.4 (a shape per skill), M4.5 (a
 minimap and a real smithy), M4.6 (nameplates), M4.7 (unit frames) and M4.8
-(combat text, a loading screen, monster idle variety) are done.
-**M4.9 — remaining polish** — is next. See [`PLAN.md`](PLAN.md) for the full
-picture.
+(combat text, a loading screen, monster idle variety) are done. **Phase 48 M1**
+then replaced the item system outright: a catalogue of 78 named base items, a
+seven-step quality ladder, and a smithy with three verbs. See
+[`PLAN.md`](PLAN.md) for the full picture.

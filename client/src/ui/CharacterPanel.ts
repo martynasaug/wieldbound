@@ -13,17 +13,10 @@ import {
 import { attachItemTooltip } from "./ItemTooltip";
 import { iconEl, iconSvg } from "./icons";
 
-const RARITY_HEX: Record<ItemRarity, string> = { common: "#9e9e9e", rare: "#42a5f5", epic: "#ab47bc" };
-// Driven off the shared slot list rather than a copy, so the next slot to be
-// added shows up here without anyone remembering to add it.
-const SLOT_ICON: Record<ItemSlot, string> = {
-  weapon: "slot-weapon",
-  helm: "slot-helm",
-  armor: "slot-armor",
-  cape: "slot-cape",
-  boots: "slot-boots",
-  ring: "slot-ring",
-};
+// Rarity colours, slot icons and item names all come from one place now — see
+// ui/items.ts. Four panels each carrying their own copy of the palette is how
+// two of them came to disagree about what colour a tier was.
+import { SLOT_ICON, itemIcon, itemShortName, rarityColor } from "./items";
 const ATTRS: AttributeName[] = ["strength", "agility", "vitality", "intelligence"];
 // Deliberately a figure rather than a weapon: the weapon name is written
 // directly underneath, and repeating it as the portrait wastes the one place
@@ -92,6 +85,8 @@ export class CharacterPanel {
   private attrButtons = {} as Record<AttributeName, HTMLButtonElement>;
 
   private weapon: WeaponType | undefined = undefined;
+  /** Last item list seen, so the figure can name what is actually in the hand. */
+  private equipped: ItemInstance[] = [];
 
   constructor(private readonly onAllocate: (stat: AttributeName) => void) {
     this.closeButton.addEventListener("click", () => this.close());
@@ -153,7 +148,7 @@ export class CharacterPanel {
     const cls = classForWeapon(weapon);
     this.classEl.textContent = cls.charAt(0).toUpperCase() + cls.slice(1);
     this.dollArt.innerHTML = iconSvg(CLASS_ART[cls] ?? "class-adventurer", "icon");
-    this.dollWeapon.textContent = weapon ? WEAPONS[weapon].name : "Unarmed";
+    this.refreshWeaponName();
     this.dollProf.textContent =
       proficiency === null
         ? ""
@@ -163,7 +158,26 @@ export class CharacterPanel {
     this.setStatAdvice(weapon);
   }
 
+  /**
+   * The weapon by NAME, not by family: "Bloodclaim Claymore" is what the player
+   * chose to carry, and "Sword" is a category they never picked.
+   *
+   * Called from both `setWeapon` and `setEquipped` because either can arrive
+   * first — the family comes with the weapon-progress message and the item list
+   * with the inventory one, and neither is ordered with respect to the other.
+   */
+  private refreshWeaponName(): void {
+    const held = this.equipped.find((i) => i.equipped && i.slot === "weapon");
+    this.dollWeapon.textContent = held
+      ? itemShortName(held)
+      : this.weapon
+        ? WEAPONS[this.weapon].name
+        : "Unarmed";
+  }
+
   setEquipped(items: ItemInstance[]): void {
+    this.equipped = items;
+    this.refreshWeaponName();
     for (const slot of ITEM_SLOTS) {
       const el = this.gearSlots.get(slot);
       if (!el) continue;
@@ -182,12 +196,12 @@ export class CharacterPanel {
       }
       // The border carries the rarity and `currentColor` lets the glow follow
       // it, so one assignment lights the whole slot.
-      el.style.borderColor = RARITY_HEX[item.rarity];
-      el.style.color = RARITY_HEX[item.rarity];
+      el.style.borderColor = rarityColor(item.rarity);
+      el.style.color = rarityColor(item.rarity);
       el.classList.add("filled");
-      const icon = iconEl(
-        item.slot === "weapon" && item.weaponType ? WEAPONS[item.weaponType].icon : SLOT_ICON[slot],
-      );
+      // The item's own icon: a hood and a great helm are both helms and should
+      // not be the same picture on the figure.
+      const icon = iconEl(itemIcon(item) || SLOT_ICON[slot]);
       if (icon) el.appendChild(icon);
       const lvl = document.createElement("span");
       lvl.className = "gear-lvl";

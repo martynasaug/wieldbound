@@ -2207,6 +2207,107 @@ every rig animation carrying it for free — architecturally *cleaner* than the
 
 - [ ] **M4.9 — remaining polish**
 
+## Phase 48 — Items
+The whole item system, replaced. User brief: delete every item in the game, add
+a lot of new ones, each with its own model, rarity, stats — and a whole new
+crafting system to go with them.
+
+- [x] **M1 — the catalogue, the ladder and the smithy.** Three changes, and the
+      first one is the one everything else hangs off.
+
+      **ITEMS HAVE NAMES NOW.** A drop used to be a slot and a rarity — "a rare
+      weapon (sword)" — generated from nothing, identical to every other rare
+      sword, with two numbers rolled off a table keyed by nothing but where it
+      landed. That is defensible while a game has three tiers and no art budget,
+      and it stops being defensible when the thing in your hand is drawn in 3D
+      and the premise of the game is that what you hold is who you are.
+      `shared/items.ts` is a catalogue of **78 base items**; an instance is a
+      base plus what happened to it.
+      - Three axes, deliberately independent, which is the paperdoll's own
+        argument one level up: **mesh** says what shape it is, **palette** what
+        it is made of, **rarity** only tints and multiplies. Multiplying them is
+        what turns 23 downloaded models into a catalogue — the same greatsword
+        mesh is Steel, Frost and Dread and none of them needed an artist
+      - **The numbers are derived, not authored.** A base declares its band and,
+        where it is unusual, a multiplier; `basePower`/`baseGuard` compute the
+        rest. A hundred and fifty hand-typed numbers is a hundred and fifty that
+        drift, and no reviewer can tell whether band 3 beats band 2 by reading
+        them
+      - **Per-item weapon tuning** on top of the family's, which is what stops
+        nine swords being one sword with different pictures: a claymore is slow
+        and heavy, a falchion quick and light, a spear reaches
+      - **Affixes reuse `PassiveBonus`** — the same bag the talent trees already
+        total — so they need no new plumbing anywhere. `passivesOf` on the
+        server adds gear affixes beside talent totals, and damage, accuracy,
+        armour, mana and cooldowns all pick them up without learning gear exists
+
+      **SEVEN QUALITIES, AND THEY ARE CONDITIONS RATHER THAN COLOURS.** Broken,
+      Worn, Honed, Tempered, Forged, Runed, Enchanted. common/rare/epic was a
+      colour ladder borrowed from every other game and said nothing about this
+      one, whose single fixed landmark is a forge.
+      - **Broken is BELOW baseline** — it multiplies numbers down. That makes
+        the bottom of the ladder a real state with a real answer rather than a
+        synonym for "common"
+      - **Honed is exactly 1.0**, so the catalogue is authored at true values
+      - Quality also decides the affix budget, 0 through 3
+
+      **THE SMITHY HAS THREE VERBS.** Crafting used to be one: pick a slot, pick
+      a tier, pay, receive an anonymous item — a way of buying loot rolls.
+      - **Forge** — make a named thing. You choose WHAT; output is always Honed,
+        because the forge decides what a thing is and the ladder decides how
+        good. Gated by character level, not weapon level, since gating it behind
+        weapon level would punish the weapon-swapping the game is named for
+      - **Reforge** — one step up the ladder, re-rolled from the base at the new
+        quality rather than added to. Keeping the old affixes and appending
+        would make every investment decision "whichever you found first"
+      - **Salvage** — break it down. Replaces selling for wood, which was a sink
+        with no decision in it, and is what Broken items are FOR
+      - **A fourth material, essence**, off kills rather than out of the ground,
+        needed only by the top of the ladder — so the strongest gear in the game
+        cannot be made by whoever stood at a tree longest
+
+      **The art.** `tools/art/weapons.mjs` fetches Quaternius's CC0 Medieval
+      Weapons (23 models, one zip, served directly by OpenGameArt — reproducible
+      from a script unlike the monsters pack). Same stylisation as everything
+      else in the world, and crucially **no textures**: flat named materials
+      that map onto the game's material roles, which is what makes palette a
+      real axis rather than a hue slider.
+      - **The grip is still harvested, never authored.** The donor sword is
+        loaded once and every model is FITTED INTO ITS GEOMETRY SPACE. Adding a
+        weapon is a row and a file, with no grip constant anywhere
+      - **An off-hand slot**, because the pack ships five shields and a shield is
+        the one piece of gear whose value is obvious without reading a number.
+        Two-handed weapons empty it, enforced in `db.equipItem` rather than in a
+        message handler — it is a property of what is worn, so every future path
+        that equips something obeys it
+      - Two procedural shapes for the silhouettes no pack ships: a crystal stave
+        and a quiver
+
+      **Three bugs worth recording.** The fitter rotated every model a quarter
+      turn on the assumption the pack authored things standing up in Y — true of
+      the source files, false of what arrives, because FBXLoader has already
+      converted to Z-up; so it measured the blade's WIDTH and every weapon came
+      out twelve times too big. Then scaling by whatever axis ends up down the
+      grip is right for a sword and wrong for a shield, whose thinnest axis
+      points that way — a shield's 60-unit thickness normalised to a sword's
+      length blew it up to five times the character. And `appearanceOf` on the
+      server was a second, independent copy of `appearanceFromItems`: the moment
+      the appearance grew a base id, that copy silently stopped carrying it and
+      every remote player was drawn empty-handed. Latent since the shared
+      function was written, and exactly the drift it exists to prevent.
+
+      Verified: `tools/test/items.mjs` (78 bases, every model checked on disk,
+      every icon, the ladder monotonic, 20k rolls reaching all 78 bases and all
+      7 qualities, the forge/reforge/salvage economics); 25 checks in a real
+      browser covering the catalogue, the bag, the tooltip, all three smithy
+      tabs and a held mesh on the body; the smoke suite driving a real socket
+      through forging one weapon per family, the two-handed rule emptying the
+      off-hand, and salvage; and the preview contact sheets for every weapon,
+      every off-hand and the seven-step ladder.
+
+- [ ] **M2 — remaining item work.** Ground loot as a physical object, per-item
+      attack timing from `WeaponMods`, and a look at whether 78 is enough.
+
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
 renderer-agnostic), and all six DOM panels (inventory, character, craft, skills,
@@ -3450,6 +3551,96 @@ music, player-facing damage-type/resistances, more crafting recipes
   Capturing the specific nodes the probe created removes the race — and it has to
   deduplicate, because retired floats are pooled and the same node comes back.
 
+- An item is a BASE plus what happened to it. The old model — a slot and a
+  rarity, with two numbers rolled off a table keyed by the slot — is fine while
+  items are anonymous and stops being fine the moment they are drawn in 3D and
+  the premise of the game is that what you hold is who you are. The catalogue is
+  the centre of gravity now: adding an item is a row, and everything downstream
+  (loot, the forge, the bag, the tooltip, the body) reads it.
+- Mesh, palette and rarity are three independent axes. Mesh says what shape it
+  is, palette what it is made of, rarity only tints and multiplies. That is the
+  paperdoll's own argument one level up, and it is what turns twenty-three
+  downloaded models into a seventy-eight item catalogue — the same greatsword
+  mesh is Steel, Frost and Dread and none of them needed an artist. Baking any
+  two together puts us back where the 2D game was, needing styles x rarities of
+  everything.
+- Item numbers are derived from band and slot, not authored per item. A hundred
+  and fifty hand-typed values across seventy-eight items is a hundred and fifty
+  values that drift, and no reviewer can tell by reading them whether band 3 is
+  stronger than band 2. A base declares its band and, where it is genuinely
+  unusual, a multiplier.
+- The seven qualities are CONDITIONS, not colours. common/rare/epic was borrowed
+  from every other game and said nothing about this one, whose one fixed
+  landmark is a forge and whose crafting verbs are forge, reforge and salvage.
+  Broken through Enchanted says the same thing the smithy does.
+- Broken multiplies DOWN. A bottom tier that is merely "the worst you can find"
+  is a synonym for common; one that is actively worse than baseline is a real
+  state with a real answer — salvage it, or spend to pull it up the ladder. And
+  it gives the low end of the game something to hand you that is not nothing.
+- Honed sits at exactly 1.0 so the catalogue is authored at true values. A
+  designer reading `ITEM_BASES` should be reading the numbers an item actually
+  has, not numbers that only mean something after a multiplier.
+- Affixes speak `PassiveBonus`, the vocabulary the talent trees already total.
+  This is not tidiness: combat resolution already reads `passives.critChance`,
+  the character sheet already displays it, and `applyDamagePercent` already
+  knows what to do with a percentage. A separate affix vocabulary would have
+  meant teaching every one of those about a second source — which is exactly how
+  helm and cape once came to roll stats nothing ever read.
+- Gear passives are added inside `passivesOf`, the one funnel every combat
+  number already flows through. One edit reaches damage, accuracy, armour, mana
+  and cooldowns, and the character sheet reads the same totals the server
+  resolves with.
+- The forge decides WHAT and the ladder decides HOW GOOD. Letting the forge pick
+  a quality is what made the old workbench a way of buying loot rolls, and it
+  would make reforging pointless. Forging always outputs Honed.
+- Reforging RE-ROLLS rather than adds. Keeping the old affixes and appending
+  makes a reforged item strictly a superset of itself, which turns "which item
+  do I invest in" into "whichever I found first" — and would mean an Enchanted
+  item's three affixes were chosen by what a Worn one rolled six steps earlier.
+- Essence comes off kills and cannot be gathered. Without one material the world
+  will not hand you for standing still, the top of the reforge ladder is a
+  function of time spent at trees, and the strongest gear in the game belongs to
+  whoever fought least.
+- The forge is gated by CHARACTER level, not weapon level. Weapon level is a
+  commitment to one family, and gating the bench behind it would punish exactly
+  the weapon-swapping the game is named for.
+- The two-handed rule lives in `db.equipItem`, not in the message handler. It is
+  a property of what is worn, so every path that equips something — a starting
+  kit, a reward, a test, a future one nobody has written — obeys it without
+  being told.
+- Styles are declared by the base item, not rolled. Rolling a look was right
+  while items were anonymous slot-and-rarity pairs and is wrong the moment they
+  have names: "Ranger's Hood" is a hood because that is what it is, not because
+  a random number came up hood.
+- The grip is harvested and every model is fitted into it. Character rigs ship
+  their weapon already parented to `WeaponR` with the right transform, and that
+  is the one thing that must not be guessed — a grip tuned by eye is wrong on
+  the next animation and wrong again on the next body. Fitting twenty-three
+  downloaded models into the donor's geometry space generalises what `buildAxe`
+  and `buildMace` already did for two procedural ones, and means adding a weapon
+  needs no grip constant at all.
+- Measure which axis a model lies along; do not assume it. The first fitter
+  rotated everything a quarter turn because the pack authors standing up in Y —
+  true of the files, false of what arrives, since FBXLoader has already
+  converted to Z-up. It measured the blade's width and every weapon came out
+  twelve times too big.
+- Scale by the LARGEST extent even when orientation uses a different axis. These
+  are two separate questions and conflating them is a real bug: normalising a
+  shield's sixty-unit thickness to a sword's length blew it up to five times the
+  character. Same rule the ground scatter arrived at when a flower clump
+  normalised by height came out a metre across.
+- One rarity palette, in `shared`. It existed FOUR times before the catalogue —
+  the bag, the character window, the workbench and the tooltip each carried
+  their own hex table, and the 3D tinting a fifth. A value duplicated per call
+  site is a value that drifts, and nobody notices until two panels disagree
+  about what colour a tier is.
+- A test that shares a world with a live game must assert on IDENTITY, not on
+  counts. Something is usually hitting the character, so a stray real damage
+  number lands mid-probe and "six elements" becomes seven. And a test character
+  persists by name, so reusing one means the second run starts with the first
+  run's bag and none of its materials — the forge check then fails for a reason
+  that has nothing to do with the forge.
+
 - This machine (a fresh Windows box picking up the project) had neither Git
   nor Node.js preinstalled; both were installed via `winget` (`Git.Git`,
   `OpenJS.NodeJS`) rather than assuming either was already present. Also has
@@ -3461,7 +3652,49 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 47 M4.8 complete (2026-08-19). **Latest: M4.8 — the numbers, the
+Phase 0 through 48 M1 complete (2026-08-19). **Latest: Phase 48 M1 — the item
+system, replaced.** User brief: delete every item in the game, add a lot of new
+ones each with its own model and stats, a seven-step rarity ladder named Broken
+through Enchanted, and a whole new crafting system.
+
+Items have names now, and that is the change everything else hangs off. A drop
+used to be a slot and a rarity — "a rare weapon (sword)" — identical to every
+other rare sword. `shared/items.ts` is a catalogue of **78 base items**, and an
+instance is a base plus what happened to it. Three axes stay independent: mesh
+says what shape it is, palette what it is made of, rarity only tints and
+multiplies — which is what turns 23 downloaded models into a catalogue. The
+numbers are derived from band and slot rather than authored, per-item weapon
+tuning stops nine swords being one sword with pictures, and affixes speak
+`PassiveBonus` so they reach combat through the funnel talents already use.
+
+The seven qualities are **conditions rather than colours**, for a game whose one
+fixed landmark is a forge. Broken multiplies DOWN, so the bottom of the ladder
+is a real state with a real answer; Honed is exactly 1.0, so the catalogue is
+authored at true values.
+
+The smithy has **three verbs**: Forge names what you want (always Honed — the
+forge decides what, the ladder decides how good), Reforge pushes one step up and
+re-rolls rather than adds, Salvage breaks things down and replaces selling. A
+fourth material, **essence**, comes off kills and is needed only near the top,
+so the best gear cannot be made by whoever stood at a tree longest.
+
+Art: `tools/art/weapons.mjs` fetches Quaternius's CC0 Medieval Weapons — 23
+models, one zip, no textures, flat named materials that map onto the game's
+material roles. The grip is still harvested off the character rig and every
+model is fitted into its geometry space, so adding a weapon is a row and a file.
+An **off-hand slot** joined the six, with two-handed weapons emptying it.
+
+Old items were deleted once, on a recorded schema mark.
+
+Three bugs worth remembering: the fitter assumed models stand up in Y (FBXLoader
+has already converted them to Z-up) and every weapon came out twelve times too
+big; scaling by whatever axis ends up down the grip blew shields up to five
+times the character; and `appearanceOf` on the server was a second copy of
+`appearanceFromItems` that silently stopped carrying the new base id, so every
+remote player was drawn empty-handed.
+**Next: Phase 48 M2 — ground loot, per-item attack timing.**
+
+Before that, Phase 0 through 47 M4.8 (2026-08-19). **Latest: M4.8 — the numbers, the
 wait, and four monsters breathing in lockstep.** Three loose ends, each the
 oldest thing left in its corner. Floating combat text was the last of the 2D
 client still on screen — one class, one keyframe, projected once at spawn and

@@ -1,20 +1,55 @@
+// The smithy.
+//
+// The old workbench had one verb and no decisions in it: pick a slot, pick a
+// tier, pay wood and ore, receive an anonymous item. It was a way of buying
+// loot rolls, and the only choice was how much to spend.
+//
+// There are three verbs now, and each is a different question — which is why
+// they are three tabs rather than three buttons on one list:
+//
+//   FORGE    what do I want to own? A catalogue of named things, gated by
+//            level so the bench cannot outrun the world you have walked into.
+//            Always comes out Honed, the baseline the catalogue is authored at.
+//
+//   REFORGE  which ONE of these do I invest in? Every item in the bag with the
+//            cost of its next step up the ladder. Steeply superlinear, so the
+//            answer is one item and not all six.
+//
+//   SALVAGE  what is this worth in parts? Where everything you have outgrown
+//            goes, and the reason a Broken drop is worth picking up.
+//
+// Consumables stay where they were, at the top of Forge, because they are the
+// one thing here that is still just a recipe.
+
 import {
   POTION_CRAFT_COST,
   POTION_HEAL_AMOUNT,
   TONIC_CRAFT_COST,
   TONIC_XP_AMOUNT,
-  RARITY_ORDER,
   ITEM_SLOTS,
-  WEAPON_TYPES,
-  WEAPONS,
-  CLASSES,
-  classForWeapon,
-  craftCostFor,
-  type ItemRarity,
+  SLOT_LABEL,
+  type ItemInstance,
   type ItemSlot,
-  type WeaponType,
 } from "../../../shared/protocol-types";
+import {
+  FORGE_LEVEL_FOR_BAND,
+  MATERIALS,
+  canAfford,
+  describeCost,
+  forgeCost,
+  forgeableBases,
+  itemBase,
+  nextRarity,
+  reforgeCost,
+  salvageYield,
+  type ItemBase,
+  type Material,
+  type MaterialCost,
+} from "../../../shared/items";
 import { iconSvg } from "./icons";
+import { itemIcon, itemShortName, rarityColor, rarityName } from "./items";
+
+type Tab = "forge" | "reforge" | "salvage";
 
 interface ConsumableCost {
   wood: number;
@@ -22,25 +57,25 @@ interface ConsumableCost {
   herb: number;
 }
 
-const SLOTS: readonly ItemSlot[] = ITEM_SLOTS;
-const RARITY_HEX: Record<ItemRarity, string> = { common: "#9e9e9e", rare: "#42a5f5", epic: "#ab47bc" };
-
 export class CraftPanel {
   private overlay = document.getElementById("craft-overlay")!;
   private grid = document.getElementById("craft-grid")!;
   private closeButton = document.getElementById("craft-close")!;
-  private wood = 0;
-  private ore = 0;
-  private herb = 0;
+
+  private materials: Record<Material, number> = { wood: 0, ore: 0, herb: 0, essence: 0 };
+  private items: ItemInstance[] = [];
+  private level = 1;
   private stationId: string | null = null;
-  // The workbench is where changing class is a deliberate act rather than
-  // something a loot drop does to you: you pick the family, then the tier.
-  // Defaults to what you already wield so the common case — upgrading — does
-  // not re-class you by accident.
-  private weaponType: WeaponType = "sword";
+  private tab: Tab = "forge";
+  /** Which slot's shelf is open in Forge. Seventy-eight recipes in one
+   *  column is a list nobody reads to the bottom of; one slot at a time is a
+   *  shelf. */
+  private slotFilter: ItemSlot = "weapon";
 
   constructor(
-    private readonly onCraft: (stationId: string, slot: ItemSlot, rarity: ItemRarity, weaponType?: WeaponType) => void,
+    private readonly onForge: (stationId: string, baseId: string) => void,
+    private readonly onReforge: (stationId: string, itemId: string) => void,
+    private readonly onSalvage: (itemId: string) => void,
     private readonly onCraftPotion: (stationId: string) => void,
     private readonly onCraftTonic: (stationId: string) => void,
   ) {
@@ -62,137 +97,288 @@ export class CraftPanel {
     this.stationId = null;
   }
 
-  // Called whenever equipment changes, so opening the bench pre-selects the
-  // family you are actually holding. Fists have no recipe, so an unarmed
-  // character falls back to the sword — the entry-level pick.
-  setEquippedWeapon(type: WeaponType | undefined): void {
-    this.weaponType = type && type !== "fist" ? type : "sword";
+  setMaterials(m: Record<Material, number>): void {
+    this.materials = m;
     if (this.isOpen) this.render();
   }
 
-  setResources(wood: number, ore: number, herb: number): void {
-    this.wood = wood;
-    this.ore = ore;
-    this.herb = herb;
+  setItems(items: ItemInstance[]): void {
+    this.items = items;
     if (this.isOpen) this.render();
   }
 
-  private renderConsumableRow(name: string, color: string, cost: ConsumableCost, onCraft: () => void): void {
-    const affordable = this.wood >= cost.wood && this.ore >= cost.ore && this.herb >= cost.herb;
+  setLevel(level: number): void {
+    this.level = level;
+    if (this.isOpen) this.render();
+  }
+
+  /** Opening the bench lands on the shelf for what you are holding. */
+  setEquippedWeapon(_type: unknown): void {
+    // Kept for the caller's sake; the shelf now defaults to weapons anyway.
+  }
+
+  // --- rendering ------------------------------------------------------------
+
+  private render(): void {
+    this.grid.innerHTML = "";
+    this.renderTabs();
+    this.renderWallet();
+    if (this.tab === "forge") this.renderForge();
+    else if (this.tab === "reforge") this.renderReforge();
+    else this.renderSalvage();
+  }
+
+  private renderTabs(): void {
+    const row = document.createElement("div");
+    row.className = "smith-tabs";
+    const tabs: [Tab, string, string][] = [
+      ["forge", "Forge", "forge"],
+      ["reforge", "Reforge", "reforge"],
+      ["salvage", "Salvage", "salvage"],
+    ];
+    for (const [id, label, icon] of tabs) {
+      const b = document.createElement("button");
+      b.className = "smith-tab";
+      b.classList.toggle("active", this.tab === id);
+      b.innerHTML = `${iconSvg(icon)}<span>${label}</span>`;
+      b.addEventListener("click", () => {
+        this.tab = id;
+        this.render();
+      });
+      row.appendChild(b);
+    }
+    this.grid.appendChild(row);
+  }
+
+  /** The wallet, always visible: every verb here spends from it. */
+  private renderWallet(): void {
+    const row = document.createElement("div");
+    row.className = "smith-wallet";
+    for (const m of MATERIALS) {
+      const cell = document.createElement("span");
+      cell.className = "smith-mat";
+      cell.innerHTML = `${iconSvg(m === "essence" ? "essence" : m)}${this.materials[m] ?? 0}`;
+      cell.title = m;
+      row.appendChild(cell);
+    }
+    this.grid.appendChild(row);
+  }
+
+  private costLine(cost: MaterialCost): HTMLElement {
+    const el = document.createElement("div");
+    el.className = "craft-row-cost";
+    el.textContent = describeCost(cost);
+    // Each shortfall is named rather than the whole line greying out, because
+    // "you cannot afford this" is much less useful than "you need essence".
+    const short = canAfford(cost, this.materials).missing;
+    if (short.length) {
+      el.classList.add("short");
+      el.textContent += `  (need ${short.join(", ")})`;
+    }
+    return el;
+  }
+
+  private row(
+    icon: string,
+    name: string,
+    colour: string,
+    sub: HTMLElement,
+    action: string,
+    enabled: boolean,
+    onClick: () => void,
+  ): void {
     const row = document.createElement("div");
     row.className = "craft-row";
+
+    const glyph = document.createElement("span");
+    glyph.className = "craft-row-icon";
+    glyph.innerHTML = iconSvg(icon);
+    glyph.style.color = colour;
+    row.appendChild(glyph);
+
     const info = document.createElement("div");
     const nameEl = document.createElement("div");
     nameEl.className = "craft-row-name";
     nameEl.textContent = name;
-    nameEl.style.color = color;
-    const costLine = document.createElement("div");
-    costLine.className = "craft-row-cost";
-    const costParts = [
-      cost.herb > 0 ? `${cost.herb} herb` : null,
-      cost.wood > 0 ? `${cost.wood} wood` : null,
-      cost.ore > 0 ? `${cost.ore} ore` : null,
-    ].filter(Boolean);
-    costLine.textContent = costParts.join(", ");
+    nameEl.style.color = colour;
     info.appendChild(nameEl);
-    info.appendChild(costLine);
-    const button = document.createElement("button");
-    button.textContent = "Craft";
-    button.disabled = !affordable;
-    button.addEventListener("click", onCraft);
+    info.appendChild(sub);
     row.appendChild(info);
+
+    const button = document.createElement("button");
+    button.textContent = action;
+    button.disabled = !enabled;
+    button.addEventListener("click", onClick);
     row.appendChild(button);
+
     this.grid.appendChild(row);
   }
 
-  // Family buttons, each labelled with the class it would make you — the
-  // whole point being that this choice is the class choice, so it should not
-  // be possible to make it without seeing that.
-  private renderWeaponPicker(): void {
-    const row = document.createElement("div");
-    row.className = "craft-weapon-picker";
-    for (const type of WEAPON_TYPES) {
-      const def = WEAPONS[type];
-      const button = document.createElement("button");
-      button.className = "craft-weapon-btn";
-      button.classList.toggle("active", type === this.weaponType);
-      button.innerHTML = `<span class="cw-icon">${iconSvg(def.icon)}</span><span class="cw-name">${def.name}</span>`;
-      button.title = `${def.name} — ${CLASSES[classForWeapon(type)].name}`;
-      button.addEventListener("click", () => {
-        this.weaponType = type;
-        this.render();
-      });
-      row.appendChild(button);
-    }
-    const note = document.createElement("div");
-    note.className = "craft-weapon-note";
-    note.textContent = `Equipping a ${WEAPONS[this.weaponType].name.toLowerCase()} makes you a ${CLASSES[classForWeapon(this.weaponType)].name}.`;
-    this.grid.appendChild(row);
-    this.grid.appendChild(note);
-  }
+  // --- forge ----------------------------------------------------------------
 
-  private render(): void {
-    this.grid.innerHTML = "";
-
-    const consumableTitle = document.createElement("div");
-    consumableTitle.className = "craft-section-title";
-    consumableTitle.textContent = "consumable";
-    this.grid.appendChild(consumableTitle);
-
-    this.renderConsumableRow(`Health Potion (+${POTION_HEAL_AMOUNT} HP)`, "#7ed957", POTION_CRAFT_COST, () => {
+  private renderForge(): void {
+    this.section("consumables");
+    this.renderConsumable(`Health Potion (+${POTION_HEAL_AMOUNT} HP)`, "#7ed957", POTION_CRAFT_COST, () => {
       if (this.stationId) this.onCraftPotion(this.stationId);
     });
-    this.renderConsumableRow(`XP Tonic (+${TONIC_XP_AMOUNT} XP)`, "#ffd873", TONIC_CRAFT_COST, () => {
+    this.renderConsumable(`XP Tonic (+${TONIC_XP_AMOUNT} XP)`, "#ffd873", TONIC_CRAFT_COST, () => {
       if (this.stationId) this.onCraftTonic(this.stationId);
     });
 
-    for (const slot of SLOTS) {
-      const sectionTitle = document.createElement("div");
-      sectionTitle.className = "craft-section-title";
-      sectionTitle.textContent = slot;
-      this.grid.appendChild(sectionTitle);
-
-      // One family picker rather than 7 families x 3 tiers of rows: the tier
-      // rows below re-render against whichever family is selected.
-      if (slot === "weapon") this.renderWeaponPicker();
-
-      for (const rarity of RARITY_ORDER) {
-        const cost = craftCostFor(slot, rarity);
-        const affordable = this.wood >= cost.wood && this.ore >= cost.ore;
-
-        const row = document.createElement("div");
-        row.className = "craft-row";
-
-        const info = document.createElement("div");
-        const name = document.createElement("div");
-        name.className = "craft-row-name";
-        name.textContent = rarity;
-        name.style.color = RARITY_HEX[rarity];
-        const costLine = document.createElement("div");
-        costLine.className = "craft-row-cost";
-        costLine.textContent = `${cost.wood} wood, ${cost.ore} ore`;
-        info.appendChild(name);
-        info.appendChild(costLine);
-
-        if (slot === "weapon") {
-          const family = document.createElement("span");
-          family.className = "craft-row-family";
-          family.textContent = ` ${WEAPONS[this.weaponType].name}`;
-          name.appendChild(family);
-        }
-
-        const button = document.createElement("button");
-        button.textContent = "Craft";
-        button.disabled = !affordable;
-        button.addEventListener("click", () => {
-          if (!this.stationId) return;
-          this.onCraft(this.stationId, slot, rarity, slot === "weapon" ? this.weaponType : undefined);
-        });
-
-        row.appendChild(info);
-        row.appendChild(button);
-        this.grid.appendChild(row);
-      }
+    // One shelf at a time. Seventy-eight recipes in one column is a list
+    // nobody reads to the bottom of.
+    const shelves = document.createElement("div");
+    shelves.className = "smith-shelves";
+    for (const slot of ITEM_SLOTS) {
+      const b = document.createElement("button");
+      b.className = "smith-shelf";
+      b.classList.toggle("active", this.slotFilter === slot);
+      b.textContent = SLOT_LABEL[slot];
+      b.addEventListener("click", () => {
+        this.slotFilter = slot;
+        this.render();
+      });
+      shelves.appendChild(b);
     }
+    this.grid.appendChild(shelves);
+
+    const available = forgeableBases(this.level).filter((b) => b.slot === this.slotFilter);
+    const locked = Object.values(
+      Object.fromEntries(
+        forgeableBases(99)
+          .filter((b) => b.slot === this.slotFilter && !available.includes(b))
+          .map((b) => [b.id, b]),
+      ),
+    ) as ItemBase[];
+
+    this.section(`${SLOT_LABEL[this.slotFilter]} — ${available.length} known`);
+    for (const base of available) this.renderForgeRow(base, true);
+    if (locked.length) {
+      this.section(`${locked.length} not yet learned`);
+      for (const base of locked) this.renderForgeRow(base, false);
+    }
+  }
+
+  private renderForgeRow(base: ItemBase, unlocked: boolean): void {
+    const cost = forgeCost(base);
+    const sub = unlocked ? this.costLine(cost) : document.createElement("div");
+    if (!unlocked) {
+      sub.className = "craft-row-cost short";
+      sub.textContent = `Needs level ${FORGE_LEVEL_FOR_BAND[base.band]}`;
+    }
+    this.row(
+      base.icon,
+      base.name,
+      unlocked ? "#dfe6e4" : "#6f6a62",
+      sub,
+      "Forge",
+      unlocked && canAfford(cost, this.materials).ok && !!this.stationId,
+      () => {
+        if (this.stationId) this.onForge(this.stationId, base.id);
+      },
+    );
+  }
+
+  // --- reforge --------------------------------------------------------------
+
+  private renderReforge(): void {
+    const ladder = this.items.filter((i) => nextRarity(i.rarity) !== null);
+    this.section("one step up the ladder");
+    if (ladder.length === 0) {
+      this.note("Nothing to reforge. Everything you own is already Enchanted, or you own nothing.");
+      return;
+    }
+    for (const item of ladder) {
+      const base = itemBase(item.baseId);
+      const to = nextRarity(item.rarity)!;
+      const cost = reforgeCost(base, item.rarity);
+      if (!cost) continue;
+
+      const sub = this.costLine(cost);
+      const step = document.createElement("div");
+      step.className = "craft-row-step";
+      step.innerHTML =
+        `<span style="color:${rarityColor(item.rarity)}">${rarityName(item.rarity)}</span>` +
+        ` → <span style="color:${rarityColor(to)}">${rarityName(to)}</span>`;
+      sub.prepend(step);
+
+      this.row(
+        itemIcon(item),
+        itemShortName(item) + (item.equipped ? " (worn)" : ""),
+        rarityColor(item.rarity),
+        sub,
+        "Reforge",
+        canAfford(cost, this.materials).ok && !!this.stationId,
+        () => {
+          if (this.stationId) this.onReforge(this.stationId, item.id);
+        },
+      );
+    }
+  }
+
+  // --- salvage --------------------------------------------------------------
+
+  private renderSalvage(): void {
+    // Worn items are excluded: salvaging the thing you are holding is never
+    // what anyone meant, and a confirmation dialogue for it would be a
+    // dialogue nobody reads.
+    const bag = this.items.filter((i) => !i.equipped);
+    this.section("break down for materials");
+    if (bag.length === 0) {
+      this.note("Nothing spare in the bag. Equipped items cannot be salvaged.");
+      return;
+    }
+    for (const item of bag) {
+      const yielded = salvageYield(item);
+      const sub = document.createElement("div");
+      sub.className = "craft-row-cost";
+      sub.textContent = `Returns ${describeCost(yielded)}`;
+      this.row(
+        itemIcon(item),
+        itemShortName(item),
+        rarityColor(item.rarity),
+        sub,
+        "Salvage",
+        true,
+        () => this.onSalvage(item.id),
+      );
+    }
+  }
+
+  // --- shared bits ----------------------------------------------------------
+
+  private section(title: string): void {
+    const el = document.createElement("div");
+    el.className = "craft-section-title";
+    el.textContent = title;
+    this.grid.appendChild(el);
+  }
+
+  private note(text: string): void {
+    const el = document.createElement("div");
+    el.className = "smith-note";
+    el.textContent = text;
+    this.grid.appendChild(el);
+  }
+
+  private renderConsumable(
+    name: string,
+    color: string,
+    cost: ConsumableCost,
+    onCraft: () => void,
+  ): void {
+    const affordable =
+      this.materials.wood >= cost.wood &&
+      this.materials.ore >= cost.ore &&
+      this.materials.herb >= cost.herb;
+    this.row(
+      name.startsWith("Health") ? "potion" : "tonic",
+      name,
+      color,
+      this.costLine(cost),
+      "Craft",
+      affordable && !!this.stationId,
+      onCraft,
+    );
   }
 }

@@ -25,7 +25,7 @@ import * as THREE from "three";
 import {
   GEAR_STYLES,
   RARITY_ORDER,
-  SLOT_STYLES,
+  RARITIES,
   WEAPONS,
   WEAPON_TYPES,
   classForWeapon,
@@ -34,6 +34,7 @@ import {
   type ItemRarity,
   type ItemSlot,
 } from "../../shared/protocol-types";
+import { ITEM_BASES } from "../../shared/items";
 import { Actor } from "../src/three/Actor";
 
 const CELL_PX = 260;
@@ -50,33 +51,96 @@ function layer(style: GearStyle, rarity: ItemRarity) {
   return { style, rarity };
 }
 
+/**
+ * Every weapon in the catalogue, held.
+ *
+ * This is the sheet that matters most now: thirty-seven weapon bases are
+ * twenty-three downloaded models fitted into a grip harvested off the rig, and
+ * a fit that is wrong reads as a sword held by its blade — which is invisible
+ * in a stat panel and obvious here.
+ */
 function weaponSheet(): Cell[] {
   const cells: Cell[] = [
     { title: "Fists", subtitle: "adventurer", appearance: { layers: {} } },
   ];
-  for (const type of WEAPON_TYPES) {
-    for (const rarity of ["common", "epic"] as ItemRarity[]) {
+  for (const base of Object.values(ITEM_BASES)) {
+    if (base.slot !== "weapon" || !base.weaponType) continue;
+    cells.push({
+      title: base.name,
+      subtitle: `${classForWeapon(base.weaponType)} · band ${base.band} · ${base.art.palette}`,
+      appearance: {
+        weaponType: base.weaponType,
+        weaponRarity: "honed",
+        weaponBaseId: base.id,
+        layers: {},
+      },
+    });
+  }
+  return cells;
+}
+
+/** Every off-hand, which hangs off a socket the pack never authored. */
+function offhandSheet(): Cell[] {
+  const cells: Cell[] = [];
+  for (const base of Object.values(ITEM_BASES)) {
+    if (base.slot !== "offhand") continue;
+    for (const rarity of ["worn", "forged", "enchanted"] as ItemRarity[]) {
       cells.push({
-        title: WEAPONS[type].name,
-        subtitle: `${classForWeapon(type)} · ${rarity}`,
-        appearance: { weaponType: type, weaponRarity: rarity, layers: {} },
+        title: base.name,
+        subtitle: `${rarity} · ${base.art.palette}`,
+        appearance: {
+          weaponType: "sword",
+          weaponRarity: rarity,
+          weaponBaseId: "armingsword",
+          offhandBaseId: base.id,
+          offhandRarity: rarity,
+          layers: {},
+        },
       });
     }
   }
   return cells;
 }
 
+/** One weapon through all seven qualities — the ladder, seen rather than read. */
+function ladderSheet(): Cell[] {
+  const cells: Cell[] = [];
+  for (const baseId of ["claymore", "twinbite", "starcaller", "ruinstring"]) {
+    const base = ITEM_BASES[baseId];
+    for (const rarity of RARITY_ORDER) {
+      cells.push({
+        title: base.name,
+        subtitle: RARITIES[rarity].name,
+        appearance: {
+          weaponType: base.weaponType,
+          weaponRarity: rarity,
+          weaponBaseId: base.id,
+          layers: {},
+        },
+      });
+    }
+  }
+  return cells;
+}
+
+/**
+ * Every armour piece in the catalogue, worn.
+ *
+ * Driven off the catalogue rather than off a style list, because styles are no
+ * longer rolled — a base item declares the shape it is. So this sheet is now
+ * literally "every wearable thing in the game", which is what it always meant
+ * to be.
+ */
 function armourSheet(): Cell[] {
   const cells: Cell[] = [];
-  for (const [slot, styles] of Object.entries(SLOT_STYLES) as [ItemSlot, GearStyle[]][]) {
-    for (const style of styles) {
-      for (const rarity of RARITY_ORDER) {
-        cells.push({
-          title: `${slot} · ${style}`,
-          subtitle: rarity,
-          appearance: { layers: { [slot]: layer(style, rarity) } },
-        });
-      }
+  for (const base of Object.values(ITEM_BASES)) {
+    if (!base.style || base.slot === "weapon" || base.slot === "offhand") continue;
+    for (const rarity of ["worn", "forged", "enchanted"] as ItemRarity[]) {
+      cells.push({
+        title: base.name,
+        subtitle: `${base.slot} · ${base.style} · ${rarity}`,
+        appearance: { layers: { [base.slot]: layer(base.style, rarity) } },
+      });
     }
   }
   return cells;
@@ -109,6 +173,8 @@ function fullSheet(): Cell[] {
 
 const SHEETS: Record<string, () => Cell[]> = {
   weapons: weaponSheet,
+  offhand: offhandSheet,
+  ladder: ladderSheet,
   armour: armourSheet,
   full: fullSheet,
 };

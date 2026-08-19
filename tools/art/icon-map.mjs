@@ -169,4 +169,53 @@ export const ICON_MAP = {
   agility: "delapouite/jump-across",
   vitality: "lorc/heart-tower",
   intelligence: "lorc/brain",
+  // --- the item catalogue --------------------------------------------------
+  // One icon per base-item FAMILY rather than per base item: seventy-eight
+  // glyphs would be seventy-eight downloads to say "this is a helmet" in
+  // seventy-eight ways, and the thing a player reads off a bag slot is what
+  // KIND of object it is. Which particular one it is, they read from the name
+  // and see on the character.
+  "slot-offhand": "delapouite/attached-shield",
+
+  "offhand-shield": "willdabeast/round-shield",
+  "offhand-focus": "lorc/crystal-shine",
+  "offhand-quiver": "delapouite/quiver",
+
+  "helm-cap": "lorc/barbute",
+  "helm-hood": "delapouite/warlock-hood",
+  "helm-full": "lorc/visored-helm",
+  "helm-horned": "lorc/horned-helm",
+  "helm-circlet": "delapouite/tiara",
+
+  "armor-robe": "lorc/robe",
+  "armor-leather": "lorc/leather-vest",
+  "armor-scale": "lorc/scale-mail",
+  "armor-chain": "lorc/mail-shirt",
+  "armor-brigandine": "delapouite/leather-armor",
+  "armor-plate": "lorc/breastplate",
+
+  "boots-low": "lorc/leather-boot",
+  "boots-tall": "delapouite/fur-boot",
+  "boots-wrapped": "darkzaitzev/tabi-boot",
+  "boots-plated": "delapouite/greaves",
+
+  "cape-cape": "delapouite/cape",
+  "cape-cloak": "lucasms/cloak",
+  "cape-tabard": "delapouite/cape-armor",
+  "cape-mantle": "lorc/wing-cloak",
+
+  "ring-band": "delapouite/ring",
+  "ring-bone": "lorc/skull-ring",
+  "ring-signet": "lorc/skull-signet",
+  "ring-gem": "lorc/engagement-ring",
+  "ring-rune": "lorc/swirl-ring",
+
+  // --- the smithy ----------------------------------------------------------
+  // Essence is the fourth material, and the only one that comes off a kill
+  // rather than out of the ground — so it is deliberately not another lump of
+  // rock or bundle of leaves.
+  essence: "delapouite/soul-vessel",
+  forge: "lorc/anvil-impact",
+  reforge: "lorc/fire-shield",
+  salvage: "delapouite/hammer-break",
 };

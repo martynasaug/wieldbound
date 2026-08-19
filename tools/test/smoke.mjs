@@ -44,16 +44,17 @@ ws.on("message", (raw) => {
 const equippedWeapon = () => items.find((i) => i.equipped && i.slot === "weapon");
 const CLASS_OF = { fist: "adventurer", sword: "warrior", axe: "warrior", mace: "warrior", dagger: "ranger", bow: "ranger", staff: "mage", wand: "mage" };
 
-async function craftAndEquip(slot, rarity, weaponType) {
+/** Forges one named base item and puts it on. */
+async function forgeAndEquip(baseId) {
   const before = items.length;
-  send({ type: "CRAFT_ITEM", payload: { stationId, slot, rarity, weaponType } });
+  send({ type: "FORGE_ITEM", payload: { stationId, baseId } });
   for (let i = 0; i < 30 && items.length === before; i++) await sleep(100);
   if (items.length === before) return null;
   // Newest first (the server orders by createdAt DESC).
   const fresh = items[0];
   send({ type: "EQUIP_ITEM", payload: { itemId: fresh.id } });
   await sleep(400);
-  return fresh;
+  return items.find((i) => i.id === fresh.id) ?? fresh;
 }
 
 async function main() {
@@ -71,28 +72,64 @@ async function main() {
   // works if the daily bonus / starting stock covers a common recipe.
   log(`   wood=${welcome.wood} ore=${welcome.ore} herb=${welcome.herb}`);
 
-  for (const type of ["sword", "bow", "staff", "dagger", "axe"]) {
-    const it = await craftAndEquip("weapon", "common", type);
+  // The off-hand, and the two-handed rule that pays for it. A shield goes on;
+  // then a two-hander must take it back off, with no message from the client
+  // saying so — the rule lives in the server's equip path.
+  const shield = await forgeAndEquip("plankshield");
+  if (shield) {
+    const wornOffhand = () => items.find((i) => i.equipped && i.slot === "offhand");
+    log(`   off-hand: ${wornOffhand()?.baseId ?? "none"} (expect plankshield)`);
+    const twoHander = await forgeAndEquip("shortbow");
+    if (twoHander) {
+      log(`   after equipping a bow: off-hand=${wornOffhand()?.baseId ?? "none"} (expect none)`);
+      if (wornOffhand()) log("   !! two-handed rule did not empty the off-hand");
+    }
+  }
+
+  // One weapon per family, by NAME now rather than by slot-and-tier — the
+  // forge names a catalogue entry, and the entry is what decides the family.
+  // Every one of these is band 1, so a level-1 character can make it.
+  const STARTERS = {
+    sword: "armingsword",
+    bow: "shortbow",
+    staff: "apprenticestaff",
+    dagger: "dirk",
+    axe: "handaxe",
+    mace: "smithhammer",
+    wand: "birchrod",
+  };
+  for (const [type, baseId] of Object.entries(STARTERS)) {
+    const it = await forgeAndEquip(baseId);
     if (!it) {
-      log(`   ${type}: craft refused (out of materials) - stopping weapon sweep`);
+      log(`   ${type}: forge refused (out of materials) - stopping weapon sweep`);
       break;
     }
     const eq = equippedWeapon();
     const me = globalThis.__me;
     log(
-      `   equipped ${type}: item.weaponType=${eq?.weaponType} expect-class=${CLASS_OF[type]} ` +
-        `appearance.weaponType=${me?.appearance?.weaponType} mana=${mana.mana}/${mana.max}`,
+      `   ${baseId}: weaponType=${eq?.weaponType} expect-class=${CLASS_OF[type]} ` +
+        `appearance.baseId=${me?.appearance?.weaponBaseId} rarity=${eq?.rarity} mana=${mana.mana}/${mana.max}`,
     );
     if (eq?.weaponType !== type) log(`   !! MISMATCH: equipped ${eq?.weaponType}, asked for ${type}`);
+    if (eq?.baseId !== baseId) log(`   !! MISMATCH: equipped base ${eq?.baseId}, asked for ${baseId}`);
   }
 
   // A visible-gear slot: it must show up as a layer with a style, which is
   // the only thing other clients get to draw a helm from.
-  for (const slot of ["helm", "cape", "armor", "boots"]) {
-    const it = await craftAndEquip(slot, "common");
-    if (!it) { log(`   ${slot}: craft refused`); continue; }
+  for (const baseId of ["paddedcap", "torncloak", "leatherjerkin", "wornsandals"]) {
+    const it = await forgeAndEquip(baseId);
+    if (!it) { log(`   ${baseId}: forge refused`); continue; }
     const me = globalThis.__me;
-    log(`   equipped ${slot}: style=${it.style} layer=${JSON.stringify(me?.appearance?.layers?.[slot])}`);
+    log(`   equipped ${baseId}: style=${it.style} layer=${JSON.stringify(me?.appearance?.layers?.[it.slot])}`);
+  }
+
+  // Salvage: the bag must shrink and the materials must come back.
+  const spare = items.find((i) => !i.equipped);
+  if (spare) {
+    const before = items.length;
+    send({ type: "SALVAGE_ITEM", payload: { itemId: spare.id } });
+    for (let i = 0; i < 30 && items.length === before; i++) await sleep(100);
+    log(`   salvaged ${spare.baseId}: bag ${before} -> ${items.length}`);
   }
 
   log("final appearance:", JSON.stringify(globalThis.__me?.appearance));

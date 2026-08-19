@@ -23,8 +23,7 @@ import {
   classForWeapon,
   attackRangeFor,
   weaponDef,
-  rollWeaponType,
-  rollGearStyle,
+
   ITEM_SLOTS,
   VISIBLE_GEAR_SLOTS,
   type ItemSlot,
@@ -34,6 +33,8 @@ import {
   manaRegenAmount,
   primaryStatValue,
   talentPassives,
+  addPassives,
+  appearanceFromItems,
   unlockedActives,
   hasActive,
   canLearnTalent,
@@ -90,15 +91,12 @@ import {
   playerMinHit,
   regenAmountForVitality,
   resolveHit,
-  rollItemRarity,
-  rollItemRarityWithFloor,
-  rollItemSlot,
+
   gearArmor,
   gearEvasion,
   gearCritChance,
   gearDamageBonus,
-  rollItemStatValue,
-  rollItemBonusStatValue,
+
   xpRewardFor,
   type AttributeName,
   type ClientToServerMessage,
@@ -112,6 +110,23 @@ import {
   type ServerToClientMessage,
 } from "../../shared/protocol-types.ts";
 import {
+  FORGE_OUTPUT_RARITY,
+  ITEM_BASES,
+  canForge,
+  describeCost,
+  essenceFor,
+  forgeCost,
+  gearPassives,
+  itemBase,
+  itemName,
+  reforgeCost,
+  reforgeItem,
+  rollBase,
+  rollItem,
+  rollRarity,
+  rollRarityWithFloor,
+} from "../../shared/items.ts";
+import {
   loadOrCreateCharacter,
   savePosition,
   addWood,
@@ -124,9 +139,14 @@ import {
   applyDamage,
   addHp,
   addItem,
+  getItem,
+  replaceItemRolls,
+  salvageItem,
+  materialsOf,
+  spendMaterials,
+  addEssence,
   listItems,
   equipItem,
-  sellItem,
   craftPotion,
   usePotion,
   craftTonic,
@@ -260,7 +280,21 @@ function weaponLevelOf(playerId: string, weapon = heldWeapon(playerId)): number 
  *  class+level lookup: bonuses now come from what you chose, on this weapon. */
 function passivesOf(playerId: string): ReturnType<typeof talentPassives> {
   const weapon = heldWeapon(playerId);
-  return talentPassives(weapon, ranksOf(playerId, weapon));
+  const total = talentPassives(weapon, ranksOf(playerId, weapon));
+  // Gear affixes total into the SAME bag, here, in the one function every
+  // combat number already flows through. That is the whole reason affixes reuse
+  // `PassiveBonus`: damage, accuracy, armour, mana and cooldowns all pick them
+  // up without any of them learning that gear exists — and the character sheet
+  // reads the same totals the server resolves with.
+  return addPassives(total, gearPassives(equippedItems.get(playerId)));
+}
+
+/** Whether a player is standing at the station they named. */
+function atStation(playerId: string, stationId: string): boolean {
+  const player = players.get(playerId);
+  const station = stations.find((s) => s.id === stationId);
+  if (!player || !station) return false;
+  return Math.hypot(player.x - station.x, player.y - station.y) <= INTERACTION_RANGE_PX;
 }
 
 /**
@@ -366,22 +400,23 @@ function computeEquipped(items: ItemInstance[]): EquippedItems {
   return out;
 }
 
-// What other clients need in order to draw this player: the weapon in hand
-// (which is also their class) and one layer per equipped visible slot. Built
-// straight from the equipment map, so it cannot describe gear the player is
-// not actually wearing.
+/**
+ * What other clients need in order to draw this player.
+ *
+ * Delegates to `appearanceFromItems`, the shared derivation the local player
+ * already rebuilds its own look with. This used to be a second, independent
+ * copy of that logic living here — and the moment the catalogue added a base id
+ * to the appearance, this copy silently stopped carrying it, so every remote
+ * player was drawn holding nothing while the local one was armed. Exactly the
+ * drift the shared function exists to prevent, and it had been latent since the
+ * function was written.
+ */
 function appearanceOf(playerId: string): Appearance {
   const eq = equippedItems.get(playerId);
-  const layers: Appearance["layers"] = {};
-  for (const slot of VISIBLE_GEAR_SLOTS) {
-    const item = eq?.[slot];
-    if (item?.style) layers[slot] = { style: item.style, rarity: item.rarity };
-  }
-  return {
-    weaponType: eq?.weapon?.weaponType,
-    weaponRarity: eq?.weapon?.rarity,
-    layers,
-  };
+  const worn = ITEM_SLOTS.map((slot) => eq?.[slot]).filter(
+    (item): item is ItemInstance => !!item,
+  );
+  return appearanceFromItems(worn);
 }
 
 
@@ -714,7 +749,13 @@ function awardKill(monster: MonsterState, now: number): void {
   }
 
   const topSocket = sockets.get(topId);
-  if (topSocket) maybeDropLoot(topId, topSocket, monster);
+  if (topSocket) {
+    maybeDropLoot(topId, topSocket, monster);
+    // Essence goes to the same player the loot does, and for the same reason:
+    // it is not divisible, and the threat table already decided who did the
+    // most work.
+    maybeDropEssence(topId, topSocket, monster);
+  }
   void now;
 }
 
@@ -1454,19 +1495,45 @@ function maybeDropLoot(playerId: string, socket: WebSocket, monster: MonsterStat
     return;
   }
 
-  const slot = rollItemSlot();
-  const dropped = guaranteed ? rollItemRarityWithFloor(BOSS_MIN_RARITY) : rollItemRarity();
-  const statValue = rollItemStatValue(slot, dropped);
-  const bonusStatValue = rollItemBonusStatValue(slot, dropped);
-  // Weapons drop in ANY family, not the finder's. Since the weapon IS the
+  // WHAT drops is decided by where the player is fighting, not by a flat roll
+  // over every item in the game. The monster's own difficulty band is the
+  // input, so walking one ring further out changes the loot table as well as
+  // the danger — which is the whole point of laying the world out as bands.
+  //
+  // Weapons still drop in ANY family, not the finder's: since the weapon IS the
   // class, an unfamiliar drop is the game offering a different way to play
   // rather than the dead loot it used to be under the old equip restriction.
-  const weaponType = slot === "weapon" ? rollWeaponType() : null;
-  const style = rollGearStyle(slot, dropped, Math.random) ?? null;
-  const item = addItem(playerId, slot, dropped, statValue, bonusStatValue, weaponType, style);
+  const band = MONSTER_STATS[monster.kind].band;
+  const base = rollBase(band);
+  const quality = guaranteed ? rollRarityWithFloor(BOSS_MIN_RARITY) : rollRarity();
+  const item = addItem(playerId, rollItem(base, quality));
 
   sendLootUpdate(socket, item);
   sendItemsUpdate(socket, playerId, listItems(playerId));
+}
+
+/**
+ * Essence off a kill. The one material that cannot be gathered, and the reason
+ * the top of the reforge ladder is not a function of time spent at trees.
+ */
+function maybeDropEssence(playerId: string, socket: WebSocket, monster: MonsterState): void {
+  const stats = MONSTER_STATS[monster.kind];
+  const amount = essenceFor(stats.band, stats.guaranteedDrop);
+  if (amount <= 0) return;
+  addEssence(playerId, amount);
+  sendMaterials(socket, playerId);
+  sendInfo(socket, `+${amount} essence`, "#c0a6ff");
+}
+
+/** The whole wallet, in one message. */
+function sendMaterials(socket: WebSocket, playerId: string): void {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  const m = materialsOf(playerId);
+  woodBalances.set(playerId, m.wood);
+  oreBalances.set(playerId, m.ore);
+  herbBalances.set(playerId, m.herb);
+  const update: ServerToClientMessage = { type: "MATERIALS_UPDATE", payload: m };
+  socket.send(JSON.stringify(update));
 }
 
 const wss = new WebSocketServer({ port: PORT });
@@ -1580,6 +1647,10 @@ wss.on("connection", (socket) => {
       // happens.
       sendAttackState(id);
       sendWeaponProgress(id);
+      // And the wallet, which WELCOME does not carry: essence arrived after the
+      // welcome payload was settled, and one message that always says all four
+      // is better than a fifth field that only some paths remember to set.
+      sendMaterials(socket, id);
       return;
     }
 
@@ -1746,14 +1817,14 @@ wss.on("connection", (socket) => {
       return;
     }
 
-    if (msg.type === "SELL_ITEM" && id) {
-      const result = sellItem(id, msg.payload.itemId);
+    if (msg.type === "SALVAGE_ITEM" && id) {
+      const result = salvageItem(id, msg.payload.itemId);
       if (!result) return;
 
-      woodBalances.set(id, result.wood);
       equippedItems.set(id, computeEquipped(result.items));
       sendItemsUpdate(socket, id, result.items);
-      sendInventoryUpdate(socket, result.wood, gatherLevels.get(id) ?? 0);
+      sendMaterials(socket, id);
+      sendInfo(socket, `Salvaged: ${describeCost(result.yielded)}.`, "#c9b47a");
       return;
     }
 
@@ -1774,38 +1845,70 @@ wss.on("connection", (socket) => {
       sendLeaderboardUpdate(socket);
     }
 
-    if (msg.type === "CRAFT_ITEM" && id) {
-      const player = players.get(id);
-      const station = stations.find((s) => s.id === msg.payload.stationId);
-      if (!player || !station) return;
-      if (Math.hypot(player.x - station.x, player.y - station.y) > INTERACTION_RANGE_PX) return;
-
+    // --- forge: make a named thing ----------------------------------------
+    if (msg.type === "FORGE_ITEM" && id) {
+      if (!atStation(id, msg.payload.stationId)) return;
       if (listItems(id).length >= INVENTORY_CAP) {
-        sendInfo(socket, `Bag is full (${INVENTORY_CAP}/${INVENTORY_CAP}) — sell some items first.`, "#ef5350");
+        sendInfo(socket, `Bag is full (${INVENTORY_CAP}/${INVENTORY_CAP}) — salvage something first.`, "#ef5350");
         return;
       }
 
-      const { slot, rarity } = msg.payload;
-      const cost = craftCostFor(slot, rarity);
-      const spendResult = trySpendCraftResources(id, cost.wood, cost.ore);
-      if (!spendResult) return;
+      const base = ITEM_BASES[msg.payload.baseId];
+      if (!base) return;
+      // Re-checked here rather than trusted from the client, for the same
+      // reason `canLearnTalent` is: the button the client greys out and the
+      // rule the server enforces have to be the same rule, and a hand-written
+      // message can say anything at all.
+      const gate = canForge(base, playerLevels.get(id) ?? 1);
+      if (!gate.ok) {
+        sendInfo(socket, `${base.name}: ${gate.reason}.`, "#c98d5e");
+        return;
+      }
 
-      woodBalances.set(id, spendResult.wood);
-      oreBalances.set(id, spendResult.ore);
-      const statValue = rollItemStatValue(slot, rarity);
-      const bonusStatValue = rollItemBonusStatValue(slot, rarity);
-      // Crafting is the deterministic counterweight to drop RNG, so it is
-      // also the reliable way to change class: the player names the family.
-      // Defaulting to what they already wield means "craft me a better one"
-      // never silently re-classes someone who just wanted an upgrade.
-      const craftedWeapon =
-        slot === "weapon" ? (msg.payload.weaponType ?? weaponTypeOf(id) ?? "sword") : null;
-      const craftedStyle = msg.payload.style ?? rollGearStyle(slot, rarity, Math.random) ?? null;
-      const item = addItem(id, slot, rarity, statValue, bonusStatValue, craftedWeapon, craftedStyle);
+      const cost = forgeCost(base);
+      if (!spendMaterials(id, cost)) {
+        sendInfo(socket, `Not enough materials — ${base.name} needs ${describeCost(cost)}.`, "#c98d5e");
+        return;
+      }
 
+      const item = addItem(id, rollItem(base, FORGE_OUTPUT_RARITY));
       sendLootUpdate(socket, item);
       sendItemsUpdate(socket, id, listItems(id));
-      sendOreUpdate(socket, spendResult.wood, spendResult.ore, battlePowerLevels.get(id) ?? 0);
+      sendMaterials(socket, id);
+      return;
+    }
+
+    // --- reforge: one step up the ladder -----------------------------------
+    if (msg.type === "REFORGE_ITEM" && id) {
+      if (!atStation(id, msg.payload.stationId)) return;
+
+      const item = getItem(id, msg.payload.itemId);
+      if (!item) return;
+      const base = itemBase(item.baseId);
+      const cost = reforgeCost(base, item.rarity);
+      if (!cost) {
+        sendInfo(socket, `${itemName(item)} is already at the top of the ladder.`, "#c98d5e");
+        return;
+      }
+      if (!spendMaterials(id, cost)) {
+        sendInfo(socket, `Not enough materials — reforging needs ${describeCost(cost)}.`, "#c98d5e");
+        return;
+      }
+
+      const next = reforgeItem(item);
+      if (!next) return;
+      const saved = replaceItemRolls(id, item.id, next);
+      if (!saved) return;
+
+      const items = listItems(id);
+      // The reforged item may be the one being worn, and its numbers have just
+      // changed — so the equipped cache has to be rebuilt or combat keeps
+      // resolving against the old rolls.
+      equippedItems.set(id, computeEquipped(items));
+      sendItemsUpdate(socket, id, items);
+      sendMaterials(socket, id);
+      sendInfo(socket, `Reforged: ${itemName(saved)}.`, "#ffd873");
+      return;
     }
 
     if (msg.type === "CRAFT_POTION" && id) {

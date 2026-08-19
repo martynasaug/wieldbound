@@ -6,7 +6,6 @@ import {
   TONIC_XP_AMOUNT,
   WEAPONS,
   rarityRank,
-  sellValueFor,
   type GatherableResource,
   type ItemInstance,
   type ItemRarity,
@@ -14,19 +13,14 @@ import {
 } from "../../../shared/protocol-types";
 import { attachItemTooltip, attachMaterialTooltip } from "./ItemTooltip";
 import { iconEl, iconSvg } from "./icons";
-
-const SLOT_ICON: Record<ItemSlot, string> = {
-  weapon: "slot-weapon",
-  helm: "slot-helm",
-  armor: "slot-armor",
-  cape: "slot-cape",
-  boots: "slot-boots",
-  ring: "slot-ring",
-};
-const RARITY_HEX: Record<ItemRarity, string> = { common: "#9e9e9e", rare: "#42a5f5", epic: "#ab47bc" };
-const MATERIAL_ICON: Record<GatherableResource, string> = { wood: "wood", ore: "ore", herb: "herb" };
-const MATERIAL_LABEL: Record<GatherableResource, string> = { wood: "Wood", ore: "Ore", herb: "Herb" };
-const MATERIALS: GatherableResource[] = ["wood", "ore", "herb"];
+import { itemIcon, itemShortName, rarityColor, rarityGlows, SLOT_ICON } from "./items";
+import {
+  itemScore,
+  MATERIAL_ICON,
+  MATERIAL_LABEL,
+  MATERIALS,
+  type Material,
+} from "../../../shared/items";
 
 /**
  * The bag: a fixed grid of slots, with materials and consumables in their own
@@ -54,7 +48,7 @@ export class InventoryPanel {
   private consumablesEl = document.getElementById("inv-consumables")!;
 
   private items: ItemInstance[] = [];
-  private materials: Record<GatherableResource, number> = { wood: 0, ore: 0, herb: 0 };
+  private materials: Record<Material, number> = { wood: 0, ore: 0, herb: 0, essence: 0 };
   private potions = 0;
   private tonics = 0;
   /** Player-chosen order, applied on top of arrival order. Not persisted: it is
@@ -96,8 +90,8 @@ export class InventoryPanel {
     this.render();
   }
 
-  setMaterials(wood: number, ore: number, herb: number): void {
-    this.materials = { wood, ore, herb };
+  setMaterials(m: Record<Material, number>): void {
+    this.materials = m;
     this.renderFooter();
   }
 
@@ -119,7 +113,10 @@ export class InventoryPanel {
       (a, b) =>
         (slotOrder.get(a.slot) ?? 9) - (slotOrder.get(b.slot) ?? 9) ||
         rarityRank(b.rarity) - rarityRank(a.rarity) ||
-        b.statValue - a.statValue,
+        // Score rather than the raw primary roll: with a catalogue, two items
+        // in one slot are no longer comparable on one number — a band-4 helm
+        // with two affixes beats a band-5 one with none.
+        itemScore(b) - itemScore(a),
     );
   }
 
@@ -138,14 +135,18 @@ export class InventoryPanel {
         continue;
       }
       cell.classList.add("filled");
-      cell.style.borderColor = RARITY_HEX[item.rarity];
+      const colour = rarityColor(item.rarity);
+      cell.style.borderColor = colour;
       // The icon takes the same colour through currentColor, so one assignment
-      // rarity-tints the border and the glyph together.
-      cell.style.color = RARITY_HEX[item.rarity];
+      // tints the border and the glyph together.
+      cell.style.color = colour;
+      // The top two qualities lift off the grid. Only those two, or the lift
+      // stops meaning anything.
+      if (rarityGlows(item.rarity)) cell.classList.add("lit");
 
-      const icon = iconEl(
-        item.slot === "weapon" && item.weaponType ? WEAPONS[item.weaponType].icon : SLOT_ICON[item.slot],
-      );
+      // The item's OWN icon, from the catalogue — a hood and a great helm are
+      // both helms and should not be the same picture in a bag of thirty.
+      const icon = iconEl(itemIcon(item) || SLOT_ICON[item.slot]);
       if (icon) cell.appendChild(icon);
 
       const qty = document.createElement("span");
@@ -155,17 +156,17 @@ export class InventoryPanel {
 
       cell.addEventListener("click", () => this.onEquip(item.id));
 
-      // Selling is the only irreversible thing in this window, so it never
-      // shares a gesture with equipping: its own button, its own price on it.
-      const sell = document.createElement("button");
-      sell.className = "bag-sell";
-      sell.innerHTML = `${sellValueFor(item.rarity)}${iconSvg("wood", "icon inline")}`;
-      sell.title = `Sell for ${sellValueFor(item.rarity)} wood`;
-      sell.addEventListener("click", (e) => {
+      // Salvaging is the only irreversible thing in this window, so it never
+      // shares a gesture with equipping: its own button, revealed on hover.
+      const salvage = document.createElement("button");
+      salvage.className = "bag-sell";
+      salvage.innerHTML = iconSvg("salvage", "icon inline");
+      salvage.title = `Salvage ${itemShortName(item)} for materials`;
+      salvage.addEventListener("click", (e) => {
         e.stopPropagation();
         this.onSell(item.id);
       });
-      cell.appendChild(sell);
+      cell.appendChild(salvage);
 
       attachItemTooltip(cell, item);
       this.grid.appendChild(cell);
@@ -208,4 +209,4 @@ export class InventoryPanel {
 }
 
 /** Kept for the rarity legend the craft panel shares. */
-export const RARITY_COLOURS = RARITY_ORDER.map((r) => RARITY_HEX[r]);
+export const RARITY_COLOURS = RARITY_ORDER.map((r) => rarityColor(r));

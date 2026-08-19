@@ -1,7 +1,7 @@
 Interface icons
 ===============
 
-135 icons from game-icons.net, baked into client/src/ui/icons.ts by
+167 icons from game-icons.net, baked into client/src/ui/icons.ts by
 tools/art/icons.mjs. Licensed CC BY 3.0 (some contributors release CC0); see
 https://github.com/game-icons/icons/blob/master/license.txt for the per-author
 terms.
@@ -12,8 +12,10 @@ Contributors whose work is used here:
   - delapouite
   - faithtoken
   - lorc
+  - lucasms
   - sbed
   - skoll
+  - willdabeast
   - zeromancer
 
 Icon key -> source file:
@@ -152,3 +154,35 @@ Icon key -> source file:
   agility                delapouite/jump-across.svg
   vitality               lorc/heart-tower.svg
   intelligence           lorc/brain.svg
+  slot-offhand           delapouite/attached-shield.svg
+  offhand-shield         willdabeast/round-shield.svg
+  offhand-focus          lorc/crystal-shine.svg
+  offhand-quiver         delapouite/quiver.svg
+  helm-cap               lorc/barbute.svg
+  helm-hood              delapouite/warlock-hood.svg
+  helm-full              lorc/visored-helm.svg
+  helm-horned            lorc/horned-helm.svg
+  helm-circlet           delapouite/tiara.svg
+  armor-robe             lorc/robe.svg
+  armor-leather          lorc/leather-vest.svg
+  armor-scale            lorc/scale-mail.svg
+  armor-chain            lorc/mail-shirt.svg
+  armor-brigandine       delapouite/leather-armor.svg
+  armor-plate            lorc/breastplate.svg
+  boots-low              lorc/leather-boot.svg
+  boots-tall             delapouite/fur-boot.svg
+  boots-wrapped          darkzaitzev/tabi-boot.svg
+  boots-plated           delapouite/greaves.svg
+  cape-cape              delapouite/cape.svg
+  cape-cloak             lucasms/cloak.svg
+  cape-tabard            delapouite/cape-armor.svg
+  cape-mantle            lorc/wing-cloak.svg
+  ring-band              delapouite/ring.svg
+  ring-bone              lorc/skull-ring.svg
+  ring-signet            lorc/skull-signet.svg
+  ring-gem               lorc/engagement-ring.svg
+  ring-rune              lorc/swirl-ring.svg
+  essence                delapouite/soul-vessel.svg
+  forge                  lorc/anvil-impact.svg
+  reforge                lorc/fire-shield.svg
+  salvage                delapouite/hammer-break.svg

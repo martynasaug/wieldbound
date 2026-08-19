@@ -142,3 +142,23 @@ Textures keep three.js's default flipY (true). The usual advice for FBX is to
 force it false — doing that here put every UV island on the wrong part of the
 atlas and rendered the warrior's steel plate as the brown leather sitting
 directly above it in the sheet.
+
+WEAPONS  (weapons/*.fbx)
+
+Quaternius "LowPoly Medieval Weapons" (Sept 2018), CC0 1.0 Universal.
+https://opengameart.org/content/lowpoly-medieval-weapons
+
+  23 models: 5 swords, 3 axes, 2 hammers, 2 daggers, 4 bows, a spear, a scythe,
+  5 shields and an arrow. Fetched by tools/art/weapons.mjs — one zip served
+  directly by OpenGameArt, so unlike the Ultimate Monsters pack this one is
+  reproducible from a script.
+
+  NO TEXTURES, and that is why this pack rather than a better-looking one. Every
+  mesh is flat material colour under a small shared vocabulary — Steel,
+  DarkSteel, LightSteel, Wood, DarkWood, Gold, Black and a few accents — which
+  maps onto the material ROLES in three/gear.ts. So an item's palette can repaint
+  a mesh and its quality can tint it, both without touching a UV. That is what
+  makes 23 models into a 78-item catalogue (see shared/items.ts).
+
+  The FBX are copied through unconverted: 835 KB for all 23, and the client
+  already loads FBX for the character rigs.

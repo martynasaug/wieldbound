@@ -1,0 +1,136 @@
+// How an item is presented, in one place.
+//
+// The rarity palette existed FOUR times before the catalogue arrived — the bag,
+// the character window, the workbench and the tooltip each carried their own
+// `{ common: "#9e9e9e", rare: ... }`, and the 3D gear tinting carried a fifth
+// as hex numbers. That is the same failure mode as helm and cape rolling stats
+// nothing read: a value duplicated per call site is a value that drifts, and
+// nobody notices until two panels disagree about what colour Runed is.
+//
+// So there is one source now, and it is `RARITIES` in shared — the same table
+// the server rolls from. Everything below is a thin read of it plus the
+// formatting each surface needs.
+
+import {
+  PRIMARY_STAT_LABEL,
+  RARITIES,
+  SECONDARY_STAT_LABEL,
+  SLOT_LABEL,
+  type ItemInstance,
+  type ItemRarity,
+  type ItemSlot,
+} from "../../../shared/protocol-types";
+import {
+  AFFIXES_BY_ID,
+  affixSummary,
+  itemBase,
+  itemName,
+  itemShortName,
+} from "../../../shared/items";
+import { iconSvg } from "./icons";
+
+export function rarityColor(rarity: ItemRarity): string {
+  return RARITIES[rarity]?.color ?? RARITIES.honed.color;
+}
+
+export function rarityName(rarity: ItemRarity): string {
+  return RARITIES[rarity]?.name ?? "";
+}
+
+/** Whether this quality gets the extra lift — a glow everything has says nothing. */
+export function rarityGlows(rarity: ItemRarity): boolean {
+  return !!RARITIES[rarity]?.glow;
+}
+
+/** The icon key for an item, from its base. */
+export function itemIcon(item: Pick<ItemInstance, "baseId">): string {
+  return itemBase(item.baseId).icon;
+}
+
+export function itemIconSvg(item: Pick<ItemInstance, "baseId">, className = "icon"): string {
+  return iconSvg(itemIcon(item), className);
+}
+
+/** Units for the secondary roll, which is a percentage on most slots and a
+ *  speed on the two that carry you. */
+const SECONDARY_SUFFIX: Record<ItemSlot, string> = {
+  weapon: "%",
+  offhand: "%",
+  armor: "%",
+  helm: "%",
+  cape: " px/s",
+  boots: " px/s",
+  ring: "%",
+};
+
+export { itemName, itemShortName };
+
+export interface ItemLine {
+  label: string;
+  value: string;
+}
+
+/** The two rolled numbers, labelled by what they actually do. */
+export function itemStatLines(item: ItemInstance): ItemLine[] {
+  const lines: ItemLine[] = [];
+  if (item.statValue > 0) {
+    lines.push({ label: PRIMARY_STAT_LABEL[item.slot], value: `+${item.statValue}` });
+  }
+  if (item.bonusStatValue > 0) {
+    lines.push({
+      label: SECONDARY_STAT_LABEL[item.slot],
+      value: `+${item.bonusStatValue}${SECONDARY_SUFFIX[item.slot]}`,
+    });
+  }
+  return lines;
+}
+
+/** One line per affix, reading as what it gives rather than as its name. */
+export function itemAffixLines(item: ItemInstance): ItemLine[] {
+  const base = itemBase(item.baseId);
+  return (item.affixes ?? [])
+    .map((id) => AFFIXES_BY_ID[id])
+    .filter(Boolean)
+    .map((affix) => ({ label: affix.label, value: affixSummary(affix, base.band) }));
+}
+
+/** Everything a tooltip needs, assembled once so every surface agrees. */
+export function itemDetails(item: ItemInstance): {
+  name: string;
+  color: string;
+  quality: string;
+  kind: string;
+  band: number;
+  flavour: string;
+  stats: ItemLine[];
+  affixes: ItemLine[];
+  twoHanded: boolean;
+} {
+  const base = itemBase(item.baseId);
+  return {
+    name: itemShortName(item),
+    color: rarityColor(item.rarity),
+    quality: rarityName(item.rarity),
+    kind: item.weaponType
+      ? `${item.weaponType[0].toUpperCase()}${item.weaponType.slice(1)}`
+      : SLOT_LABEL[item.slot],
+    band: base.band,
+    flavour: base.flavour,
+    stats: itemStatLines(item),
+    affixes: itemAffixLines(item),
+    twoHanded: !!base.twoHanded,
+  };
+}
+
+/** Slot icons, for empty paperdoll and bag slots. */
+export const SLOT_ICON: Record<ItemSlot, string> = {
+  weapon: "slot-weapon",
+  offhand: "slot-offhand",
+  helm: "slot-helm",
+  armor: "slot-armor",
+  cape: "slot-cape",
+  boots: "slot-boots",
+  ring: "slot-ring",
+};
+
+export { SLOT_LABEL };

@@ -17,6 +17,10 @@ export interface GameSocketHandlers {
   onSnapshot: (payload: Extract<ServerToClientMessage, { type: "STATE_SNAPSHOT" }>["payload"]) => void;
   onInventoryUpdate: (payload: Extract<ServerToClientMessage, { type: "INVENTORY_UPDATE" }>["payload"]) => void;
   onHerbUpdate: (payload: Extract<ServerToClientMessage, { type: "HERB_UPDATE" }>["payload"]) => void;
+  /** All four materials at once. Wood, ore and herb each had their own message;
+   *  essence made that four, and four ways to say one thing is three chances
+   *  for the client's idea of the wallet to drift from the server's. */
+  onMaterials: (payload: Extract<ServerToClientMessage, { type: "MATERIALS_UPDATE" }>["payload"]) => void;
   onOreUpdate: (payload: Extract<ServerToClientMessage, { type: "ORE_UPDATE" }>["payload"]) => void;
   onXpUpdate: (payload: Extract<ServerToClientMessage, { type: "XP_UPDATE" }>["payload"]) => void;
   onLootUpdate: (payload: Extract<ServerToClientMessage, { type: "LOOT_UPDATE" }>["payload"]) => void;
@@ -64,6 +68,8 @@ export class GameSocket {
         this.handlers.onSnapshot(msg.payload);
       } else if (msg.type === "INVENTORY_UPDATE") {
         this.handlers.onInventoryUpdate(msg.payload);
+      } else if (msg.type === "MATERIALS_UPDATE") {
+        this.handlers.onMaterials(msg.payload);
       } else if (msg.type === "HERB_UPDATE") {
         this.handlers.onHerbUpdate(msg.payload);
       } else if (msg.type === "ORE_UPDATE") {
@@ -139,19 +145,23 @@ export class GameSocket {
     this.send({ type: "EQUIP_ITEM", payload: { itemId } });
   }
 
-  sendSellItem(itemId: string): void {
-    this.send({ type: "SELL_ITEM", payload: { itemId } });
+  sendSalvageItem(itemId: string): void {
+    this.send({ type: "SALVAGE_ITEM", payload: { itemId } });
   }
 
   sendAllocateStat(stat: AttributeName): void {
     this.send({ type: "ALLOCATE_STAT", payload: { stat } });
   }
 
-  // `weaponType` is omitted for non-weapons, and for weapons means "keep the
-  // family I already wield" — crafting an upgrade must not silently re-class
-  // you, which is exactly what a random roll at the workbench would do.
-  sendCraftItem(stationId: string, slot: ItemSlot, rarity: ItemRarity, weaponType?: WeaponType): void {
-    this.send({ type: "CRAFT_ITEM", payload: { stationId, slot, rarity, weaponType } });
+  /** Make a named thing from the catalogue. The forge decides WHAT; the ladder
+   *  decides how good, which is why there is no rarity here. */
+  sendForgeItem(stationId: string, baseId: string): void {
+    this.send({ type: "FORGE_ITEM", payload: { stationId, baseId } });
+  }
+
+  /** One step up the ladder on something already owned. */
+  sendReforgeItem(stationId: string, itemId: string): void {
+    this.send({ type: "REFORGE_ITEM", payload: { stationId, itemId } });
   }
 
   sendCraftPotion(stationId: string): void {

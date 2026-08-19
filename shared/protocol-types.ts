@@ -1725,61 +1725,131 @@ export function battlePowerUpgradeCost(level: number): BattlePowerCost {
   return { wood: 5 + level * 5, ore: 3 + level * 3 };
 }
 
-// --- Equipment / rarity (mirrors Idlekin's weapon slot + common..mythic tiers,
-// scaled down to a few tiers for the MVP) ---
-
-export const RARITY_ORDER = ["common", "rare", "epic"] as const;
+// --- Equipment / rarity ----------------------------------------------------
+// SEVEN TIERS, AND THEY ARE CONDITIONS RATHER THAN COLOURS.
+//
+// common/rare/epic was a colour ladder borrowed from every other game, and it
+// said nothing about this one. The world's single fixed landmark is a smithy,
+// the progression is measured in what you are holding, and the crafting verbs
+// are forge, reforge and salvage — so the ladder is the state a made object is
+// in, from a thing that is falling apart to a thing with power bound into it:
+//
+//   Broken - Worn - Honed - Tempered - Forged - Runed - Enchanted
+//
+// Two consequences worth stating, because both are deliberate:
+//
+//   BROKEN IS BELOW BASELINE, not merely the worst thing you can find. It
+//   multiplies an item's numbers DOWN. That makes the bottom of the ladder a
+//   real state with a real answer (salvage it, or reforge it upward) rather
+//   than a synonym for "common".
+//
+//   HONED IS THE BASELINE, at exactly 1.0. Every base item in the catalogue is
+//   authored at the numbers it has when honed, so a designer reading
+//   `ITEM_BASES` is reading true values rather than values that only mean
+//   something after a multiplier.
+export const RARITY_ORDER = [
+  "broken",
+  "worn",
+  "honed",
+  "tempered",
+  "forged",
+  "runed",
+  "enchanted",
+] as const;
 export type ItemRarity = (typeof RARITY_ORDER)[number];
 
-const RARITY_DROP_WEIGHTS: Record<ItemRarity, number> = { common: 60, rare: 30, epic: 10 };
-const RARITY_SPEED_BONUS_MS: Record<ItemRarity, number> = { common: 200, rare: 500, epic: 900 };
-const RARITY_XP_BONUS: Record<ItemRarity, number> = { common: 0.1, rare: 0.25, epic: 0.5 };
-const RARITY_MOVE_SPEED_BONUS: Record<ItemRarity, number> = { common: 20, rare: 50, epic: 90 };
+export interface RarityDef {
+  id: ItemRarity;
+  name: string;
+  /** Multiplies every number the base item declares. Honed is 1.0. */
+  power: number;
+  /** How many affixes an item of this quality carries. */
+  affixes: number;
+  /** Relative chance of rolling this from a drop, before any band floor. */
+  weight: number;
+  /** Interface and nameplate colour. Also tints the 3D mesh. */
+  color: string;
+  /** Whether the mesh gets an emissive lift — reserved for the top two, or it
+   *  stops meaning anything. */
+  glow: boolean;
+  blurb: string;
+}
 
-export const ITEM_SLOTS = ["weapon", "helm", "armor", "cape", "boots", "ring"] as const;
+export const RARITIES: Record<ItemRarity, RarityDef> = {
+  broken:    { id: "broken",    name: "Broken",    power: 0.55, affixes: 0, weight: 14, color: "#6f6a62", glow: false, blurb: "Held together by habit. Worth more as parts." },
+  worn:      { id: "worn",      name: "Worn",      power: 0.8,  affixes: 0, weight: 30, color: "#a09079", glow: false, blurb: "Used, and used honestly." },
+  honed:     { id: "honed",     name: "Honed",     power: 1.0,  affixes: 1, weight: 26, color: "#dfe6e4", glow: false, blurb: "Kept sharp. What the smith intended." },
+  tempered:  { id: "tempered",  name: "Tempered",  power: 1.25, affixes: 1, weight: 16, color: "#6fb6ff", glow: false, blurb: "Worked hot and quenched right." },
+  forged:    { id: "forged",    name: "Forged",    power: 1.55, affixes: 2, weight: 9,  color: "#ffb545", glow: false, blurb: "Made for someone in particular." },
+  runed:     { id: "runed",     name: "Runed",     power: 1.9,  affixes: 2, weight: 4,  color: "#c07cff", glow: true,  blurb: "Cut with marks that hold." },
+  enchanted: { id: "enchanted", name: "Enchanted", power: 2.3,  affixes: 3, weight: 1,  color: "#6ff0e0", glow: true,  blurb: "Something answers when you draw it." },
+};
+
+export function rarityDef(rarity: ItemRarity): RarityDef {
+  return RARITIES[rarity] ?? RARITIES.honed;
+}
+
+/** The baseline. Anything the game hands out without an opinion is this. */
+export const BASE_RARITY: ItemRarity = "honed";
+
+// The three old tier bonuses, re-tabled across seven steps. They stay because
+// the formulas that read them are load-bearing — swing interval, xp rate and
+// move speed — and because a ladder whose only effect is a multiplier on rolled
+// stats gives the player nothing to feel between one step and the next.
+const RARITY_SPEED_BONUS_MS: Record<ItemRarity, number> = {
+  broken: -120, worn: 60, honed: 200, tempered: 380, forged: 560, runed: 760, enchanted: 980,
+};
+const RARITY_XP_BONUS: Record<ItemRarity, number> = {
+  broken: -0.05, worn: 0.04, honed: 0.1, tempered: 0.18, forged: 0.28, runed: 0.4, enchanted: 0.55,
+};
+const RARITY_MOVE_SPEED_BONUS: Record<ItemRarity, number> = {
+  broken: -14, worn: 8, honed: 22, tempered: 40, forged: 60, runed: 82, enchanted: 105,
+};
+
+// `offhand` joined the six on the day the item catalogue arrived: the weapons
+// pack ships five shields, and a shield is the one piece of gear whose value is
+// obvious without reading a number. Two-handed weapons empty it (see
+// `ItemBase.twoHanded`), which is what stops "claymore and buckler".
+export const ITEM_SLOTS = ["weapon", "offhand", "helm", "armor", "cape", "boots", "ring"] as const;
 export type ItemSlot = (typeof ITEM_SLOTS)[number];
 
+export const SLOT_LABEL: Record<ItemSlot, string> = {
+  weapon: "Weapon",
+  offhand: "Off-hand",
+  helm: "Head",
+  armor: "Chest",
+  cape: "Back",
+  boots: "Feet",
+  ring: "Ring",
+};
+
 // --- Gear appearance
-// The paperdoll draws the body naked and layers one sprite per equipped
-// visible slot. A style names WHICH art to layer; rarity only tints it. These
-// strings are the contract between the loot roller and the gear.png rows, so
-// adding a look means adding a style here and a row there — nothing else.
+// The body is drawn naked and one layer is added per equipped visible slot. A
+// STYLE names which shape gets built; rarity only tints it. Keeping those two
+// independent is the whole reason for a paperdoll — baking them together would
+// need styles x rarities meshes and could never tint plate without also
+// staining skin.
+//
+// Styles are no longer ROLLED. They are declared by the base item, because
+// there is a catalogue now: "Ranger's Hood" is a hood because that is what it
+// is, not because a random number came up hood. Rolling a look was the right
+// answer while items were anonymous slot-and-rarity pairs and is the wrong one
+// the moment they have names.
 export const GEAR_STYLES = [
-  "leather",
-  "chain",
-  "plate",
-  "robe",
-  "cap",
-  "hood",
-  "full",
-  "low",
-  "tall",
-  "cape",
+  // chest
+  "leather", "chain", "plate", "robe", "scale", "brigandine",
+  // head
+  "cap", "hood", "full", "horned", "circlet",
+  // feet
+  "low", "tall", "plated", "wrapped",
+  // back
+  "cape", "cloak", "mantle", "tabard",
 ] as const;
 export type GearStyle = (typeof GEAR_STYLES)[number];
 
-// Which looks a slot may roll. Rarity biases the pick (see rollGearStyle) so
-// plate and great helms read as the high-end results without being exclusive.
-export const SLOT_STYLES: Partial<Record<ItemSlot, GearStyle[]>> = {
-  armor: ["leather", "chain", "plate", "robe"],
-  helm: ["cap", "hood", "full"],
-  boots: ["low", "tall"],
-  cape: ["cape"],
-};
-
-// Later entries in each slot's list are the fancier looks, so shifting the
-// index by rarity is enough to make epics look like epics.
-export function rollGearStyle(slot: ItemSlot, rarity: ItemRarity, rand: () => number): GearStyle | undefined {
-  const styles = SLOT_STYLES[slot];
-  if (!styles || styles.length === 0) return undefined;
-  const bias = RARITY_ORDER.indexOf(rarity);
-  const idx = Math.min(styles.length - 1, Math.floor(rand() * styles.length) + (bias > 0 && rand() < 0.5 ? bias : 0));
-  return styles[idx];
-}
-
-// Slots that put a layer on the character. `ring` and `weapon` are absent:
-// rings are invisible, and the weapon is a separate hand sprite that has to
-// rotate and tween independently of the body.
+// Slots that put a layer on the character. `ring` is invisible, and `weapon`
+// and `offhand` are held rather than worn — they hang off a hand bone and have
+// to move independently of the body.
 export const VISIBLE_GEAR_SLOTS: ItemSlot[] = ["cape", "armor", "helm", "boots"];
 
 // The bag can only ever grow via loot/crafting (selling is the only way
@@ -1818,7 +1888,9 @@ export function playerAttackIntervalMs(
   return Math.max(BATTLE_DURATION_FLOOR_MS, BATTLE_DURATION_MS - weaponBonus - powerBonus - agilityBonus);
 }
 
-const RARITY_CRIT_DAMAGE_BONUS: Record<ItemRarity, number> = { common: 0.1, rare: 0.25, epic: 0.5 };
+const RARITY_CRIT_DAMAGE_BONUS: Record<ItemRarity, number> = {
+  broken: -0.05, worn: 0.04, honed: 0.1, tempered: 0.2, forged: 0.32, runed: 0.45, enchanted: 0.62,
+};
 export const BASE_CRIT_MULTIPLIER = 1.5;
 
 export function critDamageMultiplier(
@@ -1839,94 +1911,14 @@ export function xpBonusPercent(armorRarity: ItemRarity | null): number {
   return armorRarity ? Math.round(RARITY_XP_BONUS[armorRarity] * 100) : 0;
 }
 
-// Selling an unequipped item refunds wood — a simple sink so the bag
-// doesn't only ever grow, without introducing a whole new currency.
-const RARITY_SELL_VALUE: Record<ItemRarity, number> = { common: 5, rare: 20, epic: 60 };
+// Boss kills (see MonsterStats.guaranteedDrop) never drop below this.
+export const BOSS_MIN_RARITY: ItemRarity = "tempered";
 
-export function sellValueFor(rarity: ItemRarity): number {
-  return RARITY_SELL_VALUE[rarity];
-}
-
-export function rollItemRarity(random: () => number = Math.random): ItemRarity {
-  const total = RARITY_ORDER.reduce((sum, r) => sum + RARITY_DROP_WEIGHTS[r], 0);
-  let roll = random() * total;
-  for (const rarity of RARITY_ORDER) {
-    roll -= RARITY_DROP_WEIGHTS[rarity];
-    if (roll <= 0) return rarity;
-  }
-  return RARITY_ORDER[RARITY_ORDER.length - 1];
-}
-
-// Boss kills (see MonsterStats.guaranteedDrop) always drop at least this rarity.
-export const BOSS_MIN_RARITY: ItemRarity = "rare";
-
-export function rollItemRarityWithFloor(
-  minRarity: ItemRarity,
-  random: () => number = Math.random,
-): ItemRarity {
-  const rolled = rollItemRarity(random);
-  return rarityRank(rolled) >= rarityRank(minRarity) ? rolled : minRarity;
-}
-
-export function rollItemSlot(random: () => number = Math.random): ItemSlot {
-  return ITEM_SLOTS[Math.floor(random() * ITEM_SLOTS.length)];
-}
-
-// Any family, uniformly. Deliberately NOT biased toward what the finder is
-// already using: an off-class weapon is the interesting drop, because
-// equipping it changes what they are.
-export function rollWeaponType(random: () => number = Math.random): WeaponType {
-  return WEAPON_TYPES[Math.floor(random() * WEAPON_TYPES.length)];
-}
-
-// Each slot rolls one primary numeric stat on drop, ranged by rarity:
-// weapon -> bonus damage (added to max hit), armor -> flat damage reduction,
-// boots -> evasion% (subtracted from attackers' accuracy against you),
-// ring -> bonus damage too (stacks with weapon's, a pure damage slot with
-// no defensive/utility side-effect).
-// Helm and cape roll smaller than the chest piece, so filling every slot is
-// an upgrade without making the chest irrelevant.
-const STAT_ROLL_RANGES: Record<ItemSlot, Record<ItemRarity, [number, number]>> = {
-  weapon: { common: [1, 3], rare: [4, 8], epic: [9, 15] },
-  armor: { common: [1, 3], rare: [4, 8], epic: [9, 15] },
-  helm: { common: [1, 2], rare: [3, 5], epic: [6, 10] },
-  cape: { common: [1, 2], rare: [2, 4], epic: [5, 8] },
-  boots: { common: [1, 3], rare: [4, 7], epic: [8, 12] },
-  ring: { common: [1, 2], rare: [3, 5], epic: [6, 9] },
-};
-
-export function rollItemStatValue(
-  slot: ItemSlot,
-  rarity: ItemRarity,
-  random: () => number = Math.random,
-): number {
-  const [min, max] = STAT_ROLL_RANGES[slot][rarity];
-  return min + Math.floor(random() * (max - min + 1));
-}
-
-// Second roll per item, a different stat flavor than the primary so gear
-// has two numbers worth checking, not just a bigger version of one:
-// weapon -> bonus crit chance%, armor -> bonus evasion% (stacks with
-// boots' evasion), boots -> bonus move speed, ring -> bonus accuracy%.
-// Smaller ranges than the primary roll since these are a secondary bonus,
-// not the main reason to equip the item.
-const SECONDARY_STAT_ROLL_RANGES: Record<ItemSlot, Record<ItemRarity, [number, number]>> = {
-  weapon: { common: [0, 1], rare: [1, 3], epic: [3, 6] },
-  armor: { common: [0, 1], rare: [1, 3], epic: [3, 6] },
-  helm: { common: [0, 1], rare: [1, 2], epic: [2, 4] },
-  cape: { common: [1, 3], rare: [4, 8], epic: [9, 14] },
-  boots: { common: [2, 5], rare: [6, 12], epic: [13, 20] },
-  ring: { common: [0, 1], rare: [1, 3], epic: [3, 5] },
-};
-
-export function rollItemBonusStatValue(
-  slot: ItemSlot,
-  rarity: ItemRarity,
-  random: () => number = Math.random,
-): number {
-  const [min, max] = SECONDARY_STAT_ROLL_RANGES[slot][rarity];
-  return min + Math.floor(random() * (max - min + 1));
-}
+// Everything about WHICH item drops, what it is called, what it rolls and what
+// it costs to make now lives in `shared/items.ts`. This file keeps the wire
+// format and the formulas the server resolves combat with; that one keeps the
+// catalogue. The dependency runs one way — items.ts imports from here and never
+// the reverse — so there is no cycle to reason about.
 
 // --- Crafting: a deterministic alternative to monster-drop RNG. Mirrors
 // Idlekin's real interactableId+recipeCode/claim model, scaled way down —
@@ -1939,6 +1931,7 @@ export interface CraftCost {
 
 export const CRAFT_COSTS: Record<ItemSlot, CraftCost> = {
   weapon: { wood: 15, ore: 10 },
+  offhand: { wood: 18, ore: 8 },
   armor: { wood: 15, ore: 10 },
   helm: { wood: 8, ore: 12 },
   cape: { wood: 14, ore: 4 },
@@ -1950,9 +1943,13 @@ export const CRAFT_COSTS: Record<ItemSlot, CraftCost> = {
 // than needing new resource types — keeps the recipe table one multiplier
 // per rarity instead of a full slot x rarity cost matrix.
 export const CRAFT_RARITY_MULTIPLIER: Record<ItemRarity, number> = {
-  common: 1,
-  rare: 4,
-  epic: 12,
+  broken: 0.4,
+  worn: 0.7,
+  honed: 1,
+  tempered: 2.4,
+  forged: 5,
+  runed: 10,
+  enchanted: 20,
 };
 
 export function craftCostFor(slot: ItemSlot, rarity: ItemRarity): CraftCost {
@@ -1967,18 +1964,41 @@ export interface CraftingStationState {
   y: number;
 }
 
-export interface CraftItemMessage {
-  type: "CRAFT_ITEM";
-  payload: {
-    stationId: string;
-    slot: ItemSlot;
-    rarity: ItemRarity;
-    // Weapons only. Omitted means "same family I already wield" — crafting an
-    // upgrade should not change your class behind your back.
-    weaponType?: WeaponType;
-    // Armour only. Omitted rolls a look appropriate to the rarity.
-    style?: GearStyle;
-  };
+// --- The smithy's three verbs ----------------------------------------------
+// Crafting used to be one message that took a slot and a rarity and returned an
+// anonymous item: a way of buying loot rolls. There are three now, and they are
+// three different questions.
+//
+// FORGE asks WHAT. The player names a base item from the catalogue; the output
+// is always Honed, because the forge decides what a thing is and the ladder
+// decides how good it is. Blurring those makes reforging pointless.
+export interface ForgeItemMessage {
+  type: "FORGE_ITEM";
+  payload: { stationId: string; baseId: string };
+}
+
+// REFORGE asks HOW GOOD. One step up the ladder on an item already owned. The
+// server re-rolls it from its base at the new quality rather than adding to
+// what it had, so an Enchanted item's affixes are not decided by what a Worn
+// one happened to roll six steps earlier.
+export interface ReforgeItemMessage {
+  type: "REFORGE_ITEM";
+  payload: { stationId: string; itemId: string };
+}
+
+// SALVAGE asks WHAT IS IT WORTH IN PARTS. Replaces selling for wood, which
+// was a sink with no decision in it.
+export interface SalvageItemMessage {
+  type: "SALVAGE_ITEM";
+  payload: { itemId: string };
+}
+
+/** Every material, in one message. Wood, ore and herb each had their own
+ *  update; essence made that four, and four messages to say one thing is three
+ *  chances for the client's idea of the wallet to drift from the server's. */
+export interface MaterialsUpdateMessage {
+  type: "MATERIALS_UPDATE";
+  payload: { wood: number; ore: number; herb: number; essence: number };
 }
 
 // Consumables are a plain stack count on the character (mirrors
@@ -2055,18 +2075,41 @@ export const STATION_LABEL = "Workbench";
 // player decides.
 export interface ItemInstance {
   id: string;
+  /**
+   * Which entry in the catalogue this is an instance OF — the single biggest
+   * change to the item model. Items used to be anonymous: a bag held "a rare
+   * weapon (sword)", generated from nothing, identical to every other rare
+   * sword. Now every item is a named thing with its own model, its own numbers
+   * and its own place in the world, and the instance carries only what varies:
+   * its quality and what it rolled.
+   *
+   * See `ITEM_BASES` in shared/items.ts. Unknown ids resolve to a fallback
+   * rather than crashing, because a catalogue entry can be removed while a
+   * saved character is still wearing it.
+   */
+  baseId: string;
   slot: ItemSlot;
   rarity: ItemRarity;
   equipped: boolean;
+  /** Primary number, base value x rarity power, rolled once and stored. */
   statValue: number;
+  /** Secondary number, same treatment. What it means is per slot — see
+   *  `SECONDARY_STAT_LABEL`. */
   bonusStatValue: number;
+  /**
+   * Affix ids, as many as the rarity allows. They contribute a `PassiveBonus`,
+   * which is the same vocabulary the talent trees already total — so an affix
+   * needs no new plumbing in combat resolution or on the stat sheet, and the
+   * server and the character window read one set of numbers.
+   */
+  affixes: string[];
   // Only meaningful on weapons. Nothing gates equipping it — the family IS
   // the class, so picking up an unfamiliar weapon is an invitation to play
-  // differently rather than a restriction. Weapons that predate this system
-  // have no family recorded and resolve to fists.
+  // differently rather than a restriction.
   weaponType?: WeaponType;
-  // Visual variant within the slot: which armour/accessory art to layer on
-  // the paperdoll. Cosmetic only — stats come from rarity and rolls.
+  // Which armour shape to layer on the paperdoll. Declared by the base item
+  // rather than rolled; carried on the instance so the client never has to
+  // reach into the catalogue to draw a body.
   style?: GearStyle;
 }
 
@@ -2092,11 +2135,16 @@ export function equippedBySlot(items: ItemInstance[]): EquippedGear {
 }
 
 export function gearArmor(eq: EquippedGear | undefined): number {
-  return (eq?.armor?.statValue ?? 0) + (eq?.helm?.statValue ?? 0);
+  return (eq?.armor?.statValue ?? 0) + (eq?.helm?.statValue ?? 0) + (eq?.offhand?.statValue ?? 0);
 }
 
 export function gearEvasion(eq: EquippedGear | undefined): number {
-  return (eq?.boots?.statValue ?? 0) + (eq?.cape?.statValue ?? 0) + (eq?.armor?.bonusStatValue ?? 0);
+  return (
+    (eq?.boots?.statValue ?? 0) +
+    (eq?.cape?.statValue ?? 0) +
+    (eq?.armor?.bonusStatValue ?? 0) +
+    (eq?.offhand?.bonusStatValue ?? 0)
+  );
 }
 
 export function gearCritChance(eq: EquippedGear | undefined): number {
@@ -2117,11 +2165,24 @@ export function gearDamageBonus(eq: EquippedGear | undefined): number {
 // and the character stat sheet.
 export const SECONDARY_STAT_LABEL: Record<ItemSlot, string> = {
   weapon: "Crit chance",
+  offhand: "Evasion",
   armor: "Evasion",
   helm: "Crit chance",
   cape: "Move speed",
   boots: "Move speed",
   ring: "Accuracy",
+};
+
+/** What the PRIMARY roll means, per slot. Was only ever written in a comment
+ *  over the roll table, which meant the tooltip could not say it. */
+export const PRIMARY_STAT_LABEL: Record<ItemSlot, string> = {
+  weapon: "Bonus damage",
+  offhand: "Armour",
+  armor: "Armour",
+  helm: "Armour",
+  cape: "Evasion",
+  boots: "Evasion",
+  ring: "Bonus damage",
 };
 
 // No class is sent at login any more — the server derives it from whatever
@@ -2149,6 +2210,12 @@ export interface Appearance {
   // with a class field — there is no class field.
   weaponType?: WeaponType;
   weaponRarity?: ItemRarity;
+  /** Which catalogue entry is in the hand, so the client knows which MODEL to
+   *  put there. The family alone was enough while there was one sword; there
+   *  are nine now and they do not look alike. */
+  weaponBaseId?: string;
+  offhandBaseId?: string;
+  offhandRarity?: ItemRarity;
   layers: Partial<Record<ItemSlot, GearLayer>>;
 }
 
@@ -2165,12 +2232,20 @@ export function appearanceClass(a: Appearance): CharacterClass {
 export function appearanceFromItems(items: ItemInstance[]): Appearance {
   const equipped = items.filter((i) => i.equipped);
   const weapon = equipped.find((i) => i.slot === "weapon");
+  const offhand = equipped.find((i) => i.slot === "offhand");
   const layers: Appearance["layers"] = {};
   for (const slot of VISIBLE_GEAR_SLOTS) {
     const item = equipped.find((i) => i.slot === slot);
     if (item?.style) layers[slot] = { style: item.style, rarity: item.rarity };
   }
-  return { weaponType: weapon?.weaponType, weaponRarity: weapon?.rarity, layers };
+  return {
+    weaponType: weapon?.weaponType,
+    weaponRarity: weapon?.rarity,
+    weaponBaseId: weapon?.baseId,
+    offhandBaseId: offhand?.baseId,
+    offhandRarity: offhand?.rarity,
+    layers,
+  };
 }
 
 export interface PlayerState {
@@ -2445,10 +2520,6 @@ export interface EquipItemMessage {
   payload: { itemId: string };
 }
 
-export interface SellItemMessage {
-  type: "SELL_ITEM";
-  payload: { itemId: string };
-}
 
 // Sent after any inventory mutation (new drop, or an equip swap) — always the
 // full item list plus the currently-equipped rarity per slot (the latter is
@@ -2526,9 +2597,10 @@ export type ClientToServerMessage =
   | UpgradeGatherSpeedMessage
   | UpgradeBattlePowerMessage
   | EquipItemMessage
-  | SellItemMessage
+  | SalvageItemMessage
   | AllocateStatMessage
-  | CraftItemMessage
+  | ForgeItemMessage
+  | ReforgeItemMessage
   | CraftPotionMessage
   | UsePotionMessage
   | CraftTonicMessage
@@ -2544,6 +2616,7 @@ export type ServerToClientMessage =
   | StateSnapshotMessage
   | WelcomeMessage
   | InventoryUpdateMessage
+  | MaterialsUpdateMessage
   | HerbUpdateMessage
   | OreUpdateMessage
   | XpUpdateMessage

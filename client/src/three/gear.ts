@@ -31,14 +31,16 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type {
-  CharacterClass,
-  GearStyle,
-  ItemRarity,
-  ItemSlot,
-  WeaponType,
+import {
+  RARITIES,
+  RARITY_ORDER,
+  type CharacterClass,
+  type GearStyle,
+  type ItemRarity,
+  type ItemSlot,
 } from "../../../shared/protocol-types";
 import { loadModel } from "./assets";
+import { PALETTES, itemBase, type PaletteDef } from "../../../shared/items";
 
 // --- Bodies ---------------------------------------------------------------
 // Class is worn, so the silhouette is worn too: pick up a staff and you are not
@@ -69,19 +71,25 @@ export const BUILTIN_WEAPON_MESHES = new Set([
 // chestpiece and a leather one take the same epic tint and stay recognisably
 // plate and leather, and no rarity can ever reach skin, because skin is not a
 // gear material.
-const RARITY_TINT: Record<ItemRarity, number> = {
-  common: 0xccc7bd,
-  rare: 0x9ec4ff,
-  epic: 0xffd36e,
-};
+// Seven steps now, and they are read straight off the shared ladder rather
+// than re-typed here — the same table the interface colours a bag slot with, so
+// a Runed sword in your hand and a Runed sword in your bag cannot be different
+// shades of the same word. Multiplied over whatever colour the piece's material
+// role already carries, which is what keeps the two axes independent: a plate
+// chestpiece and a leather one take the same Enchanted tint and stay
+// recognisably plate and leather, and no quality can ever reach skin, because
+// skin is not a gear material.
+const RARITY_TINT: Record<ItemRarity, number> = Object.fromEntries(
+  RARITY_ORDER.map((r) => [r, Number.parseInt(RARITIES[r].color.slice(1), 16)]),
+) as Record<ItemRarity, number>;
 
-// Epics glow faintly so they read as epic across a field, where a hue shift
-// alone gets lost against the grass.
-const RARITY_GLOW: Record<ItemRarity, number> = {
-  common: 0x000000,
-  rare: 0x000000,
-  epic: 0x3a2a06,
-};
+// Only the top two glow, and that is the whole reason to have a glow at all: a
+// hue shift gets lost against grass at any distance, and a lift that everything
+// has is a lift that says nothing. `RarityDef.glow` decides which, so the
+// interface and the world agree about where the line is.
+const RARITY_GLOW: Record<ItemRarity, number> = Object.fromEntries(
+  RARITY_ORDER.map((r) => [r, RARITIES[r].glow ? 0x2a2038 : 0x000000]),
+) as Record<ItemRarity, number>;
 
 /** What a piece is made of. The style picks this; rarity never does. */
 type MaterialRole = "metal" | "leather" | "cloth" | "dark";
@@ -454,32 +462,35 @@ export function buildArmour(slot: ItemSlot, style: GearStyle, rarity: ItemRarity
   });
 }
 
-// --- Weapons --------------------------------------------------------------
+// --- Held items -------------------------------------------------------------
+// What is in your hands, which since the catalogue arrived is a much bigger
+// question than "which of four weapons".
+//
+// THE GRIP IS STILL HARVESTED, NOT AUTHORED. Every character rig ships its own
+// weapon already parented to `WeaponR` with the right offset, rotation and
+// scale, and that transform is the one piece of this that must not be guessed:
+// a grip tuned by eye is wrong on the next animation and wrong again on the
+// next body. So the donor sword is loaded once, its transform is kept, and
+// every model in the catalogue is FITTED INTO ITS GEOMETRY SPACE — measured,
+// rotated onto the same axis, scaled to the same length, and seated so its
+// handle lands where the sword's handle lands.
+//
+// That is the same move `buildAxe` and `buildMace` already made for two
+// procedural shapes, generalised to twenty-three downloaded ones. The payoff is
+// that adding a weapon to the game is a row in `shared/items.ts` and a file on
+// disk, with no grip constant anywhere.
+//
+// THE OFF-HAND HANGS OFF `FistL`. The pack authored no left socket — there is a
+// `WeaponR` and nothing facing it — so this is the one transform in the file
+// that IS authored, mirrored off the right hand's. It is marked as such below,
+// because it is exactly the kind of constant that rots quietly.
 
-/** Where a weapon mesh is lifted from, and how it is altered on the way. */
-interface WeaponSource {
-  /** Character FBX whose rig parents this weapon to `WeaponR`. */
-  body: string;
-  mesh: string;
-  /** Multiplies the harvested grip scale. A wand is a staff cut down. */
-  scale?: number;
-  /** Built inside the donor's geometry space rather than harvested from it. */
-  procedural?: (bounds: THREE.Box3) => THREE.BufferGeometry;
-}
-
-const WEAPON_SOURCES: Record<WeaponType, WeaponSource | null> = {
-  // Not an omission: bare hands are a real archetype, and the honest way to
-  // draw them is nothing at all.
-  fist: null,
-  sword: { body: "Warrior", mesh: "Warrior_Sword" },
-  bow: { body: "Ranger", mesh: "Ranger_Bow" },
-  staff: { body: "Wizard", mesh: "Wizard_Staff" },
-  dagger: { body: "Rogue", mesh: "Rogue_Dagger" },
-  // A wand is the staff's silhouette at hand length. Scaling the grip shrinks
-  // it toward the hand rather than toward its own centre, so it stays held.
-  wand: { body: "Wizard", mesh: "Wizard_Staff", scale: 0.5 },
-  axe: { body: "Warrior", mesh: "Warrior_Sword", procedural: buildAxe },
-  mace: { body: "Warrior", mesh: "Warrior_Sword", procedural: buildMace },
+/** Which pack material names map onto which palette role. */
+const MATERIAL_ROLE: Record<string, "metal" | "wood" | "accent"> = {
+  Steel: "metal", LightSteel: "metal", DarkSteel: "metal",
+  Wood: "wood", LightWood: "wood", DarkWood: "wood", DarkBrown: "wood",
+  Gold: "accent", LightGold: "accent", White: "accent", Black: "metal",
+  Red: "accent", LightRed: "accent", Green: "accent", LightBlue: "accent",
 };
 
 export interface HeldWeapon {
@@ -488,27 +499,77 @@ export interface HeldWeapon {
   bone: string;
 }
 
-const weaponCache = new Map<string, Promise<HeldWeapon | null>>();
+/**
+ * The donor grip: the sword the Warrior rig carries, with its local transform.
+ *
+ * Loaded once and shared. Everything held in the right hand is placed by
+ * copying this transform and fitting itself into the box the sword occupies.
+ */
+interface Grip {
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  scale: THREE.Vector3;
+  bone: string;
+  /** The donor's own geometry bounds, in its own space. */
+  box: THREE.Box3;
+}
+
+let gripPromise: Promise<Grip | null> | null = null;
+
+async function donorGrip(): Promise<Grip | null> {
+  if (!gripPromise) gripPromise = loadGrip();
+  return gripPromise;
+}
+
+async function loadGrip(): Promise<Grip | null> {
+  const proto = await loadModel("Warrior");
+  const donor = findMesh(proto, "Warrior_Sword");
+  if (!donor) {
+    console.warn("gear: the donor grip (Warrior_Sword) is missing; hands will be empty");
+    return null;
+  }
+  donor.geometry.computeBoundingBox();
+  return {
+    position: donor.position.clone(),
+    quaternion: donor.quaternion.clone(),
+    scale: donor.scale.clone(),
+    bone: donor.parent?.name ?? "WeaponR",
+    box: donor.geometry.boundingBox!.clone(),
+  };
+}
+
+function findMesh(root: THREE.Object3D, name: string): THREE.Mesh | null {
+  let found: THREE.Mesh | null = null;
+  root.traverse((o) => {
+    if (!found && o.name === name && (o as THREE.Mesh).isMesh) found = o as THREE.Mesh;
+  });
+  return found;
+}
+
+const heldCache = new Map<string, Promise<HeldWeapon | null>>();
 
 /**
- * The weapon for a type, carrying the grip transform its own rig exported.
- * Resolves to null for fists.
+ * The thing in a hand, by catalogue id.
+ *
+ * Cached per (item, quality, hand) as a prototype; every wielder gets a clone
+ * with its own materials, because the wielder owns — and eventually disposes —
+ * whatever it is handed.
  */
-export async function buildWeapon(
-  type: WeaponType,
+export async function buildHeldItem(
+  baseId: string | undefined | null,
   rarity: ItemRarity,
+  hand: "right" | "left" = "right",
 ): Promise<HeldWeapon | null> {
-  const key = `${type}|${rarity}`;
-  let p = weaponCache.get(key);
+  if (!baseId) return null;
+  const key = `${baseId}|${rarity}|${hand}`;
+  let p = heldCache.get(key);
   if (!p) {
-    p = makeWeapon(type, rarity);
-    weaponCache.set(key, p);
+    p = makeHeldItem(baseId, rarity, hand);
+    heldCache.set(key, p);
   }
   const proto = await p;
   if (!proto) return null;
-  // The cache holds a prototype; every wielder gets its own copy. The materials
-  // have to be cloned too — `Object3D.clone` shares them, and the wielder owns
-  // (and eventually disposes) whatever it is handed.
+
   const object = proto.object.clone(true);
   object.traverse((o) => {
     const mesh = o as THREE.Mesh;
@@ -520,98 +581,284 @@ export async function buildWeapon(
   return { bone: proto.bone, object };
 }
 
-async function makeWeapon(type: WeaponType, rarity: ItemRarity): Promise<HeldWeapon | null> {
-  const src = WEAPON_SOURCES[type];
-  if (!src) return null;
+async function makeHeldItem(
+  baseId: string,
+  rarity: ItemRarity,
+  hand: "right" | "left",
+): Promise<HeldWeapon | null> {
+  const base = itemBase(baseId);
+  const grip = await donorGrip();
+  if (!grip) return null;
 
-  const proto = await loadModel(src.body);
-  let found: THREE.Mesh | null = null;
-  proto.traverse((o) => {
-    if (!found && o.name === src.mesh && (o as THREE.Mesh).isMesh) found = o as THREE.Mesh;
-  });
-  if (!found) {
-    console.warn(`gear: ${src.mesh} not found on ${src.body}; ${type} will be invisible`);
-    return null;
-  }
-  const donor = found as THREE.Mesh;
+  const palette = PALETTES[base.art.palette] ?? PALETTES.steel;
+  let mesh: THREE.Mesh | null = null;
 
-  let mesh: THREE.Mesh;
-  if (src.procedural) {
-    donor.geometry.computeBoundingBox();
+  if (base.art.build) {
     mesh = new THREE.Mesh(
-      src.procedural(donor.geometry.boundingBox!.clone()),
-      forgedMaterial(rarity),
+      base.art.build === "crystalstave" ? buildCrystalStave(grip.box) : buildQuiver(grip.box),
+      [
+        paletteMaterial(palette, "metal", rarity),
+        paletteMaterial(palette, "wood", rarity),
+        paletteMaterial(palette, "accent", rarity),
+      ],
     );
-  } else {
-    const source = Array.isArray(donor.material) ? donor.material[0] : donor.material;
-    mesh = new THREE.Mesh(donor.geometry, tintedClone(source, rarity));
+  } else if (base.art.model?.startsWith("rig:")) {
+    // Harvested off the rig that authored it — the original four weapons, and
+    // still the most accurate path there is, since the mesh is already sitting
+    // in the socket it belongs in.
+    const [body, meshName] = base.art.model.slice(4).split("/");
+    const proto = await loadModel(body);
+    const donor = findMesh(proto, meshName);
+    if (!donor) {
+      console.warn(`gear: ${meshName} not found on ${body}; ${baseId} will be invisible`);
+      return null;
+    }
+    mesh = new THREE.Mesh(donor.geometry, repaint(donor.material, palette, rarity));
+    mesh.position.copy(donor.position);
+    mesh.quaternion.copy(donor.quaternion);
+    mesh.scale.copy(donor.scale);
+  } else if (base.art.model) {
+    const proto = await loadModel(base.art.model);
+    const donor = findMesh(proto, "") ?? firstMesh(proto);
+    if (!donor) {
+      console.warn(`gear: ${base.art.model} has no mesh; ${baseId} will be invisible`);
+      return null;
+    }
+    mesh = new THREE.Mesh(
+      fitToGrip(donor.geometry, grip.box, base.art.lay ?? "along"),
+      repaint(donor.material, palette, rarity),
+    );
   }
-  mesh.name = `weapon_${type}`;
+  if (!mesh) return null;
+
+  // Everything that was NOT harvested off the rig still needs the rig's own
+  // grip transform, or it hangs in world space beside the character.
+  if (!base.art.model?.startsWith("rig:")) {
+    mesh.position.copy(grip.position);
+    mesh.quaternion.copy(grip.quaternion);
+    mesh.scale.copy(grip.scale);
+  }
+  if (base.art.scale && base.art.scale !== 1) mesh.scale.multiplyScalar(base.art.scale);
+
+  mesh.name = `held_${baseId}`;
   mesh.castShadow = true;
 
-  // The grip: position, rotation and scale straight off the donor rig.
-  mesh.position.copy(donor.position);
-  mesh.quaternion.copy(donor.quaternion);
-  mesh.scale.copy(donor.scale).multiplyScalar(src.scale ?? 1);
-  return { object: mesh, bone: donor.parent?.name ?? "WeaponR" };
+  if (hand === "left") {
+    // AUTHORED, and the only authored transform here. The pack gives no left
+    // socket, so the off-hand rides `FistL` with the right hand's grip mirrored
+    // across the body's plane and turned to face outward — a shield held edge-on
+    // is a stick. Re-derive this if the character pack is ever replaced.
+    const holder = new THREE.Group();
+    holder.add(mesh);
+    holder.rotation.set(Math.PI / 2, 0, Math.PI);
+    holder.scale.set(1, 1, -1);
+    return { object: holder, bone: "FistL" };
+  }
+
+  return { object: mesh, bone: grip.bone };
+}
+
+function firstMesh(root: THREE.Object3D): THREE.Mesh | null {
+  let found: THREE.Mesh | null = null;
+  root.traverse((o) => {
+    if (!found && (o as THREE.Mesh).isMesh) found = o as THREE.Mesh;
+  });
+  return found;
 }
 
 /**
- * An axe head on a haft, laid out along the donor sword's long axis so the
- * harvested grip places it identically. Two material groups: haft is leather,
- * head is metal.
+ * Rotates, scales and seats a downloaded model into the donor sword's geometry
+ * space.
+ *
+ * WHICH AXIS IS MEASURED, NOT WHICH AXIS IS ASSUMED. The first version rotated
+ * every model a quarter turn on the assumption the pack authored things
+ * standing up in Y — which is true of the source files and false of what
+ * arrives, because FBXLoader has already converted them to Z-up. So the
+ * rotation turned a model that was already lying correctly onto its thin axis,
+ * the length came out as the blade's WIDTH, and every fitted weapon was drawn
+ * about twelve times too big. Measuring the box and picking the longest axis is
+ * both correct for the models we have and robust to a pack that does it
+ * differently — the same lesson the ground scatter recorded when it started
+ * normalising by largest dimension rather than by height.
+ *
+ * `lay` decides which of the model's axes runs down the grip. A sword is
+ * "along": its length points away from the hand. A shield is "flat": its
+ * SHORTEST axis does, so the face turns outward instead of lying edge-on like
+ * a plank.
  */
-function buildAxe(b: THREE.Box3): THREE.BufferGeometry {
-  const z0 = b.min.z;
-  const len = b.max.z - z0;
+function fitToGrip(
+  source: THREE.BufferGeometry,
+  box: THREE.Box3,
+  lay: "along" | "flat" = "along",
+): THREE.BufferGeometry {
+  const geo = source.clone();
+  geo.computeBoundingBox();
+  const b = geo.boundingBox!;
+  const size = [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z];
 
-  const head = new THREE.CylinderGeometry(0.44, 0.12, 0.18, 3, 1);
-  head.rotateZ(Math.PI / 2);
-  head.scale(1, 1, 2.4);
-  head.translate(0.16, 0, z0 + len * 0.82);
+  // The axis that should end up pointing down the grip.
+  const pick = lay === "along"
+    ? size.indexOf(Math.max(...size))
+    : size.indexOf(Math.min(...size));
+  if (pick === 0) geo.rotateY(Math.PI / 2);
+  else if (pick === 1) geo.rotateX(-Math.PI / 2);
 
-  const haft = new THREE.CylinderGeometry(0.055, 0.07, len * 0.95, 6);
-  haft.rotateX(Math.PI / 2);
-  haft.translate(0, 0, z0 + len * 0.46);
-  const cap = new THREE.CylinderGeometry(0.09, 0.09, 0.13, 6);
-  cap.rotateX(Math.PI / 2);
-  cap.translate(0, 0, z0 + 0.07);
+  // SCALE BY THE LARGEST EXTENT, ALWAYS — orientation and size are separate
+  // questions and conflating them was a real bug. Scaling by whatever ends up
+  // down the grip is right for a sword and wrong for a shield, whose thinnest
+  // axis points that way: normalising a shield's 60-unit thickness to a
+  // sword's length blew it up to five times the character. Same rule the
+  // ground scatter arrived at when a flower clump normalised by height came
+  // out a metre across.
+  const longest = Math.max(...size) || 1;
+  const target = box.max.z - box.min.z;
+  const scale = target / longest;
+  geo.scale(scale, scale, scale);
 
-  return grouped(merge([head]), merge([haft, cap]));
+  geo.computeBoundingBox();
+  const after = geo.boundingBox!;
+  // Centred across the grip, with the butt of the handle at the donor's own
+  // start, so every weapon is held at the same point in the fist however long
+  // it is.
+  geo.translate(
+    -(after.min.x + after.max.x) / 2,
+    -(after.min.y + after.max.y) / 2,
+    box.min.z - after.min.z,
+  );
+  return geo;
 }
 
-/** A flanged mace: short haft, blunt head, four ribs. */
-function buildMace(b: THREE.Box3): THREE.BufferGeometry {
-  const z0 = b.min.z;
-  const len = (b.max.z - z0) * 0.8;
-  const headZ = z0 + len * 0.88;
+/**
+ * Repaints a downloaded model by ROLE rather than by hue.
+ *
+ * The pack's material names are a small shared vocabulary — Steel, DarkWood,
+ * Gold and a few accents — so a palette can darken the blade and leave the grip
+ * leather-coloured, instead of staining the whole object one colour. Rarity is
+ * then multiplied over the result, which keeps the two axes independent exactly
+ * as they are for armour: a Frost greatsword and a Crimson one take the same
+ * Enchanted tint and stay recognisably frost and crimson.
+ */
+function repaint(
+  source: THREE.Material | THREE.Material[],
+  palette: PaletteDef,
+  rarity: ItemRarity,
+): THREE.Material | THREE.Material[] {
+  const list = Array.isArray(source) ? source : [source];
+  const out = list.map((m) => {
+    const src = m as THREE.MeshStandardMaterial;
+    const role = MATERIAL_ROLE[src.name] ?? "metal";
+    const mat = paletteMaterial(palette, role, rarity);
+    mat.name = src.name;
+    return mat;
+  });
+  return out.length === 1 ? out[0] : out;
+}
 
-  const metal: THREE.BufferGeometry[] = [new THREE.IcosahedronGeometry(0.22, 0)];
-  metal[0].translate(0, 0, headZ);
-  for (let i = 0; i < 4; i++) {
-    const flange = new THREE.BoxGeometry(0.08, 0.36, 0.32);
-    flange.rotateZ((i * Math.PI) / 2);
-    flange.translate(0, 0, headZ);
-    metal.push(flange);
+function paletteMaterial(
+  palette: PaletteDef,
+  role: "metal" | "wood" | "accent",
+  rarity: ItemRarity,
+): THREE.MeshStandardMaterial {
+  const base = palette[role];
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(base),
+    roughness: role === "metal" ? 0.4 : role === "accent" ? 0.5 : 0.85,
+    metalness: role === "wood" ? 0 : 0.5,
+    flatShading: true,
+  });
+  mat.color.multiply(new THREE.Color(RARITY_TINT[rarity]));
+  mat.emissive = new THREE.Color(RARITY_GLOW[rarity]);
+  return mat;
+}
+
+/**
+ * A stave with a floating crystal at its head — the one silhouette no pack in
+ * the project ships, and the reason `staff` and `wand` would otherwise be five
+ * items sharing two meshes.
+ *
+ * Three material groups so the palette can reach all of it: shaft is wood,
+ * the claw is metal, the stone is accent.
+ */
+function buildCrystalStave(b: THREE.Box3): THREE.BufferGeometry {
+  const z0 = b.min.z;
+  const len = (b.max.z - z0) * 1.35;
+  const headZ = z0 + len * 0.94;
+
+  const claw: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 3; i++) {
+    const prong = new THREE.CylinderGeometry(0.018, 0.05, 0.3, 4);
+    prong.rotateX(Math.PI / 2);
+    prong.rotateZ((i * Math.PI * 2) / 3);
+    prong.translate(
+      Math.cos((i * Math.PI * 2) / 3) * 0.075,
+      Math.sin((i * Math.PI * 2) / 3) * 0.075,
+      headZ - 0.14,
+    );
+    claw.push(prong);
   }
 
-  const haft = new THREE.CylinderGeometry(0.06, 0.075, len * 0.88, 6);
-  haft.rotateX(Math.PI / 2);
-  haft.translate(0, 0, z0 + len * 0.44);
-  const cap = new THREE.CylinderGeometry(0.095, 0.095, 0.13, 6);
-  cap.rotateX(Math.PI / 2);
-  cap.translate(0, 0, z0 + 0.07);
+  const shaft = new THREE.CylinderGeometry(0.036, 0.05, len * 0.9, 7);
+  shaft.rotateX(Math.PI / 2);
+  shaft.translate(0, 0, z0 + len * 0.45);
+  const collar = new THREE.CylinderGeometry(0.062, 0.062, 0.06, 7);
+  collar.rotateX(Math.PI / 2);
+  collar.translate(0, 0, headZ - 0.3);
 
-  return grouped(merge(metal), merge([haft, cap]));
+  // Deliberately not touching the claw: the gap is the whole idea, and an
+  // octahedron reads as cut stone where a sphere reads as a ball on a stick.
+  const stone = new THREE.OctahedronGeometry(0.13, 0);
+  stone.scale(1, 1, 1.5);
+  stone.translate(0, 0, headZ + 0.1);
+
+  return threeGroups(merge(claw), merge([shaft, collar]), stone);
 }
 
-/** Joins metal and leather halves into one geometry with two material groups,
- *  so a forged weapon can have a wooden haft without needing two meshes. */
-function grouped(metal: THREE.BufferGeometry, leather: THREE.BufferGeometry): THREE.BufferGeometry {
-  const metalCount = metal.attributes.position.count;
-  const out = merge([metal, leather]);
+/** A quiver of arrows, for the ranger's off-hand. */
+function buildQuiver(b: THREE.Box3): THREE.BufferGeometry {
+  const z0 = b.min.z;
+  const len = (b.max.z - z0) * 0.5;
+
+  const body = new THREE.CylinderGeometry(0.11, 0.085, len, 8, 1, true);
+  body.rotateX(Math.PI / 2);
+  body.translate(0, 0, z0 + len * 0.5);
+  const rim = new THREE.TorusGeometry(0.11, 0.016, 4, 10);
+  rim.translate(0, 0, z0 + len);
+
+  const shafts: THREE.BufferGeometry[] = [];
+  const heads: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const x = Math.cos(a) * 0.045;
+    const y = Math.sin(a) * 0.045;
+    const shaft = new THREE.CylinderGeometry(0.008, 0.008, len * 0.55, 4);
+    shaft.rotateX(Math.PI / 2);
+    shaft.translate(x, y, z0 + len * 1.15);
+    shafts.push(shaft);
+    const head = new THREE.ConeGeometry(0.022, 0.06, 4);
+    head.rotateX(Math.PI / 2);
+    head.translate(x, y, z0 + len * 1.45);
+    heads.push(head);
+  }
+
+  return threeGroups(merge([rim, ...heads]), merge([body, ...shafts]), new THREE.BufferGeometry());
+}
+
+/** Joins three halves into one geometry with three material groups, so a
+ *  palette can paint metal, wood and accent independently on one mesh. */
+function threeGroups(
+  metal: THREE.BufferGeometry,
+  wood: THREE.BufferGeometry,
+  accent: THREE.BufferGeometry,
+): THREE.BufferGeometry {
+  const a = metal.attributes.position?.count ?? 0;
+  const b = wood.attributes.position?.count ?? 0;
+  const parts = [metal, wood, accent].filter((g) => (g.attributes.position?.count ?? 0) > 0);
+  const out = merge(parts);
   out.clearGroups();
-  out.addGroup(0, metalCount, 0);
-  out.addGroup(metalCount, out.attributes.position.count - metalCount, 1);
+  let at = 0;
+  if (a > 0) { out.addGroup(at, a, 0); at += a; }
+  if (b > 0) { out.addGroup(at, b, 1); at += b; }
+  const rest = out.attributes.position.count - at;
+  if (rest > 0) out.addGroup(at, rest, 2);
   return out;
 }

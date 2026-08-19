@@ -348,14 +348,72 @@
       .craft-row {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        gap: 10px;
         border: 1px solid var(--gold-dim);
         border-radius: 6px;
-        padding: 10px 12px;
+        padding: 9px 12px;
         background: var(--slot-grad);
       }
-      .craft-row-name { font-size: 13px; text-transform: capitalize; color: var(--parchment); }
+      /* The row's info column takes the slack, so every button in the list
+         lines up down the right edge however long a name is. */
+      .craft-row > div:nth-child(2) { flex: 1; min-width: 0; }
+      .craft-row-icon { flex: none; width: 22px; height: 22px; display: block; }
+      .craft-row-icon svg { width: 100%; height: 100%; fill: currentColor; }
+      .craft-row-name { font-size: 13px; color: var(--parchment); }
       .craft-row-cost { font-size: 11px; color: var(--muted); margin-top: 2px; }
+      /* Named shortfalls rather than a greyed-out row: "you need essence" is
+         far more use than "you cannot afford this". */
+      .craft-row-cost.short { color: #c98d5e; }
+      .craft-row-step { font-size: 11px; margin-bottom: 1px; }
+
+      /* --- the smithy's three verbs --------------------------------------- */
+      .smith-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+      .smith-tab {
+        flex: 1;
+        display: flex; align-items: center; justify-content: center; gap: 6px;
+        padding: 7px 4px;
+        background: linear-gradient(180deg, #3a2a17, #241a0f);
+        border: 1px solid var(--gold-dim);
+        border-radius: 5px;
+        color: var(--muted);
+        font: 12px Georgia, serif;
+        cursor: pointer;
+      }
+      .smith-tab svg { width: 15px; height: 15px; fill: currentColor; }
+      .smith-tab:hover { color: var(--parchment); }
+      .smith-tab.active {
+        color: #241a0f;
+        background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+        border-color: var(--gold-bright);
+      }
+      /* The wallet stays on screen in every tab: all three verbs spend from it. */
+      .smith-wallet {
+        display: flex; gap: 14px; justify-content: center;
+        padding: 6px 0 9px;
+        border-bottom: 1px solid rgba(226, 176, 79, .18);
+        margin-bottom: 6px;
+      }
+      .smith-mat {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: 12px; color: var(--parchment);
+      }
+      .smith-mat svg { width: 15px; height: 15px; fill: var(--gold); }
+      .smith-shelves { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+      .smith-shelf {
+        padding: 4px 9px;
+        background: #2a1f10;
+        border: 1px solid var(--gold-dim);
+        border-radius: 4px;
+        color: var(--muted);
+        font: 11px Georgia, serif;
+        cursor: pointer;
+      }
+      .smith-shelf.active { color: var(--gold-bright); border-color: var(--gold); background: #3d2c18; }
+      .smith-note {
+        padding: 14px 4px;
+        font-size: 12px; font-style: italic; color: var(--muted);
+        text-align: center; line-height: 1.6;
+      }
       .craft-row button {
         background: linear-gradient(180deg, var(--gold-bright), var(--gold));
         border: 1px solid var(--gold-dim);
@@ -957,11 +1015,39 @@
       }
       #item-tooltip .tt-title {
         font-weight: bold;
-        text-transform: capitalize;
-        margin-bottom: 3px;
+        margin-bottom: 1px;
         letter-spacing: .02em;
+        font-size: 13px;
+      }
+      /* Quality and kind, in the item's own colour but quieter — it is the
+         same fact the title is already coloured by, so it must not compete
+         with the name. */
+      #item-tooltip .tt-sub {
+        font-size: 10.5px;
+        opacity: .72;
+        margin-bottom: 5px;
+        letter-spacing: .04em;
       }
       #item-tooltip .tt-line { font-size: 11px; color: #cbbb95; line-height: 1.45; }
+      /* Affixes are the part of an item that is not true of every copy of it,
+         so they are set apart rather than listed among the rolls. */
+      #item-tooltip .tt-affix {
+        font-size: 11px;
+        color: #9ad4ff;
+        line-height: 1.45;
+        padding-left: 7px;
+        border-left: 2px solid rgba(154, 212, 255, .35);
+        margin: 2px 0;
+      }
+      #item-tooltip .tt-flavour {
+        margin-top: 6px;
+        padding-top: 5px;
+        border-top: 1px solid rgba(226, 176, 79, .18);
+        font-size: 10.5px;
+        font-style: italic;
+        color: #8d7c5c;
+        line-height: 1.5;
+      }
 
       /* --- Icons ------------------------------------------------------
          Every glyph in the interface is one of these: a single 512x512 path
@@ -1146,7 +1232,7 @@
         <div id="craft-overlay" class="window">
           <div id="craft-panel">
             <div class="win-title">
-              <span class="win-icon" data-icon="dock-craft"></span><span>Workbench</span>
+              <span class="win-icon" data-icon="forge"></span><span>Smithy</span>
               <button id="craft-close" class="win-close">&times;</button>
             </div>
             <div id="craft-grid" class="window-body"></div>

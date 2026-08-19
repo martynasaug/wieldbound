@@ -7,13 +7,8 @@ import {
   xpToNextLevel,
   maxHpForLevel,
   xpRewardFor,
-  sellValueFor,
   POTION_CRAFT_COST,
   TONIC_CRAFT_COST,
-  rollItemSlot,
-  rollItemRarity,
-  rollItemStatValue,
-  rollItemBonusStatValue,
   LOOT_DROP_CHANCE,
   INVENTORY_CAP,
   PLAYER_SPAWN,
@@ -32,6 +27,11 @@ import {
   type AttributeName,
   type LeaderboardEntry,
 } from "../../shared/protocol-types.ts";
+import {
+  isTwoHanded,
+  salvageYield,
+  type MaterialCost,
+} from "../../shared/items.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "..", "data");
@@ -61,17 +61,56 @@ for (const itemMigration of [
   "ALTER TABLE items ADD COLUMN statValue REAL NOT NULL DEFAULT 0",
   "ALTER TABLE items ADD COLUMN bonusStatValue REAL NOT NULL DEFAULT 0",
   // Which family a weapon belongs to. This is what decides the wielder's
-  // class, so it is load-bearing rather than cosmetic. Null on pre-class
-  // weapons, which resolve to fists.
+  // class, so it is load-bearing rather than cosmetic.
   "ALTER TABLE items ADD COLUMN weaponType TEXT",
-  // Which art an armour piece layers onto the paperdoll.
+  // Which art an armour piece layers onto the body.
   "ALTER TABLE items ADD COLUMN style TEXT",
+  // Which entry in the catalogue this is an instance of. The item system's
+  // centre of gravity: everything an item IS now hangs off this.
+  "ALTER TABLE items ADD COLUMN baseId TEXT",
+  // Affix ids as a JSON array. A list on one row is the one shape a wide table
+  // genuinely cannot hold — and unlike the talent ranks, which are keyed by
+  // (character, weapon, node) and therefore earn their own table, these are
+  // read and written only ever as a whole, with the item.
+  "ALTER TABLE items ADD COLUMN affixes TEXT NOT NULL DEFAULT '[]'",
 ]) {
   try {
     db.exec(itemMigration);
   } catch {
     // column already exists from a previous run
   }
+}
+
+// --- One-time wipe: the old item model is gone ------------------------------
+// Every item that predates the catalogue is an anonymous slot-and-rarity pair
+// whose rarity is a word this game no longer has — "common" is not a step on
+// the ladder any more. There is nothing to migrate them TO: a Broken Notched
+// Dirk is not a translation of "a common weapon (sword)", it is a different
+// object.
+//
+// So they are deleted, once, and the fact that it has happened is recorded —
+// otherwise every restart would wipe a player's bag. The denormalised rarity
+// columns on `characters` are cleared in the same breath, because they cache
+// what is equipped and nothing is any more.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS schema_marks (
+    mark TEXT PRIMARY KEY,
+    appliedAt INTEGER NOT NULL
+  );
+`);
+const ITEM_WIPE_MARK = "items-v2-catalogue";
+const alreadyWiped = db
+  .prepare("SELECT mark FROM schema_marks WHERE mark = ?")
+  .get(ITEM_WIPE_MARK);
+if (!alreadyWiped) {
+  const before = (db.prepare("SELECT COUNT(*) AS n FROM items").get() as { n: number }).n;
+  db.exec("DELETE FROM items");
+  db.exec("UPDATE characters SET weaponRarity = NULL, armorRarity = NULL, bootsRarity = NULL");
+  db.prepare("INSERT INTO schema_marks (mark, appliedAt) VALUES (?, ?)").run(
+    ITEM_WIPE_MARK,
+    Date.now(),
+  );
+  console.log(`[db] item catalogue: cleared ${before} pre-catalogue item(s), once`);
 }
 for (const migration of [
   "ALTER TABLE characters ADD COLUMN wood INTEGER NOT NULL DEFAULT 0",
@@ -93,6 +132,11 @@ for (const migration of [
   "ALTER TABLE characters ADD COLUMN offlineBattleMonsterKind TEXT",
   "ALTER TABLE characters ADD COLUMN potions INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE characters ADD COLUMN herb INTEGER NOT NULL DEFAULT 0",
+  // The fourth material, and the only one that comes off a kill rather than out
+  // of the ground. The top of the reforge ladder needs it, which is what stops
+  // the strongest gear in the game being made by whoever stood at a tree
+  // longest.
+  "ALTER TABLE characters ADD COLUMN essence INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE characters ADD COLUMN lastDailyAt INTEGER",
   "ALTER TABLE characters ADD COLUMN tonics INTEGER NOT NULL DEFAULT 0",
   // Vestigial: class is no longer stored. It is derived from the equipped
@@ -410,10 +454,16 @@ export function markDisconnected(
 // `markDisconnected` is kept purely to stamp the last-seen time.
 
 const insertItem = db.prepare(
-  "INSERT INTO items (id, characterId, slot, rarity, statValue, bonusStatValue, equipped, createdAt, weaponType, style) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+  "INSERT INTO items (id, characterId, baseId, slot, rarity, statValue, bonusStatValue, affixes, equipped, createdAt, weaponType, style) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
 );
 const selectItemsByCharacter = db.prepare(
-  "SELECT id, slot, rarity, statValue, bonusStatValue, equipped, weaponType, style FROM items WHERE characterId = ? ORDER BY createdAt DESC",
+  "SELECT id, baseId, slot, rarity, statValue, bonusStatValue, affixes, equipped, weaponType, style FROM items WHERE characterId = ? ORDER BY createdAt DESC",
+);
+const selectOneItem = db.prepare(
+  "SELECT id, baseId, slot, rarity, statValue, bonusStatValue, affixes, equipped, weaponType, style FROM items WHERE id = ? AND characterId = ?",
+);
+const updateItemStmt = db.prepare(
+  "UPDATE items SET rarity = ?, statValue = ?, bonusStatValue = ?, affixes = ? WHERE id = ?",
 );
 const selectItemForEquip = db.prepare(
   "SELECT id, slot FROM items WHERE id = ? AND characterId = ?",
@@ -427,10 +477,12 @@ const deleteItemStmt = db.prepare("DELETE FROM items WHERE id = ?");
 
 interface ItemRow {
   id: string;
+  baseId: string | null;
   slot: string;
   rarity: string;
   statValue: number;
   bonusStatValue: number;
+  affixes: string | null;
   equipped: number;
   weaponType: string | null;
   style: string | null;
@@ -439,10 +491,16 @@ interface ItemRow {
 function toItemInstance(row: ItemRow): ItemInstance {
   return {
     id: row.id,
+    // Falls back rather than throwing: a catalogue entry can be retired while a
+    // saved character is still wearing it, and `itemBase` resolves an unknown
+    // id to a placeholder. A bag full of "Lost Relic" is recoverable; a
+    // character who cannot log in is not.
+    baseId: row.baseId ?? "unknown",
     slot: row.slot as ItemSlot,
     rarity: row.rarity as ItemRarity,
     statValue: row.statValue,
     bonusStatValue: row.bonusStatValue,
+    affixes: parseAffixes(row.affixes),
     equipped: row.equipped === 1,
     // Both are nullable in SQLite and optional on the wire. weaponType was
     // being dropped here even though the SELECT fetched it, which silently
@@ -453,27 +511,75 @@ function toItemInstance(row: ItemRow): ItemInstance {
   };
 }
 
+/** Defensive: the column is a JSON array written by this process, but a bad
+ *  row must not take a character's whole bag down with it. */
+function parseAffixes(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Writes one rolled item.
+ *
+ * Takes the roll rather than the ingredients of a roll: `rollItem` in
+ * shared/items.ts is the single place an item comes into existence, so the
+ * forge and the loot table cannot disagree about what a Tempered Falchion is.
+ */
 export function addItem(
   characterId: string,
-  slot: ItemSlot,
-  rarity: ItemRarity,
-  statValue: number,
-  bonusStatValue: number,
-  weaponType: WeaponType | null = null,
-  style: GearStyle | null = null,
+  rolled: Omit<ItemInstance, "id" | "equipped">,
 ): ItemInstance {
   const id = randomUUID();
-  insertItem.run(id, characterId, slot, rarity, statValue, bonusStatValue, Date.now(), weaponType, style);
-  return {
+  insertItem.run(
     id,
-    slot,
-    rarity,
-    statValue,
-    bonusStatValue,
-    equipped: false,
-    weaponType: weaponType ?? undefined,
-    style: style ?? undefined,
-  };
+    characterId,
+    rolled.baseId,
+    rolled.slot,
+    rolled.rarity,
+    rolled.statValue,
+    rolled.bonusStatValue,
+    JSON.stringify(rolled.affixes ?? []),
+    Date.now(),
+    rolled.weaponType ?? null,
+    rolled.style ?? null,
+  );
+  return { ...rolled, id, equipped: false };
+}
+
+export function getItem(characterId: string, itemId: string): ItemInstance | null {
+  const row = selectOneItem.get(itemId, characterId) as unknown as ItemRow | undefined;
+  return row ? toItemInstance(row) : null;
+}
+
+/** Replaces an item's quality and rolls in place, keeping its id and whether it
+ *  is worn. What reforging does. */
+export function replaceItemRolls(
+  characterId: string,
+  itemId: string,
+  next: Pick<ItemInstance, "rarity" | "statValue" | "bonusStatValue" | "affixes">,
+): ItemInstance | null {
+  const existing = getItem(characterId, itemId);
+  if (!existing) return null;
+  updateItemStmt.run(
+    next.rarity,
+    next.statValue,
+    next.bonusStatValue,
+    JSON.stringify(next.affixes ?? []),
+    itemId,
+  );
+  return getItem(characterId, itemId);
+}
+
+export function deleteItem(characterId: string, itemId: string): boolean {
+  const existing = getItem(characterId, itemId);
+  if (!existing) return false;
+  deleteItemStmt.run(itemId);
+  return true;
 }
 
 export function listItems(characterId: string): ItemInstance[] {
@@ -494,6 +600,19 @@ export function equipItem(characterId: string, itemId: string): EquipResult | nu
   unequipSlotStmt.run(characterId, target.slot);
   equipItemStmt.run(itemId);
 
+  // Two hands are two hands. A greatsword, a bow and a staff all empty the
+  // off-hand, and putting something in the off-hand puts down a two-hander —
+  // enforced HERE rather than in the message handler because it is a property
+  // of what is worn, and every future path that equips something (a starting
+  // kit, a reward, a test) has to obey it too.
+  const afterEquip = listItems(characterId);
+  const worn = (slot: ItemSlot) => afterEquip.find((i) => i.slot === slot && i.equipped) ?? null;
+  if (target.slot === "weapon" && isTwoHanded(worn("weapon"))) {
+    unequipSlotStmt.run(characterId, "offhand");
+  } else if (target.slot === "offhand" && isTwoHanded(worn("weapon"))) {
+    unequipSlotStmt.run(characterId, "weapon");
+  }
+
   const items = listItems(characterId);
   const equippedRarity = (slot: ItemSlot): ItemRarity | null =>
     items.find((item) => item.slot === slot && item.equipped)?.rarity ?? null;
@@ -508,13 +627,80 @@ export function equipItem(characterId: string, itemId: string): EquipResult | nu
   return { items, weaponRarity, armorRarity, bootsRarity };
 }
 
-export function sellItem(characterId: string, itemId: string): { wood: number; items: ItemInstance[] } | null {
-  const row = selectItemForSell.get(itemId, characterId) as { rarity: string; equipped: number } | undefined;
-  if (!row || row.equipped === 1) return null;
+/**
+ * Breaks an item down and returns the materials to the character.
+ *
+ * Replaces selling for wood, which was a sink with no decision in it: one
+ * currency out, always, scaled only by rarity. Salvage gives back a share of
+ * what the thing would cost to forge, so what you get depends on WHAT you
+ * broke — and a Broken drop, which used to be strictly the worst outcome, is
+ * now a small pile of ore you would otherwise have gone mining for.
+ */
+export function salvageItem(
+  characterId: string,
+  itemId: string,
+): { yielded: MaterialCost; items: ItemInstance[]; materials: MaterialTotals } | null {
+  const item = getItem(characterId, itemId);
+  if (!item || item.equipped) return null;
 
+  const yielded = salvageYield(item);
   deleteItemStmt.run(itemId);
-  const wood = addWood(characterId, sellValueFor(row.rarity as ItemRarity));
-  return { wood, items: listItems(characterId) };
+  if (yielded.wood) addWood(characterId, yielded.wood);
+  if (yielded.ore) addOre(characterId, yielded.ore);
+  if (yielded.herb) addHerb(characterId, yielded.herb);
+
+  return { yielded, items: listItems(characterId), materials: materialsOf(characterId) };
+}
+
+export interface MaterialTotals {
+  wood: number;
+  ore: number;
+  herb: number;
+  essence: number;
+}
+
+const selectMaterials = db.prepare(
+  "SELECT wood, ore, herb, essence FROM characters WHERE id = ?",
+);
+const addEssenceStmt = db.prepare(
+  "UPDATE characters SET essence = essence + ? WHERE id = ?",
+);
+const spendMaterialsStmt = db.prepare(
+  "UPDATE characters SET wood = wood - ?, ore = ore - ?, herb = herb - ?, essence = essence - ? WHERE id = ? AND wood >= ? AND ore >= ? AND herb >= ? AND essence >= ?",
+);
+
+export function materialsOf(characterId: string): MaterialTotals {
+  return (selectMaterials.get(characterId) as unknown as MaterialTotals) ?? {
+    wood: 0, ore: 0, herb: 0, essence: 0,
+  };
+}
+
+export function addEssence(characterId: string, amount: number): number {
+  if (amount > 0) addEssenceStmt.run(amount, characterId);
+  return materialsOf(characterId).essence;
+}
+
+/**
+ * Spends a cost atomically, returning null if the character could not pay.
+ *
+ * One statement with the balance check in its WHERE clause, for the same reason
+ * the gather-speed upgrade has always been one statement: two rapid clicks on a
+ * forge button must not both succeed against the same wood.
+ */
+export function spendMaterials(
+  characterId: string,
+  cost: MaterialCost,
+): MaterialTotals | null {
+  const wood = Math.max(0, Math.round(cost.wood ?? 0));
+  const ore = Math.max(0, Math.round(cost.ore ?? 0));
+  const herb = Math.max(0, Math.round(cost.herb ?? 0));
+  const essence = Math.max(0, Math.round(cost.essence ?? 0));
+  const result = spendMaterialsStmt.run(
+    wood, ore, herb, essence, characterId,
+    wood, ore, herb, essence,
+  );
+  if (Number(result.changes) === 0) return null;
+  return materialsOf(characterId);
 }
 
 export function setWeapon(id: string, rarity: ItemRarity): void {

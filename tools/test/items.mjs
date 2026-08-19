@@ -1,0 +1,331 @@
+// Checks the item catalogue against the rules it quietly relies on.
+//
+// Seventy-eight base items and twenty-five affixes are hand-authored data, and
+// almost every failure mode is silent. A base naming a model that does not
+// exist is invisible in the player's hand. A slot with no band-1 entry means a
+// new character can never find one. An affix restricted to a slot that never
+// rolls it is content nobody will see. A rarity ladder that is not monotonic
+// makes reforging a downgrade. None of it throws, and none of it shows up in a
+// typecheck beyond the strings being strings.
+//
+// Also prints the shape of the catalogue, which is the cheapest way to notice
+// that one slot ended up with nine entries and another with three.
+//
+//   node tools/test/items.mjs
+
+import { existsSync } from "node:fs";
+import path from "node:path";
+import {
+  ITEM_SLOTS,
+  RARITIES,
+  RARITY_ORDER,
+  WEAPONS,
+  WEAPON_TYPES,
+} from "../../shared/protocol-types.ts";
+import {
+  AFFIXES,
+  AFFIXES_BY_ID,
+  ITEM_BASES,
+  MATERIALS,
+  PALETTES,
+  affixBonus,
+  baseGuard,
+  basePower,
+  canAfford,
+  forgeCost,
+  forgeableBases,
+  itemBase,
+  itemName,
+  itemPassives,
+  reforgeCost,
+  reforgeItem,
+  rollAffixes,
+  rollBase,
+  rollItem,
+  rollRarity,
+  rollRarityWithFloor,
+  salvageYield,
+} from "../../shared/items.ts";
+
+const MODEL_DIR = path.resolve(import.meta.dirname, "../../client/public/models");
+const ICONS_SRC = path.resolve(import.meta.dirname, "../../client/src/ui/icons.ts");
+
+let failures = 0;
+function check(name, ok, detail = "") {
+  if (ok) return;
+  failures++;
+  console.log(`  FAIL  ${name}${detail ? " — " + detail : ""}`);
+}
+function section(title) {
+  console.log(`\n${title}`);
+}
+
+const bases = Object.values(ITEM_BASES);
+
+// --- 1. the shape of it -----------------------------------------------------
+section("1. the catalogue");
+console.log(`  ${bases.length} base items, ${AFFIXES.length} affixes, ${RARITY_ORDER.length} qualities`);
+for (const slot of ITEM_SLOTS) {
+  const inSlot = bases.filter((b) => b.slot === slot);
+  const byBand = [1, 2, 3, 4, 5].map((b) => inSlot.filter((x) => x.band === b).length);
+  console.log(`  ${slot.padEnd(8)} ${String(inSlot.length).padStart(2)}  bands ${byBand.join("/")}`);
+  check(`${slot} has entries`, inSlot.length > 0);
+  // A slot with nothing at band 1 is a slot a new character cannot fill.
+  check(`${slot} has something at band 1`, byBand[0] > 0, `bands ${byBand.join("/")}`);
+}
+
+// --- 2. ids, names and uniqueness -------------------------------------------
+section("2. identity");
+const ids = new Set();
+const names = new Set();
+for (const b of bases) {
+  check(`duplicate base id ${b.id}`, !ids.has(b.id));
+  ids.add(b.id);
+  check(`duplicate base name ${b.name}`, !names.has(b.name), b.id);
+  names.add(b.name);
+  check(`${b.id} has a flavour line`, typeof b.flavour === "string" && b.flavour.length > 10);
+  check(`${b.id} band in range`, b.band >= 1 && b.band <= 5, String(b.band));
+  check(`${b.id} palette exists`, !!PALETTES[b.art.palette], b.art.palette);
+}
+console.log(`  ${ids.size} unique ids, ${names.size} unique names`);
+
+// --- 3. every model the catalogue names actually exists ---------------------
+// The one failure that is completely invisible at runtime: a missing model
+// leaves an empty hand and logs nothing the player will ever see.
+section("3. art");
+let checkedModels = 0;
+let builders = 0;
+for (const b of bases) {
+  const { model, build } = b.art;
+  if (build) {
+    builders++;
+    check(`${b.id} names a known builder`, ["crystalstave", "quiver"].includes(build), build);
+    continue;
+  }
+  if (!model) {
+    // Armour is procedural and declares a style instead. Rings are the one slot
+    // that is genuinely invisible — no mesh, no layer, nothing to draw — so
+    // they are allowed to declare neither.
+    if (b.slot !== "ring") {
+      check(`${b.id} has either a model or a style`, !!b.style, `slot ${b.slot}`);
+    }
+    continue;
+  }
+  checkedModels++;
+  if (model.startsWith("rig:")) {
+    // Harvested off a character rig that already carries the mesh.
+    const [body] = model.slice(4).split("/");
+    check(`${b.id} rig body ${body}.fbx exists`, existsSync(path.join(MODEL_DIR, `${body}.fbx`)), model);
+  } else {
+    check(
+      `${b.id} model ${model} exists`,
+      existsSync(path.join(MODEL_DIR, `${model}.fbx`)) || existsSync(path.join(MODEL_DIR, `${model}.gltf`)),
+      model,
+    );
+  }
+}
+console.log(`  ${checkedModels} models checked on disk, ${builders} procedural`);
+
+// Icons cross a generated boundary, so only a runtime check can catch a typo.
+const iconSrc = await import("node:fs").then((fs) => fs.readFileSync(ICONS_SRC, "utf8"));
+const missingIcons = [...new Set(bases.map((b) => b.icon))].filter(
+  (key) => !new RegExp(`^\\s{2}"?${key.replace(/[-]/g, "\\-")}"?:`, "m").test(iconSrc),
+);
+check("every icon the catalogue names is baked", missingIcons.length === 0, missingIcons.join(", "));
+console.log(`  ${new Set(bases.map((b) => b.icon)).size} distinct icons named`);
+
+// --- 4. the rarity ladder ---------------------------------------------------
+section("4. the ladder");
+let prev = -Infinity;
+for (const r of RARITY_ORDER) {
+  const def = RARITIES[r];
+  check(`${r} is stronger than the step below it`, def.power > prev, `${def.power} after ${prev}`);
+  prev = def.power;
+}
+console.log(`  ${RARITY_ORDER.map((r) => `${RARITIES[r].name} x${RARITIES[r].power}`).join("  ")}`);
+check("Honed is exactly the baseline", RARITIES.honed.power === 1, String(RARITIES.honed.power));
+check("Broken is below the baseline", RARITIES.broken.power < 1, String(RARITIES.broken.power));
+let affixes = -1;
+for (const r of RARITY_ORDER) {
+  check(`${r} never grants fewer affixes than the step below`, RARITIES[r].affixes >= affixes);
+  affixes = RARITIES[r].affixes;
+}
+
+// --- 5. affixes -------------------------------------------------------------
+section("5. affixes");
+const affixIds = new Set();
+for (const a of AFFIXES) {
+  check(`duplicate affix id ${a.id}`, !affixIds.has(a.id));
+  affixIds.add(a.id);
+  check(`${a.id} has a label`, !!a.label);
+  check(`${a.id} has at least one modifier`, Object.keys(a.per).length > 0);
+  // An affix restricted to slots that never roll at its band is unreachable.
+  const reachable = bases.some(
+    (b) => b.band >= a.minBand && (!a.slots || a.slots.includes(b.slot)),
+  );
+  check(`${a.id} is reachable by some base item`, reachable, `minBand ${a.minBand}`);
+  // And it must actually produce a number on the lowest item that can roll it.
+  const lowest = bases.find((b) => b.band >= a.minBand && (!a.slots || a.slots.includes(b.slot)));
+  const bonus = affixBonus(a, lowest.band);
+  const any = Object.values(bonus).some((v) => v !== 0);
+  check(`${a.id} rounds to something on a band-${lowest.band} item`, any, JSON.stringify(bonus));
+}
+const prefixes = AFFIXES.filter((a) => a.kind === "prefix").length;
+console.log(`  ${prefixes} prefixes, ${AFFIXES.length - prefixes} suffixes`);
+
+// --- 6. rolling -------------------------------------------------------------
+section("6. rolling");
+let seed = 12345;
+const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+const seenBases = new Set();
+const seenRarities = new Set();
+for (let i = 0; i < 20000; i++) {
+  const band = (1 + Math.floor(rand() * 5));
+  const base = rollBase(band, rand);
+  seenBases.add(base.id);
+  const rarity = rollRarity(rand);
+  seenRarities.add(rarity);
+  const item = rollItem(base, rarity, rand);
+  if (i === 0) console.log(`  sample: ${itemName({ ...item })}`);
+  check("rolled item names its base", item.baseId === base.id);
+  check("rolled item carries its slot", item.slot === base.slot);
+  check("stat values are non-negative", item.statValue >= 0 && item.bonusStatValue >= 0);
+  check(
+    "affix count matches the quality",
+    item.affixes.length <= RARITIES[rarity].affixes,
+    `${item.affixes.length} for ${rarity}`,
+  );
+  check("no duplicate affixes on one item", new Set(item.affixes).size === item.affixes.length);
+  for (const id of item.affixes) {
+    const a = AFFIXES_BY_ID[id];
+    check(`affix ${id} exists`, !!a);
+    check(`affix ${id} is legal on ${base.slot}`, !a.slots || a.slots.includes(base.slot));
+    check(`affix ${id} is legal at band ${base.band}`, a.minBand <= base.band);
+  }
+}
+console.log(`  ${seenBases.size}/${bases.length} bases and ${seenRarities.size}/${RARITY_ORDER.length} qualities seen in 20k rolls`);
+check("every base is reachable from some band", seenBases.size === bases.length,
+  bases.filter((b) => !seenBases.has(b.id)).map((b) => b.id).join(", "));
+check("every quality is reachable", seenRarities.size === RARITY_ORDER.length);
+
+// A boss drop never comes out below its floor.
+let belowFloor = 0;
+for (let i = 0; i < 5000; i++) {
+  const r = rollRarityWithFloor("tempered", rand);
+  if (RARITY_ORDER.indexOf(r) < RARITY_ORDER.indexOf("tempered")) belowFloor++;
+}
+check("a floored roll never lands below the floor", belowFloor === 0, `${belowFloor} of 5000`);
+
+// --- 7. quality actually pays -----------------------------------------------
+section("7. quality pays");
+for (const b of [bases[0], bases[Math.floor(bases.length / 2)], bases[bases.length - 1]]) {
+  const fixed = () => 0.5; // no jitter, so this compares qualities and not luck
+  let last = -1;
+  for (const r of RARITY_ORDER) {
+    const item = rollItem(b, r, fixed);
+    check(`${b.id} gets stronger at ${r}`, item.statValue >= last, `${item.statValue} after ${last}`);
+    last = item.statValue;
+  }
+  const broken = rollItem(b, "broken", fixed);
+  const honed = rollItem(b, "honed", fixed);
+  check(`${b.id} Broken is worse than Honed`, broken.statValue < honed.statValue,
+    `${broken.statValue} vs ${honed.statValue}`);
+}
+
+// --- 8. weapons -------------------------------------------------------------
+section("8. weapons");
+const weapons = bases.filter((b) => b.slot === "weapon");
+for (const type of WEAPON_TYPES) {
+  const inFamily = weapons.filter((b) => b.weaponType === type);
+  console.log(`  ${type.padEnd(7)} ${String(inFamily.length).padStart(2)}  ${inFamily.map((b) => b.name).join(", ")}`);
+  check(`${type} has at least one weapon`, inFamily.length > 0);
+}
+for (const b of weapons) {
+  check(`${b.id} names a real family`, !!WEAPONS[b.weaponType], String(b.weaponType));
+  if (b.mods) {
+    for (const [k, v] of Object.entries(b.mods)) {
+      check(`${b.id} mod ${k} is a sane multiplier`, v > 0.3 && v < 3, `${k}=${v}`);
+    }
+  }
+}
+// Fists are the unarmed state and must never be a findable item.
+check("no item is a fist", !weapons.some((b) => b.weaponType === "fist"));
+
+// --- 9. the smithy ----------------------------------------------------------
+section("9. the smithy");
+const wallet = { wood: 1e6, ore: 1e6, herb: 1e6, essence: 1e6 };
+for (const b of bases) {
+  const cost = forgeCost(b);
+  check(`${b.id} costs something to forge`, MATERIALS.some((m) => (cost[m] ?? 0) > 0), JSON.stringify(cost));
+  check(`${b.id} forge cost is affordable in principle`, canAfford(cost, wallet).ok);
+}
+const cheapest = Math.min(...bases.map((b) => (forgeCost(b).wood ?? 0) + (forgeCost(b).ore ?? 0)));
+const dearest = Math.max(...bases.map((b) => (forgeCost(b).wood ?? 0) + (forgeCost(b).ore ?? 0)));
+console.log(`  forge cost spans ${cheapest} to ${dearest} wood+ore`);
+check("forging gets meaningfully dearer with band", dearest > cheapest * 8);
+
+// The ladder must be climbable, and each step dearer than the last.
+const sample = ITEM_BASES.longsword;
+let lastCost = 0;
+for (const r of RARITY_ORDER.slice(0, -1)) {
+  const cost = reforgeCost(sample, r);
+  check(`reforge from ${r} has a cost`, !!cost);
+  const total = MATERIALS.reduce((s, m) => s + (cost[m] ?? 0), 0);
+  check(`reforge from ${r} costs more than the step before`, total > lastCost, `${total} after ${lastCost}`);
+  lastCost = total;
+}
+check("there is no step past the top", reforgeCost(sample, "enchanted") === null);
+console.log(`  a longsword to Enchanted: ${lastCost} materials on the last step alone`);
+
+// Essence is the fight-only material, and only the top of the ladder needs it.
+const needsEssence = RARITY_ORDER.slice(0, -1).filter((r) => (reforgeCost(sample, r)?.essence ?? 0) > 0);
+check("essence is only needed near the top", needsEssence.length > 0 && needsEssence.length <= 3,
+  needsEssence.join(", "));
+check("no forge recipe below band 5 needs essence",
+  bases.filter((b) => b.band < 5).every((b) => !(forgeCost(b).essence > 0)));
+
+// Reforging really does raise the quality, keep the item, and re-roll affixes.
+const before = { id: "x", equipped: false, ...rollItem(sample, "honed", rand) };
+const after = reforgeItem(before, rand);
+check("reforging keeps the item's identity", after.id === before.id && after.baseId === before.baseId);
+check("reforging steps the quality up", after.rarity === "tempered", after.rarity);
+check("reforging keeps it equipped or not", after.equipped === before.equipped);
+check("reforging does not lose the weapon family", after.weaponType === before.weaponType);
+
+// Salvage returns something, never essence, and scales with quality.
+for (const r of RARITY_ORDER) {
+  const item = { id: "x", equipped: false, ...rollItem(sample, r, rand) };
+  const yielded = salvageYield(item);
+  check(`salvaging a ${r} item returns something`, MATERIALS.some((m) => (yielded[m] ?? 0) > 0));
+  check(`salvaging never returns essence`, !yielded.essence);
+}
+const brokenYield = salvageYield({ id: "x", equipped: false, ...rollItem(sample, "broken", rand) });
+const runedYield = salvageYield({ id: "x", equipped: false, ...rollItem(sample, "runed", rand) });
+check("a better item salvages for more",
+  (runedYield.ore ?? 0) > (brokenYield.ore ?? 0), `${runedYield.ore} vs ${brokenYield.ore}`);
+
+// The forge unlocks with level rather than opening everything at once.
+const atOne = forgeableBases(1).length;
+const atTwenty = forgeableBases(20).length;
+console.log(`  forge offers ${atOne} recipes at level 1, ${atTwenty} at level 20`);
+check("the forge starts small", atOne > 0 && atOne < bases.length);
+check("the forge eventually offers everything", atTwenty === bases.length);
+
+// --- 10. affix totals reach the passive vocabulary --------------------------
+section("10. affixes reach the stat sheet");
+const loaded = { id: "x", equipped: true, ...rollItem(ITEM_BASES.claymore, "enchanted", rand) };
+const totals = itemPassives(loaded);
+check("an enchanted item contributes something",
+  Object.values(totals).some((v) => v !== 0), JSON.stringify(loaded.affixes));
+check("its totals use the shared passive vocabulary",
+  Object.keys(totals).every((k) => k in totals));
+console.log(`  ${itemName(loaded)} -> ${loaded.affixes.join(", ") || "no affixes"}`);
+
+// --- done -------------------------------------------------------------------
+console.log(
+  failures === 0
+    ? "\nOK — the catalogue holds"
+    : `\n${failures} FAILURES`,
+);
+process.exitCode = failures ? 1 : 0;

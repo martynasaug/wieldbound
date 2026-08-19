@@ -18,7 +18,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, CLASS_BODIES, buildArmour, buildWeapon } from "./gear";
+import { BUILTIN_WEAPON_MESHES, CLASS_BODIES, buildArmour, buildHeldItem } from "./gear";
 
 export type ActorAnim = "idle" | "run" | "attack" | "hit" | "die";
 
@@ -137,7 +137,9 @@ export class Actor {
   /** Which body model is currently built, so a re-equip that does not change
    *  class does not needlessly rebuild the rig. */
   private bodyModel: string;
-  private held: THREE.Object3D | null = null;
+  /** Both hands. Was one object back when only the right one could hold
+   *  anything. */
+  private held: THREE.Object3D[] = [];
   private worn: THREE.Object3D[] = [];
   private appearance: Appearance | null = null;
   /** Bumped on every appearance change, so a slower earlier load cannot land
@@ -325,15 +327,22 @@ export class Actor {
     const generation = ++this.dressGeneration;
     this.clearGear();
 
-    const weaponType = appearance.weaponType;
-    if (weaponType) {
-      void buildWeapon(weaponType, appearance.weaponRarity ?? "common").then((weapon) => {
-        if (!weapon || generation !== this.dressGeneration) return;
-        const socket = this.bones.get(weapon.bone) ?? this.weaponSocket;
+    // What is in each hand, by catalogue id. The family alone was enough while
+    // there was one sword per class; there are nine now and they do not look
+    // alike, so the appearance carries which one.
+    const hands: [string | undefined, ItemRarity | undefined, "right" | "left"][] = [
+      [appearance.weaponBaseId, appearance.weaponRarity, "right"],
+      [appearance.offhandBaseId, appearance.offhandRarity, "left"],
+    ];
+    for (const [baseId, rarity, hand] of hands) {
+      if (!baseId) continue;
+      void buildHeldItem(baseId, rarity ?? "honed", hand).then((held) => {
+        if (!held || generation !== this.dressGeneration) return;
+        const socket = this.bones.get(held.bone) ?? (hand === "right" ? this.weaponSocket : null);
         if (!socket) return;
-        socket.add(weapon.object);
-        this.held = weapon.object;
-        this.trackMaterials(weapon.object);
+        socket.add(held.object);
+        this.held.push(held.object);
+        this.trackMaterials(held.object);
       });
     }
 
@@ -372,7 +381,7 @@ export class Actor {
   }
 
   private clearGear(): void {
-    for (const object of [this.held, ...this.worn]) {
+    for (const object of [...this.held, ...this.worn]) {
       if (!object) continue;
       const mats = new Set<THREE.Material>();
       object.traverse((c) => {
@@ -387,7 +396,7 @@ export class Actor {
       }
       this.litMaterials = this.litMaterials.filter((l) => !mats.has(l.mat));
     }
-    this.held = null;
+    this.held = [];
     this.worn = [];
   }
 
