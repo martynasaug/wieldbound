@@ -24,6 +24,7 @@ import {
   WEAPONS,
   WEAPON_TREES,
   WEAPON_TYPES,
+  MONSTER_STATS,
 } from "../../shared/protocol-types.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -67,6 +68,8 @@ for (const s of ["strength", "agility", "vitality", "intelligence"]) require_(s,
 for (const f of ["hp", "mana", "xp", "gear", "sort", "sell", "settings"]) require_(f, `interface ${f}`);
 for (const r of [1, 2, 3]) require_(`rank-${r}`, `leaderboard place ${r}`);
 for (const c of ["sun", "moon"]) require_(c, `day/night clock ${c}`);
+// One portrait per monster kind, on the target frame.
+for (const kind of Object.keys(MONSTER_STATS)) require_(`monster-${kind}`, `portrait for ${kind}`);
 
 console.log("\n3. every weapon can draw its own bar");
 // The one composite check: a player holding any weapon sees that weapon's

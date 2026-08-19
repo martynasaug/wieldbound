@@ -1,7 +1,7 @@
 Interface icons
 ===============
 
-122 icons from game-icons.net, baked into client/src/ui/icons.ts by
+135 icons from game-icons.net, baked into client/src/ui/icons.ts by
 tools/art/icons.mjs. Licensed CC BY 3.0 (some contributors release CC0); see
 https://github.com/game-icons/icons/blob/master/license.txt for the per-author
 terms.
@@ -123,6 +123,19 @@ Icon key -> source file:
   dock-skills            delapouite/skills.svg
   dock-craft             lorc/anvil.svg
   dock-leaderboard       lorc/laurel-crown.svg
+  monster-slime          delapouite/slime.svg
+  monster-mushnub        delapouite/grass-mushroom.svg
+  monster-spikyblob      lorc/acid-blob.svg
+  monster-goblin         delapouite/goblin-head.svg
+  monster-armabee        lorc/wasp-sting.svg
+  monster-wolf           lorc/wolf-head.svg
+  monster-cactoro        delapouite/cactus.svg
+  monster-orcbrute       delapouite/orc-head.svg
+  monster-ghost          lorc/ghost.svg
+  monster-troll          skoll/troll.svg
+  monster-demon          delapouite/devil-mask.svg
+  monster-golem          delapouite/golem-head.svg
+  monster-dragon         lorc/dragon-head.svg
   rank-1                 delapouite/podium-winner.svg
   rank-2                 delapouite/podium-second.svg
   rank-3                 delapouite/podium-third.svg

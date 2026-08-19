@@ -14,39 +14,134 @@ import { iconSvg } from "../ui/icons";
 
 const STYLE = `
 #hud3d { position: fixed; inset: 0; pointer-events: none; z-index: 5; font-family: Georgia, serif; }
+/* --- The player's unit frame -------------------------------------------
+   A portrait, a name plate and three bars, built in the same language as the
+   character window's paperdoll: a lit bevel, a vignette behind the figure and
+   a keyline inset from the frame edge. That window already established that
+   ornament is cheap and does most of the work — this is the same forty lines
+   of CSS applied to the thing the player looks at most.
+
+   The frame publishes its own height as --unit-frame-bottom, and the target
+   frame starts from there. It used to be a hardcoded top: 122px, which was
+   correct until the world clock was added a row and quietly pushed the frame
+   past it — the target frame then drew straight over the clock. Same fix as
+   the minimap and the window rail: measure, publish, and let the neighbour
+   read it. */
 #hud3d .frame {
-  position: absolute; left: 14px; top: 14px; width: 264px;
-  background: linear-gradient(#3a2a17, #241a0f);
-  border: 1px solid var(--gold, #d9a441); border-radius: 8px;
-  padding: 9px 11px; box-shadow: 0 4px 18px #0008;
+  position: absolute; left: 14px; top: 14px; width: 272px;
+  display: flex; gap: 9px;
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(255,214,140,.10), transparent 60%),
+    linear-gradient(180deg, #3d2c18, #221809);
+  border: 1px solid var(--gold, #d9a441);
+  border-radius: 9px;
+  padding: 9px 11px 8px;
+  box-shadow: 0 6px 22px #000a, inset 0 1px 0 rgba(255,220,150,.16);
 }
-#hud3d .who { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
-/* The world clock. Sits on the unit frame rather than anywhere new, because it
-   answers a question the player only asks while looking at the light, and a
-   panel of its own for four characters would be furniture. */
+/* Keyline, inset from the border, so the frame has depth rather than one edge. */
+#hud3d .frame::after {
+  content: "";
+  position: absolute; inset: 4px;
+  border: 1px solid rgba(226,176,79,.20);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+/* --- portrait --- */
+#hud3d .portrait {
+  position: relative; flex: none;
+  width: 52px; height: 52px;
+  border-radius: 7px;
+  background:
+    radial-gradient(80% 70% at 50% 24%, #6a5028, #2a1d0d 70%),
+    linear-gradient(180deg, #4a3720, #241a0e);
+  border: 1px solid #7a5c2a;
+  box-shadow: inset 0 1px 0 rgba(255,220,150,.18), inset 0 -8px 12px rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+#hud3d .portrait .icon {
+  width: 34px; height: 34px;
+  fill: var(--gold-bright, #ffd873);
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,.8));
+}
+/* The level rides the portrait's corner rather than sitting in the text row:
+   it is an attribute of who you are, not another number in the stack. */
+#hud3d .portrait .lvl {
+  position: absolute; right: -1px; bottom: -1px;
+  min-width: 17px; padding: 0 3px;
+  background: linear-gradient(180deg, #5a4420, #33260f);
+  border: 1px solid var(--gold, #d9a441);
+  border-radius: 4px 0 5px 0;
+  font: bold 10px/13px Georgia, serif;
+  color: var(--gold-bright, #ffd873);
+  text-align: center;
+  text-shadow: 0 1px 1px #000;
+}
+
+#hud3d .frame .stack { flex: 1; min-width: 0; }
+#hud3d .who { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+#hud3d .who .nm {
+  color: var(--gold-bright, #ffd873);
+  font: bold 14px Georgia, serif;
+  letter-spacing: .02em;
+  text-shadow: 0 1px 2px #000;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#hud3d .who .lv { display: none; }
+
+/* --- bars ---
+   One shape for all three: a near-black trough, a gradient fill with a lit top
+   edge, and quarter ticks drawn as a repeating gradient so they cost no
+   elements. The colour is the only thing that differs, which is what makes
+   three stacked bars read as one instrument rather than three widgets. */
+#hud3d .bar {
+  position: relative; height: 14px; margin-bottom: 4px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #150e05, #241a0c);
+  border: 1px solid #6a5024;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,.7);
+}
+#hud3d .bar:last-child { margin-bottom: 0; }
+#hud3d .bar .fill {
+  position: absolute; inset: 0; width: 0%;
+  transition: width .18s ease-out;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), inset 0 -4px 6px rgba(0,0,0,.28);
+}
+#hud3d .bar::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    90deg, transparent 0 calc(25% - 1px), rgba(0,0,0,.42) calc(25% - 1px) 25%);
+  pointer-events: none;
+}
+#hud3d .bar .txt {
+  position: relative; text-align: center;
+  font: 10px/14px monospace;
+  color: #fdf3dc;
+  text-shadow: -1px 0 1px #000, 1px 0 1px #000, 0 1px 1px #000;
+}
+#hud3d .bar.hp .fill { background: linear-gradient(180deg, #7ada6a, #3d8f3d 60%, #2c6b2c); }
+#hud3d .bar.mp .fill { background: linear-gradient(180deg, #79c2f5, #2b6ba8 60%, #1e4f80); }
+/* XP is the one you are not watching mid-fight, so it is thinner and quieter. */
+#hud3d .bar.xp { height: 9px; }
+#hud3d .bar.xp .fill { background: linear-gradient(180deg, #f0cf70, #b48a26 60%, #8a6717); }
+#hud3d .bar.xp .txt { font-size: 8px; line-height: 9px; color: #e8d9b0; }
+
+/* --- the world clock ---
+   Sits on the unit frame rather than anywhere new: it answers a question the
+   player only asks while looking at the light, and a panel of its own for four
+   characters would be furniture. */
 #hud3d .clock {
   display: flex; align-items: center; gap: 5px;
-  margin-top: 6px; padding-top: 5px;
-  border-top: 1px solid #58421f;
+  margin-top: 7px; padding-top: 6px;
+  border-top: 1px solid rgba(226,176,79,.28);
   font: 11px monospace; color: #d9c39a;
 }
 #hud3d .clock .icon { width: 12px; height: 12px; fill: currentColor; flex: none; }
 #hud3d .clock .phase { color: var(--gold, #d9a441); text-transform: capitalize; }
-#hud3d .clock .time { margin-left: auto; color: #f5e7c8; }
-#hud3d .who .nm { color: var(--gold-bright, #ffd873); font-weight: bold; font-size: 14px; }
-#hud3d .who .lv { color: var(--gold, #d9a441); font-size: 11px; }
-#hud3d .bar {
-  position: relative; height: 15px; margin-bottom: 4px; border-radius: 3px;
-  background: #1b1206; border: 1px solid #58421f; overflow: hidden;
-}
-#hud3d .bar .fill { position: absolute; inset: 0; width: 0%; transition: width .18s ease-out; }
-#hud3d .bar .txt {
-  position: relative; text-align: center; font: 10px/15px monospace;
-  color: #f5e7c8; text-shadow: 0 1px 1px #000;
-}
-#hud3d .bar.hp .fill { background: linear-gradient(#5fc45f, #3d8f3d); }
-#hud3d .bar.xp .fill { background: linear-gradient(#e8c25a, #b48a26); }
-#hud3d .bar.mp .fill { background: linear-gradient(#5aa8e8, #2b6ba8); }
+#hud3d .clock .time { margin-left: auto; color: #f5e7c8; letter-spacing: .04em; }
 
 /* --- Nameplates ---------------------------------------------------------
    Four kinds, deliberately NOT styled alike. A field can hold a dozen of
@@ -215,8 +310,14 @@ const STYLE = `
 }
 `;
 
-// Screen area the unit frame occupies (left/top offsets plus its size, with a
-// little slack). Nameplates falling inside it are suppressed.
+// Screen area the unit frames occupy. Nameplates falling inside it are
+// suppressed, because they are world-anchored and the frames are not — so
+// anything behind them drew straight over the player's own health.
+//
+// Measured rather than hardcoded. It was `{ w: 300, h: 130 }`, which stopped
+// covering the frames the moment the world clock added a row and the target
+// frame grew a portrait — and the failure is a label drawn over your own HP
+// bar, which reads as a rendering glitch rather than as a stale constant.
 const HUD_FRAME_RECT = { w: 300, h: 130 };
 
 /** Which of the four nameplate treatments something gets. */
@@ -285,6 +386,16 @@ export class Hud {
   private readonly mpFill: HTMLElement;
   private readonly mpText: HTMLElement;
   private readonly toastHost: HTMLElement;
+  private readonly frameEl: HTMLElement;
+  private readonly portraitEl: HTMLElement;
+  private readonly levelBadge: HTMLElement;
+  private lastPortrait = "";
+  /** Last published frame height, so the CSS variable is written only on change. */
+  private lastFrameHeight = 0;
+  /** Live bottom edge of the unit frames, refreshed by syncLayout. */
+  private framesBottom = HUD_FRAME_RECT.h;
+  /** Looked up once: it lives in index.html and is never replaced. */
+  private readonly targetFrameEl = document.getElementById("target-frame");
   private readonly clockIcon: HTMLElement;
   private readonly clockPhase: HTMLElement;
   private readonly clockTime: HTMLElement;
@@ -302,11 +413,14 @@ export class Hud {
     this.root.id = "hud3d";
     this.root.innerHTML = `
       <div class="frame">
-        <div class="who"><span class="nm">—</span><span class="lv">Lv 1</span></div>
-        <div class="bar hp"><div class="fill"></div><div class="txt">0/0</div></div>
-        <div class="bar mp"><div class="fill"></div><div class="txt">0/0</div></div>
-        <div class="bar xp"><div class="fill"></div><div class="txt">0/0</div></div>
-        <div class="clock"><span class="ci"></span><span class="phase">—</span><span class="time">--:--</span></div>
+        <div class="portrait"><span class="pi"></span><span class="lvl">1</span></div>
+        <div class="stack">
+          <div class="who"><span class="nm">—</span><span class="lv">Lv 1</span></div>
+          <div class="bar hp"><div class="fill"></div><div class="txt">0/0</div></div>
+          <div class="bar mp"><div class="fill"></div><div class="txt">0/0</div></div>
+          <div class="bar xp"><div class="fill"></div><div class="txt">0/0</div></div>
+          <div class="clock"><span class="ci"></span><span class="phase">—</span><span class="time">--:--</span></div>
+        </div>
       </div>
       <div class="toasts"></div>
     `;
@@ -321,6 +435,9 @@ export class Hud {
     this.mpFill = this.root.querySelector(".bar.mp .fill")!;
     this.mpText = this.root.querySelector(".bar.mp .txt")!;
     this.toastHost = this.root.querySelector(".toasts")!;
+    this.frameEl = this.root.querySelector(".frame")!;
+    this.portraitEl = this.root.querySelector(".portrait .pi")!;
+    this.levelBadge = this.root.querySelector(".portrait .lvl")!;
     this.clockIcon = this.root.querySelector(".clock .ci")!;
     this.clockPhase = this.root.querySelector(".clock .phase")!;
     this.clockTime = this.root.querySelector(".clock .time")!;
@@ -346,6 +463,51 @@ export class Hud {
   setIdentity(name: string, level: number): void {
     this.nameEl.textContent = name;
     this.levelEl.textContent = `Lv ${level}`;
+    this.levelBadge.textContent = String(level);
+  }
+
+  /**
+   * The portrait's figure, which is the class the equipped weapon implies.
+   *
+   * Rewritten only when it changes: this is called on every equip and the icon
+   * is the same one nine times out of ten.
+   */
+  setPortrait(cls: string): void {
+    if (cls === this.lastPortrait) return;
+    this.lastPortrait = cls;
+    this.portraitEl.innerHTML = iconSvg(`class-${cls}`, "icon");
+  }
+
+  /**
+   * Publishes the frame's height so the target frame can sit under it.
+   *
+   * The target frame used to carry a hardcoded `top: 122px`, which was right
+   * until the world clock added a row and pushed the unit frame past it — and
+   * then the two overlapped, with the target frame drawing over the clock.
+   * Measuring and publishing is the same fix the minimap and the window rail
+   * already use, and it survives anything else being added to either.
+   */
+  syncLayout(): void {
+    const height = Math.round(this.frameEl.getBoundingClientRect().height);
+    if (height === 0) return;
+
+    // 14px is the frame's own top offset; 8 is the gap between the two.
+    const targetTop = 14 + height + 8;
+    // Only the CSS write is guarded. The exclusion zone below has to be
+    // recomputed every call regardless, because the target frame appears and
+    // disappears without the player frame's height changing at all.
+    if (height !== this.lastFrameHeight) {
+      this.lastFrameHeight = height;
+      document.documentElement.style.setProperty("--unit-frame-bottom", `${targetTop}px`);
+    }
+
+    // The nameplate exclusion zone reaches to the bottom of whichever frames
+    // are showing, so it grows with them instead of being a number that goes
+    // stale the next time either one gains a row.
+    const target = this.targetFrameEl;
+    const showing = target?.classList.contains("shown") ?? false;
+    const targetHeight = showing ? Math.round(target!.getBoundingClientRect().height) : 0;
+    this.framesBottom = (showing ? targetTop + targetHeight : 14 + height) + 6;
   }
 
   setHp(hp: number, maxHp: number): void {
@@ -407,7 +569,7 @@ export class Hud {
     // behind the frame drew straight over the player's own health. Suppress
     // rather than reposition: a label yanked away from the thing it names is
     // worse than a label that briefly is not there.
-    if (screen.x < HUD_FRAME_RECT.w && screen.y < HUD_FRAME_RECT.h) return;
+    if (screen.x < HUD_FRAME_RECT.w && screen.y < this.framesBottom) return;
     this.seenThisFrame.add(id);
 
     let st = this.plates.get(id);

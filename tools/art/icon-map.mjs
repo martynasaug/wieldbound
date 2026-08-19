@@ -129,6 +129,25 @@ export const ICON_MAP = {
   "dock-craft": "lorc/anvil",
   "dock-leaderboard": "lorc/laurel-crown",
 
+  // --- monster portraits ---------------------------------------------------
+  // One per kind, for the target frame. Worth having thirteen real ones rather
+  // than four category glyphs: the portrait is the largest thing in the frame
+  // and a hood standing in for a slime reads as a person you are about to
+  // fight, which is worse than no picture at all.
+  "monster-slime": "delapouite/slime",
+  "monster-mushnub": "delapouite/grass-mushroom",
+  "monster-spikyblob": "lorc/acid-blob",
+  "monster-goblin": "delapouite/goblin-head",
+  "monster-armabee": "lorc/wasp-sting",
+  "monster-wolf": "lorc/wolf-head",
+  "monster-cactoro": "delapouite/cactus",
+  "monster-orcbrute": "delapouite/orc-head",
+  "monster-ghost": "lorc/ghost",
+  "monster-troll": "skoll/troll",
+  "monster-demon": "delapouite/devil-mask",
+  "monster-golem": "delapouite/golem-head",
+  "monster-dragon": "lorc/dragon-head",
+
   // --- the leaderboard's top three ----------------------------------------
   // One podium per place rather than one icon recoloured: the shapes differ,
   // so the ranking stays readable without relying on colour alone.

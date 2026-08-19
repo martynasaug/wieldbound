@@ -2052,7 +2052,57 @@ every rig animation carrying it for free — architecturally *cleaner* than the
       Restarting the dev server fixed it — the same lesson as the `public/`
       404s, one layer up.
 
-- [ ] **M4.7 — remaining polish**
+- [x] **M4.7 — the unit frames, and a layout bug I had shipped.** User
+      screenshot: the target frame was drawing over the player frame's clock
+      row, and both looked plain beside everything else.
+
+      **The overlap was mine, from M4.3.** `#target-frame` carried a hardcoded
+      `top: 122px`, correct for as long as the player frame was 108px tall —
+      and the world clock added a row. A fixed offset against a neighbour whose
+      height can change is a bug with a timer on it. The frame now measures
+      itself and publishes `--unit-frame-bottom`; the target frame starts from
+      there. Third use of that pattern now, after the minimap and the window
+      rail, and it is the one that should have been used first.
+      - `HUD_FRAME_RECT`, the zone where nameplates are suppressed so they
+        cannot draw over your own health, was hardcoded `{ w: 300, h: 130 }` for
+        the same reason and had the same rot. It is measured now, and it grows
+        and shrinks as the target frame appears
+      - Only the CSS write is guarded by "has the height changed"; the exclusion
+        zone is recomputed every call, because the target frame comes and goes
+        without the player frame's height moving at all
+
+      **Both frames rebuilt as a matched pair**, in the character window's
+      language — a lit bevel, a vignette behind the portrait, a keyline inset
+      from the edge. Stacking them was already deliberate (the two health bars
+      you compare mid-fight end up next to each other); making them look
+      related is what finishes that thought.
+      - A **portrait** on each: the player's is the class their weapon implies,
+        the target's is the monster's own creature glyph. Thirteen real
+        portraits rather than four category icons, because the portrait is the
+        largest thing in the frame and a hood standing in for a slime reads as
+        a person you are about to fight
+      - The **level moved onto the portrait's corner** as a badge. It is an
+        attribute of who you are, not another number in the stack
+      - One bar shape for all four — near-black trough, gradient fill with a lit
+        top edge, quarter ticks as a repeating gradient so they cost no
+        elements. Only the colour differs, which is what makes three stacked
+        bars read as one instrument rather than three widgets. XP is thinner and
+        quieter, since it is the one you are not watching mid-fight
+      - The target's **portrait and name tint to the difficulty band**, and a
+        boss gets the bright border — driven by `guaranteedDrop`, the same flag
+        that promotes its nameplate, so the two cannot disagree
+      - Its health value moved onto the bar rather than under it; a third line
+        of text for a number read at a glance was the tallest part of the frame
+
+      Verified with 15 checks, and the one that matters is measured twice: the
+      gap between the frames at their natural size, and again after forcing the
+      player frame 40px taller — because a fix that only works at today's height
+      is the same bug with a new number. Also that the exclusion zone covers
+      both frames with zero nameplates inside, that an elite's border really
+      does differ, and that the CSS variable equals the measured height plus its
+      offsets.
+
+- [ ] **M4.8 — remaining polish**
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -3176,6 +3226,37 @@ music, player-facing damage-type/resistances, more crafting recipes
   data that is definitely in the file is definitely not in the browser, suspect
   the server before the code.
 
+- A fixed offset against a neighbour whose height can change is a bug with a
+  timer on it. `#target-frame` sat at `top: 122px` and was correct until the
+  world clock added a row to the frame above it, three milestones later — and
+  the symptom was a panel drawing over the player's own clock, which reads as a
+  rendering fault rather than as a stale number. Same story for
+  `HUD_FRAME_RECT`, the nameplate exclusion zone, hardcoded at 130px tall.
+  Measure and publish; let the neighbour read it. This is now the third use of
+  that pattern after the minimap and the window rail, and it should have been
+  the first.
+- Guard the write, not the computation. `syncLayout` originally returned early
+  when the frame's height was unchanged, which is right for the CSS variable and
+  wrong for everything else it does — the target frame appears and disappears
+  constantly without the player frame moving a pixel, so the exclusion zone
+  would have been frozen at whatever it was when the height last changed.
+- The player frame and the target frame are one design, not two. They were
+  already stacked deliberately, so that the two health bars a player compares
+  mid-fight sit next to each other; styling them as a matched pair — same
+  bevel, same portrait treatment, same bar shape — is what makes that
+  adjacency read as a relationship rather than as two panels that happen to be
+  near each other.
+- One bar shape, four colours. Health, mana, experience and the target's health
+  share a trough, a gradient, a lit top edge and quarter ticks, and differ only
+  in hue. Three stacked bars drawn three ways read as three widgets; drawn one
+  way they read as one instrument, and the colour is then free to carry all of
+  the meaning.
+- Thirteen monster portraits rather than four category glyphs. The portrait is
+  the biggest thing in the target frame, and the first pass grouped kinds by
+  archetype — which put a hooded figure on a slime, reading as a person the
+  player was about to fight. When an icon is large enough to be identified, it
+  has to be right; category glyphs work at 12px and fail at 28.
+
 - This machine (a fresh Windows box picking up the project) had neither Git
   nor Node.js preinstalled; both were installed via `winget` (`Git.Git`,
   `OpenJS.NodeJS`) rather than assuming either was already present. Also has
@@ -3187,7 +3268,25 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 47 M4.6 complete (2026-08-19). **Latest: M4.6 — nameplates that
+Phase 0 through 47 M4.7 complete (2026-08-19). **Latest: M4.7 — the unit frames,
+and a layout bug I had shipped.** The target frame was drawing over the player
+frame's clock row: it carried a hardcoded `top: 122px`, correct until M4.3's
+world clock added a row to the frame above it. A fixed offset against a
+neighbour whose height can change is a bug with a timer on it — the frame now
+measures itself and publishes `--unit-frame-bottom`, the third use of that
+pattern after the minimap and the window rail. `HUD_FRAME_RECT`, the zone that
+stops nameplates drawing over your own health, had rotted the same way and is
+measured now too. Both frames were then rebuilt as a matched pair in the
+character window's language: portraits (the player's class, and thirteen real
+monster glyphs rather than four category icons), the level as a badge on the
+portrait corner, and one bar shape for all four bars so they read as one
+instrument. The target's portrait and name tint to the difficulty band and a
+boss gets the bright border, driven by the same `guaranteedDrop` that promotes
+its nameplate. 15 checks, including the frame gap measured again after forcing
+the player frame 40px taller.
+**Next: M4.8 — remaining polish.**
+
+Before that, Phase 0 through 47 M4.6 (2026-08-19). **Latest: M4.6 — nameplates that
 say what kind of thing they name.** Every label in the world used to be the same
 yellow monospace text with an optional red bar, so a tree, a boss and another
 player were typographically identical. There are four treatments now, and the

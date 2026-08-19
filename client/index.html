@@ -630,20 +630,72 @@
          that hides behind the bag is worse than useless mid-fight. Stacking the
          two unit frames also puts the health bars you are comparing next to
          each other, and leaves the whole top-centre free. */
+      /* --- Target frame ---------------------------------------------------
+         Built in the same language as the player's own unit frame directly
+         above it — portrait, name plate, bars — so the two read as a matched
+         pair rather than two widgets that happen to be stacked. That pairing
+         is the point: the health bars you are comparing mid-fight are the two
+         nearest each other on screen.
+
+         It starts from --unit-frame-bottom, which the HUD measures and
+         publishes. It used to carry a hardcoded top: 122px, which was correct
+         until the world clock added a row to the frame above and the two
+         silently began to overlap. */
       #target-frame {
         position: absolute;
-        top: 122px;
+        top: var(--unit-frame-bottom, 122px);
         left: 14px;
-        width: 264px;
-        padding: 8px 12px 10px;
-        background: linear-gradient(rgba(58, 42, 23, 0.94), rgba(36, 26, 15, 0.94));
-        border: 1px solid var(--gold);
-        border-radius: 8px;
-        box-shadow: 0 4px 18px #0009;
-        z-index: 6;
+        width: 272px;
         display: none;
+        gap: 9px;
+        padding: 8px 11px;
+        background:
+          radial-gradient(120% 100% at 0% 0%, rgba(255,214,140,.08), transparent 60%),
+          linear-gradient(180deg, rgba(58,42,23,.95), rgba(30,21,11,.95));
+        border: 1px solid var(--gold-dim);
+        border-radius: 9px;
+        box-shadow: 0 6px 22px #000a, inset 0 1px 0 rgba(255,220,150,.12);
+        z-index: 6;
       }
-      #target-frame.shown { display: block; }
+      #target-frame.shown { display: flex; }
+      #target-frame::after {
+        content: "";
+        position: absolute; inset: 4px;
+        border: 1px solid rgba(226,176,79,.16);
+        border-radius: 6px;
+        pointer-events: none;
+      }
+      /* A boss gets the bright border, the same promotion its nameplate gets.
+         One flag drives both, so they cannot disagree about what is elite. */
+      #target-frame.elite { border-color: var(--gold-bright); }
+      #target-frame.elite::after { border-color: rgba(255,216,115,.34); }
+
+      #target-portrait {
+        position: relative; flex: none;
+        width: 44px; height: 44px;
+        border-radius: 7px;
+        background:
+          radial-gradient(80% 70% at 50% 24%, #5c3030, #26140f 70%),
+          linear-gradient(180deg, #402020, #1e1008);
+        border: 1px solid #7a4a2a;
+        box-shadow: inset 0 1px 0 rgba(255,200,150,.16), inset 0 -8px 12px rgba(0,0,0,.55);
+        display: flex; align-items: center; justify-content: center;
+        overflow: hidden;
+      }
+      #target-portrait .icon {
+        width: 28px; height: 28px;
+        fill: currentColor;
+        filter: drop-shadow(0 3px 5px rgba(0,0,0,.8));
+      }
+      /* The portrait tints to the difficulty band, so the frame carries the
+         same warning the nameplate does without repeating the word. */
+      #target-frame.band-1 #target-portrait { color: #cfd6c4; }
+      #target-frame.band-2 #target-portrait { color: #9fd97a; }
+      #target-frame.band-3 #target-portrait { color: #ffe27a; }
+      #target-frame.band-4 #target-portrait { color: #ffb05a; }
+      #target-frame.band-5 #target-portrait { color: #ff7a6a; }
+
+      #target-body { flex: 1; min-width: 0; }
       #target-name {
         font: bold 13px Georgia, serif;
         color: var(--gold-bright);
@@ -651,30 +703,55 @@
         text-shadow: 0 1px 2px #000;
         display: flex;
         justify-content: space-between;
+        align-items: baseline;
         gap: 8px;
       }
+      #target-name > span:first-child {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      #target-frame.band-1 #target-name > span:first-child { color: #cfd6c4; }
+      #target-frame.band-2 #target-name > span:first-child { color: #9fd97a; }
+      #target-frame.band-3 #target-name > span:first-child { color: #ffe27a; }
+      #target-frame.band-4 #target-name > span:first-child { color: #ffb05a; }
+      #target-frame.band-5 #target-name > span:first-child { color: #ff7a6a; }
       #target-name .t-extra {
-        font-weight: normal;
+        font: normal 10px Georgia, serif;
         color: #c98d5e;
+        flex: none;
       }
-      #target-hp-text {
-        font: 10px/1 monospace;
-        color: #f5e7c8;
-        text-align: center;
-        margin-top: 3px;
-        text-shadow: 0 1px 1px #000;
-      }
+
       #target-hp-track {
-        height: 12px;
-        background: #1c150c;
-        border: 1px solid var(--gold-dim);
+        position: relative;
+        height: 14px;
         border-radius: 3px;
+        background: linear-gradient(180deg, #150e05, #241a0c);
+        border: 1px solid #6a5024;
         overflow: hidden;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,.7);
+      }
+      #target-hp-track::after {
+        content: "";
+        position: absolute; inset: 0;
+        background: repeating-linear-gradient(
+          90deg, transparent 0 calc(25% - 1px), rgba(0,0,0,.42) calc(25% - 1px) 25%);
+        pointer-events: none;
       }
       #target-hp-fill {
         height: 100%;
         width: 100%;
-        background: #c0392b;
+        background: linear-gradient(180deg, #e46a6a, #a32626 60%, #7d1b1b);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.26), inset 0 -4px 6px rgba(0,0,0,.28);
+        transition: width .16s ease-out;
+      }
+      /* The value sits ON the bar rather than under it: a third line of text
+         for a number you read at a glance was the tallest part of the frame. */
+      #target-hp-text {
+        position: absolute; inset: 0;
+        font: 10px/14px monospace;
+        color: #fdf3dc;
+        text-align: center;
+        text-shadow: -1px 0 1px #000, 1px 0 1px #000, 0 1px 1px #000;
+        pointer-events: none;
       }
       /* Wind-up bar. The danger circle on the ground already says WHERE a
          telegraphed slam will land; this says WHEN, which is the half you need
@@ -682,13 +759,12 @@
       #target-cast {
         display: none;
         height: 7px;
-        margin-top: 3px;
+        margin-top: 4px;
         background: #1c150c;
         border: 1px solid #a8642e;
         border-radius: 3px;
         overflow: hidden;
       }
-      #target-cast.shown { display: block; }
       #target-cast-fill {
         height: 100%;
         width: 0%;
@@ -1098,10 +1174,15 @@
       </div>
       <div id="combat-log"></div>
       <div id="target-frame">
-        <div id="target-name"></div>
-        <div id="target-hp-track"><div id="target-hp-fill"></div></div>
-        <div id="target-cast"><div id="target-cast-fill"></div></div>
-        <div id="target-hp-text"></div>
+        <div id="target-portrait"></div>
+        <div id="target-body">
+          <div id="target-name"></div>
+          <div id="target-hp-track">
+            <div id="target-hp-fill"></div>
+            <div id="target-hp-text"></div>
+          </div>
+          <div id="target-cast"><div id="target-cast-fill"></div></div>
+        </div>
       </div>
       <div id="hotbar-wrap">
         <div id="hotbar"></div>

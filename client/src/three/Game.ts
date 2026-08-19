@@ -202,6 +202,19 @@ function isMoving(prevX: number, prevY: number, x: number, y: number, wasMoving:
   return wasMoving;
 }
 
+/**
+ * The portrait glyph for each monster kind, on the target frame.
+ *
+ * One per kind rather than a handful of category glyphs. The portrait is the
+ * largest thing in the frame, and standing a hood in for a slime reads as a
+ * person you are about to fight — worse than no picture at all. The keys are
+ * `monster-<kind>`, so adding a monster is a row here and a row in the icon
+ * map, in step with the MONSTER_STATS row it already needs.
+ */
+const MONSTER_PORTRAIT: Record<MonsterKind, string> = Object.fromEntries(
+  (Object.keys(MONSTER_STATS) as MonsterKind[]).map((kind) => [kind, `monster-${kind}`]),
+) as Record<MonsterKind, string>;
+
 /** The glyph on a resource node's nameplate, so kind reads without the word. */
 const NODE_PLATE_ICON: Record<ResourceNodeState["kind"], string> = {
   tree: "wood",
@@ -1916,6 +1929,8 @@ export class Game {
     this.fadeOccluders();
     this.drawPlates();
     const hour = this.world.updateDayNight();
+    this.hud.setPortrait(classForWeapon(this.appearance.weaponType));
+    this.hud.syncLayout();
     this.hud.setClock(hour.name, gameClock(hour.clock * DAY_LENGTH_MS), isDaytime(hour.clock * DAY_LENGTH_MS));
     this.world.render();
     requestAnimationFrame(this.loop);
@@ -2231,7 +2246,12 @@ export class Game {
           : this.lockedId === shownId
             ? "locked"
             : undefined;
-      this.targetFrame.show(MONSTER_LABELS[t.kind], t.state.hp, t.state.maxHp, note);
+      const tStats = MONSTER_STATS[t.kind];
+      this.targetFrame.show(MONSTER_LABELS[t.kind], t.state.hp, t.state.maxHp, note, {
+        band: tStats.band,
+        elite: tStats.guaranteedDrop,
+        icon: MONSTER_PORTRAIT[t.kind],
+      });
       // Only the kinds that telegraph have a windup duration, and only they
       // ever set the flag, so the bar appears exactly when there is something
       // to time.
@@ -2245,7 +2265,11 @@ export class Game {
       const ally = this.players.get(this.allyTargetId);
       // Remote players' HP is not on the wire, so the frame shows the name and
       // says what the selection is for, rather than inventing a health bar.
-      if (ally) this.targetFrame.show(this.playerNames.get(this.allyTargetId) ?? "Ally", 0, 0, "ally");
+      if (ally) {
+        this.targetFrame.show(this.playerNames.get(this.allyTargetId) ?? "Ally", 0, 0, "ally", {
+          icon: `class-${this.playerClasses.get(this.allyTargetId) ?? "adventurer"}`,
+        });
+      }
       else this.targetFrame.hide();
     } else {
       this.targetFrame.hide();
