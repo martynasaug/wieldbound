@@ -4,6 +4,24 @@ Build-time tooling. None of this runs at game time — it produces the PNGs and
 WAVs in `client/public/assets/`, which are committed. You only need this if you
 want to *change* an asset.
 
+> ## ⚠️ Mostly superseded as of Phase 47
+>
+> The renderer was rewritten from Phaser 2D to Three.js 3D. Of everything the
+> `art/` scripts below generate, **only two outputs are still loaded by the
+> game**:
+>
+> - `build_fx2.ps1` → `fx.png` — still used, drawn as camera-facing quads in 3D
+> - `build_sfx.ps1` → `assets/sfx/*.wav` — still used, unchanged
+>
+> Everything else (`build_paperdoll`, `build_weapons`, `build_monsters`,
+> `build_props`, `make_custom_sprites`, `make_rock`, `preview_doll`) targets
+> the 2D sprite client that no longer exists. The scripts and their outputs are
+> kept because they are a genuine record of how that game was built — but
+> **editing them changes nothing you can see in the running game.**
+>
+> 3D models live in `client/public/models/` and are CC0 downloads, not
+> generated; see the ASSET_CREDITS.txt there.
+
 Everything here is PowerShell + `System.Drawing`, chosen because it needs no
 toolchain beyond Windows itself. Paths resolve from each script's own location,
 so the repo works wherever it is cloned.
@@ -41,6 +59,9 @@ reproduces the committed PNGs byte for byte, so `git status` staying clean is
 the check that you haven't broken one.
 
 ## test/
+
+**Still valid after the 3D rewrite** — it drives the server over a real socket
+and the server did not change, so it tests exactly what it always did.
 
 `smoke.mjs` — drives a real WebSocket client against a running server. Logs in,
 crafts and equips a weapon of each family, and asserts that class, mana pool and
