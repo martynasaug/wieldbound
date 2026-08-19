@@ -20,6 +20,8 @@ import {
   MONSTER_STATS,
   PLAYER_SPAWN,
   bandAt,
+  battlePowerUpgradeCost,
+  gatherUpgradeCost,
   gatherYieldFor,
   RARITIES,
   RARITY_ORDER,
@@ -575,6 +577,28 @@ section("9d. richer ground further out");
   check("bands rise with distance and never fall",
     along.every((b, i) => i === 0 || b >= along[i - 1]), along.join(","));
   check("the far corner is band 5", bandAt(0, 0) === 5, String(bandAt(0, 0)));
+
+  // The upgrades have to stay priced against the income they pace. Both were
+  // linear from a time when a node paid exactly one, and a cost that grows more
+  // slowly than the income it is priced against is not a cost.
+  for (const level of [0, 3, 6, 10]) {
+    const cost = gatherUpgradeCost(level);
+    const gathersAtBand3 = cost / gatherYieldFor(3, level);
+    check(`gather upgrade ${level} costs more than a couple of gathers`,
+      level === 0 || gathersAtBand3 > 6,
+      `level ${level}: ${cost} wood = ${gathersAtBand3.toFixed(0)} gathers`);
+  }
+  const early = gatherUpgradeCost(1) / gatherYieldFor(3, 1);
+  const late = gatherUpgradeCost(10) / gatherYieldFor(3, 10);
+  check("and the upgrade gets dearer in real terms as it goes", late > early * 3,
+    `${early.toFixed(0)} gathers early vs ${late.toFixed(0)} late`);
+  console.log(`  gather upgrade: level 1 is ${early.toFixed(0)} gathers, level 10 is ${late.toFixed(0)}`);
+  // Battle power is priced the same way and was linear for the same reason.
+  const bpEarly = battlePowerUpgradeCost(1);
+  const bpLate = battlePowerUpgradeCost(10);
+  check("battle power gets dearer too",
+    bpLate.wood > bpEarly.wood * 20 && bpLate.ore > bpEarly.ore * 20,
+    `${bpEarly.wood}/${bpEarly.ore} -> ${bpLate.wood}/${bpLate.ore}`);
 
   // The economy has to be reachable: the dearest forge recipe should be a
   // session's gathering, not a week of it.

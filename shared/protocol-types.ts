@@ -507,8 +507,17 @@ export function gatherDurationForLevel(level: number, agility = 0): number {
   );
 }
 
+/**
+ * What the next gather-speed level costs.
+ *
+ * Quadratic, not linear. It was `5 + level * 5` back when a node paid one, and
+ * the moment the ground started paying two to twelve that curve fell behind the
+ * thing it was meant to pace: level ten cost fifty-five wood, which is five
+ * gathers at the outer rings. A cost that grows more slowly than the income it
+ * is priced against is not a cost.
+ */
 export function gatherUpgradeCost(level: number): number {
-  return 5 + level * 5;
+  return 12 + level * level * 9;
 }
 
 // --- Richer ground further out ---------------------------------------------
@@ -1755,8 +1764,9 @@ export interface BattlePowerCost {
   ore: number;
 }
 
+/** Same shape, and for the same reason — see `gatherUpgradeCost`. */
 export function battlePowerUpgradeCost(level: number): BattlePowerCost {
-  return { wood: 5 + level * 5, ore: 3 + level * 3 };
+  return { wood: 10 + level * level * 7, ore: 8 + level * level * 6 };
 }
 
 // --- Equipment / rarity ----------------------------------------------------

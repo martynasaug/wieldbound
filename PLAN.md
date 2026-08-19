@@ -2546,6 +2546,14 @@ crafting system to go with them.
         is 327 materials against a band-4 gather of 14, so about two dozen
         gathers rather than a week of them
 
+- [x] **M1.11 — the upgrade curves, repriced.** Both `gatherUpgradeCost` and
+      `battlePowerUpgradeCost` were linear, written when a node paid exactly
+      one. The moment the ground started paying two to twelve, level ten cost
+      fifty-five wood — five gathers at the outer rings. A cost that grows more
+      slowly than the income it is priced against is not a cost. Quadratic now,
+      and the suite checks the ratio rather than the number: the gather upgrade
+      runs from about four gathers early to forty-six late.
+
 - [ ] **M2 — remaining item work.** What a second material tier would buy, and
       whether consumables belong in the catalogue rather than beside it.
 
@@ -4020,9 +4028,47 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M1.4 complete (2026-08-20). **Latest: M1.1 through M1.4 —
-weapons that feel different, loot on the ground, matched gear, and a forge that
-teaches rather than unlocks.**
+Phase 0 through 48 M1.11 complete (2026-08-20). **The item system, rebuilt and
+then followed through.**
+
+**M1** replaced the item model: a catalogue of named things (107 now), a
+seven-step quality ladder whose names are conditions rather than colours, an
+off-hand slot, and a smithy with three verbs.
+
+**M1.1** made weapons feel different — 37 of them carried per-item multipliers
+that nothing read, so a claymore played exactly like an arming sword. One
+resolver per number now; dps spans 1.6x across the catalogue.
+
+**M1.2** put loot on the ground, as the item's own model, picked up by walking
+over it.
+
+**M1.3** gave the palette axis meaning: twelve matched sets, deliberately worth
+less than one quality step. The test refused eight of them, so 29 base items
+were added.
+
+**M1.4** replaced the forge's level gate with a learned one — a recipe comes
+from SALVAGING one, which is what ties the three verbs into a loop.
+
+**M1.5-M1.6** stopped the bench making the player do arithmetic: both Forge and
+Reforge preview what they produce, one button clears the bottom of the ladder,
+and essence and learned recipes are felt rather than logged.
+
+**M1.7** made loot reflect what dropped it — material affinity per monster kind,
+and a signature item for each of the three bosses.
+
+**M1.8** marks straightforward upgrades in the bag, and explains why a shield
+comes off when you draw a two-hander.
+
+**M1.9** turned the top of the reforge ladder from a gamble into a decision: at
+Runed and Enchanted the player names one of the affixes.
+
+**M1.10-M1.11** followed the economy through. Gathering paid one per node while
+forge costs had grown to 327 — so yield now scales with the band a node stands
+in (2/3/5/8/12), five new node rings reach bands 4 and 5, and the two upgrade
+curves went from linear to quadratic because a cost that grows more slowly than
+the income it paces is not a cost.
+
+Before that, Phase 0 through 48 M1.4 (2026-08-20).
 
 M1.5 and M1.6 stopped the bench making the player do arithmetic: both Forge and
 Reforge now show what they would produce before you pay, one button clears
