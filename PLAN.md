@@ -2455,6 +2455,36 @@ crafting system to go with them.
         after the other on connect, so borrowing one flag for the other would
         have congratulated a returning smith on everything they already knew
 
+- [x] **M1.7 — loot that reflects what dropped it.** Loot was rolled from the
+      band alone, so a dragon could hand you a plank shield and a slime could
+      hand you dragonscale. The band is the right measure of how GOOD a drop is
+      and says nothing at all about what it is — which made the catalogue feel
+      like a table the world drew from rather than like things the world was
+      made of.
+      - **Affinity biases the material.** A golem carries iron and steel, a
+        ghost bone and blackglass, a dragon crimson and gold. Bias and never
+        restriction: anything in the band can still drop, so a camp is not a
+        vending machine for one palette and the matched-gear sets stay
+        assemblable by playing rather than by farming one spot
+      - **Bosses have a signature** — the one item they are known for. Troll to
+        Bulwark, golem to Deepsledge, dragon to Dragonscale Plate. It is the
+        oldest hook in the genre, "I want that, so I am going to go and kill
+        that", and the game had nothing like it. Measured at 39% of a dragon's
+        drops: often enough to be a reason to go, rare enough that going is
+        still a decision
+      - Only bosses get one, or "the thing it is known for" stops meaning
+        anything — a rule the suite checks against `guaranteedDrop` rather than
+        against a second list
+
+      **The test for this was wrong twice before it was right**, and the third
+      version is the one worth keeping. "A kind drops its own materials more
+      often than not" fails for any monster whose palettes are a tenth of its
+      band. "Far more than chance" then fails for any monster whose palettes are
+      already two thirds of its band, because a share cannot triple past 100%.
+      The **odds ratio** against an unbiased roll of the same band is scale-free
+      and is exactly what `AFFINITY_WEIGHT` sets — so the test asserts the knob
+      rather than a symptom of it, and holds for all thirteen kinds.
+
 - [ ] **M2 — remaining item work.** What a second material tier would buy, and
       whether the reforge ladder wants a failure chance at the top.
 
@@ -3866,6 +3896,26 @@ music, player-facing damage-type/resistances, more crafting recipes
   allowed. A level-1 smith who salvages a band-5 sword has learned something
   they cannot afford for a long time, and that is a much more interesting
   position to be in than a greyed-out list.
+
+- What a monster is made of decides what it is carrying. Rolling loot from the
+  band alone made the catalogue a table the world drew from rather than things
+  the world was made of — a dragon could hand you a plank shield. Affinity is a
+  bias and never a restriction, because a camp that only drops one palette is a
+  vending machine, and the matched sets would then only be assemblable by
+  farming one spot.
+- Only bosses have a signature drop, and it is weighted rather than guaranteed.
+  "The thing it is known for" stops meaning anything if everything has one, and
+  a certainty turns the fight into a shopping trip. The rule is checked against
+  `guaranteedDrop`, the flag that already decides which monsters are bosses,
+  rather than against a second list that could drift.
+- Assert the KNOB, not a symptom of it. The loot-affinity test failed twice for
+  opposite reasons — "more often than not" is impossible for a palette that is a
+  tenth of its band, and "far more than chance" is impossible for one that is
+  already two thirds of it — because both put a fixed threshold on a share whose
+  ceiling depends on how common the palette happens to be. The odds ratio
+  against an unbiased roll is scale-free and is precisely what the weight sets,
+  so it holds for all thirteen kinds without any of them being chosen to satisfy
+  it.
 
 - A test that shares a world with a live game must assert on IDENTITY, not on
   counts. Something is usually hitting the character, so a stray real damage

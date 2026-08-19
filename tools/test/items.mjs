@@ -17,6 +17,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   ITEM_SLOTS,
+  MONSTER_STATS,
   RARITIES,
   RARITY_ORDER,
   WEAPONS,
@@ -47,6 +48,7 @@ import {
   rollRarity,
   rollRarityWithFloor,
   salvageYield,
+  MONSTER_LOOT,
   PALETTE_SETS,
   activeSets,
   feelNotes,
@@ -225,6 +227,87 @@ for (let i = 0; i < 5000; i++) {
   if (RARITY_ORDER.indexOf(r) < RARITY_ORDER.indexOf("tempered")) belowFloor++;
 }
 check("a floored roll never lands below the floor", belowFloor === 0, `${belowFloor} of 5000`);
+
+// --- 6b. loot reflects what dropped it ---------------------------------------
+// The band decides how GOOD a drop is and says nothing about what it is. These
+// check that a kind's own materials really are more likely, that the bias is a
+// bias and not a restriction, and that a boss's signature turns up often enough
+// to be a reason to go and rarely enough that going is still a decision.
+section("6b. loot reflects what dropped it");
+for (const kind of Object.keys(MONSTER_LOOT)) {
+  const loot = MONSTER_LOOT[kind];
+  check(`${kind} names real palettes`, loot.palettes.every((p) => !!PALETTES[p]),
+    loot.palettes.join(", "));
+  check(`${kind} names at least one`, loot.palettes.length > 0);
+  if (loot.signature) {
+    check(`${kind}'s signature exists`, !!ITEM_BASES[loot.signature], loot.signature);
+    check(`${kind}'s signature is worth going for`,
+      ITEM_BASES[loot.signature].band >= 4, `band ${ITEM_BASES[loot.signature]?.band}`);
+  }
+  // Only bosses get one, or "the thing it is known for" stops meaning anything.
+  const isBoss = MONSTER_STATS[kind].guaranteedDrop;
+  check(`${kind}: only bosses have a signature`, isBoss || !loot.signature,
+    `${kind} boss=${isBoss} signature=${loot.signature ?? "none"}`);
+}
+
+// Every monster in the game must be able to drop SOMETHING, and its own
+// materials must measurably outnumber the rest.
+for (const kind of Object.keys(MONSTER_LOOT)) {
+  const band = MONSTER_STATS[kind].band;
+  const affinity = new Set(MONSTER_LOOT[kind].palettes);
+  let onTheme = 0;
+  let offTheme = 0;
+  const seen = new Set();
+  for (let i = 0; i < 4000; i++) {
+    const base = rollBase(band, kind, rand);
+    seen.add(base.id);
+    if (affinity.has(base.art.palette)) onTheme++;
+    else offTheme++;
+  }
+  // Measured as an ODDS RATIO against an unbiased roll of the same band, which
+  // is the only scale-free way to state this. Comparing shares does not work:
+  // a slime's wood-and-bronze is already two thirds of band 1 and cannot triple,
+  // while a ghost's blackglass is a tenth of band 4 and easily can — so any
+  // fixed threshold on the share is really a threshold on how common the
+  // palette happens to be. The odds ratio is exactly what `AFFINITY_WEIGHT`
+  // sets, so this asserts the knob rather than a symptom of it.
+  let baseline = 0;
+  for (let i = 0; i < 4000; i++) {
+    if (affinity.has(rollBase(band, undefined, rand).art.palette)) baseline++;
+  }
+  const odds = (n) => n / Math.max(1, 4000 - n);
+  const ratio = odds(onTheme) / odds(baseline);
+  check(`${kind} drops its own materials far more than chance would`,
+    ratio > 2.2,
+    `${(ratio).toFixed(1)}x the odds (${onTheme} on-theme vs ${baseline} unbiased)`);
+  // A bias, not a restriction: a camp that only ever drops one palette is a
+  // vending machine, and the matched sets would only be assemblable by farming
+  // one spot.
+  check(`${kind} still drops off-theme items`, offTheme > 0, `${offTheme}`);
+  check(`${kind} drops a variety`, seen.size >= 8, `${seen.size} distinct bases`);
+}
+
+{
+  // The signature, measured. Often enough to be a reason to go; rare enough
+  // that going is still a decision.
+  let hits = 0;
+  for (let i = 0; i < 6000; i++) {
+    if (rollBase(5, "dragon", rand).id === "dragonscale") hits++;
+  }
+  const rate = hits / 6000;
+  console.log(`  a dragon drops Dragonscale Plate ${(rate * 100).toFixed(0)}% of the time it drops anything`);
+  check("a boss signature is common enough to be a reason to go", rate > 0.25, `${rate.toFixed(2)}`);
+  check("and rare enough that going is still a decision", rate < 0.55, `${rate.toFixed(2)}`);
+}
+
+// Rolling with no monster behind it is the plain band roll — the forge and the
+// tests both do this, and it must not quietly pick a default creature.
+{
+  const palettes = new Set();
+  for (let i = 0; i < 2000; i++) palettes.add(rollBase(3, undefined, rand).art.palette);
+  check("a roll with no monster behind it is unbiased", palettes.size >= 8,
+    `${palettes.size} palettes`);
+}
 
 // --- 7. quality actually pays -----------------------------------------------
 section("7. quality pays");

@@ -57,6 +57,7 @@ import {
   type ItemInstance,
   type ItemRarity,
   type ItemSlot,
+  type MonsterKind,
   type PassiveBonus,
   type WeaponType,
   // Extension included on purpose: the tools/test suites run this file under
@@ -873,21 +874,116 @@ export function rollRarityWithFloor(
   return rarityIndex(rolled) >= rarityIndex(floor) ? rolled : floor;
 }
 
+// --- What a thing is carrying -----------------------------------------------
+// Loot was rolled from the band alone, which meant a dragon could hand you a
+// plank shield and a slime could hand you dragonscale. The band is the right
+// measure of HOW GOOD a drop is and it says nothing at all about WHAT — so the
+// catalogue felt like a table the world drew from rather than like things the
+// world was made of.
+//
+// Two additions, and neither changes how strong loot is:
+//
+//   AFFINITY biases which material drops. A golem is iron and steel, a ghost is
+//   bone and blackglass, a dragon is crimson. Bias rather than restriction:
+//   anything in the band can still drop, so a camp never becomes a vending
+//   machine for one palette, and the matched-gear sets stay assemblable by
+//   playing rather than by farming one spot.
+//
+//   A SIGNATURE is the one item a kind is known for, and only bosses have one.
+//   It is the oldest hook in the genre — "I want that, so I am going to go and
+//   kill that" — and the game had nothing like it: every drop was equally
+//   likely to come from anywhere. Weighted rather than guaranteed, because a
+//   certainty is a shopping trip.
+
+export interface MonsterLoot {
+  /** Materials this kind tends to carry. Weighted, never exclusive. */
+  palettes: PaletteId[];
+  /** The one thing it is known for. Bosses only — see `guaranteedDrop`. */
+  signature?: string;
+}
+
+export const MONSTER_LOOT: Record<MonsterKind, MonsterLoot> = {
+  // band 1 — whatever was lying around
+  slime: { palettes: ["wood", "bronze"] },
+  mushnub: { palettes: ["wood", "verdant"] },
+
+  // band 2
+  spikyblob: { palettes: ["bone", "verdant"] },
+  goblin: { palettes: ["iron", "bronze"] },
+  armabee: { palettes: ["verdant", "wood"] },
+
+  // band 3
+  wolf: { palettes: ["bone", "wood"] },
+  cactoro: { palettes: ["verdant", "bronze"] },
+  orcbrute: { palettes: ["iron", "steel"] },
+
+  // band 4
+  ghost: { palettes: ["bone", "obsidian"] },
+  troll: { palettes: ["iron", "bone"], signature: "bulwark" },
+  demon: { palettes: ["crimson", "obsidian"] },
+
+  // band 5 — the far corners, and the three things worth going for
+  golem: { palettes: ["iron", "steel"], signature: "deepsledge" },
+  dragon: { palettes: ["crimson", "gold"], signature: "dragonscale" },
+};
+
 /**
- * Which base item a kill in this band drops.
+ * How much more likely a kind's own materials are than anything else.
  *
- * Weighted around the band rather than restricted to it, so the world is not
- * five sealed loot tables: most of what a band-3 camp drops is band 3, but band
- * 2 and band 4 both turn up, and the band-4 piece is the thing that makes
- * walking one ring further out feel like it paid.
+ * Three is enough to be felt across an evening and not enough to make a camp
+ * predictable — which is the line this whole system is trying to walk. Worth
+ * tuning by playing rather than by reasoning.
  */
-export function rollBase(band: ItemBand, random: () => number = Math.random): ItemBase {
+const AFFINITY_WEIGHT = 3;
+
+/** How much of a boss's drop is its signature. A third: often enough to be a
+ *  reason to go, rare enough that going is still a decision. */
+const SIGNATURE_CHANCE = 0.34;
+
+/**
+ * Which base item a kill drops.
+ *
+ * Two independent weightings, and keeping them independent is the point:
+ *
+ *   THE BAND decides how good. Weighted around the monster's own band rather
+ *   than restricted to it, so the world is not five sealed loot tables — most
+ *   of what a band-3 camp drops is band 3, but band 2 and band 4 both turn up,
+ *   and the band-4 piece is what makes walking one ring further out feel like
+ *   it paid.
+ *
+ *   THE KIND decides what it is made of. A golem carries iron and steel, a
+ *   ghost bone and blackglass. Bias, never restriction: anything in the band
+ *   can still drop, so a camp is not a vending machine for one palette and the
+ *   matched-gear sets stay assemblable by playing rather than by farming one
+ *   spot.
+ *
+ * `kind` is optional because the forge and the tests roll without one, and a
+ * roll with no monster behind it should be the plain band roll rather than an
+ * arbitrary default.
+ */
+export function rollBase(
+  band: ItemBand,
+  kind?: MonsterKind,
+  random: () => number = Math.random,
+): ItemBase {
+  const loot = kind ? MONSTER_LOOT[kind] : undefined;
+
+  // A boss's signature, before anything else. Weighted rather than guaranteed:
+  // a certainty turns the fight into a shopping trip.
+  if (loot?.signature && random() < SIGNATURE_CHANCE) {
+    const signature = ITEM_BASES[loot.signature];
+    if (signature) return signature;
+  }
+
+  const affinity = new Set(loot?.palettes ?? []);
   const pool: ItemBase[] = [];
   for (const base of Object.values(ITEM_BASES)) {
     const distance = Math.abs(base.band - band);
     if (distance > 1) continue;
-    // Three entries for the band itself, one for each neighbour.
-    const weight = distance === 0 ? 3 : 1;
+    // Three entries for the band itself, one for each neighbour, times three
+    // again for anything made of what this creature is made of.
+    let weight = distance === 0 ? 3 : 1;
+    if (affinity.has(base.art.palette)) weight *= AFFINITY_WEIGHT;
     for (let i = 0; i < weight; i++) pool.push(base);
   }
   if (pool.length === 0) return UNKNOWN_BASE;

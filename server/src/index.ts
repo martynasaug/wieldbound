@@ -1588,8 +1588,10 @@ function maybeDropLoot(playerId: string, socket: WebSocket, monster: MonsterStat
   // Weapons still drop in ANY family, not the finder's: since the weapon IS the
   // class, an unfamiliar drop is the game offering a different way to play
   // rather than the dead loot it used to be under the old equip restriction.
+  // The kind, not just its band: what a thing is made of decides what it is
+  // carrying, and a boss has one item it is known for.
   const band = MONSTER_STATS[monster.kind].band;
-  const base = rollBase(band);
+  const base = rollBase(band, monster.kind);
   const quality = guaranteed ? rollRarityWithFloor(BOSS_MIN_RARITY) : rollRarity();
   const rolled = rollItem(base, quality);
   // On the ground, not in the bag. It is reserved for the player the threat
