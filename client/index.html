@@ -220,6 +220,18 @@
       .char-tab.active { color: var(--gold-bright); background: var(--slot-grad); }
       .char-tabbody { padding: 10px 12px 4px; border-top: 1px solid var(--gold-dim); }
       .char-tabbody.hidden { display: none; }
+      /* The breakdown. One line per source, each listing only what it actually
+         contributes — a source with nothing to say is left out rather than
+         printed as a row of zeroes. */
+      #stat-sources .src { margin-bottom: 5px; }
+      #stat-sources .src-name {
+        font-size: 10.5px;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        color: var(--gold);
+      }
+      #stat-sources .src-body { font-size: 11px; color: #cbbb95; line-height: 1.45; }
+      #stat-sources .src-none { font-size: 11px; font-style: italic; color: var(--muted); }
       .stat-group { margin-bottom: 8px; }
       .stat-group h4 {
         margin: 0 0 4px; font-size: 11px; color: var(--gold); text-transform: uppercase;
@@ -1273,6 +1285,14 @@
                 <div><span class="stat-label">Move Speed</span><span id="stat-move"></span></div>
                 <div><span class="stat-label">XP Bonus</span><span id="stat-xpbonus"></span></div>
                 <div><span class="stat-label">Gather Time</span><span id="stat-gather"></span></div>
+              </div>
+              <!-- Where the numbers above come from. Four separate systems feed
+                   them now — rolled gear, affixes, matched sets and talents —
+                   and a single total cannot say which of them is doing the
+                   work, or which one would move if the player changed
+                   something. -->
+              <div class="stat-group"><h4>Where it comes from</h4>
+                <div id="stat-sources"></div>
               </div>
             </div>
           </div>

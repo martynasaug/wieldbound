@@ -2566,6 +2566,20 @@ crafting system to go with them.
       - `isUpgrade` moved no code: it lives in `ui/items.ts` because it decides
         whether to draw a mark, which is presentation rather than a rule
 
+- [x] **M1.13 — where a stat comes from.** Four systems feed the Statistics tab
+      now — the rolled numbers on gear, the affixes on that gear, matched sets,
+      and the weapon's talents — and a single total cannot say which is doing
+      the work, or which one would move if the player changed something. That is
+      a gap the last few milestones created.
+      - One line per source, listing only what it actually contributes. A source
+        with nothing to say is left out rather than printed as a row of zeroes:
+        a zero has to be read before it can be dismissed
+      - **Recomputed from the same shared functions the server totals with**,
+        never tracked alongside them. A second bookkeeping of where a number
+        came from is a second thing that can disagree with the number
+      - A bare character gets a line saying what would appear there, because an
+        empty panel teaches nothing
+
 - [ ] **M2 — remaining item work.** What a second material tier would buy, and
       whether consumables belong in the catalogue rather than beside it.
 

@@ -18,6 +18,7 @@ import { iconEl, iconSvg } from "./icons";
 // ui/items.ts. Four panels each carrying their own copy of the palette is how
 // two of them came to disagree about what colour a tier was.
 import { SLOT_ICON, describeBonus, itemIcon, itemShortName, rarityColor } from "./items";
+import type { PassiveBonus } from "../../../shared/protocol-types";
 import { activeSets } from "../../../shared/items";
 const ATTRS: AttributeName[] = ["strength", "agility", "vitality", "intelligence"];
 // Deliberately a figure rather than a weapon: the weapon name is written
@@ -90,6 +91,7 @@ export class CharacterPanel {
   /** Last item list seen, so the figure can name what is actually in the hand. */
   private equipped: ItemInstance[] = [];
   private setsEl = document.getElementById("doll-sets")!;
+  private sourcesEl = document.getElementById("stat-sources")!;
 
   constructor(private readonly onAllocate: (stat: AttributeName) => void) {
     this.closeButton.addEventListener("click", () => this.close());
@@ -252,6 +254,44 @@ export class CharacterPanel {
       .filter((i) => i.equipped)
       .reduce((total, i) => total + i.statValue + i.bonusStatValue, 0);
     this.dollPower.textContent = String(Math.round(power));
+  }
+
+  /**
+   * Where the numbers on this tab come from.
+   *
+   * Four systems feed them — the rolled numbers on gear, the affixes on that
+   * gear, matched sets, and the weapon's talents — and a single total cannot
+   * say which is doing the work or which one would move if the player changed
+   * something. Each source lists only what it actually contributes: a row of
+   * zeroes is worse than no row, because it has to be read before it can be
+   * dismissed.
+   */
+  setSources(sources: { name: string; bonus: PassiveBonus }[]): void {
+    this.sourcesEl.innerHTML = "";
+    let any = false;
+    for (const source of sources) {
+      const text = describeBonus(source.bonus);
+      if (!text) continue;
+      any = true;
+      const box = document.createElement("div");
+      box.className = "src";
+      const name = document.createElement("div");
+      name.className = "src-name";
+      name.textContent = source.name;
+      const body = document.createElement("div");
+      body.className = "src-body";
+      body.textContent = text;
+      box.appendChild(name);
+      box.appendChild(body);
+      this.sourcesEl.appendChild(box);
+    }
+    if (!any) {
+      const none = document.createElement("div");
+      none.className = "src-none";
+      none.textContent =
+        "Nothing yet. Gear, the affixes on it, matched materials and your weapon's talents all show up here.";
+      this.sourcesEl.appendChild(none);
+    }
   }
 
   setStats(stats: CharacterStats): void {

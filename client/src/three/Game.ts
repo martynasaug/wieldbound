@@ -9,10 +9,13 @@
 import * as THREE from "three";
 import {
   INTERACTION_RANGE_PX,
+  EMPTY_PASSIVES,
+  ITEM_SLOTS,
   MONSTER_LABELS,
   MONSTER_STATS,
   NODE_LABELS,
   RARITIES,
+  addPassives,
   SKILLS,
   STATION_LABEL,
   WORLD_WIDTH,
@@ -108,6 +111,7 @@ import {
   canForge,
   eligibleAffixes,
   forgeCost,
+  setPassives,
   gearPassives,
   hitBandOf,
   itemBase,
@@ -1650,6 +1654,22 @@ export class Game {
     // avoid, and a tree full of percentages is the easiest way to reintroduce
     // it — so they go through the same shared helpers the server calls.
     const talents = this.passives();
+
+    // Split back into its four sources for the breakdown. Deliberately
+    // recomputed from the same shared functions the server totals with rather
+    // than tracked separately — a second bookkeeping of where a number came
+    // from is a second thing that can disagree with the number.
+    const affixTotals = { ...EMPTY_PASSIVES };
+    for (const slot of ITEM_SLOTS) {
+      const item = gear[slot];
+      if (item) addPassives(affixTotals, itemPassives(item));
+    }
+    this.characterPanel.setSources([
+      { name: "Talents", bonus: talents },
+      { name: "Affixes", bonus: affixTotals },
+      { name: "Matched gear", bonus: setPassives(gear) },
+    ]);
+
     this.characterPanel.setStats({
       moveSpeedPxPerSec: this.moveSpeed(),
       xpBonusPercent: xpBonusPercent(this.armorRarity),
