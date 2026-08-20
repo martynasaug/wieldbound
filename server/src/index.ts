@@ -118,6 +118,8 @@ import {
 import {
   FORGE_OUTPUT_RARITY,
   ITEM_BASES,
+  bagRoomFor,
+  bagSlotsUsed,
   canForge,
   describeCost,
   essenceFor,
@@ -1563,11 +1565,15 @@ function collectDrops(now: number): void {
       if (Math.hypot(player.x - drop.x, player.y - drop.y) > LOOT_PICKUP_RANGE_PX) continue;
 
       const socket = sockets.get(player.id);
-      if (listItems(player.id).length >= INVENTORY_CAP) {
+      // Asked with the item in hand rather than as a bare count: a seventh copy
+      // of something already in the bag needs no new cell, so a bag the old
+      // rule called full can still take it. That is what a cap counting cells
+      // rather than instances buys.
+      if (!bagRoomFor(listItems(player.id), drop.item, INVENTORY_CAP)) {
         // The drop stays where it is rather than being destroyed, which is what
         // makes a full bag a delay instead of a loss.
         if (socket) {
-          sendInfo(socket, `Bag is full (${INVENTORY_CAP}/${INVENTORY_CAP}) — salvage something.`, "#ef5350");
+          sendInfo(socket, `Bag is full (${bagSlotsUsed(listItems(player.id))}/${INVENTORY_CAP} slots) — salvage something.`, "#ef5350");
         }
         continue;
       }
@@ -2037,13 +2043,15 @@ wss.on("connection", (socket) => {
     // --- forge: make a named thing ----------------------------------------
     if (msg.type === "FORGE_ITEM" && id) {
       if (!atStation(id, msg.payload.stationId)) return;
-      if (listItems(id).length >= INVENTORY_CAP) {
-        sendInfo(socket, `Bag is full (${INVENTORY_CAP}/${INVENTORY_CAP}) — salvage something first.`, "#ef5350");
-        return;
-      }
-
       const base = ITEM_BASES[msg.payload.baseId];
       if (!base) return;
+      // Checked against what is about to be made rather than against a count,
+      // for the same reason a drop is: forging a second copy of something you
+      // already carry needs no new cell.
+      if (!bagRoomFor(listItems(id), { baseId: base.id, rarity: FORGE_OUTPUT_RARITY, affixes: [] }, INVENTORY_CAP)) {
+        sendInfo(socket, `Bag is full (${bagSlotsUsed(listItems(id))}/${INVENTORY_CAP} slots) — salvage something first.`, "#ef5350");
+        return;
+      }
       // Re-checked here rather than trusted from the client, for the same
       // reason `canLearnTalent` is: the button the client greys out and the
       // rule the server enforces have to be the same rule, and a hand-written

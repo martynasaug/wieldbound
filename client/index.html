@@ -305,6 +305,15 @@
         position: absolute; bottom: 1px; right: 3px;
         font: bold 11px Georgia, serif; color: #fff; text-shadow: 0 1px 3px #000;
       }
+      /* How many are in the cell. A slot has four corners and now uses all
+         four: the upgrade mark top left, the salvage button top right on hover,
+         the rolled number bottom right, and the count bottom left. Gold rather
+         than white so it is never read as a second stat. */
+      .bag-slot .bag-count {
+        position: absolute; bottom: 1px; left: 3px;
+        font: bold 11px Georgia, serif; color: var(--gold-bright);
+        text-shadow: 0 1px 3px #000;
+      }
       /* Sell lives on the item, appears on hover, and says the price — a
          destructive action should never be a bare click. */
       .bag-sell {

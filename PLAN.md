@@ -2605,8 +2605,43 @@ crafting system to go with them.
         carried across once on the same schema-mark pattern the item wipe used —
         78 stacks moved on the first boot
 
-- [ ] **M2 — remaining item work.** What a second material tier would buy, and
-      whether the bag wants stacking now that four consumables sit under it.
+- [x] **M2.1 — a bag slot holds a kind, not an instance.** Thirty flat cells was
+      the right shape while the catalogue was three rarities of five slots. At a
+      hundred and seven bases with a seven-step ladder on top, an evening at one
+      camp fills the bag with six copies of the same Worn dirk — and each of them
+      took a cell, so the bag reported itself full while showing the player six
+      pictures of one thing.
+      - **The kind is the item's NAME** — base, quality, affixes. Two things with
+        the same name are interchangeable to whoever is carrying them, and the
+        tenth of a point of jitter between their rolls is not worth a second
+        cell. Anything that differs in a way the name shows — a Keen one, a
+        Tempered one — stacks apart, which is the line a player would draw
+        anyway and needs no separate rule
+      - **The cap moved with it, onto cells.** Grouping the display while leaving
+        the cap counting instances would have been worse than not grouping at
+        all: the grid would show empty cells and the game would still refuse the
+        drop. `bagRoomFor` is therefore asked with the incoming item rather than
+        as a bare count — a seventh Worn dirk fits into a bag of thirty full
+        cells and a Frostbrand does not
+      - **Equipped items stopped counting**, which they always should have. The
+        bag's own readout has excluded them since it was written, so the panel
+        and the rule disagreed by up to seven whenever a character was dressed
+      - A cell shows and equips the **best-rolled** of its pile, and says so in
+        the tooltip; its salvage button breaks down the whole cell, which is safe
+        precisely because a stack is homogeneous by construction
+      - `STACK_LIMIT` is 9 and a bigger pile spills into a second cell, so "a
+        cell is a slot" stays literally true and a bag is still something that
+        fills up
+
+      Verified: `tools/test/bag.mjs` (what shares a cell, how many cells a pile
+      takes, whether one more fits, and that the grid the client draws and the
+      cap the server counts are the same call), and in a real browser — 22 items
+      seeded into a bag collapse to 6 cells reading "6 / 30 (22 items)", the
+      nine-stack spills a two beside it, and the tooltip says which one the
+      numbers belong to.
+
+- [ ] **M2.2 — a second material tier.** What refining buys, and whether the top
+      of the reforge ladder can want something other than more of the same.
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -4078,6 +4113,19 @@ music, player-facing damage-type/resistances, more crafting recipes
   quietly have become a way around the rule that stops a stocked player being
   unkillable.
 
+- A bag slot holds a kind, not an instance, and the CAP moved with it. Grouping
+  the display while leaving the cap counting rows would have been worse than not
+  grouping at all — the grid would show empty cells and the game would still
+  refuse the drop. The kind is the item's NAME, because that is what a player
+  reads off it: two things called the same thing are interchangeable to whoever
+  is carrying them, and a tenth of a point of jitter is not a reason to spend a
+  second cell.
+- "Does one more fit" is asked with the item, never as a count. The answer
+  depends on WHAT is arriving — a seventh Worn dirk fits into a bag of thirty
+  full cells and a Frostbrand does not — and computing it by counting the cells
+  the bag WOULD use is exact by construction rather than a second copy of the
+  spill rule that can drift from the first.
+
 - A test that shares a world with a live game must assert on IDENTITY, not on
   counts. Something is usually hitting the character, so a stray real damage
   number lands mid-probe and "six elements" becomes seven. And a test character
@@ -4096,8 +4144,14 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M1.11 complete (2026-08-20). **The item system, rebuilt and
+Phase 0 through 48 M2.1 complete (2026-08-20). **The item system, rebuilt and
 then followed through.**
+
+**M2.1** made a bag slot hold a KIND rather than an instance. Six copies of one
+Worn dirk are one cell with a six on it, the cap counts cells instead of rows,
+and equipped items stopped taking bag space they were never shown to be using.
+
+Before that, Phase 0 through 48 M1.15.
 
 **M1** replaced the item model: a catalogue of named things (107 now), a
 seven-step quality ladder whose names are conditions rather than colours, an

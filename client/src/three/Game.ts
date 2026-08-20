@@ -426,6 +426,7 @@ export class Game {
       (itemId) => this.socket.sendEquipItem(itemId),
       (itemId) => this.salvageItem(itemId),
       (id) => this.socket.sendUseConsumable(id),
+      (itemIds) => this.socket.sendSalvageMany(itemIds),
     );
     this.craftPanel = new CraftPanel(
       (stationId, baseId) => this.socket.sendForgeItem(stationId, baseId),

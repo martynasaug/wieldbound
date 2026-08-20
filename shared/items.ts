@@ -1155,6 +1155,119 @@ export function itemScore(item: ItemInstance): number {
   return item.statValue * 2 + item.bonusStatValue + affixWeight + base.band * 3;
 }
 
+// --- The bag stacks ---------------------------------------------------------
+// Thirty flat cells was the right shape while the catalogue was three rarities
+// of five slots. At a hundred and seven bases with a seven-step ladder on top,
+// a farm at one camp fills the bag with six copies of the same Worn dirk, and
+// each of them takes a cell of its own — so the bag reports itself full while
+// showing the player six pictures of one thing.
+//
+// A BAG SLOT HOLDS A KIND, NOT AN INSTANCE.
+//
+// The kind is what the player actually reads off the item: its base, its
+// quality, and its affixes — which is precisely its NAME. Two things with the
+// same name are interchangeable to the person carrying them, and the tenth of a
+// point of jitter between their rolls is not a reason to spend a second cell on
+// one of them. Anything that differs in a way the name shows — a Keen one, a
+// Tempered one — is a different thing and stacks apart, which is the honest
+// line and needs no separate rule.
+//
+// The cap moves with it, onto slots. Grouping the display while leaving the cap
+// counting instances would be worse than not grouping at all: the grid would
+// show empty cells and the game would still refuse the drop. And equipped
+// items stop counting, which they always should have — the bag's own readout
+// has excluded them since it was written, so the panel and the rule disagreed
+// by seven whenever a character was dressed.
+
+/** How many of one kind share a cell. One digit, so the badge stays a badge —
+ *  and finite, so a bag is still something that fills up. */
+export const STACK_LIMIT = 9;
+
+/**
+ * What decides whether two items share a cell.
+ *
+ * Base, quality and affixes — the three things `itemName` is built from, in a
+ * form that sorts. Affixes are sorted before joining because the roll order is
+ * an accident of the dice and two items with the same two affixes in the other
+ * order are the same item.
+ */
+export function stackKeyOf(item: Pick<ItemInstance, "baseId" | "rarity" | "affixes">): string {
+  const affixes = [...(item.affixes ?? [])].sort().join(",");
+  return `${item.baseId}|${item.rarity}|${affixes}`;
+}
+
+export interface BagStack {
+  key: string;
+  /** Every instance in this cell, best first. Never longer than `STACK_LIMIT`. */
+  items: ItemInstance[];
+  /** The one a click acts on: the best-rolled of the pile. */
+  best: ItemInstance;
+  count: number;
+}
+
+/**
+ * The bag as cells rather than as rows.
+ *
+ * Equipped items are not in it: they are worn, not carried. A kind with more
+ * than `STACK_LIMIT` copies spills into a second cell rather than showing a
+ * count the cell cannot hold, which keeps "a cell is a slot" true — the whole
+ * point of moving the cap here.
+ */
+export function bagStacks(items: ItemInstance[]): BagStack[] {
+  const groups = new Map<string, ItemInstance[]>();
+  const order: string[] = [];
+  for (const item of items) {
+    if (item.equipped) continue;
+    const key = stackKeyOf(item);
+    let group = groups.get(key);
+    if (!group) {
+      group = [];
+      groups.set(key, group);
+      order.push(key);
+    }
+    group.push(item);
+  }
+
+  const stacks: BagStack[] = [];
+  for (const key of order) {
+    // Best first, so the instance a click equips is the one the cell's numbers
+    // describe. Ties break on id purely so the order is stable across renders.
+    const group = groups.get(key)!.sort((a, b) => itemScore(b) - itemScore(a) || a.id.localeCompare(b.id));
+    for (let i = 0; i < group.length; i += STACK_LIMIT) {
+      const slice = group.slice(i, i + STACK_LIMIT);
+      stacks.push({ key, items: slice, best: slice[0], count: slice.length });
+    }
+  }
+  return stacks;
+}
+
+/** How many of the thirty cells are taken. */
+export function bagSlotsUsed(items: ItemInstance[]): number {
+  return bagStacks(items).length;
+}
+
+/**
+ * Whether one more thing fits.
+ *
+ * Asked with the incoming item rather than as a bare count, because the answer
+ * depends on WHAT is arriving: a seventh Worn dirk fits into a bag of thirty
+ * full cells and a Frostbrand does not. Computed by counting the slots the bag
+ * would use with it in, which is exact by construction rather than by a second
+ * copy of the spill rule.
+ */
+export function bagRoomFor(
+  items: ItemInstance[],
+  incoming: Pick<ItemInstance, "baseId" | "rarity" | "affixes">,
+  cap: number,
+): boolean {
+  const probe: ItemInstance = {
+    ...(incoming as ItemInstance),
+    id: "__probe__",
+    equipped: false,
+  };
+  return bagSlotsUsed([...items, probe]) <= cap;
+}
+
 // --- How a particular weapon feels ------------------------------------------
 // Three numbers decide what swinging a thing is like — how far it reaches, how
 // often, and how hard — and each of them is a FAMILY multiplier times an ITEM

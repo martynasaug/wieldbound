@@ -155,6 +155,17 @@ why it is a test rather than a matter of judgement.
 node tools/test/bodies.mjs
 ```
 
+`bag.mjs` — no server needed. Checks the one rule the bag and the server
+share: what counts as the same kind of thing, how many cells a pile of them
+takes, and whether one more fits. The client draws cells and the server counts
+cells to decide whether a drop is accepted, so if the two ever compute
+different numbers the symptom is a drop vanishing into a bag with visible
+space in it — which nothing throws on.
+
+```powershell
+node tools/test/bag.mjs
+```
+
 `icons.mjs` — no server needed. Checks that every icon key the game names — the
 class, weapon, default-attack and skill tables, all 73 talent nodes, plus the
 slots, materials, consumables, dock and attribute keys the panels name directly

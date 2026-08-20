@@ -56,6 +56,9 @@ export function attachItemTooltip(
   target: HTMLElement,
   item: ItemInstance,
   equipped: ItemInstance[] = [],
+  /** How many of this kind share the cell. Everything else the tooltip says
+   *  describes the best-rolled one, which is the one a click would equip. */
+  count = 1,
 ): void {
   attachTooltip(target, () => {
     const d = itemDetails(item, equipped);
@@ -72,6 +75,16 @@ export function attachItemTooltip(
     sub.textContent = `${d.quality} · ${d.kind}${d.twoHanded ? " · two-handed" : ""}`;
     sub.style.color = d.color;
     el.appendChild(sub);
+
+    // Said before the numbers, because it changes what the numbers mean: they
+    // are the best of the pile, not the only ones in it.
+    if (count > 1) {
+      const stack = document.createElement("div");
+      stack.className = "tt-line";
+      stack.style.color = "#e2b04f";
+      stack.textContent = `${count} in the bag — the best is shown`;
+      el.appendChild(stack);
+    }
 
     for (const line of d.stats) {
       const row = document.createElement("div");

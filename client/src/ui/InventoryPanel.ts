@@ -17,8 +17,10 @@ import { isUpgrade, itemIcon, itemShortName, rarityColor, rarityGlows, SLOT_ICON
 import {
   CONSUMABLES,
   CONSUMABLE_IDS,
+  bagStacks,
   consumableSummary,
   itemScore,
+  type BagStack,
   MATERIAL_ICON,
   MATERIAL_LABEL,
   MATERIALS,
@@ -40,6 +42,12 @@ import {
  * so the third slot is always the third slot; materials and consumables live in
  * a footer, because they are counters rather than objects; and Sort is one
  * button instead of nine tabs.
+ *
+ * A CELL HOLDS A KIND, NOT AN INSTANCE. Six copies of one Worn dirk are one
+ * cell with a six on it, because six pictures of the same thing is what the
+ * player was being asked to read. What counts as "the same thing" is the item's
+ * NAME — base, quality and affixes — so a Keen one and a Tempered one stack
+ * apart, which is the line a player would draw anyway. See `bagStacks`.
  */
 export class InventoryPanel {
   private overlay = document.getElementById("inventory-overlay")!;
@@ -63,6 +71,7 @@ export class InventoryPanel {
     private readonly onEquip: (itemId: string) => void,
     private readonly onSell: (itemId: string) => void,
     private readonly onUseConsumable: (id: string) => void,
+    private readonly onSalvageMany: (itemIds: string[]) => void,
   ) {
     this.closeButton.addEventListener("click", () => this.close());
     this.sortButton.addEventListener("click", () => {
@@ -113,35 +122,51 @@ export class InventoryPanel {
     this.renderFooter();
   }
 
-  private ordered(): ItemInstance[] {
-    const bag = this.items.filter((i) => !i.equipped);
-    if (!this.sorted) return bag;
+  /**
+   * The cells, in the order they are drawn.
+   *
+   * Grouping happens in shared, because the server counts the same cells to
+   * decide whether a drop fits — a second copy of the rule here is a second
+   * thing that can disagree about whether the bag is full.
+   */
+  private ordered(): BagStack[] {
+    const stacks = bagStacks(this.items);
+    if (!this.sorted) return stacks;
     const slotOrder = new Map(ITEM_SLOTS.map((s, i) => [s, i]));
-    return [...bag].sort(
+    return [...stacks].sort(
       (a, b) =>
-        (slotOrder.get(a.slot) ?? 9) - (slotOrder.get(b.slot) ?? 9) ||
-        rarityRank(b.rarity) - rarityRank(a.rarity) ||
+        (slotOrder.get(a.best.slot) ?? 9) - (slotOrder.get(b.best.slot) ?? 9) ||
+        rarityRank(b.best.rarity) - rarityRank(a.best.rarity) ||
         // Score rather than the raw primary roll: with a catalogue, two items
         // in one slot are no longer comparable on one number — a band-4 helm
         // with two affixes beats a band-5 one with none.
-        itemScore(b) - itemScore(a),
+        itemScore(b.best) - itemScore(a.best),
     );
   }
 
   private render(): void {
     const bag = this.ordered();
-    this.capacityEl.textContent = `${bag.length} / ${INVENTORY_CAP}`;
+    const carried = bag.reduce((n, s) => n + s.count, 0);
+    // Cells over the count, because cells are what the cap is now measured in
+    // — and the count is kept beside it, because "22 things in 14 slots" is the
+    // whole of what stacking did and hiding it would make the bag look emptier
+    // than it is.
+    this.capacityEl.textContent =
+      `${bag.length} / ${INVENTORY_CAP}` + (carried > bag.length ? ` (${carried} items)` : "");
     this.capacityEl.style.color = bag.length >= INVENTORY_CAP ? "#ef5350" : "";
 
     this.grid.innerHTML = "";
     for (let i = 0; i < INVENTORY_CAP; i++) {
-      const item = bag[i];
+      const stack = bag[i];
       const cell = document.createElement("div");
       cell.className = "bag-slot";
-      if (!item) {
+      if (!stack) {
         this.grid.appendChild(cell);
         continue;
       }
+      // The best-rolled of the pile: it is the one a click equips, so it has to
+      // be the one whose numbers the cell and its tooltip show.
+      const item = stack.best;
       cell.classList.add("filled");
       const colour = rarityColor(item.rarity);
       cell.style.borderColor = colour;
@@ -162,6 +187,17 @@ export class InventoryPanel {
       qty.textContent = String(item.statValue);
       cell.appendChild(qty);
 
+      // How many are in the cell. Bottom left, because top left is where the
+      // upgrade mark already lives and the two were drawn on top of each other
+      // for exactly one screenshot. Absent at one: a "1" on every slot in the
+      // bag is thirty characters that say nothing.
+      if (stack.count > 1) {
+        const count = document.createElement("span");
+        count.className = "bag-count";
+        count.textContent = `${stack.count}`;
+        cell.appendChild(count);
+      }
+
       // A mark for things that are straightforwardly better than what is worn.
       // Only when there is nothing to trade off — a mark that appears on
       // sidegrades is a mark players learn to ignore, and the tooltip is where
@@ -181,14 +217,22 @@ export class InventoryPanel {
       const salvage = document.createElement("button");
       salvage.className = "bag-sell";
       salvage.innerHTML = iconSvg("salvage", "icon inline");
-      salvage.title = `Salvage ${itemShortName(item)} for materials`;
+      // A cell is a kind, so its salvage button breaks down the kind. Safe
+      // precisely because a stack is homogeneous by construction — everything
+      // in it has the same name, so there is no "but I wanted to keep one of
+      // those" hiding in the pile.
+      salvage.title =
+        stack.count > 1
+          ? `Salvage all ${stack.count} ${itemShortName(item)} for materials`
+          : `Salvage ${itemShortName(item)} for materials`;
       salvage.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.onSell(item.id);
+        if (stack.count > 1) this.onSalvageMany(stack.items.map((i) => i.id));
+        else this.onSell(item.id);
       });
       cell.appendChild(salvage);
 
-      attachItemTooltip(cell, item, this.items);
+      attachItemTooltip(cell, item, this.items, stack.count);
       this.grid.appendChild(cell);
     }
     this.renderFooter();
