@@ -1606,6 +1606,161 @@
       .tn-icon { display: flex; color: var(--gold-bright); }
       .talent-node.unavailable .tn-icon { color: var(--muted); }
       .skills-title .title-icon { font-size: 18px; color: var(--gold-bright); margin-right: 6px; }
+
+      /* --- Talking to somebody -------------------------------------------
+         Bottom centre, not in the window rail. Everything in the rail is
+         something you keep open; a conversation is something that ends, and
+         it wants the middle of the screen rather than the edge of it.
+
+         The box is deliberately capped at 640px and the text at 62 characters
+         of measure: an NPC paragraph stretched across a 2560px monitor is one
+         line of text nobody's eye can track back to the start of. */
+      #dialogue-overlay {
+        position: absolute;
+        left: 50%;
+        bottom: 132px;
+        transform: translate(-50%, 14px);
+        width: min(640px, calc(100vw - 40px));
+        display: none;
+        opacity: 0;
+        transition: opacity 120ms ease, transform 120ms ease;
+        background: var(--panel-grad);
+        border: 1px solid var(--gold-dim);
+        border-radius: 10px;
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 232, 178, 0.12);
+        z-index: 40;
+      }
+      #dialogue-overlay.open { display: block; opacity: 1; transform: translate(-50%, 0); }
+
+      .dlg-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px 10px;
+        border-bottom: 1px solid rgba(226, 176, 79, 0.28);
+      }
+      .dlg-portrait {
+        flex: 0 0 auto;
+        width: 46px;
+        height: 46px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        border: 1px solid var(--gold-dim);
+        background: var(--slot-grad);
+        color: var(--gold-bright);
+      }
+      /* The role colours the portrait's rim. It is the one thing worth knowing
+         about a stranger before you read a word they say. */
+      .dlg-portrait.role-vendor { border-color: #6fae7a; color: #9fe0a8; }
+      .dlg-portrait.role-quest { border-color: #e2b04f; color: var(--gold-bright); }
+      .dlg-portrait.role-guide { border-color: #7fa8dc; color: #b6d4ff; }
+      .dlg-portrait.role-flavour { border-color: var(--gold-dim); color: var(--muted); }
+      .dlg-portrait svg { width: 28px; height: 28px; }
+
+      .dlg-names { flex: 1 1 auto; min-width: 0; }
+      #dialogue-name {
+        display: block;
+        color: var(--parchment);
+        font-size: 17px;
+        letter-spacing: 0.02em;
+      }
+      #dialogue-title {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-style: italic;
+      }
+      #dialogue-close {
+        flex: 0 0 auto;
+        background: none;
+        border: none;
+        color: var(--muted);
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 2px 4px;
+      }
+      #dialogue-close:hover { color: var(--gold-bright); }
+
+      #dialogue-body {
+        padding: 13px 16px 12px;
+        color: var(--parchment);
+        font-size: 14px;
+        line-height: 1.55;
+        max-width: 62ch;
+      }
+
+      #dialogue-options {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 0 10px 11px;
+        max-height: 34vh;
+        overflow-y: auto;
+      }
+      .dlg-option {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        width: 100%;
+        text-align: left;
+        background: none;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 7px 10px;
+        color: #cdb98d;
+        font-family: inherit;
+        font-size: 13.5px;
+        cursor: pointer;
+      }
+      .dlg-option:hover:not(.disabled) {
+        background: rgba(226, 176, 79, 0.1);
+        border-color: rgba(226, 176, 79, 0.35);
+        color: var(--parchment);
+      }
+      .dlg-option.primary { color: var(--gold-bright); }
+      .dlg-option.disabled { color: #7a6a4c; cursor: default; }
+      .dlg-option-label { flex: 1 1 auto; }
+      .dlg-option-note { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-style: italic; }
+
+      /* --- What you are supposed to be doing --------------------------------
+         Under the minimap, which is the corner the eye already goes to for
+         "where am I and what now". Hidden entirely when nothing is taken —
+         an empty box captioned "Quests" is furniture advertising something
+         the player is not doing. */
+      #quest-tracker {
+        position: absolute;
+        right: 14px;
+        /* Under the minimap, wherever the minimap currently ends. It publishes
+           its own height as --minimap-bottom for exactly this — the map is
+           resizable and a hardcoded offset would collide with it at two of
+           its four sizes. */
+        top: calc(var(--minimap-bottom, 260px) + 10px);
+        width: 214px;
+        display: none;
+        padding: 8px 10px 9px;
+        background: linear-gradient(180deg, rgba(46, 34, 20, 0.82), rgba(22, 16, 9, 0.82));
+        border: 1px solid rgba(138, 107, 47, 0.7);
+        border-radius: 7px;
+        pointer-events: none;
+        z-index: 12;
+      }
+      #quest-tracker.open { display: block; }
+      .qt-head {
+        color: var(--gold);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+      .qt-row { margin-bottom: 6px; }
+      .qt-row:last-child { margin-bottom: 0; }
+      .qt-name { display: block; color: var(--parchment); font-size: 13px; }
+      .qt-obj { display: block; color: var(--muted); font-size: 11.5px; }
+      .qt-row.done .qt-obj { color: #9fe0a8; }
+      .qt-ready { display: block; color: var(--gold-bright); font-size: 11px; font-style: italic; }
     </style>
   </head>
   <body>
@@ -1836,6 +1991,21 @@
         <button id="dock-leaderboard" class="dock-btn" title="Leaderboard (L)">
           <span data-icon="dock-leaderboard"></span><span class="dock-key">L</span>
         </button>
+      </div>
+      <div id="quest-tracker"></div>
+      <!-- One box for every conversation in the game. What the options DO is
+           supplied by whoever opened it; see ui/DialoguePanel.ts. -->
+      <div id="dialogue-overlay">
+        <div class="dlg-head">
+          <div id="dialogue-portrait" class="dlg-portrait"></div>
+          <div class="dlg-names">
+            <span id="dialogue-name"></span>
+            <span id="dialogue-title"></span>
+          </div>
+          <button id="dialogue-close" title="Close (Esc)">&times;</button>
+        </div>
+        <div id="dialogue-body"></div>
+        <div id="dialogue-options"></div>
       </div>
       <div id="item-tooltip"></div>
      </div>

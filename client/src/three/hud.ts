@@ -304,6 +304,34 @@ const STYLE = `
   box-shadow: 0 2px 8px #0009;
 }
 
+/* --- townspeople --------------------------------------------------------
+   Two lines rather than one: a name and, under it, what they are for. A
+   nameplate that says only "Oswyn Thale" tells a new player nothing they can
+   act on, and the title is the entire reason to walk over.
+
+   The "click to talk" tail appears only while you are close enough, which
+   makes the plate itself the range indicator — otherwise the answer to "why
+   does clicking him do nothing" is invisible. */
+#hud3d .plate-npc .pn {
+  color: #ffe6b0;
+  padding: .18em .6em;
+  border-radius: .3em;
+  background: linear-gradient(180deg, rgba(46,34,20,.88), rgba(22,16,9,.88));
+  border: 1px solid rgba(138,107,47,.85);
+  box-shadow: 0 2px 8px #0009;
+}
+#hud3d .plate-npc .pt {
+  display: block;
+  margin-top: .18em;
+  font-size: .82em;
+  font-style: italic;
+  color: #c2a97a;
+  text-shadow: 0 1px 2px #000a;
+}
+#hud3d .plate-npc.engaged .pn { border-color: #ffd873; color: #fff3d2; }
+#hud3d .plate-npc.engaged .pt { color: #ffd873; }
+#hud3d .plate-npc.engaged .pt::after { content: " · click to talk"; }
+
 #hud3d .toasts { position: absolute; left: 14px; bottom: 190px; display: flex; flex-direction: column; gap: 5px; }
 #hud3d .toast {
   background: linear-gradient(#3a2a17, #241a0f); border: 1px solid var(--gold, #d9a441);
@@ -327,8 +355,8 @@ const STYLE = `
 // bar, which reads as a rendering glitch rather than as a stale constant.
 const HUD_FRAME_RECT = { w: 300, h: 130 };
 
-/** Which of the four nameplate treatments something gets. */
-export type PlateKind = "monster" | "player" | "node" | "station" | "drop";
+/** Which nameplate treatment something gets. */
+export type PlateKind = "monster" | "player" | "node" | "station" | "drop" | "npc";
 
 export interface PlateSpec {
   kind: PlateKind;
@@ -351,6 +379,8 @@ export interface PlateSpec {
   dim?: boolean;
   /** Icon key drawn left of the name. */
   icon?: string;
+  /** A second, smaller line under the name. Townspeople use it for their title. */
+  subtitle?: string;
   /** Overrides the name's colour. Drops use it to carry their quality, which is
    *  the one fact a player needs to read about loot from across a field. */
   tint?: string;
@@ -629,10 +659,17 @@ export class Hud {
     }
 
     const icon = spec.icon ?? "";
-    if (st.name !== spec.name || st.icon !== icon) {
-      st.name = spec.name;
+    // The subtitle is folded into the same comparison rather than tracked
+    // separately: this runs for every plate every frame, and the whole point of
+    // the guard is that the DOM is not touched when nothing has changed.
+    const name = spec.subtitle ? `${spec.name}\u0000${spec.subtitle}` : spec.name;
+    if (st.name !== name || st.icon !== icon) {
+      st.name = name;
       st.icon = icon;
-      st.nameEl.innerHTML = (icon ? iconSvg(icon, "icon") : "") + `<span>${spec.name}</span>`;
+      st.nameEl.innerHTML =
+        (icon ? iconSvg(icon, "icon") : "") +
+        `<span>${spec.name}</span>` +
+        (spec.subtitle ? `<i class="pt">${spec.subtitle}</i>` : "");
     }
     // Written only on change, like the name and the class list: this runs for
     // every plate every frame, and assigning an unchanged colour sixty times a

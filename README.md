@@ -67,6 +67,34 @@ unavailable.
   arrive, a staff throws a bolt, a wand fires a beam, and an axe lands heavier
   and later than a dagger. Bare hands are a real (weak) archetype rather than
   a broken state.
+- **A town to start in** — Emberhold: six buildings on a ring inside a
+  palisade, a paved square with a monument at its centre, a road running gate
+  to gate, and the smithy in the middle of it where it always was. Every
+  structure is *generated* — boxes and gable prisms in the game's own palette,
+  surfaced with procedural plaster, coursed masonry, thatch, shingle and slate —
+  because the CC0 kits this project draws on have props, plants and characters
+  and no buildings, and a downloaded pack would arrive in a different
+  stylisation from the trees behind it. **It is lit after dark**, deliberately
+  and in two separate ways: lanterns and windows come on by the hour whether
+  anybody is watching or not, because that is what the town looks like from
+  outside it; and a warm ambient lift makes the square genuinely readable at
+  midnight, scaled by how close you are standing so that nobody carries it out
+  past the gate. **And the walls are walls** — the first static obstacle in the
+  game, resolved on the shallowest axis so you slide along plaster rather than
+  being flung round it.
+- **Five people who each do something** — Elsbet Vane the Herald explains the
+  rules the game has never said out loud; Oswyn Thale the Provisioner runs a
+  shop priced in wood, ore and herb, because there is no currency and is not
+  going to be one; Warden Cabel and Marda Quill hand out work; Tobin Ash at the
+  anvil explains the bench's five verbs. One dialogue box serves all of them —
+  what the options *do* is supplied by whoever opened it, which is why a vendor
+  and a quest giver need no second panel between them.
+- **Six quests, counted off things the server already resolves** — a kill it
+  credited through the threat table, a gather it worked out, a forge it charged
+  you for. Kill credit follows the experience rule (everyone who damaged it)
+  rather than the loot rule (whoever did most), so questing together is not
+  worse than questing alone. A tracker sits under the minimap and hides itself
+  entirely when you have taken nothing.
 - **A world with ground in it** — a tiled PBR surface that mixes grass into
   dirt under one noise field and drifts its colour under another, so the tiling
   has no findable period, scattered with 4,800 instanced plants. None of that
@@ -108,7 +136,8 @@ unavailable.
   empty. Monsters inflict them back: a cactoro poisons, a dragon sets you
   alight, a troll takes your feet out.
 - **13 monster kinds** in five difficulty bands radiating from spawn, so
-  walking further from the workbench *is* the progression. Each kind has a
+  walking further from the town *is* the progression — the first camp stands
+  well outside the palisade, and nothing spawns within the walls. Each kind has a
   verb rather than a bigger stat line — one bursts on death, one outruns you,
   one can only be hit by a high-Agility build, one has armour that ignores
   chip damage. **And each has something that hurts it**: a troll knits itself
@@ -227,6 +256,12 @@ shared/   protocol-types.ts — message shapes AND the game's formulas,
 `shared/protocol-types.ts` is worth reading first: hit resolution, stat curves,
 monster stats, skills and gear aggregation all live there, so the client's stat
 sheet computes exactly what the server resolves combat with.
+`shared/town.ts`, `shared/shop.ts` and `shared/quests.ts` are Emberhold —
+where every building and every townsperson stands, what the Provisioner
+stocks, and what the watch and the inn want doing. All three are in server
+pixels like the rest of the protocol, and the wall collision lives with them
+rather than in the client, so the moment the server wants to know where a
+player may stand the two cannot disagree.
 `shared/items.ts` sits beside it and owns the *content* — every base item, the
 quality ladder, the affix tables and the smithy's costs. The dependency runs one
 way (items imports protocol-types, never the reverse), so one file is the wire

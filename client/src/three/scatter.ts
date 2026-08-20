@@ -203,7 +203,15 @@ export async function buildGroundCover(
     // bucketing afterwards keeps chunking a rendering decision rather than
     // something that can change where a plant grows.
     const buckets = new Map<number, THREE.Matrix4[]>();
-    for (let i = 0; i < species.count; i++) {
+    // Density, not a headcount. `species.count` is authored against the world
+    // the scatter was written for; expressed as a fraction of that area, a
+    // bigger map gets proportionally more cover instead of the same plants
+    // spread thinner. Chunked culling means the cost follows what is on screen
+    // rather than what exists.
+    const AUTHORED_AREA = (4800 / 40) * (3600 / 40);
+    const density = (area.halfWidth * 2 * area.halfHeight * 2) / AUTHORED_AREA;
+    const total = Math.round(species.count * density);
+    for (let i = 0; i < total; i++) {
       const x = (rand() * 2 - 1) * area.halfWidth;
       const z = (rand() * 2 - 1) * area.halfHeight;
       const h = species.size[0] + rand() * (species.size[1] - species.size[0]);

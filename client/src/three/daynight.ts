@@ -127,6 +127,24 @@ export function phaseAt(t: number, out?: Phase): Phase {
 }
 
 /**
+ * How dark it is, 0 by day and 1 in the small hours.
+ *
+ * Derived from the graded sun intensity rather than from the clock, so it can
+ * never disagree with what the scene actually looks like: change a keyframe to
+ * make dusk gloomier and everything that lights itself after dark comes on
+ * earlier, with no second table to remember.
+ *
+ * `starAlpha` was the obvious candidate and is the wrong one — it is authored
+ * for a star dome and stays at 0.1 through a sunset that is already too dim to
+ * read a shopfront by, which would leave the town's lanterns off for the whole
+ * of the prettiest part of the day.
+ */
+export function nightAmount(t: number): number {
+  const light = phaseAt(t).lightIntensity;
+  return Math.max(0, Math.min(1, (1.35 - light) / 1.1));
+}
+
+/**
  * A dome of points, only visible after dark.
  *
  * Deliberately a fixed dome parented to nothing: it is drawn far outside the

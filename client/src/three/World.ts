@@ -196,8 +196,13 @@ export class World {
     let seed = 20260818;
     const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 
+    // Scaled to the perimeter rather than fixed: the world grew by half in each
+    // direction when Emberhold was built, and 260 trees that ringed the old map
+    // convincingly left visible gaps in the new one.
+    const perimeter = 4 * (PLAY_HALF_W + PLAY_HALF_H);
+    const treeCount = Math.round(perimeter * 1.05);
     const border = this.decor;
-    for (let i = 0; i < 260; i++) {
+    for (let i = 0; i < treeCount; i++) {
       const proto = usable[Math.floor(rand() * usable.length)];
       const tree = proto.object.clone(true);
 

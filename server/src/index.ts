@@ -125,6 +125,7 @@ import {
   type PlayerState,
   type ResourceNodeState,
   type ServerToClientMessage,
+  resourceForNodeKind,
 } from "../../shared/protocol-types.ts";
 import {
   FORGE_OUTPUT_RARITY,
@@ -156,6 +157,7 @@ import {
   refineDef,
   swingIntervalOf,
   type MaterialCost,
+  type Material,
 } from "../../shared/items.ts";
 import {
   loadOrCreateCharacter,
@@ -205,7 +207,19 @@ import {
   clearTalents,
   getHotbar,
   setHotbar,
+  questRows,
+  acceptQuest,
+  advanceQuest,
+  completeQuest,
 } from "./db.ts";
+import { NPC_TALK_RANGE_PX, npcById } from "../../shared/town.ts";
+import { SHOP_OUTPUT_RARITY, shopEntry } from "../../shared/shop.ts";
+import {
+  offerStateFor,
+  questDef,
+  questSatisfied,
+  type QuestObjective,
+} from "../../shared/quests.ts";
 
 const PORT = 8080;
 const TICK_MS = 100;
@@ -525,23 +539,39 @@ function ringNodes(
 const nodes: ResourceNodeState[] = [
   // Herb bushes ring the workbench — a garden around town, convenient since
   // potions are crafted at the bench they surround.
-  ...ringNodes("bush", "bush", 330, 6, 15),
+  //
+  // They used to sit at 330px, which is exactly where Emberhold's buildings now
+  // stand: six bushes growing through the inn's front wall. Moved INSIDE the
+  // square rather than outside the ring, which is the better answer anyway — a
+  // herb garden between the anvil and the well is a thing a town would have,
+  // and it keeps the one gatherable a beginner needs within sight of spawn.
+  ...ringNodes("bush", "bush", 1000, 6, 15),
   // Wood and ore spread outward. The outer rings sit in the same ground as the
   // band-2/3 camps, so gathering out there is a decision rather than a chore.
-  ...ringNodes("tree-inner", "tree", 560, 8, 22),
-  ...ringNodes("rock-inner", "rock", 820, 6, 30),
-  ...ringNodes("tree-mid", "tree", 1150, 10, 12),
-  ...ringNodes("rock-outer", "rock", 1400, 8, 15),
-  ...ringNodes("tree-outer", "tree", 1560, 10, 30),
+  //
+  // Nothing gatherable stands inside the walls any more. It did for one build —
+  // a herb garden in the square, which was convenient and was also the only
+  // place in the game where a resource node and a shopfront were the same
+  // scenery. A town is somewhere you go BETWEEN gathering trips; a bush growing
+  // between the anvil and the inn quietly makes the square another field.
+  ...ringNodes("tree-inner", "tree", 1150, 8, 22),
+  ...ringNodes("rock-inner", "rock", 1500, 6, 30),
+  ...ringNodes("tree-mid", "tree", 1850, 10, 12),
+  ...ringNodes("rock-outer", "rock", 2050, 8, 15),
+  ...ringNodes("tree-outer", "tree", 2150, 10, 30),
   // Out where the ghosts and trolls are. Nothing forces a player this far for
   // materials, but the reforge ladder's upper steps cost thousands and the
   // inner rings cannot pay for them in any reasonable time — so the ground has
   // to reach as far as the economy does.
-  ...ringNodes("bush-far", "bush", 1780, 6, 40),
-  ...ringNodes("rock-far", "rock", 1900, 8, 22),
-  ...ringNodes("tree-far", "tree", 2050, 8, 5),
-  ...ringNodes("rock-deep", "rock", 2350, 6, 35),
-  ...ringNodes("tree-deep", "tree", 2450, 6, 8),
+  ...ringNodes("bush-far", "bush", 2300, 6, 40),
+  ...ringNodes("rock-far", "rock", 2400, 8, 22),
+  ...ringNodes("tree-far", "tree", 2500, 8, 5),
+  // The outermost two are hard against the map's short axis: the world is 5400
+  // tall, so a ring past 2700 leaves the world at the top and bottom of its
+  // circle. These sit just inside that and no ring may be added beyond them
+  // without the world growing first.
+  ...ringNodes("rock-deep", "rock", 2680, 6, 35),
+  ...ringNodes("tree-deep", "tree", 2660, 6, 8),
 ];
 const nodeRespawnAt = new Map<string, number>();
 
@@ -612,40 +642,47 @@ function aliveMonsterBodies(): { x: number; y: number; radiusPx: number }[] {
 }
 
 const monsters: MonsterState[] = [
-  // Band 1 (~620px) — clearable at level 1. Deliberately no camp closer than
+  // Band 1 (~980px) — clearable at level 1. Deliberately no camp closer than
   // this, so spawn and the workbench stay safe ground.
-  ...ringPack("slime-a", "slime", 620, 0),
-  ...ringPack("mushnub-a", "mushnub", 620, 90),
-  ...ringPack("slime-b", "slime", 620, 180),
-  ...ringPack("mushnub-b", "mushnub", 620, 270),
+  //
+  // Pushed out from 620 when Emberhold was built, and again when the square was
+  // widened. A pack reaches 70px in from its own centre, so the number that has
+  // to clear the 800px palisade is 980 - 70 = 910, not 980. "Nothing spawns
+  // inside the walls" is a rule the Herald says out loud, and a rule stated in
+  // dialogue has to be true in the layout — which is why the town test asserts
+  // it against the pack's near edge rather than its centre.
+  ...ringPack("slime-a", "slime", 1320, 0),
+  ...ringPack("mushnub-a", "mushnub", 1320, 90),
+  ...ringPack("slime-b", "slime", 1320, 180),
+  ...ringPack("mushnub-b", "mushnub", 1320, 270),
 
-  // Band 2 (~1000px)
-  ...ringPack("goblin-a", "goblin", 1000, 45),
-  ...ringPack("spikyblob-a", "spikyblob", 1000, 135),
-  ...ringPack("goblin-b", "goblin", 1000, 225),
-  ...ringPack("armabee-a", "armabee", 1000, 315),
+  // Band 2 (~1600px)
+  ...ringPack("goblin-a", "goblin", 1600, 45),
+  ...ringPack("spikyblob-a", "spikyblob", 1600, 135),
+  ...ringPack("goblin-b", "goblin", 1600, 225),
+  ...ringPack("armabee-a", "armabee", 1600, 315),
 
-  // Band 3 (~1350-1450px)
-  ...ringPack("wolf-a", "wolf", 1350, 20),
-  ...ringPack("cactoro-a", "cactoro", 1350, 100),
-  ...ringPack("orcbrute-a", "orcbrute", 1350, 200),
-  ...ringPack("wolf-b", "wolf", 1350, 280),
-  ...ringPack("spikyblob-b", "spikyblob", 1450, 160),
-  ...ringPack("armabee-b", "armabee", 1450, 340),
+  // Band 3 (~1900-2000px)
+  ...ringPack("wolf-a", "wolf", 1900, 20),
+  ...ringPack("cactoro-a", "cactoro", 1900, 100),
+  ...ringPack("orcbrute-a", "orcbrute", 1900, 200),
+  ...ringPack("wolf-b", "wolf", 1900, 280),
+  ...ringPack("spikyblob-b", "spikyblob", 2000, 160),
+  ...ringPack("armabee-b", "armabee", 2000, 340),
 
   // Band 4 (~1700-1750px). Troll and demon come in threes — three things
   // hitting this hard at once is already the whole fight.
-  ...ringPack("ghost-a", "ghost", 1700, 70),
-  ...ringPack("troll-a", "troll", 1700, 190, TRIANGLE_OFFSETS),
-  ...ringPack("demon-a", "demon", 1700, 310, TRIANGLE_OFFSETS),
-  ...ringPack("cactoro-b", "cactoro", 1750, 130),
-  ...ringPack("orcbrute-b", "orcbrute", 1750, 250),
+  ...ringPack("ghost-a", "ghost", 2350, 70),
+  ...ringPack("troll-a", "troll", 2350, 190, TRIANGLE_OFFSETS),
+  ...ringPack("demon-a", "demon", 2350, 310, TRIANGLE_OFFSETS),
+  ...ringPack("cactoro-b", "cactoro", 2450, 130),
+  ...ringPack("orcbrute-b", "orcbrute", 2450, 250),
 
   // Band 5 (~2050px) — the far corners. Angles are kept off vertical because
   // the world is wider than it is tall and a pack at 90 degrees would spawn
   // outside the south edge.
-  ...ringPack("golem-a", "golem", 2050, 140, TRIANGLE_OFFSETS),
-  ...ringPack("dragon-a", "dragon", 2050, 320, TRIANGLE_OFFSETS),
+  ...ringPack("golem-a", "golem", 2750, 140, TRIANGLE_OFFSETS),
+  ...ringPack("dragon-a", "dragon", 2750, 320, TRIANGLE_OFFSETS),
 ];
 const monsterRespawnAt = new Map<string, number>();
 
@@ -1047,6 +1084,16 @@ function awardKill(monster: MonsterState, now: number): void {
       sendXpUpdate(socket, xp, level, leveledUp);
       if (leveledUp) sendStatsUpdate(socket, attrs, maxHpOf(playerId, attrs));
     }
+  }
+
+  // Quest credit follows the SAME rule the experience split does — everybody
+  // who damaged it gets the kill — rather than going only to the top
+  // contributor like the loot. A shared quest that only advanced for whoever
+  // landed the killing blow is the exact defect Phase 42 fixed for XP, and
+  // re-introducing it here would make questing together worse than questing
+  // alone.
+  for (const [playerId] of contributors) {
+    advanceQuests(playerId, (o) => (o.kind === "kill" && o.monster === monster.kind ? 1 : 0));
   }
 
   const topSocket = sockets.get(topId);
@@ -2009,6 +2056,74 @@ function sendRunes(socket: WebSocket, counts: Record<string, number>): void {
   socket.send(JSON.stringify(update));
 }
 
+// --- Emberhold ---------------------------------------------------------------
+
+/**
+ * Everything this character has taken and everything they have finished.
+ *
+ * Read straight out of SQLite each time rather than mirrored in a map, which is
+ * the same call the recipes make: this is sent when something changes, not
+ * sixty times a second, and a cached copy of a table is one more thing that can
+ * disagree with the table.
+ */
+function sendQuestState(socket: WebSocket | undefined, playerId: string): void {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  const rows = questRows(playerId);
+  const update: ServerToClientMessage = {
+    type: "QUEST_STATE",
+    payload: {
+      active: rows.filter((r) => r.completedAt === null).map((r) => ({ id: r.questId, count: r.count })),
+      completed: rows.filter((r) => r.completedAt !== null).map((r) => r.questId),
+    },
+  };
+  socket.send(JSON.stringify(update));
+}
+
+/** Is this player standing close enough to the named townsperson to deal? */
+function nearNpc(playerId: string, npcId: string): boolean {
+  const npc = npcById(npcId);
+  const player = players.get(playerId);
+  if (!npc || !player) return false;
+  // A little slack over the client's own range, for the same reason the bench
+  // has it: the server's copy of where you are standing lags yours by up to a
+  // send interval, and a refusal at exactly the boundary reads as a bug.
+  return Math.hypot(player.x - npc.x, player.y - npc.y) <= NPC_TALK_RANGE_PX * 1.5;
+}
+
+/**
+ * Moves every active quest whose objective matches.
+ *
+ * One funnel for all four objective kinds, called from the four places the
+ * server already resolves those events. Written as a predicate over the
+ * objective rather than as a switch per call site, so adding a quest that
+ * counts something new is a change in `shared/quests.ts` and one line here —
+ * not a fifth hook nobody remembers to add.
+ */
+function advanceQuests(
+  playerId: string,
+  matches: (o: QuestObjective) => number,
+): void {
+  const rows = questRows(playerId).filter((r) => r.completedAt === null);
+  if (rows.length === 0) return;
+  let changed = false;
+  for (const row of rows) {
+    const def = questDef(row.questId);
+    if (!def) continue;
+    const amount = matches(def.objective);
+    if (amount <= 0) continue;
+    if (row.count >= def.objective.count) continue;
+    const next = advanceQuest(playerId, def.id, amount, def.objective.count);
+    changed = true;
+    const socket = sockets.get(playerId);
+    // Said out loud at the moment it completes, because the alternative is a
+    // player who finished a quest an hour ago and never went back.
+    if (socket && questSatisfied(def, next)) {
+      sendInfo(socket, `"${def.name}" — done. Return to ${npcById(def.giver)?.name ?? "the giver"}.`, "#ffd873");
+    }
+  }
+  if (changed) sendQuestState(sockets.get(playerId), playerId);
+}
+
 /** The whole wallet, in one message. */
 function sendMaterials(socket: WebSocket, playerId: string): void {
   if (socket.readyState !== WebSocket.OPEN) return;
@@ -2138,6 +2253,9 @@ wss.on("connection", (socket) => {
       sendRecipes(socket, id);
       sendConsumables(socket, consumablesOf(id));
       sendRunes(socket, runesOf(id));
+      // Work in hand, so the tracker is populated on the first frame rather
+      // than only after the next kill.
+      sendQuestState(socket, id);
       // Whatever is still running. Statuses do not survive a disconnect — they
       // live in memory and a character who logged out is not standing anywhere
       // to be on fire — but a reconnect inside one still has to be told, or the
@@ -2399,6 +2517,108 @@ wss.on("connection", (socket) => {
       sendManaUpdate(socket, manaBalances.get(id) ?? maxMana, maxMana);
     }
 
+    // --- Emberhold: the shop ------------------------------------------------
+    if (msg.type === "BUY_FROM_VENDOR" && id) {
+      const npc = npcById(msg.payload.npcId);
+      if (!npc || npc.role !== "vendor") return;
+      if (!nearNpc(id, npc.id)) {
+        sendInfo(socket, `You are too far from ${npc.name}.`, "#c98d5e");
+        return;
+      }
+      const entry = shopEntry(msg.payload.entryId);
+      if (!entry) return;
+
+      if (entry.kind === "item") {
+        const base = ITEM_BASES[entry.ref];
+        if (!base) return;
+        // Room checked BEFORE the materials are taken. The forge does the same,
+        // and for the same reason: the alternative is paying for something that
+        // then does not arrive.
+        if (!bagRoomFor(listItems(id), { baseId: base.id, rarity: SHOP_OUTPUT_RARITY, affixes: [] }, INVENTORY_CAP)) {
+          sendInfo(socket, `Bag is full (${bagSlotsUsed(listItems(id))}/${INVENTORY_CAP} slots).`, "#ef5350");
+          return;
+        }
+        if (!spendMaterials(id, entry.cost)) {
+          sendInfo(socket, `Not enough — ${base.name} costs ${describeCost(entry.cost)}.`, "#c98d5e");
+          return;
+        }
+        const item = addItem(id, rollItem(base, SHOP_OUTPUT_RARITY));
+        sendLootUpdate(socket, item);
+        sendItemsUpdate(socket, id, listItems(id));
+        sendMaterials(socket, id);
+        return;
+      }
+
+      const def = consumableDef(entry.ref);
+      if (!def) return;
+      if (!spendMaterials(id, entry.cost)) {
+        sendInfo(socket, `Not enough — ${def.name} costs ${describeCost(entry.cost)}.`, "#c98d5e");
+        return;
+      }
+      sendConsumables(socket, addConsumable(id, def.id));
+      sendMaterials(socket, id);
+      sendInfo(socket, `Bought ${def.name}.`, "#9fe0a8");
+      return;
+    }
+
+    // --- Emberhold: work ----------------------------------------------------
+    if (msg.type === "ACCEPT_QUEST" && id) {
+      const def = questDef(msg.payload.questId);
+      if (!def || def.giver !== msg.payload.npcId) return;
+      if (!nearNpc(id, def.giver)) return;
+
+      // The same gate the client greys the row out with, re-run here — the
+      // client's list and the server's rule have to BE the same rule, or a
+      // hand-written message walks straight past the level requirement.
+      const rows = questRows(id);
+      const state = offerStateFor(
+        def,
+        playerLevels.get(id) ?? 1,
+        rows.filter((r) => r.completedAt === null).map((r) => ({ id: r.questId, count: r.count })),
+        rows.filter((r) => r.completedAt !== null).map((r) => r.questId),
+      );
+      if (state !== "offer") return;
+
+      if (acceptQuest(id, def.id)) {
+        sendInfo(socket, `Taken: "${def.name}".`, "#ffd873");
+        sendQuestState(socket, id);
+      }
+      return;
+    }
+
+    if (msg.type === "TURN_IN_QUEST" && id) {
+      const def = questDef(msg.payload.questId);
+      if (!def || def.giver !== msg.payload.npcId) return;
+      if (!nearNpc(id, def.giver)) return;
+
+      const row = questRows(id).find((r) => r.questId === def.id);
+      if (!row || row.completedAt !== null) return;
+      if (!questSatisfied(def, row.count)) return;
+
+      // The write is the gate. `completeQuest` only changes a row whose
+      // completedAt is still null, so two turn-in messages arriving together
+      // cannot both pay out — the second one changes nothing and returns false.
+      if (!completeQuest(id, def.id)) return;
+
+      if (def.reward.materials) {
+        for (const [material, amount] of Object.entries(def.reward.materials)) {
+          if (amount) addMaterial(id, material as Material, amount);
+        }
+        sendMaterials(socket, id);
+      }
+      if (def.reward.consumable) {
+        sendConsumables(socket, addConsumable(id, def.reward.consumable.id, def.reward.consumable.count));
+      }
+      const attrs = attributes.get(id);
+      const { xp, level, leveledUp, statPoints } = addXp(id, def.reward.xp);
+      playerLevels.set(id, level);
+      if (attrs) attrs.statPoints = statPoints;
+      sendXpUpdate(socket, xp, level, leveledUp);
+      if (leveledUp && attrs) sendStatsUpdate(socket, attrs, maxHpOf(id, attrs));
+      sendQuestState(socket, id);
+      return;
+    }
+
     if (msg.type === "REQUEST_LEADERBOARD") {
       sendLeaderboardUpdate(socket);
     }
@@ -2435,6 +2655,7 @@ wss.on("connection", (socket) => {
       sendLootUpdate(socket, item);
       sendItemsUpdate(socket, id, listItems(id));
       sendMaterials(socket, id);
+      advanceQuests(id, (o) => (o.kind === "forge" ? 1 : 0));
       return;
     }
 
@@ -3053,6 +3274,16 @@ setInterval(() => {
         herbBalances.set(playerId, herb);
         if (socket) sendHerbUpdate(socket, herb);
       }
+
+      // Counted as the YIELD, not as one gather. "Thirty wood" has to mean
+      // thirty wood in the bag, or the same quest is four trips at the wall and
+      // fifteen out where the ground is rich — and the number on the tracker
+      // would not match the number in the materials panel, which is the kind of
+      // disagreement players rightly read as a bug.
+      const gained = resourceForNodeKind(node.kind);
+      advanceQuests(playerId, (o) =>
+        o.kind === "gather" && o.resource === gained ? yielded : 0,
+      );
     }
   }
 

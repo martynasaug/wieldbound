@@ -107,19 +107,6 @@ db.exec(`
   );
 `);
 const ITEM_WIPE_MARK = "items-v2-catalogue";
-const alreadyWiped = db
-  .prepare("SELECT mark FROM schema_marks WHERE mark = ?")
-  .get(ITEM_WIPE_MARK);
-if (!alreadyWiped) {
-  const before = (db.prepare("SELECT COUNT(*) AS n FROM items").get() as { n: number }).n;
-  db.exec("DELETE FROM items");
-  db.exec("UPDATE characters SET weaponRarity = NULL, armorRarity = NULL, bootsRarity = NULL");
-  db.prepare("INSERT INTO schema_marks (mark, appliedAt) VALUES (?, ?)").run(
-    ITEM_WIPE_MARK,
-    Date.now(),
-  );
-  console.log(`[db] item catalogue: cleared ${before} pre-catalogue item(s), once`);
-}
 for (const migration of [
   "ALTER TABLE characters ADD COLUMN wood INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE characters ADD COLUMN gatherLevel INTEGER NOT NULL DEFAULT 0",
@@ -168,6 +155,28 @@ for (const migration of [
   } catch {
     // column already exists from a previous run
   }
+}
+
+// The one-time wipe runs HERE, after the migrations, and that ordering is the
+// whole point rather than tidiness: it clears `weaponRarity`, `armorRarity` and
+// `bootsRarity`, and those three columns are ADDED by the loop above. On any
+// database that had already been through an older build the columns were
+// present and this ran fine wherever it sat — so the bug only ever appeared on
+// a genuinely fresh file, which is exactly the path the README documents and
+// the one nobody re-walks. Deleting the .db and starting the server threw
+// "no such column: weaponRarity" and the server never came up at all.
+const alreadyWiped = db
+  .prepare("SELECT mark FROM schema_marks WHERE mark = ?")
+  .get(ITEM_WIPE_MARK);
+if (!alreadyWiped) {
+  const before = (db.prepare("SELECT COUNT(*) AS n FROM items").get() as { n: number }).n;
+  db.exec("DELETE FROM items");
+  db.exec("UPDATE characters SET weaponRarity = NULL, armorRarity = NULL, bootsRarity = NULL");
+  db.prepare("INSERT INTO schema_marks (mark, appliedAt) VALUES (?, ?)").run(
+    ITEM_WIPE_MARK,
+    Date.now(),
+  );
+  console.log(`[db] item catalogue: cleared ${before} pre-catalogue item(s), once`);
 }
 
 // --- Weapon proficiency and talents -----------------------------------------
@@ -1183,4 +1192,78 @@ export function allocateStat(id: string, stat: AttributeName): AllocateResult | 
 
   applyAllocateStmt.run(next.strength, next.agility, next.vitality, next.intelligence, next.statPoints, id);
   return next;
+}
+
+// --- Quests -----------------------------------------------------------------
+// One row per quest a character has ever touched, carrying its counter and
+// whether it has been paid out. Rows rather than columns, exactly like recipes
+// and runes: the set of quests is content and grows, and the absence of a row
+// is the honest representation of "never spoken to them about it".
+//
+// The counter lives here rather than being recomputed from statistics on
+// demand, and that is a deliberate call with a real consequence: kills you made
+// BEFORE taking a quest do not count toward it. That is the behaviour a player
+// expects from "go and kill four slimes" — the alternative hands you a finished
+// quest the moment you accept it, which is worse than no quest at all.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS quests (
+    characterId TEXT NOT NULL,
+    questId TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    completedAt INTEGER,
+    PRIMARY KEY (characterId, questId)
+  );
+`);
+
+const selectQuests = db.prepare(
+  "SELECT questId, count, completedAt FROM quests WHERE characterId = ?",
+);
+const insertQuest = db.prepare(
+  "INSERT OR IGNORE INTO quests (characterId, questId, count, completedAt) VALUES (?, ?, 0, NULL)",
+);
+// The increment is capped in SQL rather than read-modify-written in JS: two
+// kills resolved in the same tick would otherwise both read the same count.
+const bumpQuest = db.prepare(
+  "UPDATE quests SET count = MIN(count + ?, ?) WHERE characterId = ? AND questId = ? AND completedAt IS NULL",
+);
+const finishQuest = db.prepare(
+  "UPDATE quests SET completedAt = ? WHERE characterId = ? AND questId = ? AND completedAt IS NULL",
+);
+
+export interface QuestRow {
+  questId: string;
+  count: number;
+  completedAt: number | null;
+}
+
+export function questRows(characterId: string): QuestRow[] {
+  return selectQuests.all(characterId) as unknown as QuestRow[];
+}
+
+/** Takes a quest. False when it was already taken, which is not an error. */
+export function acceptQuest(characterId: string, questId: string): boolean {
+  return Number(insertQuest.run(characterId, questId).changes) > 0;
+}
+
+/** Adds to a quest's counter, clamped at its target. Returns the new count. */
+export function advanceQuest(
+  characterId: string,
+  questId: string,
+  amount: number,
+  target: number,
+): number {
+  bumpQuest.run(amount, target, characterId, questId);
+  const row = selectQuests
+    .all(characterId)
+    .find((r) => (r as unknown as QuestRow).questId === questId) as unknown as QuestRow | undefined;
+  return row?.count ?? 0;
+}
+
+/**
+ * Marks a quest paid. False when it was already paid — which is the whole
+ * point: the `completedAt IS NULL` guard is what stops two turn-in messages
+ * arriving together from both handing out the reward.
+ */
+export function completeQuest(characterId: string, questId: string): boolean {
+  return Number(finishQuest.run(Date.now(), characterId, questId).changes) > 0;
 }

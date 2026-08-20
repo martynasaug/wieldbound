@@ -238,3 +238,34 @@ covers roughly one common recipe; for a full sweep, top the character up:
 ```powershell
 node -e "const{DatabaseSync}=require('node:sqlite');new DatabaseSync('server/data/wieldbound.db').prepare('UPDATE characters SET wood=4000,ore=4000,herb=4000 WHERE name=?').run('mybotname')"
 ```
+
+`town.mjs` — no server needed, pure geometry over `shared/town.ts`. Checks
+Emberhold's layout: that no two buildings overlap (separating-axis, against
+their real oriented footprints), that the square is genuinely clear around the
+anvil, that both roads leave through open ground, that nobody is standing in a
+wall, that the pushout evicts every interior sample without flinging anyone
+across town, that the palisade stops short of the nearest monster body, and
+that every node ring the server seeds is outside the walls and inside the
+world.
+
+It has already rewritten the town three times. The first layout put seven
+buildings on too tight a ring and it refused all of it — three overlapping
+pairs and three roads running into walls — which is what forced the change from
+four gates to one through-road. None of those failures throws, and a building
+standing on a road is not visible from any single screenshot.
+
+```powershell
+node tools/test/town.mjs
+```
+
+`quests.mjs` — no server needed. Checks the shop and the work: that every shop
+line names something real, that nothing past band 2 is on sale, that buying
+always costs more in total than forging the same item (or the anvil is
+decoration), that a first weapon is reachable in one session, that every quest
+names a monster and a resource that exist, that the chain has no cycle and
+nothing is stranded, and that the level gates never run ahead of what the
+quests before them pay.
+
+```powershell
+node tools/test/quests.mjs
+```

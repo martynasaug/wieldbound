@@ -112,6 +112,25 @@ import {
   toWorldZ,
 } from "./World";
 import { instantiate, whenLoadsSettle } from "./assets";
+import { nightAmount } from "./daynight";
+import { Town } from "./town";
+import { buildNpcs, type NpcVisual } from "./npcs";
+import { DialoguePanel, type DialogueAction } from "../ui/DialoguePanel";
+import { QuestTracker } from "../ui/QuestTracker";
+import { SHOP_STOCK } from "../../../shared/shop";
+import {
+  objectiveLabel,
+  offerStateFor,
+  questsFrom,
+  rewardLabel,
+  lockReason,
+} from "../../../shared/quests";
+import {
+  NPC_TALK_RANGE_PX,
+  TOWN_CENTER,
+  TOWN_NAME,
+  pushOutOfBuildings,
+} from "../../../shared/town";
 import {
   CONSUMABLES,
   ITEM_BASES,
@@ -120,6 +139,7 @@ import {
   type Material,
   activeSets,
   canForge,
+  describeCost,
   eligibleAffixes,
   forgeCost,
   setPassives,
@@ -313,6 +333,15 @@ export class Game {
   private readonly combatLog = new CombatLog();
   private readonly targetFrame = new TargetFrame();
   private readonly hotbar: Hotbar;
+  private readonly dialogue = new DialoguePanel();
+  private readonly questTracker = new QuestTracker();
+
+  /** Emberhold: the buildings, the palisade, the cobbles and every lantern. */
+  private readonly town = new Town();
+  /** The five people standing in it. Keyed by NPC id, and deliberately a map of
+   *  its own — an NPC in `players` or `monsters` would be selectable as an ally
+   *  or attackable as an enemy, and both are wrong. */
+  private npcs = new Map<string, NpcVisual>();
 
   // --- authoritative local state (server position is in px, as in the 2D game)
   private playerId = "";
@@ -514,6 +543,15 @@ export class Game {
       },
       onConsumables: (p) => {
         this.inventoryPanel.setConsumables(p.counts);
+      },
+      onQuestState: (p) => {
+        this.questTracker.setState(p.active, p.completed);
+        // A conversation open on the giver is redrawn in place, so accepting or
+        // handing in changes the list you are looking at rather than leaving a
+        // stale row that does nothing when clicked.
+        const openId = this.dialogue.openNpcId;
+        const npc = openId ? this.npcs.get(openId) : null;
+        if (npc) this.dialogue.setActions(this.dialogueActionsFor(npc));
       },
       onRunes: (p) => {
         // A rune arriving is the payoff for having destroyed something, so it
@@ -744,9 +782,19 @@ export class Game {
     preloadSfx();
     this.socket.connect();
 
+    // The town is generated rather than downloaded, so it costs a few
+    // milliseconds and is on screen before the first tree arrives. Built before
+    // the awaits for exactly that reason: spawn is inside it, and a player who
+    // materialises on bare grass and watches a town assemble around them has
+    // seen the seams.
+    this.town.build(this.world.scene);
+
     const decor = this.world.buildDecor();
     const body = this.localActor.load();
-    await Promise.all([decor, body]);
+    const people = buildNpcs(this.world.scene).then((npcs) => {
+      this.npcs = npcs;
+    });
+    await Promise.all([decor, body, people]);
     // The models have parsed; their textures have not necessarily arrived, and
     // a first frame that repaints itself twenty megabytes at a time is exactly
     // what a loading screen exists to hide.
@@ -2120,6 +2168,18 @@ export class Game {
       this.setTarget(picked === this.lockedId ? null : picked);
       return;
     }
+    // Townspeople, before players and before the bench. They stand in the one
+    // place every player passes through, so a click that fell through to "clear
+    // your target" while the cursor was on a shopkeeper would be the single
+    // most-hit dead click in the game.
+    for (const [id, npc] of this.npcs) {
+      if (!npc.actor.loaded) continue;
+      if (this.raycaster.intersectObject(npc.actor.root, true).length === 0) continue;
+      const dist = Math.hypot(this.playerX - npc.def.x, this.playerY - npc.def.y);
+      if (dist <= NPC_TALK_RANGE_PX) this.talkTo(id);
+      else this.hud.toast(`${npc.def.name} is too far away.`, "#c98d5e");
+      return;
+    }
     // One selection covers enemies and allies — the server looks the id up in
     // both and stores it as whichever it turns out to be, so clicking a player
     // is how you give Mend and War Cry someone to help.
@@ -2153,6 +2213,176 @@ export class Game {
       }
     }
     this.setTarget(null);
+  }
+
+  /**
+   * Opens a conversation.
+   *
+   * The NPC turns to face whoever is speaking to them, which costs one line and
+   * is most of what stops these reading as furniture: a shopkeeper who carries
+   * on staring at the wall while you talk to their ear is worse than no
+   * shopkeeper.
+   */
+  private talkTo(id: string): void {
+    const npc = this.npcs.get(id);
+    if (!npc) return;
+    const dx = this.playerX - npc.def.x;
+    const dy = this.playerY - npc.def.y;
+    const len = Math.hypot(dx, dy) || 1;
+    npc.actor.faceDirection(dx / len, dy / len);
+    this.dialogue.open(npc.def, this.dialogueActionsFor(npc));
+  }
+
+  /**
+   * What this person can DO for you, above their small talk.
+   *
+   * Empty for the guide and for Tobin, and that is not a gap: their whole
+   * function is the topics themselves. The list is built fresh on every open so
+   * it reflects the bag and the level as they are now.
+   */
+  private dialogueActionsFor(npc: NpcVisual): DialogueAction[] {
+    const actions: DialogueAction[] = [];
+
+    if (npc.def.role === "vendor") {
+      // The stock, priced and greyed out when it cannot be afforded. Shown
+      // inline rather than in a shop window: nine lines is not a panel, and a
+      // second overlay for it would cover the conversation that opened it.
+      for (const entry of SHOP_STOCK) {
+        const name =
+          entry.kind === "item"
+            ? (ITEM_BASES[entry.ref]?.name ?? entry.ref)
+            : (CONSUMABLES[entry.ref as keyof typeof CONSUMABLES]?.name ?? entry.ref);
+        const afford = this.canAfford(entry.cost);
+        actions.push({
+          label: `Buy ${name}`,
+          note: describeCost(entry.cost),
+          primary: afford,
+          disabled: !afford,
+          onPick: () => {
+            this.socket.sendBuyFromVendor(npc.def.id, entry.id);
+            this.dialogue.say(entry.pitch);
+            // Rebuilt after the reply lands, so a purchase that emptied the
+            // wallet greys out what is no longer affordable. Without the delay
+            // the list is redrawn from the balance the server has not yet
+            // changed, and everything still looks purchasable.
+            window.setTimeout(() => {
+              if (this.dialogue.openNpcId === npc.def.id) {
+                this.dialogue.setActions(this.dialogueActionsFor(npc));
+              }
+            }, 260);
+          },
+        });
+      }
+    }
+
+    if (npc.def.role === "quest") {
+      const active = this.questTracker.activeQuests;
+      const completed = this.questTracker.completedQuests;
+      for (const def of questsFrom(npc.def.id)) {
+        const state = offerStateFor(def, this.level, active, completed);
+        // Finished work is not listed at all. A permanent row saying "done"
+        // beside two live ones is a list that grows forever and never says
+        // anything.
+        if (state === "done") continue;
+
+        if (state === "locked") {
+          actions.push({
+            label: def.name,
+            note: lockReason(def, this.level, completed) ?? "not yet",
+            disabled: true,
+            onPick: () => {},
+          });
+          continue;
+        }
+
+        if (state === "offer") {
+          actions.push({
+            label: `${def.name}`,
+            note: rewardLabel(def.reward),
+            primary: true,
+            onPick: () => {
+              this.dialogue.say(def.brief);
+              this.dialogue.setActions([
+                {
+                  label: "I'll do it.",
+                  primary: true,
+                  onPick: () => {
+                    this.socket.sendAcceptQuest(npc.def.id, def.id);
+                    this.dialogue.say(def.brief);
+                    window.setTimeout(() => {
+                      if (this.dialogue.openNpcId === npc.def.id) {
+                        this.dialogue.setActions(this.dialogueActionsFor(npc));
+                      }
+                    }, 260);
+                  },
+                },
+              ]);
+            },
+          });
+          continue;
+        }
+
+        const count = this.questTracker.progressOf(def.id) ?? 0;
+        const progress = `${objectiveLabel(def.objective)} ${Math.min(count, def.objective.count)} / ${def.objective.count}`;
+        if (state === "ready") {
+          actions.push({
+            label: `Hand in: ${def.name}`,
+            note: rewardLabel(def.reward),
+            primary: true,
+            onPick: () => {
+              this.socket.sendTurnInQuest(npc.def.id, def.id);
+              this.dialogue.say(def.done);
+              window.setTimeout(() => {
+                if (this.dialogue.openNpcId === npc.def.id) {
+                  this.dialogue.setActions(this.dialogueActionsFor(npc));
+                }
+              }, 260);
+            },
+          });
+        } else {
+          actions.push({
+            label: def.name,
+            note: progress,
+            disabled: true,
+            onPick: () => {},
+          });
+        }
+      }
+    }
+
+    return actions;
+  }
+
+  /** Whether the wallet covers a cost. Presentation only — the server re-checks
+   *  it, and has to, because a greyed-out button is not a rule. */
+  private canAfford(cost: Partial<Record<Material, number>>): boolean {
+    for (const [material, amount] of Object.entries(cost)) {
+      if (!amount) continue;
+      if ((this.wallet[material as Material] ?? 0) < amount) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Closes the box when the player walks away.
+   *
+   * Range is checked every frame rather than only on open, because the game
+   * never stops while you are talking: monsters still chase, and a conversation
+   * that stayed on screen while its other half was thirty units behind you
+   * would be a panel you had to dismiss by hand after being chased out of town.
+   * A little slack past the talk range, so standing at the very edge does not
+   * flicker the box open and shut.
+   */
+  private updateDialogueRange(): void {
+    const openId = this.dialogue.openNpcId;
+    if (!openId) return;
+    const npc = this.npcs.get(openId);
+    if (!npc) {
+      this.dialogue.close();
+      return;
+    }
+    const dist = Math.hypot(this.playerX - npc.def.x, this.playerY - npc.def.y);
+    if (dist > NPC_TALK_RANGE_PX * 1.35) this.dialogue.close();
   }
 
   /** Distance from the player to a monster, in server pixels. */
@@ -2373,6 +2603,10 @@ export class Game {
     this.localActor?.update(dt);
     for (const a of this.players.values()) a.update(dt);
     for (const v of this.monsters.values()) v.actor.update(dt);
+    // Nobody sends the townspeople anything, so this is the only thing that
+    // advances their idle at all — drop it and Emberhold is five statues.
+    for (const n of this.npcs.values()) n.actor.update(dt);
+    this.updateDialogueRange();
 
     if (this.localActor) {
       this.world.follow(this.localActor.position.x, this.localActor.position.z, dt);
@@ -2409,6 +2643,13 @@ export class Game {
     this.fadeOccluders();
     this.drawPlates();
     const hour = this.world.updateDayNight();
+    // After updateDayNight, so the town is lit against the sky it is standing
+    // under rather than against last frame's.
+    this.town.update(
+      nightAmount(hour.clock),
+      Math.hypot(this.playerX - TOWN_CENTER.x, this.playerY - TOWN_CENTER.y) / PX_PER_UNIT,
+      performance.now() / 1000,
+    );
     this.hud.setPortrait(classForWeapon(this.appearance.weaponType));
     this.hud.syncLayout();
     this.hud.setClock(hour.name, gameClock(hour.clock * DAY_LENGTH_MS), isDaytime(hour.clock * DAY_LENGTH_MS));
@@ -2598,6 +2839,13 @@ export class Game {
     );
     this.playerX = solved.x;
     this.playerY = solved.y;
+
+    // And out of any wall. Applied AFTER the bodies, because a monster that has
+    // shoved you into the inn should leave you standing outside the inn — the
+    // other order lets a body park you inside a building until it wanders off.
+    const clear = pushOutOfBuildings(this.playerX, this.playerY, PLAYER_BODY_RADIUS_PX);
+    this.playerX = clear.x;
+    this.playerY = clear.y;
   }
 
   /** Living monster bodies near enough to matter, as plain circles. Only the
@@ -2707,6 +2955,23 @@ export class Game {
         name: STATION_LABEL,
         icon: "dock-craft",
         distance: rangeTo(obj.position.x, obj.position.z),
+      });
+    }
+
+    // Townspeople. `engaged` is reused to mean "close enough to talk", which is
+    // what the plate's own styling reads to add the prompt — the same field
+    // meaning "this is the one you are acting on" that it means for a monster.
+    for (const [id, npc] of this.npcs) {
+      if (!npc.actor.loaded) continue;
+      const inRange =
+        Math.hypot(this.playerX - npc.def.x, this.playerY - npc.def.y) <= NPC_TALK_RANGE_PX;
+      this.hud.plate(`npc-${id}`, this.world.project(npc.x, 2.05, npc.z, 46), {
+        kind: "npc",
+        name: npc.def.name,
+        subtitle: npc.def.title,
+        icon: npc.def.icon,
+        engaged: inRange,
+        distance: rangeTo(npc.x, npc.z),
       });
     }
 

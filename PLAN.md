@@ -3063,6 +3063,134 @@ it needs one manual download. Until then the four monster kinds render with
 stand-ins from the packs that did fetch cleanly (slime is a genuine match;
 skeleton, dragon and bat stand in for the rest).
 
+## Phase 49 — Emberhold: a beginner town
+User brief: *"build a small beginner town with a couple good looking buildings,
+matching with our game style. Town should have some npc's — vendor, couple
+quest givers, guide etc. Town should have proper lighting so the visibility
+during night is also very good."* Then, mid-build: *"town should be bigger,
+more space, bigger gaps between buildings — it's an MMORPG so a lot of new
+players will be hanging out here, let's make it comfy."* Then: *"looks very
+bland, barely any textures. There shouldn't be any materials like bush in the
+town. We can also make a little town square in the middle. On that note let's
+expand our world and push the monsters a bit further."*
+
+The world had exactly one built thing in it — a smithy at the centre, which
+also happened to be spawn, the origin of the difficulty bands and the only
+landmark in 17 square kilometres of grass. Emberhold makes that centre a place.
+
+**The place.** Six buildings on a ring at 560px, all facing inward, inside a
+palisade at 800px with a road running gate to gate through the square: an inn
+(The Bent Nail), a shop (The Ledger & Lamp), a stone-based watchpost with a
+crenellated lookout and a banner, a chapel with a belfry and a spire, and two
+cottages. Every one of them is GENERATED — boxes and gable prisms in the game's
+own palette — because the CC0 kits this project draws on have props, plants and
+characters but no buildings, and a downloaded building pack would arrive in a
+different stylisation from the trees standing behind it. That is the same
+mistake `World.buildDecor` was already fixed for once.
+
+**Textures.** The first build was flat colour and the user's word for it was
+"bland", correctly. Nine procedural canvas textures now — plaster, wood grain,
+coursed masonry, thatch, shingle, slate, cloth, hammered iron, foliage — all
+drawn near-white so they MULTIPLY the palette rather than carrying colour of
+their own, which keeps the palette at the top of the file the one place a
+colour is decided. The piece that makes them work is `boxProjectUVs`: a
+BoxGeometry's own UVs run 0..1 on every face regardless of size, so one shared
+map would appear at four metres a tile on a wall and eight centimetres on a
+window frame. UVs are re-derived from world position, per triangle, on the
+merged geometry — giving every surface in town the same texel density for one
+pass at load.
+
+**Five people, and each of them does something.** Elsbet Vane the Herald
+explains the rules the game has never said out loud (six topics: the one rule,
+where it is safe, how fighting works, what damage is made of, what to do
+first). Oswyn Thale the Provisioner runs a real shop — nine lines, priced in
+materials because there is no currency and is not getting one, everything
+band 1–2, everything deliberately DEARER than forging the same thing. He is the
+floor under a bad start, not a shortcut past the smithy. Warden Cabel and Marda
+Quill give real quests. Tobin Ash at the anvil explains the bench's five verbs.
+
+**Work.** Six quests, three each, counted server-side against events the server
+already emits — a kill it already credited through the threat table, a gather it
+already resolved, a forge it already paid for. No new tracking. Kill credit
+follows the XP rule (everyone who damaged it) rather than the loot rule (top
+contributor), because a shared quest that only advances for whoever landed the
+killing blow is the exact defect Phase 42 fixed for experience. A tracker under
+the minimap, hidden entirely when nothing is taken.
+
+**Light.** Two separate jobs, deliberately kept separate. Lanterns and windows
+are PLACES: twenty-odd point lights at doorways, on posts round the square, at
+both gatehouses and around the monument, plus one shared window material whose
+emissive is driven by the hour — they light up whether or not anybody is
+watching, because that is what the town looks like from outside it. The ambient
+lift is a CONCESSION: night in this game is genuinely dark and that is the
+point, but a town nobody can read after dusk is a town nobody uses after dusk.
+So the fill is scaled by the player's distance from the centre — comfortably
+legible in the square at midnight, and back to the dark everything else is in
+twenty units past the gate. Nobody carries the town's light out into the field.
+
+**Walls that are walls.** The world had no static obstacle in it at all until
+now — bodies collided, scenery did not, and nothing was solid enough for that
+to be noticeable. `pushOutOfBuildings` in `shared/town.ts` slides a body out
+along the SHALLOWEST axis of penetration, which is what makes a wall feel like
+a wall rather than a magnet, and it runs after body collision so a monster that
+shoves you into the inn leaves you standing outside it.
+
+**The world grew by half in each direction** — 4800x3600 to 7200x5400, 2.25x
+the ground — and every ring moved out with it. The town is 40 units across now
+and everything radiating from it had been measured against a centre that used
+to be a single prop: at the old radii a slime could aggro a player standing at
+the anvil. Band 1 camps went 620 -> 720 -> 980 -> 1320 across three passes of
+this phase alone. Resource bands, node rings, monster camps, the treeline count
+and the ground-cover density all followed; the last two are now expressed as
+densities rather than headcounts, so the next resize does not silently thin the
+world out.
+
+**Nothing gatherable inside the walls.** The herb ring spent one build in the
+square, which was convenient and was also the only place in the game where a
+resource node and a shopfront were the same scenery. A town is somewhere you go
+BETWEEN gathering trips.
+
+### What the tests refused
+`tools/test/town.mjs` is pure geometry over the shared layout and it rejected
+the town four times before it passed. The first attempt put seven buildings on
+a 340px ring: three pairs overlapped and three of the four roads ran into a
+wall, because a building's ANGULAR width grows as the ring shrinks and the
+widest part of a footprint seen from the square is its front corners, not its
+sides. Three more attempts followed before the road went from four spokes to
+one through-road — two 156-degree arcs with three buildings each instead of
+four 66-degree arcs with two — which is the change that made the arithmetic
+work and is also the better town. It then caught a herb bush inside a wall, a
+monster spawning at the palisade, and (via a rule added in the same pass) two
+node rings that had been falling outside the world's short axis for several
+phases with nothing saying so.
+
+`tools/test/quests.mjs` refused nothing on its first run, but it is what pins
+the two rules that make the shop and the quests honest: every shop line must
+cost MORE in total than forging the same item, and quest rewards may not pay
+essence, which is supposed to come only off kills.
+
+### One real bug, found by accident
+Deleting the database to test the new `quests` table would not start: the
+one-time item wipe from Phase 48 M1 clears `weaponRarity`, `armorRarity` and
+`bootsRarity`, and those three columns are ADDED by the migration loop that ran
+AFTER it. On any database that had been through an older build the columns were
+already there and the ordering never mattered — so the bug only ever appeared
+on a genuinely fresh file, which is exactly the path the README documents and
+the one nobody re-walks. The server threw `no such column: weaponRarity` and
+never came up. Moved below the migrations.
+
+### Verified
+Headless Playwright against the real client and a real socket: five bodies
+loaded, walking into the inn evicts you 121px, the Herald's dialogue opens and
+answers a topic, walking away closes the box, Cabel's first quest is offered
+and accepted, the tracker appears at 0/4, a slime killed in the field advances
+it, Oswyn's stock lists with prices, lanterns read 0.00 at noon and 11.02 at
+midnight, the ambient lift reads 0.68 in the square and 0.000 twenty units
+outside the gate. Zero console errors. Plus all nine offline suites and both
+workspaces typechecking clean.
+
+---
+
 ## Phase 48+ — Revisit and pick from here
 Candidates, in no fixed order: guilds, real auth (password), going live
 (VPS + hosted DB), directional (4-way) character art so facing reads on the
@@ -3092,6 +3220,55 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- Emberhold's buildings are GENERATED rather than downloaded. The kits this
+  project uses have props, plants and characters and no buildings, and a
+  building pack in a different stylisation standing in front of Quaternius
+  pines is the exact mistake the treeline was already fixed for. Boxes and
+  prisms in the game's own palette cost a file and match by construction.
+- Town textures are drawn NEAR WHITE and multiply the palette rather than
+  carrying colour. One place decides what colour plaster is; a texture is only
+  ever a pattern of light and shade over it. They are also `NoColorSpace`, not
+  sRGB — decoding a shading mask as sRGB darkens every surface in town by about
+  a stop and the palette stops meaning what it says.
+- UVs for the town are box-projected from WORLD position, per triangle, on the
+  merged geometry. Primitive UVs are 0..1 per face regardless of the face's
+  size, so one shared map is four metres a tile on a wall and eight centimetres
+  on a window frame. Per triangle rather than per vertex: choosing the axis per
+  vertex tears every triangle that spans a corner.
+- The town's night lighting is two mechanisms, not one. Lanterns and lit
+  windows are places and come on by the hour alone — a town that only lights up
+  once you are inside it is a town with nothing to walk toward. The ambient
+  fill is a concession to legibility and is scaled by the PLAYER's distance from
+  the centre, so nobody carries the town's light out into the field with them.
+- No currency. Oswyn is priced in materials, which is what every other system in
+  the game is already priced in; adding coin would put a second, competing
+  denomination beside every number in the smithy. He sells only band 1–2 and
+  everything he stocks costs more in total than forging it, so he is a floor
+  under a bad start rather than a way round the anvil.
+- Quest progress is stored, not recomputed from statistics. Kills you made
+  BEFORE taking a quest do not count toward it — which is what a player expects
+  from "go and kill four slimes", and the alternative hands you a finished quest
+  the moment you accept it.
+- Quest kill credit uses the XP rule (everyone who damaged it), not the loot
+  rule (top contributor). Loot is indivisible and quest progress is not, and a
+  shared quest that only advanced for the killing blow would make questing
+  together worse than questing alone — the same defect Phase 42 fixed for
+  experience.
+- Nothing gatherable stands inside the walls. A node between the anvil and the
+  inn quietly makes the square another field, and a town is somewhere you go
+  between gathering trips.
+- One road through the town, not four spokes. Four gates cut the building ring
+  into four 66-degree arcs and six buildings do not fit in them without their
+  front corners overlapping. Two gates give two 156-degree arcs with room to
+  spare, and a village on a road is the more legible shape anyway.
+- The square is sized to the PEOPLE standing in it, not to its architecture.
+  The first build was measured against how much room the buildings needed and
+  was too tight the moment anybody stood in it. `SMITHY_CLEARANCE_PX` in the
+  layout test is deliberately far larger than any building requires.
+- Scenery counts are densities, not headcounts. The treeline and the ground
+  cover scale with the play area, so the next time the world is resized it does
+  not silently thin out — which is what happened to both when it grew by half.
 
 - Class is derived from the equipped weapon on every read rather than cached
   anywhere on the client. A cached copy would have to be invalidated on
@@ -4878,9 +5055,27 @@ rarities), multiple crafting stations. Not committing to order yet.
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M4.2 complete (2026-08-21). **The item system rebuilt and
+Phase 0 through 49 complete (2026-08-21). **The item system rebuilt and
 followed through, damage that knows what it is made of, every timed effect in
-one table with a row on screen — and a front door worth walking through.**
+one table with a row on screen, a front door worth walking through — and now a
+town to walk through it into.**
+
+**Phase 49 — Emberhold.** The world's one built thing was a smithy that also
+happened to be spawn. It is a town now: six generated buildings on a ring
+inside a palisade, a paved square with a monument, a road running gate to gate,
+and five people who each do something the game could not do before — a Herald
+who explains the rules out loud, a Provisioner with a real shop priced in
+materials, two quest givers with six quests between them, and an apprentice at
+the anvil. Nine procedural textures and world-projected UVs replaced the flat
+colour it shipped its first hour in. Lanterns and lit windows come on by the
+hour; the ambient lift that makes the square legible at midnight is scaled by
+how close you are standing, so nobody carries it out into the field. Walls are
+the first static obstacle the game has ever had. The world grew by half in each
+direction and every ring — bands, nodes, camps, treeline, ground cover — moved
+out with it, because everything radiating from the centre had been measured
+against a centre that used to be a single prop.
+
+Before that, Phase 48 M4.2.
 
 **M4.2** replaced the login card. The world renders behind it now: the same
 terrain, trees and forge the game draws, held at dusk, swaying across one

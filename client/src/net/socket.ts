@@ -45,6 +45,8 @@ export interface GameSocketHandlers {
   onStatusTick: (payload: Extract<ServerToClientMessage, { type: "STATUS_TICK" }>["payload"]) => void;
   onAttackState: (payload: Extract<ServerToClientMessage, { type: "ATTACK_STATE" }>["payload"]) => void;
   onWeaponProgress: (payload: Extract<ServerToClientMessage, { type: "WEAPON_PROGRESS" }>["payload"]) => void;
+  /** Every quest taken and every quest finished. Whole set, like the recipes. */
+  onQuestState: (payload: Extract<ServerToClientMessage, { type: "QUEST_STATE" }>["payload"]) => void;
 }
 
 export class GameSocket {
@@ -123,6 +125,8 @@ export class GameSocket {
         this.handlers.onAttackState(msg.payload);
       } else if (msg.type === "WEAPON_PROGRESS") {
         this.handlers.onWeaponProgress(msg.payload);
+      } else if (msg.type === "QUEST_STATE") {
+        this.handlers.onQuestState(msg.payload);
       }
     });
 
@@ -197,6 +201,19 @@ export class GameSocket {
 
   sendAllocateStat(stat: AttributeName): void {
     this.send({ type: "ALLOCATE_STAT", payload: { stat } });
+  }
+
+  /** Buying a line of the Provisioner's stock. Paid in materials. */
+  sendBuyFromVendor(npcId: string, entryId: string): void {
+    this.send({ type: "BUY_FROM_VENDOR", payload: { npcId, entryId } });
+  }
+
+  sendAcceptQuest(npcId: string, questId: string): void {
+    this.send({ type: "ACCEPT_QUEST", payload: { npcId, questId } });
+  }
+
+  sendTurnInQuest(npcId: string, questId: string): void {
+    this.send({ type: "TURN_IN_QUEST", payload: { npcId, questId } });
   }
 
   /** Make a named thing from the catalogue. The forge decides WHAT; the ladder

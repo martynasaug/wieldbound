@@ -13,8 +13,15 @@ export const BATTLE_RANGE_PX = 110;
 // point is not raw size: it is that difficulty can now be laid out as distance
 // from spawn, so wandering further is the progression rather than a menu of
 // equally-dangerous camps sitting a few steps apart.
-export const WORLD_WIDTH = 4800;
-export const WORLD_HEIGHT = 3600;
+// Half again as big in each direction, so the world is 2.25x the ground it
+// was. Emberhold is the reason: the town went from a smithy on open grass to a
+// 40-unit walled square, and everything radiating out from it was measured
+// against a centre that used to be a single prop. At the old radii the first
+// monster camp sat close enough to the palisade that a slime could aggro a
+// player standing at the anvil, and the five bands were packed into a strip
+// barely wider than the town itself.
+export const WORLD_WIDTH = 7200;
+export const WORLD_HEIGHT = 5400;
 
 export const GATHER_DURATION_MS = 3000;
 export const GATHER_LEVEL_STEP_MS = 400;
@@ -653,7 +660,16 @@ export function gatherUpgradeCost(level: number): number {
 // The rings are the monsters' own, so a player learns one geography rather than
 // two: the ground gets richer exactly where it gets dangerous, and the reason a
 // band-4 node is worth walking to is standing next to it.
-export const RESOURCE_BAND_RADII = [800, 1200, 1600, 2100] as const;
+// Band 1 is "the town and the ground you can see from it": the palisade stands
+// at 800 and the first boundary at 1350, so a player who walks out of a gate is
+// still in the ring they spawned in for a good while. The rest follow the world
+// out — the numbers grew with WORLD_WIDTH rather than staying put, because a
+// band is a fraction of the map and not an absolute distance.
+//
+// The far end is bounded by the map's SHORT axis: the world is 5400 tall, so
+// anything on a ring past 2700 falls outside it at the top and bottom of the
+// circle, and a node there is a node nobody can reach.
+export const RESOURCE_BAND_RADII = [1350, 1750, 2250, 2650] as const;
 
 /** Which of the five rings a point falls in, 1 (at the smithy) to 5. */
 export function bandAt(x: number, y: number): 1 | 2 | 3 | 4 | 5 {
@@ -3461,7 +3477,49 @@ export type ClientToServerMessage =
   | UseAttackMessage
   | LearnTalentMessage
   | ResetTalentsMessage
+  | BuyFromVendorMessage
+  | AcceptQuestMessage
+  | TurnInQuestMessage
   | SetHotbarMessage;
+
+// --- Emberhold ---------------------------------------------------------------
+// Declared here rather than beside the town's data, because this file is the
+// wire format and `shared/town.ts` is content. The one dependency runs the same
+// way it does for items: town imports protocol-types, never the reverse.
+
+/** Buying a line of Oswyn's stock. Paid in materials; there is no currency. */
+export interface BuyFromVendorMessage {
+  type: "BUY_FROM_VENDOR";
+  payload: { npcId: string; entryId: string };
+}
+
+export interface AcceptQuestMessage {
+  type: "ACCEPT_QUEST";
+  payload: { npcId: string; questId: string };
+}
+
+export interface TurnInQuestMessage {
+  type: "TURN_IN_QUEST";
+  payload: { npcId: string; questId: string };
+}
+
+/** One quest a character has taken and not yet been paid for. */
+export interface QuestProgressState {
+  id: string;
+  count: number;
+}
+
+/**
+ * Everything the tracker and the givers' lists need.
+ *
+ * Sent whole rather than as deltas — it is at most a dozen small rows, it
+ * changes only when something happens, and a delta protocol for a list this
+ * size is a way for two copies of it to drift apart.
+ */
+export interface QuestStateMessage {
+  type: "QUEST_STATE";
+  payload: { active: QuestProgressState[]; completed: string[] };
+}
 export type ServerToClientMessage =
   | StateSnapshotMessage
   | WelcomeMessage
@@ -3489,4 +3547,5 @@ export type ServerToClientMessage =
   | ManaUpdateMessage
   | StatusUpdateMessage
   | StatusTickMessage
+  | QuestStateMessage
   | SkillResultMessage;
