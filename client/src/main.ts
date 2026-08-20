@@ -1,6 +1,7 @@
 import { Game } from "./three/Game";
 import { hydrateIcons } from "./ui/icons";
 import { LoadingScreen, randomHint } from "./ui/LoadingScreen";
+import { LoginScreen } from "./ui/LoginScreen";
 
 // A thrown error inside Phaser's create() leaves a black canvas and nothing
 // else — the failure is completely silent unless you have devtools open.
@@ -25,17 +26,17 @@ window.addEventListener("unhandledrejection", (e) =>
   showFatal(String((e.reason as Error)?.stack ?? e.reason)),
 );
 
-const loginRoot = document.getElementById("login-root")!;
 const gameRoot = document.getElementById("game-root")!;
 const gameFrame = document.getElementById("game-frame")!;
-const nameInput = document.getElementById("name-input") as HTMLInputElement;
-const playButton = document.getElementById("play-button") as HTMLButtonElement;
 
 // There is no class picker any more. Class is whatever weapon you have
 // equipped (see classForWeapon), so choosing one up front would be a promise
 // the game immediately breaks the first time you swap weapons.
 function startGame(characterName: string): void {
-  loginRoot.style.display = "none";
+  // The card plays itself out first, so the hand-over reads as a transition
+  // rather than a cut. The loading screen goes over the top of it either way,
+  // which is why this can wait for the animation without holding anything up.
+  window.setTimeout(() => login.hide(), 280);
   gameRoot.style.display = "flex";
   gameFrame.style.width = "100%";
   gameFrame.style.height = "100%";
@@ -58,17 +59,9 @@ function startGame(characterName: string): void {
     });
 }
 
-function handlePlay(): void {
-  const name = nameInput.value.trim();
-  if (name) startGame(name);
-}
-
-playButton.addEventListener("click", handlePlay);
-nameInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") handlePlay();
-});
-// The static markup names its icons; this puts the glyphs in. Runs before
-// anything is shown, so no panel ever renders with empty icon slots.
+// The static markup names its icons; this puts the glyphs in. Runs BEFORE the
+// login screen is constructed, since that screen draws class and weapon glyphs
+// of its own and would otherwise render its tiles as empty boxes.
 hydrateIcons();
 
-nameInput.focus();
+const login = new LoginScreen(startGame);

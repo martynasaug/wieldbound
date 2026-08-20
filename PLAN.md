@@ -2988,6 +2988,63 @@ crafting system to go with them.
       poisoning the player back, and the rendered rectangles proving the row is
       somewhere you can see it.
 
+- [x] **M4.2 — a front door.** The first thing anybody saw was a card with a
+      heading, a name box and a paragraph explaining that there is no class to
+      pick — and because the card had no width of its own it stretched to fit
+      that paragraph: a thousand pixels across on a 1600px screen, with a 220px
+      input floating at one end and a Play button running the whole span. The
+      information was right and the page looked broken.
+      - **The world renders behind it now.** The same terrain shader, the same
+        ground cover, the same tree kit and the same forge that stands at the
+        centre of the map, held at dusk and drifting. There is no artist on this
+        project and never has been — every surface is procedural or CC0 — so a
+        painted splash would be the one asset nothing here could produce or keep
+        current. The renderer already knows how to draw this place, and the
+        honest title screen is the place itself
+      - **It SWAYS rather than orbits.** A full turn was the first version and it
+        is the wrong shape: the composition is hand-made — card on the left
+        third, forge on the right, smith lit from the front — and all three are
+        true of exactly one arc. Turning all the way round means most of every
+        visit is a framing nobody chose
+      - **A smith stands at the anvil**, and the Warrior rig carries its own
+        sword — so the figure is a warrior only because of what is in its hand.
+        That is the game's whole premise, stated without any words. It is placed
+        BEYOND the fire from the camera, which is the trick: with the forge
+        between the two, the side facing the player is the side the fire is on.
+        Standing it on the near side put a correctly-lit black cut-out in the
+        middle of the frame
+      - **Nothing about it is awaited.** The card is interactive on the first
+        frame; ground and sky are synchronous, and cover, trees, the forge and
+        the smith each arrive and fade in on their own. A failure in any one
+        leaves a thinner scene rather than no scene, and the whole backdrop is
+        constructed inside a try — a blocked WebGL context degrades to the flat
+        gradient with every other behaviour identical
+      - **The paragraph is gone**, replaced by four tiles showing each archetype
+        and the weapons that make it. DERIVED from `WEAPONS` through
+        `classForWeapon`, so a new family appears the moment it exists and the
+        first screen of the game can never lie about how the game works
+      - **A refusal says why.** The old button accepted a click on an empty
+        field and simply did not start the game, which is indistinguishable from
+        a broken page. And the last name is remembered — one name is one
+        character here, so the name IS the account, and making somebody retype
+        it every session is a password with no other purpose
+
+      **The bug worth recording.** The renderer appends its canvas as the last
+      child of `#login-root`, so with no explicit `z-index` it painted over
+      everything: a beautiful lit field with the entire login behind it. Every
+      DOM assertion in the suite passed straight through — the markup was
+      correct and only the pixels were wrong. The check that catches it now is
+      `elementFromPoint` over the card, which is a different kind of question
+      from any other assertion in this project.
+
+      Verified in a real browser: the card in the left third at 1600px and
+      centred at 520px, the field focused before any of the scene has loaded,
+      the card in front of the canvas, four tiles carrying [1,3,2,2] weapons
+      straight out of the weapon table, a two-letter minimum that explains
+      itself, the game starting, the backdrop giving its WebGL context back on
+      the way in, the name remembered across a reload, and the whole thing still
+      working with `getContext("webgl")` forced to return null.
+
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
 renderer-agnostic), and all six DOM panels (inventory, character, craft, skills,
@@ -3007,13 +3064,29 @@ stand-ins from the packs that did fetch cleanly (slime is a genuine match;
 skeleton, dragon and bat stand in for the rest).
 
 ## Phase 48+ — Revisit and pick from here
-Candidates, in no fixed order: mana as a resource on top of skill
-cooldowns, telegraphed boss attacks you can step out of, more skills
-(the `lightning` and `bolt` effect rows are still unused), guilds,
-real auth (password), going live (VPS + hosted DB), directional (4-way)
-character art so facing reads on the Y axis too, ambient world audio and
-music, player-facing damage-type/resistances, more crafting recipes
-(higher rarities), multiple crafting stations. Not committing to order yet.
+Candidates, in no fixed order: guilds, real auth (password), going live
+(VPS + hosted DB), directional (4-way) character art so facing reads on the
+Y axis too, ambient world audio and music, more crafting recipes (higher
+rarities), multiple crafting stations. Not committing to order yet.
+
+**Parked deliberately, both fallen out of M4.1 rather than wished for:**
+
+- **Skills that READ a status rather than only applying one.** The plumbing
+  now exists and nothing uses it in this direction: a finisher that hits
+  harder against something already bleeding, a detonator that consumes a
+  burn for a burst, a heal that cleanses a debuff. This is where a status
+  system stops being a set of timers and becomes a thing a player sequences —
+  and it is cheap now, because `statusesOf` is one call at every resolution
+  site. The reason to wait is balance rather than effort: a conditional
+  bonus is only interesting once the condition is common, and the debuffs
+  shipped one day ago.
+- **A lightning weapon, and the palette to hang it on.** `tools/test/
+  schools.mjs` prints the count every run and it still reads `lightning 0
+  weapons, 2 skills` — the only school with no weapon at all, because no
+  material in the catalogue reads as storm. It is not a one-line fix: a
+  thirteenth palette wants a matched set to be worth having, which wants
+  five slots of items made of it, which is the same shape as the M1.3 work
+  that added twenty-nine bases to make the sets assemblable.
 
 ---
 
@@ -4748,6 +4821,52 @@ music, player-facing damage-type/resistances, more crafting recipes
   window reported the figure from before the cast. The Statistics tab now lists
   "Running effects" as a fourth source beside talents, affixes and matched gear.
 
+- The title screen is the game, rendering. There is no artist on this project —
+  every surface is procedural or CC0 — so a painted splash would be the one
+  asset nothing here could produce, and the one that would go stale the first
+  time the terrain or the tree kit changed. Rendering the real scene means
+  retuning the world retunes the front door in the same commit, and it cost a
+  file rather than a budget.
+- It sways across a hand-picked arc instead of orbiting. A composition is only
+  true of one angle: the card on the left third, the forge on the right, the
+  smith lit from the front. A full turn means most of every visit is a framing
+  nobody chose — the subject behind the card, the figure a silhouette, the
+  treeline gapping open behind the text. Twenty degrees either side is enough to
+  be alive and never enough to leave the shot.
+- The smith stands BEYOND the fire from the camera, and that is a lighting
+  decision rather than a placement one. With the forge between the two, the side
+  of the figure facing the player is the side the fire is on. The first version
+  put it on the near side, where it was correctly lit — entirely on the face
+  nobody can see — and read as a black cut-out in the middle of the frame.
+- Nothing on the login screen is awaited. The scene builds in layers and each
+  fades in when it lands, so the card is interactive on the first frame rather
+  than after the trees have downloaded. The whole backdrop is also constructed
+  inside a try: the front door of a game is the last place that should be a hard
+  dependency on a working GPU, and a refused WebGL context now degrades to the
+  flat gradient with every other behaviour unchanged.
+- z-index is load-bearing here, not tidiness. `WebGLRenderer` appends its canvas
+  as the last child of its container, so in paint order it sits on top of
+  everything authored above it — the first version rendered a beautiful field
+  with the entire login behind it. Worth generalising twice over: any element
+  that a library appends for you is a sibling you did not order, and a test that
+  queries the DOM cannot see it. The assertion that catches this asks
+  `elementFromPoint` what is actually on top, which is the only question in the
+  suite that is about pixels rather than about structure.
+- The class tiles are derived from `WEAPONS` through `classForWeapon`, never
+  written out. That function is the single thing that decides what you are, and
+  the login page is the first screen of the game — a hand-written list would be
+  a fifth place to remember a new weapon family, and the failure is silent:
+  nothing throws when the front door explains the rules wrongly.
+- A refusal has to say why. The old Play button accepted the click on an empty
+  field and simply did not start the game, which is indistinguishable from a
+  broken page. Same argument the M3 draw picker made about a button that did
+  nothing, one screen earlier.
+- The last character name is remembered. One name is one character here, so the
+  name IS the account, and asking somebody to retype it every session is a
+  password with no other purpose. Storage is wrapped in a try for the same
+  reason the camera distance is: a remembered convenience must never be able to
+  stop the game starting.
+
 - This machine (a fresh Windows box picking up the project) had neither Git
   nor Node.js preinstalled; both were installed via `winget` (`Git.Git`,
   `OpenJS.NodeJS`) rather than assuming either was already present. Also has
@@ -4759,9 +4878,17 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M4.1 complete (2026-08-20). **The item system rebuilt and
-followed through, damage that knows what it is made of, and every timed effect
-in the game in one table with a row on screen.**
+Phase 0 through 48 M4.2 complete (2026-08-21). **The item system rebuilt and
+followed through, damage that knows what it is made of, every timed effect in
+one table with a row on screen — and a front door worth walking through.**
+
+**M4.2** replaced the login card. The world renders behind it now: the same
+terrain, trees and forge the game draws, held at dusk, swaying across one
+hand-picked arc with a smith at the anvil. The paragraph explaining that there
+is no class to pick became four tiles showing each archetype and the weapons
+that make it, derived from the weapon table so the first screen of the game
+cannot lie about it. Nothing is awaited — the card is live on the first frame,
+and a refused WebGL context degrades to the flat gradient.
 
 **M4.1** replaced four hand-written status timers with one table, added eight
 skills — one per weapon tree, so no weapon was left out — and gave the whole

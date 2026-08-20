@@ -31,9 +31,16 @@ That starts both halves via `concurrently`:
 - client — http://localhost:5173
 - server — ws://localhost:8080
 
-Open the client, enter a character name, and press Play. Open a second tab
+Open the client, type a character name, and press Enter. Open a second tab
 with a different name to see multiplayer. The database file is created on
 first run at `server/data/wieldbound.db`.
+
+The title screen is the game itself rendering — the same terrain, trees and
+forge, held at dusk with a smith at the anvil — because every surface in this
+project is procedural or CC0 and a painted splash would be the one asset
+nothing here could produce or keep current. It builds in layers behind a card
+that is live on the first frame, and degrades to a flat gradient if WebGL is
+unavailable.
 
 ## What's in it
 
