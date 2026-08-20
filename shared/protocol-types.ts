@@ -2073,6 +2073,28 @@ export interface MaterialsUpdateMessage {
 }
 
 /**
+ * Craft one consumable. Which one is a string from the shared table, so adding
+ * a consumable never adds a message — the thing four bespoke message pairs got
+ * wrong.
+ */
+export interface CraftConsumableMessage {
+  type: "CRAFT_CONSUMABLE";
+  payload: { stationId: string; id: string };
+}
+
+export interface UseConsumableMessage {
+  type: "USE_CONSUMABLE";
+  payload: { id: string };
+}
+
+/** Every consumable stack, by id. Whole, like the recipe list and for the same
+ *  reason: the set is tiny and a missed increment is silently wrong. */
+export interface ConsumablesUpdateMessage {
+  type: "CONSUMABLES_UPDATE";
+  payload: { counts: Record<string, number> };
+}
+
+/**
  * Everything the character has learned to make.
  *
  * Sent whole rather than as a delta, for the same reason the item list is: the
@@ -2713,6 +2735,8 @@ export type ClientToServerMessage =
   | AllocateStatMessage
   | ForgeItemMessage
   | ReforgeItemMessage
+  | CraftConsumableMessage
+  | UseConsumableMessage
   | CraftPotionMessage
   | UsePotionMessage
   | CraftTonicMessage
@@ -2730,6 +2754,7 @@ export type ServerToClientMessage =
   | InventoryUpdateMessage
   | MaterialsUpdateMessage
   | RecipesUpdateMessage
+  | ConsumablesUpdateMessage
   | HerbUpdateMessage
   | OreUpdateMessage
   | XpUpdateMessage

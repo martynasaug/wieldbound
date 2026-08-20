@@ -1517,6 +1517,106 @@ export function essenceFor(band: ItemBand, guaranteed: boolean): number {
   return guaranteed ? band + 1 : Math.max(1, Math.round(band * 0.6));
 }
 
+// --- Consumables ------------------------------------------------------------
+// Two hardcoded constants and four bespoke messages, beside a catalogue of a
+// hundred and seven named things with a forge, a ladder and a salvage loop. The
+// potion and the tonic were the last part of the item system that could not be
+// extended by adding a row.
+//
+// They are still COUNTERS rather than instances, and deliberately so: there is
+// nothing to equip, nothing to roll, and nothing to compare — a potion is a
+// quantity, and giving it an id, a quality and two stat rolls would be
+// ceremony. What they gain is a table: a name, a cost, an effect, and the
+// wiring reads all of it.
+//
+// Every effect below is something the game already knows how to do. That is the
+// constraint that kept this bounded — a consumable that needed a new mechanic
+// would be a new mechanic wearing a potion bottle.
+
+export type ConsumableId = "potion" | "tonic" | "draught" | "philtre";
+
+export interface ConsumableEffect {
+  /** Health restored. */
+  heal?: number;
+  /** Experience granted. */
+  xp?: number;
+  /** Mana restored. */
+  mana?: number;
+  /** Milliseconds of the same damage buff War Cry grants. */
+  buffMs?: number;
+}
+
+export interface ConsumableDef {
+  id: ConsumableId;
+  name: string;
+  icon: string;
+  cost: MaterialCost;
+  effect: ConsumableEffect;
+  /** One line, for the bench and the bag. */
+  blurb: string;
+  /** Shared cooldown group. Anything that heals is gated together, or a stack
+   *  of two different healing items is the immunity button the potion cooldown
+   *  exists to prevent. */
+  gated: boolean;
+}
+
+export const CONSUMABLES: Record<ConsumableId, ConsumableDef> = {
+  potion: {
+    id: "potion",
+    name: "Health Potion",
+    icon: "potion",
+    cost: { wood: 2, herb: 8 },
+    effect: { heal: 30 },
+    blurb: "Closes wounds. Not quickly enough to drink mid-swing.",
+    gated: true,
+  },
+  tonic: {
+    id: "tonic",
+    name: "XP Tonic",
+    icon: "tonic",
+    cost: { ore: 4, herb: 12 },
+    effect: { xp: 25 },
+    blurb: "Tastes of ash. You will remember the fight more clearly.",
+    gated: false,
+  },
+  draught: {
+    id: "draught",
+    name: "Blue Draught",
+    icon: "mana",
+    cost: { herb: 14, ore: 6 },
+    effect: { mana: 45 },
+    blurb: "Cold going down, and the next spell comes easier.",
+    gated: false,
+  },
+  philtre: {
+    id: "philtre",
+    name: "Wrathful Philtre",
+    icon: "warcry",
+    // The one that wants essence: a buff is closer to gear than to groceries,
+    // and essence is the material you can only get by fighting.
+    cost: { herb: 10, ore: 8, essence: 2 },
+    effect: { buffMs: 12000 },
+    blurb: "Twelve seconds of not minding what happens to you.",
+    gated: false,
+  },
+};
+
+export const CONSUMABLE_IDS: ConsumableId[] = Object.keys(CONSUMABLES) as ConsumableId[];
+
+export function consumableDef(id: string): ConsumableDef | null {
+  return CONSUMABLES[id as ConsumableId] ?? null;
+}
+
+/** How a consumable reads in a list, e.g. "restores 30 health". */
+export function consumableSummary(def: ConsumableDef): string {
+  const parts: string[] = [];
+  if (def.effect.heal) parts.push(`restores ${def.effect.heal} health`);
+  if (def.effect.mana) parts.push(`restores ${def.effect.mana} mana`);
+  if (def.effect.xp) parts.push(`grants ${def.effect.xp} experience`);
+  if (def.effect.buffMs) parts.push(`${Math.round(def.effect.buffMs / 1000)}s of heavier blows`);
+  return parts.join(", ");
+}
+
 // --- Forge ------------------------------------------------------------------
 
 /**

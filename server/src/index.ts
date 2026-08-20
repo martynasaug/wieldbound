@@ -131,6 +131,8 @@ import {
   rollItem,
   rollRarity,
   rollRarityWithFloor,
+  consumableDef,
+  consumableSummary,
   hitBandOf,
   reachOf,
   swingIntervalOf,
@@ -155,6 +157,9 @@ import {
   spendMaterials,
   addEssence,
   knownRecipes,
+  addConsumable,
+  consumablesOf,
+  spendConsumable,
   listItems,
   equipItem,
   craftPotion,
@@ -1624,6 +1629,13 @@ function maybeDropEssence(playerId: string, socket: WebSocket, monster: MonsterS
   sendInfo(socket, `+${amount} essence`, "#c0a6ff");
 }
 
+/** Every consumable stack the character holds. */
+function sendConsumables(socket: WebSocket, counts: Record<string, number>): void {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  const update: ServerToClientMessage = { type: "CONSUMABLES_UPDATE", payload: { counts } };
+  socket.send(JSON.stringify(update));
+}
+
 /** Everything this character has learned to make. */
 function sendRecipes(socket: WebSocket, playerId: string): void {
   if (socket.readyState !== WebSocket.OPEN) return;
@@ -1761,6 +1773,7 @@ wss.on("connection", (socket) => {
       // is better than a fifth field that only some paths remember to set.
       sendMaterials(socket, id);
       sendRecipes(socket, id);
+      sendConsumables(socket, consumablesOf(id));
       return;
     }
 
@@ -2105,6 +2118,74 @@ wss.on("connection", (socket) => {
       herbBalances.set(id, result.herb);
       potionBalances.set(id, result.potions);
       sendPotionsUpdate(socket, result.potions, result.wood, result.ore, result.herb);
+    }
+
+    // --- consumables: one pair of handlers for the whole table --------------
+    if (msg.type === "CRAFT_CONSUMABLE" && id) {
+      if (!atStation(id, msg.payload.stationId)) return;
+      const def = consumableDef(msg.payload.id);
+      if (!def) return;
+      if (!spendMaterials(id, def.cost)) {
+        sendInfo(socket, `Not enough materials — ${def.name} needs ${describeCost(def.cost)}.`, "#c98d5e");
+        return;
+      }
+      const counts = addConsumable(id, def.id);
+      sendMaterials(socket, id);
+      sendConsumables(socket, counts);
+      return;
+    }
+
+    if (msg.type === "USE_CONSUMABLE" && id) {
+      const def = consumableDef(msg.payload.id);
+      if (!def) return;
+      const nowMs = Date.now();
+
+      // One cooldown group for everything that heals. Without it a stack of two
+      // different healing items is exactly the immunity button the potion
+      // cooldown exists to prevent, and "add a consumable" would quietly be a
+      // way around it.
+      if (def.gated) {
+        const readyAt = potionReadyAt.get(id) ?? 0;
+        if (nowMs < readyAt) {
+          sendInfo(socket, `Not ready (${Math.ceil((readyAt - nowMs) / 1000)}s)`, "#9e9e9e");
+          return;
+        }
+      }
+
+      const counts = spendConsumable(id, def.id);
+      if (!counts) return;
+      if (def.gated) potionReadyAt.set(id, nowMs + POTION_COOLDOWN_MS);
+      sendConsumables(socket, counts);
+
+      const attrs = attributes.get(id) ?? EMPTY_ATTRS;
+      if (def.effect.heal) {
+        const maxHp = maxHpForLevel(playerLevels.get(id) ?? 1, attrs.vitality);
+        const newHp = addHp(id, def.effect.heal, maxHp);
+        hpBalances.set(id, newHp);
+        lastRegenAt.set(id, nowMs);
+        sendHpUpdate(socket, newHp, maxHp, false);
+      }
+      if (def.effect.mana) {
+        const maxMana = maxManaOf(id, attrs);
+        const next = Math.min(maxMana, (manaBalances.get(id) ?? 0) + def.effect.mana);
+        manaBalances.set(id, next);
+        sendManaUpdate(socket, next, maxMana);
+      }
+      if (def.effect.xp) {
+        const { xp, level, leveledUp, statPoints } = addXp(id, def.effect.xp);
+        playerLevels.set(id, level);
+        attrs.statPoints = statPoints;
+        attributes.set(id, attrs);
+        sendXpUpdate(socket, xp, level, leveledUp);
+        if (leveledUp) sendStatsUpdate(socket, attrs, maxHpOf(id, attrs), maxManaOf(id, attrs));
+      }
+      if (def.effect.buffMs) {
+        // The same buff War Cry grants, which is the point: a consumable that
+        // needed a new mechanic would be a new mechanic wearing a potion bottle.
+        playerBuffUntil.set(id, nowMs + def.effect.buffMs);
+        sendInfo(socket, `${def.name} — ${consumableSummary(def)}.`, "#ffd873");
+      }
+      return;
     }
 
     if (msg.type === "USE_POTION" && id) {

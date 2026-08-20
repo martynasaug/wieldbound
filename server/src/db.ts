@@ -698,6 +698,78 @@ export function learnRecipe(characterId: string, baseId: string): boolean {
   return Number(result.changes) > 0;
 }
 
+// --- Consumables ------------------------------------------------------------
+// Counters, keyed by (character, id). Rows rather than a column each, so adding
+// a consumable is a row in `CONSUMABLES` and nothing here — which is the whole
+// point of the table replacing two hardcoded constants.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS consumables (
+    characterId TEXT NOT NULL,
+    id TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (characterId, id)
+  );
+`);
+
+// The two that predate the table, carried across once. Their columns stay on
+// `characters` — reading them is how this migration knows what to carry, and
+// dropping a column in SQLite is a table rebuild for no gain.
+const CONSUMABLE_MOVE_MARK = "consumables-v2-table";
+if (!db.prepare("SELECT mark FROM schema_marks WHERE mark = ?").get(CONSUMABLE_MOVE_MARK)) {
+  const rows = db
+    .prepare("SELECT id, potions, tonics FROM characters")
+    .all() as unknown as { id: string; potions: number; tonics: number }[];
+  const move = db.prepare(
+    "INSERT OR REPLACE INTO consumables (characterId, id, count) VALUES (?, ?, ?)",
+  );
+  let moved = 0;
+  for (const row of rows) {
+    if (row.potions > 0) { move.run(row.id, "potion", row.potions); moved++; }
+    if (row.tonics > 0) { move.run(row.id, "tonic", row.tonics); moved++; }
+  }
+  db.prepare("INSERT INTO schema_marks (mark, appliedAt) VALUES (?, ?)").run(
+    CONSUMABLE_MOVE_MARK,
+    Date.now(),
+  );
+  console.log(`[db] consumables: carried ${moved} stack(s) into the new table, once`);
+}
+
+const selectConsumables = db.prepare(
+  "SELECT id, count FROM consumables WHERE characterId = ?",
+);
+const addConsumableStmt = db.prepare(
+  "INSERT INTO consumables (characterId, id, count) VALUES (?, ?, ?)" +
+    " ON CONFLICT(characterId, id) DO UPDATE SET count = count + excluded.count",
+);
+const spendConsumableStmt = db.prepare(
+  "UPDATE consumables SET count = count - 1 WHERE characterId = ? AND id = ? AND count > 0",
+);
+
+export function consumablesOf(characterId: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const row of selectConsumables.all(characterId) as unknown as {
+    id: string;
+    count: number;
+  }[]) {
+    out[row.id] = row.count;
+  }
+  return out;
+}
+
+export function addConsumable(characterId: string, id: string, count = 1): Record<string, number> {
+  addConsumableStmt.run(characterId, id, count);
+  return consumablesOf(characterId);
+}
+
+/** Spends one, atomically. Returns null if there was none — the check is in the
+ *  statement's WHERE clause for the same reason every other spend here is:
+ *  two rapid clicks must not both succeed against one bottle. */
+export function spendConsumable(characterId: string, id: string): Record<string, number> | null {
+  const result = spendConsumableStmt.run(characterId, id);
+  if (Number(result.changes) === 0) return null;
+  return consumablesOf(characterId);
+}
+
 export interface MaterialTotals {
   wood: number;
   ore: number;

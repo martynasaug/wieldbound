@@ -105,6 +105,7 @@ import {
 } from "./World";
 import { instantiate, whenLoadsSettle } from "./assets";
 import {
+  CONSUMABLES,
   ITEM_BASES,
   PALETTE_SETS,
   activeSets,
@@ -424,16 +425,14 @@ export class Game {
     this.inventoryPanel = new InventoryPanel(
       (itemId) => this.socket.sendEquipItem(itemId),
       (itemId) => this.salvageItem(itemId),
-      () => this.socket.sendUsePotion(),
-      () => this.socket.sendUseTonic(),
+      (id) => this.socket.sendUseConsumable(id),
     );
     this.craftPanel = new CraftPanel(
       (stationId, baseId) => this.socket.sendForgeItem(stationId, baseId),
       (stationId, itemId, affix) => this.socket.sendReforgeItem(stationId, itemId, affix),
       (itemId) => this.salvageItem(itemId),
       (itemIds) => this.socket.sendSalvageMany(itemIds),
-      (stationId) => this.socket.sendCraftPotion(stationId),
-      (stationId) => this.socket.sendCraftTonic(stationId),
+      (stationId, id) => this.socket.sendCraftConsumable(stationId, id),
     );
     this.skillPanel = new SkillPanel(
       (nodeId) => this.socket.sendLearnTalent(nodeId),
@@ -479,6 +478,9 @@ export class Game {
         this.herb = p.herb;
         this.essence = p.essence;
         this.syncMaterials();
+      },
+      onConsumables: (p) => {
+        this.inventoryPanel.setConsumables(p.counts);
       },
       onRecipes: (p) => {
         // Learning a recipe is the moment the smithy's loop closes, and it
@@ -645,6 +647,7 @@ export class Game {
       // constantly, and neither is answerable from the item instance alone.
       ITEM_BASES,
       RARITIES,
+      CONSUMABLES,
       PALETTE_SETS,
       activeSets,
       canForge,

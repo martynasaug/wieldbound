@@ -42,6 +42,9 @@ import {
   canForge,
   eligibleAffixes,
   describeCost,
+  CONSUMABLES,
+  CONSUMABLE_IDS,
+  consumableSummary,
   forgeCost,
   forgePreview,
   itemBase,
@@ -89,8 +92,7 @@ export class CraftPanel {
     private readonly onReforge: (stationId: string, itemId: string, affix?: string) => void,
     private readonly onSalvage: (itemId: string) => void,
     private readonly onSalvageMany: (itemIds: string[]) => void,
-    private readonly onCraftPotion: (stationId: string) => void,
-    private readonly onCraftTonic: (stationId: string) => void,
+    private readonly onCraftConsumable: (stationId: string, id: string) => void,
   ) {
     this.closeButton.addEventListener("click", () => this.close());
   }
@@ -231,12 +233,27 @@ export class CraftPanel {
 
   private renderForge(): void {
     this.section("consumables");
-    this.renderConsumable(`Health Potion (+${POTION_HEAL_AMOUNT} HP)`, "#7ed957", POTION_CRAFT_COST, () => {
-      if (this.stationId) this.onCraftPotion(this.stationId);
-    });
-    this.renderConsumable(`XP Tonic (+${TONIC_XP_AMOUNT} XP)`, "#ffd873", TONIC_CRAFT_COST, () => {
-      if (this.stationId) this.onCraftTonic(this.stationId);
-    });
+    // From the same table the bag reads, so the two can never disagree about
+    // what a Blue Draught costs or does.
+    for (const id of CONSUMABLE_IDS) {
+      const def = CONSUMABLES[id];
+      const sub = this.costLine(def.cost);
+      const what = document.createElement("div");
+      what.className = "craft-row-step";
+      what.textContent = consumableSummary(def);
+      sub.prepend(what);
+      this.row(
+        def.icon,
+        def.name,
+        "#cbbb95",
+        sub,
+        "Craft",
+        canAfford(def.cost, this.materials).ok && !!this.stationId,
+        () => {
+          if (this.stationId) this.onCraftConsumable(this.stationId, def.id);
+        },
+      );
+    }
 
     // One shelf at a time. Seventy-eight recipes in one column is a list
     // nobody reads to the bottom of.

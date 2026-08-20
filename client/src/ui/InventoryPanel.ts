@@ -15,6 +15,9 @@ import { attachItemTooltip, attachMaterialTooltip } from "./ItemTooltip";
 import { iconEl, iconSvg } from "./icons";
 import { isUpgrade, itemIcon, itemShortName, rarityColor, rarityGlows, SLOT_ICON } from "./items";
 import {
+  CONSUMABLES,
+  CONSUMABLE_IDS,
+  consumableSummary,
   itemScore,
   MATERIAL_ICON,
   MATERIAL_LABEL,
@@ -49,6 +52,7 @@ export class InventoryPanel {
 
   private items: ItemInstance[] = [];
   private materials: Record<Material, number> = { wood: 0, ore: 0, herb: 0, essence: 0 };
+  private consumables: Record<string, number> = {};
   private potions = 0;
   private tonics = 0;
   /** Player-chosen order, applied on top of arrival order. Not persisted: it is
@@ -58,8 +62,7 @@ export class InventoryPanel {
   constructor(
     private readonly onEquip: (itemId: string) => void,
     private readonly onSell: (itemId: string) => void,
-    private readonly onUsePotion: () => void,
-    private readonly onUseTonic: () => void,
+    private readonly onUseConsumable: (id: string) => void,
   ) {
     this.closeButton.addEventListener("click", () => this.close());
     this.sortButton.addEventListener("click", () => {
@@ -92,6 +95,11 @@ export class InventoryPanel {
 
   setMaterials(m: Record<Material, number>): void {
     this.materials = m;
+    this.renderFooter();
+  }
+
+  setConsumables(counts: Record<string, number>): void {
+    this.consumables = counts;
     this.renderFooter();
   }
 
@@ -196,17 +204,21 @@ export class InventoryPanel {
       this.materialsEl.appendChild(el);
     }
 
+    // Driven off the shared table, so adding a consumable is a row there and
+    // nothing here. Empty stacks are drawn too — a button that vanishes when it
+    // reaches zero is one the player has to remember exists.
     this.consumablesEl.innerHTML = "";
-    this.consumablesEl.appendChild(
-      this.useButton("potion", this.potions, `Health Potion — heals ${POTION_HEAL_AMOUNT} HP.`, () =>
-        this.onUsePotion(),
-      ),
-    );
-    this.consumablesEl.appendChild(
-      this.useButton("tonic", this.tonics, `XP Tonic — grants ${TONIC_XP_AMOUNT} XP.`, () =>
-        this.onUseTonic(),
-      ),
-    );
+    for (const id of CONSUMABLE_IDS) {
+      const def = CONSUMABLES[id];
+      this.consumablesEl.appendChild(
+        this.useButton(
+          def.icon,
+          this.consumables[id] ?? 0,
+          `${def.name} — ${consumableSummary(def)}. ${def.blurb}`,
+          () => this.onUseConsumable(id),
+        ),
+      );
+    }
   }
 
   private useButton(icon: string, count: number, title: string, onUse: () => void): HTMLElement {

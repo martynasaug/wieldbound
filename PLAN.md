@@ -2580,8 +2580,33 @@ crafting system to go with them.
       - A bare character gets a line saying what would appear there, because an
         empty panel teaches nothing
 
+- [x] **M1.14 — consumables become a table.** Two hardcoded constants and four
+      bespoke message pairs, sitting beside a catalogue of 107 named things with
+      a forge, a ladder and a salvage loop. The potion and the tonic were the
+      last part of the item system that could not be extended by adding a row.
+      - **`CONSUMABLES` in shared**, and one pair of messages for the whole
+        table — `CRAFT_CONSUMABLE` and `USE_CONSUMABLE` — so adding one never
+        adds a message, which is exactly what four bespoke pairs got wrong
+      - Still **counters rather than instances**, deliberately: there is nothing
+        to equip, nothing to roll and nothing to compare. A potion is a
+        quantity, and giving it an id, a quality and two stat rolls would be
+        ceremony
+      - Two new ones, and **every effect is something the game already knew how
+        to do**. That constraint is what kept this bounded: a consumable needing
+        a new mechanic would be a new mechanic wearing a potion bottle. The Blue
+        Draught restores mana; the Wrathful Philtre grants War Cry's own buff
+        and is the one recipe that wants **essence**, because a buff is closer
+        to gear than to groceries
+      - **The healing cooldown became a GROUP.** It gated the potion by name; a
+        second healing item would have walked straight past it, so "add a
+        consumable" would quietly have been a way around the rule that stops a
+        stocked player being unkillable
+      - Stored as rows keyed by (character, id), and the two old columns were
+        carried across once on the same schema-mark pattern the item wipe used —
+        78 stacks moved on the first boot
+
 - [ ] **M2 — remaining item work.** What a second material tier would buy, and
-      whether consumables belong in the catalogue rather than beside it.
+      whether the bag wants stacking now that four consumables sit under it.
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -4035,6 +4060,23 @@ music, player-facing damage-type/resistances, more crafting recipes
 - The gather upgrade scales WITH the band rather than beside it, or it is worth
   most in exactly the place it is easiest to use — which would make the safest
   ground the best ground and undo the point of the rings.
+
+- Consumables are a table, but they are still counters rather than instances.
+  There is nothing to equip, nothing to roll and nothing to compare — a potion is
+  a quantity, and giving it an id, a quality and two stat rolls to match the
+  catalogue would be ceremony rather than consistency. What they needed was a
+  row, not an ItemInstance.
+- One pair of messages for a whole table. Four bespoke pairs meant adding a
+  consumable meant adding a message, a handler, a column and a UI branch — which
+  is why there were two of them for a year.
+- Every consumable effect had to be something the game already did. That is what
+  kept the work bounded: a consumable needing a new mechanic is a new mechanic
+  wearing a potion bottle, and it would have arrived with none of a mechanic's
+  usual scrutiny.
+- The healing cooldown is a GROUP, not a potion. It gated by name, so the second
+  healing item would have walked straight past it — "add a consumable" would
+  quietly have become a way around the rule that stops a stocked player being
+  unkillable.
 
 - A test that shares a world with a live game must assert on IDENTITY, not on
   counts. Something is usually hitting the character, so a stray real damage
