@@ -4156,6 +4156,76 @@ the bends, exactly where a traveller needs to see where the road goes). Plus
 road reading at midnight as a line of fires going north.
 
 
+### M53.2 — the ground stops being one green
+*"remake ground/grass to a better looking/more texture/high quality, because it
+looks too simple, plain."*
+
+It was two surfaces and two noise fields. That was enough to beat TILING — which
+is what the file was written to solve, and it did solve it — and it left a
+different problem behind that nobody had named: a field with exactly one kind of
+boundary in it. Green here, brown there, everywhere, forever. Nothing to find
+after the first second.
+
+**The problem is not resolution, it is information.** A bigger source image does
+not help, because the eye is picking up the period and then, once the period is
+gone, the poverty of the vocabulary. So there are three fields now, at three
+scales chosen not to be multiples of each other so that no two of them ever line
+up into one visible feature:
+
+- **Region**, the slowest — a full cycle is on the order of a hundred and fifty
+  units, so it reads as the land changing rather than as a patch of anything. It
+  drifts between two grasses, which means two patches of "grass" a hundred units
+  apart are visibly not the same grass. This is the field doing the most work
+  and it is the one that was missing.
+- **Wear**, thresholded hard, with a second faster field breaking its outline so
+  a bare patch is not an ellipse. That is the difference between "ground that
+  has been walked on" and "somebody airbrushed here".
+- **Stone**, riding ON the wear field rather than being its own, so gravel can
+  only ever appear inside bare earth. It is what gives a worn patch an EDGE
+  instead of a fade, and never turns up in the middle of a lawn.
+
+**And a near-field detail layer, which is the one that actually fixes "plain".**
+At this camera the ground nearest the player fills a third of the screen and was
+being drawn with exactly the same information as the ground at the fog line. A
+metre-scale multiplier now runs on the albedo and fades out completely by 34
+units. The fade is not an optimisation, it is the entire trick: a
+high-frequency multiplier carried into the distance aliases into shimmer, which
+is worse than flat. Because it is gone before it can shimmer, it can be far
+stronger than a global one ever could.
+
+Four Poly Haven surfaces rather than two, chosen close in VALUE and far apart in
+TEXTURE — a pale sand beside a dark loam reads as two materials meeting, while a
+leafy grass beside a dry leafy one reads as one field that is not the same
+everywhere. Four and not more, because every surface is three texture units and
+two more samples per fragment on the largest thing in every frame.
+
+**Not every surface gets a normal map.** Grass and dirt carry the two that
+matter — they are the pair that meets at every worn edge, which is the only
+place on flat ground where the lighting difference between two surfaces is
+legible — and the regional grass and the gravel borrow whichever is dominant.
+Four normal samples to perturb lighting that at a forty-degree camera is mostly
+flat anyway is a bad trade.
+
+The tile came down from six units to 3.4, which is what puts detail under the
+player's feet: at six metres a blade of grass in the source image arrived at
+roughly one screen pixel, which is detail paid for and not seen. Halving the
+tile doubles how visible the repeat would be, and the three fields above are
+what pays for it. Anisotropy went 8 → 16 at the same time, because a smaller
+tile is a steeper UV gradient and that is exactly what anisotropy is measured
+against.
+
+### Verified
+All ten offline suites, both workspaces clean, and a browser pass: the full
+84-item load completes in 14 seconds with the twelve new texture files on the
+wire, and the wide shot shows the region field working — green foreground, a
+broad dry band across the middle, green again beyond. Zero console errors.
+
+### Still to come in this phase
+M53.3 is relief — the play area is a perfectly flat plane and no amount of
+surface work fixes that. M53.4 is forests as regions rather than a treeline, and
+a river the road has to cross.
+
+
 ---
 
 ## Phase 48+ — Revisit and pick from here
@@ -6084,6 +6154,19 @@ rarities), multiple crafting stations. Not committing to order yet.
   artifact, bisection beats theory, and naming the ground meshes (`town-paving`,
   `town-road`, `town-island`) is what made bisection possible from a console.
 
+- **Tiling and monotony are two different problems.** (Phase 53) The terrain
+  shader beat tiling in Phase 47 with two surfaces and two noise fields, and
+  what it left behind was a field with exactly ONE kind of boundary in it. A
+  bigger source texture fixes neither: the eye picks up the period first and the
+  poverty of the vocabulary second. Four surfaces and three fields at
+  non-multiple scales is the fix, and the slowest field — a regional drift over
+  a hundred and fifty units — is the one doing most of the work.
+- **Detail belongs where the camera can resolve it and nowhere else.** (Phase 53)
+  A metre-scale multiplier on the ground albedo, faded out by 34 units. The fade
+  is not an optimisation, it is what makes the layer possible: carried into the
+  distance the same signal aliases into shimmer, which is worse than flat. Being
+  gone before it can shimmer is what lets it be strong enough to matter
+  underfoot, where a third of the screen is.
 - **A world may grow without its difficulty rings growing with it.** (Phase 53)
   The bands were scaled with `WORLD_WIDTH` last time, on the argument that a
   band is a fraction of the map. That is true of a world with one place in it
@@ -6220,6 +6303,17 @@ lightning for a seam — so the counter to a golem is a thing you get by killing
 golems the slow way first. And the golem now THROWS lightning as well as folding
 to it, because before that, five elements could be worn against and only four
 could ever be thrown at you.
+
+**Phase 53 M53.2 — the ground stops being one green.** Four Poly Haven surfaces
+rather than two, and three noise fields at scales chosen not to be multiples of
+each other: a regional drift between two grasses over a hundred and fifty units,
+wear cut into it with a broken outline so a bare patch is not an ellipse, and
+gravel riding on the wear so the worst of it has an edge rather than a fade. Plus
+a metre-scale detail layer that exists only within 34 units of the camera —
+which is what actually fixes "plain", since the ground at the player's feet is a
+third of the screen and had been drawn with the same information as the fog line.
+The tile halved to 3.4 units to put detail underfoot, and the three fields are
+what pays for the repeat that would otherwise expose.
 
 **Phase 53 M53.1 — five times the ground, and a road out of it.** The world is
 16,000 x 12,000 now, and the difficulty rings deliberately did NOT grow with it:

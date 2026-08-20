@@ -1,27 +1,55 @@
-// The ground: a tiled PBR surface that blends grass into dirt and breaks its
-// own repetition.
+// The ground: four PBR surfaces blended by three noise fields, plus a near-field
+// detail layer that only exists where the camera can resolve it.
 //
-// The problem this solves is that tiling is obvious. A texture repeated every
-// few metres across a 120x90 field reads as wallpaper no matter how good the
-// source image is, and buying a bigger source image does not help — the eye is
-// picking up the PERIOD, not the resolution. So two things happen in the
-// shader, both driven by world position rather than by UV:
+// THE PROBLEM IS NOT RESOLUTION, IT IS INFORMATION. A tiled texture across a
+// four-hundred-unit field reads as wallpaper no matter how good the source
+// image is, because the eye picks up the PERIOD rather than the pixels — and a
+// bigger source image does not change the period. The first version of this
+// file solved that with two surfaces and two noise fields, which killed the
+// tiling and left something else: a field with exactly one kind of boundary in
+// it. Green here, brown there, everywhere, forever. Nothing to find after the
+// first second.
 //
-//   1. A second surface (dirt) is mixed in under a low-frequency noise, so the
-//      field has worn patches whose shape has nothing to do with the tile grid.
-//   2. A much lower-frequency tint multiplies the albedo, so even inside one
-//      surface the colour drifts across distances far larger than a tile.
+// So there are three things happening now, at three different scales, and they
+// are deliberately independent so that no two of them line up:
 //
-// Both are cheap — a handful of noise samples — and between them the tile
-// boundary stops being findable.
+//   1. A REGIONAL drift between two grasses, over tens of metres. This is the
+//      slowest field and it does the most work: it means two patches of "grass"
+//      a hundred units apart are visibly not the same grass.
+//   2. WEAR — dirt cut into whatever the region is, thresholded hard enough to
+//      have a shape rather than a gradient, with gravel showing through the
+//      middle of the worst of it. The gravel is what gives a bare patch an edge
+//      instead of a fade, and an edge is what makes it read as ground that has
+//      been walked on rather than as a stain.
+//   3. DETAIL, at a metre or so, faded out with distance from the camera. This
+//      is the one that fixes "plain": at this camera the ground nearest the
+//      player fills a third of the screen and was being drawn with exactly the
+//      same information as the ground at the fog line. Fading it by distance is
+//      not an optimisation, it is the whole trick — a high-frequency multiplier
+//      that carried on into the distance would alias into shimmering noise, and
+//      that is worse than flat.
+//
+// Everything is driven by WORLD POSITION rather than UV, so a patch stays on the
+// ground when the camera moves instead of swimming with it.
 
 import * as THREE from "three";
 import { trackLoad } from "./assets";
 
 const TEXTURE_PATH = "/textures/terrain";
 
-/** World units per texture tile. Small enough to hold detail underfoot. */
-const TILE_UNITS = 6;
+/**
+ * World units per texture tile.
+ *
+ * Down from 6. Six metres to a tile put the grass blades in the source image at
+ * roughly a pixel each by the time they reached the screen, which is the
+ * definition of detail you have paid for and cannot see. At 3.4 the near ground
+ * resolves and the tiling that would normally expose is hidden by the three
+ * fields above — which is the trade this whole file exists to make.
+ */
+const TILE_UNITS = 3.4;
+
+/** How far from the camera the detail layer has faded out completely. */
+const DETAIL_FADE_UNITS = 34;
 
 /**
  * Poly Haven packs ambient occlusion, roughness and metalness into one image's
@@ -31,15 +59,15 @@ const TILE_UNITS = 6;
  * needs a second UV channel, and a tiled AO map on flat ground contributes
  * almost nothing.
  */
-function loadSurface(name: string, repeat: number): {
-  map: THREE.Texture;
-  normal: THREE.Texture;
-  arm: THREE.Texture;
-} {
+function loadSurface(
+  name: string,
+  repeat: number,
+  withNormal: boolean,
+): { map: THREE.Texture; normal: THREE.Texture | null; arm: THREE.Texture } {
   const loader = new THREE.TextureLoader();
   const get = (suffix: string, srgb: boolean) => {
     // Counted by the shared loader, or the loading screen would fill while the
-    // heaviest six files in the game were still on the wire.
+    // heaviest files in the game were still on the wire.
     const done = trackLoad(`${name}_${suffix}.jpg`);
     const t = loader.load(`${TEXTURE_PATH}/${name}_${suffix}.jpg`, done, undefined, done);
     t.wrapS = THREE.RepeatWrapping;
@@ -48,10 +76,22 @@ function loadSurface(name: string, repeat: number): {
     if (srgb) t.colorSpace = THREE.SRGBColorSpace;
     // The ground is seen at a grazing angle almost everywhere, which is exactly
     // the case where anisotropy is the difference between crisp and smeared.
-    t.anisotropy = 8;
+    // Sixteen rather than eight now that the tile is half the size: a smaller
+    // tile is a steeper gradient in UV space, and that is what anisotropy is
+    // measured against.
+    t.anisotropy = 16;
     return t;
   };
-  return { map: get("diff", true), normal: get("nor", false), arm: get("arm", false) };
+  return {
+    map: get("diff", true),
+    // NOT EVERY SURFACE GETS ONE. Four normal maps is four more texture reads
+    // per fragment on the largest thing on screen, to perturb lighting that at
+    // this camera angle is already mostly flat. Grass and dirt carry the two
+    // that matter — they are the pair that meets at every wear edge — and the
+    // regional grass and the gravel borrow whichever is dominant there.
+    normal: withNormal ? get("nor", false) : null,
+    arm: get("arm", false),
+  };
 }
 
 // Value noise, four octaves. Written out rather than imported because it has to
@@ -81,6 +121,12 @@ const NOISE_GLSL = /* glsl */ `
     }
     return v;
   }
+  // Two octaves only. Used for the fields that decide WHERE things are rather
+  // than what they look like, where four octaves buys nothing but cost — a
+  // biome boundary does not need fine detail, it needs a shape.
+  float terrFbm2(vec2 p) {
+    return 0.65 * terrNoise(p) + 0.35 * terrNoise(p * 2.07 + 11.3);
+  }
 `;
 
 /**
@@ -91,36 +137,48 @@ const NOISE_GLSL = /* glsl */ `
  */
 export function createTerrainMaterial(spanUnits: number): THREE.MeshStandardMaterial {
   const repeat = spanUnits / TILE_UNITS;
-  const grass = loadSurface("grass", repeat);
-  const dirt = loadSurface("dirt", repeat);
+  const grass = loadSurface("grass", repeat, true);
+  const dirt = loadSurface("dirt", repeat, true);
+  const dry = loadSurface("drygrass", repeat, false);
+  const gravel = loadSurface("gravel", repeat, false);
 
   const material = new THREE.MeshStandardMaterial({
     map: grass.map,
-    normalMap: grass.normal,
+    normalMap: grass.normal!,
     roughnessMap: grass.arm,
     metalnessMap: grass.arm,
     roughness: 1,
     metalness: 0,
   });
-  material.normalScale.set(0.75, 0.75);
+  material.normalScale.set(1.15, 1.15);
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.dirtMap = { value: dirt.map };
     shader.uniforms.dirtArm = { value: dirt.arm };
+    shader.uniforms.dirtNormal = { value: dirt.normal };
+    shader.uniforms.dryMap = { value: dry.map };
+    shader.uniforms.dryArm = { value: dry.arm };
+    shader.uniforms.gravelMap = { value: gravel.map };
+    shader.uniforms.gravelArm = { value: gravel.arm };
+    shader.uniforms.detailFade = { value: DETAIL_FADE_UNITS };
 
-    // World XZ has to reach the fragment shader: every decision below is made
-    // in world space so that patches stay put on the ground rather than
-    // swimming with the UV.
+    // World XZ and the distance to the camera both have to reach the fragment
+    // shader: every decision below is made in world space so that patches stay
+    // put on the ground rather than swimming with the UV, and the detail layer
+    // needs to know how far away it is being drawn.
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
         `#include <common>
-        varying vec2 vTerrainWorld;`,
+        varying vec2 vTerrainWorld;
+        varying float vTerrainDist;`,
       )
       .replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
-        vTerrainWorld = (modelMatrix * vec4(transformed, 1.0)).xz;`,
+        vec4 terrWorld = modelMatrix * vec4(transformed, 1.0);
+        vTerrainWorld = terrWorld.xz;
+        vTerrainDist = length(cameraPosition - terrWorld.xyz);`,
       );
 
     shader.fragmentShader = shader.fragmentShader
@@ -128,43 +186,93 @@ export function createTerrainMaterial(spanUnits: number): THREE.MeshStandardMate
         "#include <common>",
         `#include <common>
         varying vec2 vTerrainWorld;
+        varying float vTerrainDist;
         uniform sampler2D dirtMap;
         uniform sampler2D dirtArm;
+        uniform sampler2D dirtNormal;
+        uniform sampler2D dryMap;
+        uniform sampler2D dryArm;
+        uniform sampler2D gravelMap;
+        uniform sampler2D gravelArm;
+        uniform float detailFade;
         ${NOISE_GLSL}
 
-        // How much dirt shows through, 0..1. One noise field, thresholded with
-        // a soft edge so the patches have a definite shape instead of fading
-        // everywhere at once.
-        // Thresholded high on purpose: this is a grass field with worn patches
-        // in it, not an even mix. Dropping the lower bound much below 0.58
-        // tips it over into reading as bare dirt with grass on top.
-        float terrainDirt(vec2 world) {
-          return smoothstep(0.58, 0.80, terrFbm(world * 0.035));
+        // --- The three fields -------------------------------------------
+        // Each is sampled at a scale that is not a multiple of the others, so
+        // no two of them ever line up into one visible feature. That is the
+        // same reason the dirt UV is 1.37x the grass UV rather than 1x.
+
+        // WHICH GRASS. The slowest field in the shader — a full cycle is on the
+        // order of a hundred and fifty units, so it reads as the land changing
+        // rather than as a patch of anything.
+        float terrainRegion(vec2 world) {
+          return smoothstep(0.36, 0.64, terrFbm2(world * 0.0062));
+        }
+
+        // HOW WORN. Thresholded hard on purpose: this is a grass field with
+        // worn patches in it, not an even mix, and a soft threshold gives every
+        // patch a hundred-unit gradient instead of a shape. Dropping the lower
+        // bound much below 0.55 tips it over into reading as bare dirt with
+        // grass on top.
+        float terrainWear(vec2 world) {
+          float base = terrFbm(world * 0.031);
+          // A second, faster field breaks the outline so a patch is not an
+          // ellipse. Cheap, and it is the difference between "worn ground" and
+          // "somebody airbrushed here".
+          base += (terrFbm(world * 0.13) - 0.5) * 0.14;
+          return smoothstep(0.55, 0.78, base);
+        }
+
+        // Stone under the worst of the wear. Rides ON the wear field rather
+        // than being its own, so gravel can only ever appear inside bare earth
+        // — which is what stops it turning up in the middle of a lawn.
+        float terrainStone(vec2 world, float wear) {
+          float m = smoothstep(0.62, 0.9, terrFbm(world * 0.055 + 31.7));
+          return m * smoothstep(0.55, 1.0, wear);
         }`,
       )
       .replace(
         "#include <map_fragment>",
         `
-        float dirtAmount = terrainDirt(vTerrainWorld);
+        float wear = terrainWear(vTerrainWorld);
+        float region = terrainRegion(vTerrainWorld);
+        float stone = terrainStone(vTerrainWorld, wear);
 
+        // Every surface is sampled at a deliberately incommensurate scale. At
+        // the same one they would line up and the blend would read as a single
+        // texture changing colour rather than as several surfaces.
         vec4 grassTexel = texture2D(map, vMapUv);
-        // Dirt is sampled at a deliberately incommensurate scale: at the same
-        // one the two would line up and the blend would read as a single
-        // texture changing colour rather than as two surfaces.
+        vec4 dryTexel = texture2D(dryMap, vMapUv * 0.83);
         vec4 dirtTexel = texture2D(dirtMap, vMapUv * 1.37);
-        vec4 sampledDiffuseColor = mix(grassTexel, dirtTexel, dirtAmount);
+        vec4 gravelTexel = texture2D(gravelMap, vMapUv * 1.71);
 
-        // Macro tint: a very low frequency drift so colour varies over tens of
-        // metres. This is what actually defeats the tiling — the repeat is
-        // still there, but no two tiles are the same colour.
+        vec4 sampledDiffuseColor = mix(grassTexel, dryTexel, region);
+        sampledDiffuseColor = mix(sampledDiffuseColor, dirtTexel, wear);
+        sampledDiffuseColor = mix(sampledDiffuseColor, gravelTexel, stone);
+
+        // MACRO TINT. A very low frequency drift so colour varies over tens of
+        // metres. Both ends stay above 1.0 on green: the drift should read as
+        // sunlight and season across the field, never as the ground going grey.
+        // An earlier pass darkened one end and the whole world looked overcast.
         float macro = terrFbm(vTerrainWorld * 0.011);
-        // Both ends stay above 1.0 on green: the drift should read as sunlight
-        // and season across the field, never as the ground going grey. An
-        // earlier pass darkened one end and the whole world looked overcast.
-        vec3 tint = mix(vec3(0.88, 1.06, 0.80), vec3(1.14, 1.16, 0.94), macro);
+        vec3 tint = mix(vec3(0.86, 1.07, 0.78), vec3(1.16, 1.17, 0.95), macro);
         // A second, faster drift keeps mid-range patches from looking flat.
-        tint *= mix(0.95, 1.08, terrFbm(vTerrainWorld * 0.06));
+        tint *= mix(0.94, 1.09, terrFbm(vTerrainWorld * 0.06));
         sampledDiffuseColor.rgb *= tint;
+
+        // NEAR-FIELD DETAIL. A metre-scale multiplier that exists only where
+        // the camera can resolve it and is gone by the time it would alias.
+        // This is the single biggest change to how the ground reads underfoot,
+        // and it is also why it can be this strong: at range it is not there to
+        // shimmer.
+        float near = 1.0 - smoothstep(0.0, detailFade, vTerrainDist);
+        if (near > 0.001) {
+          float grain = terrFbm(vTerrainWorld * 1.9);
+          float speck = terrNoise(vTerrainWorld * 7.3);
+          float detail = mix(1.0, 0.80 + grain * 0.44, near * 0.85);
+          detail *= mix(1.0, 0.93 + speck * 0.15, near * 0.7);
+          sampledDiffuseColor.rgb *= detail;
+        }
 
         diffuseColor *= sampledDiffuseColor;
         `,
@@ -174,14 +282,34 @@ export function createTerrainMaterial(spanUnits: number): THREE.MeshStandardMate
         `
         float roughnessFactor = roughness;
         vec4 grassArm = texture2D(roughnessMap, vRoughnessMapUv);
+        vec4 dryArmTexel = texture2D(dryArm, vRoughnessMapUv * 0.83);
         vec4 dirtArmTexel = texture2D(dirtArm, vRoughnessMapUv * 1.37);
-        roughnessFactor *= mix(grassArm.g, dirtArmTexel.g, dirtAmount);
+        vec4 gravelArmTexel = texture2D(gravelArm, vRoughnessMapUv * 1.71);
+        float rough = mix(grassArm.g, dryArmTexel.g, region);
+        rough = mix(rough, dirtArmTexel.g, wear);
+        // Wet-looking stone is worse than flat stone, so gravel is pushed
+        // rougher than its own map claims.
+        rough = mix(rough, max(gravelArmTexel.g, 0.72), stone);
+        roughnessFactor *= rough;
+        `,
+      )
+      // Two normal maps, blended by the wear field. Grass and dirt are the pair
+      // that meets at every worn edge, which is the only place on this ground
+      // where the lighting difference between two surfaces is legible.
+      .replace(
+        "#include <normal_fragment_maps>",
+        `
+        vec3 grassN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
+        vec3 dirtN = texture2D( dirtNormal, vNormalMapUv * 1.37 ).xyz * 2.0 - 1.0;
+        vec3 mapN = normalize( mix( grassN, dirtN, wear ) );
+        mapN.xy *= normalScale;
+        normal = normalize( tbn * mapN );
         `,
       );
   };
 
   // Two materials that compile to different programs must not be cached as one.
-  material.customProgramCacheKey = () => "wieldbound-terrain-v1";
+  material.customProgramCacheKey = () => "wieldbound-terrain-v2";
 
   return material;
 }

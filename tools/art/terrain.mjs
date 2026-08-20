@@ -21,9 +21,30 @@ const DEST = "client/public/textures/terrain";
 const API = "https://api.polyhaven.com/files";
 
 // surface -> the Poly Haven asset it comes from.
+//
+// FOUR now, up from two, and the extra pair is most of why the ground stopped
+// looking plain. Two surfaces can only ever produce ONE boundary, and one
+// boundary repeated across four hundred units is a pattern however good the
+// noise driving it — the eye finds "green here, brown there" in about a second
+// and then there is nothing else to find. Four give the blend somewhere to go:
+// a regional drift between two greens that changes over tens of metres, worn
+// earth cut into it, and stone showing through the middle of the worst wear.
+//
+// Chosen to be close in VALUE and far apart in TEXTURE. A pale sand beside a
+// dark loam reads as two materials meeting; a leafy grass beside a dry leafy
+// one reads as one field that is not the same everywhere, which is what a field
+// actually looks like.
+//
+// Four and not more, because every surface is three more texture units and two
+// more samples per fragment, and the ground is the largest thing on screen in
+// every single frame.
 const SURFACES = {
   grass: "leafy_grass",
   dirt: "dirt",
+  // The dry, bleached half of the regional drift.
+  drygrass: "brown_mud_leaves_01",
+  // Loose stone, so heavy wear has a core with an edge rather than a fade.
+  gravel: "gravel_floor",
 };
 
 // Poly Haven's map name -> ours. `nor_gl` is the OpenGL-convention normal map,
