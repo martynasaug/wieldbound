@@ -26,6 +26,7 @@ import {
   describeDropSources,
   passiveSummary,
   feelNotes,
+  isEtchedAffix,
   itemBase,
   itemName,
   itemScore,
@@ -73,6 +74,8 @@ export { itemName, itemShortName };
 export interface ItemLine {
   label: string;
   value: string;
+  /** Set only on affix lines, and only for the ones cut in with a rune. */
+  etched?: boolean;
 }
 
 /**
@@ -102,13 +105,23 @@ export function itemStatLines(item: ItemInstance): ItemLine[] {
   return lines;
 }
 
-/** One line per affix, reading as what it gives rather than as its name. */
+/**
+ * One line per affix, reading as what it gives rather than as its name.
+ *
+ * Etched ones are flagged rather than reworded. What the affix DOES is the same
+ * sentence either way — the mark is about what the fire will do to it, which is
+ * a different fact and belongs beside the line rather than inside it.
+ */
 export function itemAffixLines(item: ItemInstance): ItemLine[] {
   const base = itemBase(item.baseId);
   return (item.affixes ?? [])
     .map((id) => AFFIXES_BY_ID[id])
     .filter(Boolean)
-    .map((affix) => ({ label: affix.label, value: affixSummary(affix, base.band) }));
+    .map((affix) => ({
+      label: affix.label,
+      value: affixSummary(affix, base.band),
+      etched: isEtchedAffix(item, affix.id),
+    }));
 }
 
 /**

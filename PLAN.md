@@ -2786,6 +2786,58 @@ crafting system to go with them.
       longsword correctly refusing a band-4 rune with a list of what it would
       take instead.
 
+- [x] **M3.1 — a cut rune survives the fire.** M3 shipped etching with a warning
+      on it: reforging re-rolled every affix, etched or not, so cutting a rune
+      before climbing the ladder destroyed it. The Etch tab said so, and a verb
+      whose entire guidance is "do these two things in the other order" is a
+      trap with a sign beside it. It also made the claim under the feature false
+      — "the ladder decides how many, etching decides which" is not true of
+      anything you intend to keep improving, because the next step un-decides it.
+      - **A reforge now re-rolls what the DICE gave and keeps what was paid
+        for.** The rule it had to fit inside rather than replace is the older
+        one: a reforged item must not be a superset of itself, or every choice
+        about which item to invest in collapses to "the first one you found".
+        Rolled affixes are still entirely at the fire's mercy, and the test
+        asserts that as hard as it asserts the other half
+      - **The consequence is the best thing about it.** A player who has cut
+        every slot on an item has bought their way OUT of the gamble, one rune
+        and one measure of essence at a time. The ladder stays a re-roll for
+        everyone who has not, so this is an investment that removes variance
+        rather than a rule that removes it for free
+      - **`etched` is a SUBSET claim, and subsets go stale.** A re-roll, an etch
+        over an earlier etch, or a row written by an older build can all leave a
+        mark behind an affix that is no longer there — and a stale mark reaching
+        the roller is an instruction to preserve a slot the item does not have.
+        So it is narrowed against `affixes` on the way out of the database, again
+        in `survivingEtched`, and again after the roll. None of the three throws
+        on its own; together they make the bad state unrepresentable downstream
+      - **A keep list is not a way past a rule either** — the same sentence the
+        chosen-reforge-affix check was written under. It is filtered by the same
+        `eligibleAffixes` the roll uses and capped at the quality's own slot
+        count, so preserving a rune can never become the slot-ADDING that etching
+        was deliberately written not to do
+      - **The one decision that was reversed, and why.** M3 recorded that an
+        etched affix must be *indistinguishable* from a rolled one. That argument
+        was about a difference the player could feel and could not see — and it
+        still holds for everything it was about: two Tempests do exactly the same
+        thing to a monster. What changed is that the fire now treats them
+        differently, so the mark is stated wherever that matters — the tooltip,
+        the reforge row by name, and the bag cell
+      - **The bag cell had to move with it.** Etching does not change an item's
+        NAME, so a paid-for sword and a plain one sat in the same cell — and a
+        cell salvages its WHOLE pile, which M2.1 called safe "precisely because a
+        stack is homogeneous by construction". It stopped being true the moment
+        this landed, so `stackKeyOf` carries the marks and the etched cell is
+        edged in violet
+
+      Verified: `tools/test/items.mjs` section 9g — 400 reforges holding the rune
+      against 34 that held it by luck when the preservation is removed, so a
+      single sample would have passed by chance roughly one run in twelve. Plus a
+      real browser: an Arming Sword forged, Keen cut over what it rolled, and the
+      rune carried through Honed → Tempered (where nothing is left to the dice at
+      all) → Forged (where a second affix rolls in beside it) → Runed, that last
+      step by clicking the bench's own button rather than by sending a message.
+
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
 renderer-agnostic), and all six DOM panels (inventory, character, craft, skills,
@@ -4365,6 +4417,50 @@ music, player-facing damage-type/resistances, more crafting recipes
   run's bag and none of its materials — the forge check then fails for a reason
   that has nothing to do with the forge.
 
+- A reforge re-rolls what the DICE gave and keeps what was paid for. This
+  reverses half of M3's "an etched affix is indistinguishable from a rolled one"
+  and it is worth being precise about which half. That decision was about a
+  difference the player could FEEL and could not SEE — and it still holds: two
+  Tempests do exactly the same thing to a monster whichever way they arrived.
+  What it also did, unintentionally, was make etching an endgame-only verb by
+  accident: every step up the ladder erased it, so "the ladder decides how many,
+  etching decides which" was false for anything you meant to keep improving. The
+  fix is not to soften the ladder — rolled affixes are still entirely at the
+  fire's mercy — it is to say that a rune and a measure of essence buy a slot
+  outright, and to SHOW the mark everywhere the fire treats it differently.
+- The trap was fixed rather than better signposted. The Etch tab's whole guidance
+  was an ordering rule — reforge first, then cut — which is a sign beside a hole
+  rather than a filled hole. A verb whose correct use is "not yet" is a verb
+  nobody uses. Worth generalising: when the only thing a panel can say about a
+  feature is which order to do things in, the ordering is the bug.
+- An invisible difference is what the original argument was against, so the mark
+  is stated in three places rather than kept in the schema. The tooltip says it
+  on the affix line, the reforge row names what it will keep BEFORE the click,
+  and the bag edges the cell. Anything less would have re-created the exact
+  failure the "indistinguishable" rule existed to prevent, one level up.
+- `etched` is a SUBSET claim and every subset claim goes stale. A re-roll, an
+  etch over an earlier etch, or a row from an older build can each leave a mark
+  behind an affix that is gone — and a stale mark reaching the roller is an
+  instruction to preserve a slot the item does not have. It is therefore narrowed
+  against `affixes` on the way out of SQLite, again in `survivingEtched`, and
+  again after the roll. Three filters for one invariant is not belt-and-braces:
+  it is the same call `toItemInstance` already makes about `baseId`, which is
+  that a bad row must not be able to take anything downstream with it.
+- The bag cell had to move with the rule, not after it. Etching does not change
+  an item's NAME, so a paid-for sword and a plain one shared a cell the moment
+  this landed — and a cell salvages its whole pile, which M2.1 called safe
+  "precisely because a stack is homogeneous by construction". That sentence was
+  load-bearing and this feature falsified it, so `stackKeyOf` carries the marks.
+  Worth remembering as a shape: a stacking rule is a claim about what is
+  interchangeable, and any new property that makes two same-named things behave
+  differently is a change to that claim whether or not it looks like one.
+- A test that can pass by luck is a test that will. Removing the preservation
+  makes 34 of 400 reforges still hold the rune, because the eligible pool is only
+  twenty-odd entries — so a one-sample version of this check would have gone
+  green about one run in twelve, which is exactly often enough to be believed and
+  rare enough to be maddening. Sample count is not padding when the thing under
+  test shares an outcome with chance.
+
 - This machine (a fresh Windows box picking up the project) had neither Git
   nor Node.js preinstalled; both were installed via `winget` (`Git.Git`,
   `OpenJS.NodeJS`) rather than assuming either was already present. Also has
@@ -4376,8 +4472,16 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M3 complete (2026-08-20). **The item system, rebuilt and
+Phase 0 through 48 M3.1 complete (2026-08-20). **The item system, rebuilt and
 then followed through.**
+
+**M3.1** made a cut rune survive the fire. M3 shipped etching with a warning on
+it — reforging re-rolled etched affixes away — which made the verb endgame-only
+by accident and left the panel with nothing to say but "do these two things in
+the other order". A reforge now re-rolls what the dice gave and keeps what was
+paid for, so a player who has cut every slot on an item has bought their way out
+of the gamble one rune at a time, and the ladder stays a re-roll for everyone who
+has not.
 
 **M2.1** made a bag slot hold a KIND rather than an instance. Six copies of one
 Worn dirk are one cell with a six on it, the cap counts cells instead of rows,

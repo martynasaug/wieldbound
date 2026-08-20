@@ -314,6 +314,14 @@
         font: bold 11px Georgia, serif; color: var(--gold-bright);
         text-shadow: 0 1px 3px #000;
       }
+      /* Carries a cut rune. Violet because that is already the colour every
+         rune message in the game is written in, and an inset edge because the
+         four corners of a slot are taken and this is not a fifth badge — it is
+         a fact about the whole cell, which is exactly the pile the salvage
+         button would take apart. */
+      .bag-slot.filled.etched {
+        box-shadow: inset 3px 0 0 0 #c0a6ff, inset 0 0 12px -5px #c0a6ff;
+      }
       /* Sell lives on the item, appears on hover, and says the price — a
          destructive action should never be a bare click. */
       .bag-sell {
@@ -411,6 +419,10 @@
       /* Named shortfalls rather than a greyed-out row: "you need essence" is
          far more use than "you cannot afford this". */
       .craft-row-cost.short { color: #c98d5e; }
+      /* What a reforge will NOT touch. Violet, the rune colour, so the line
+         that promises the investment holds is the same colour as the thing
+         invested. */
+      .craft-row-step.keeps { color: #c0a6ff; }
       .craft-row-step { font-size: 11px; margin-bottom: 1px; }
 
       /* --- the smithy's three verbs --------------------------------------- */
@@ -1116,6 +1128,13 @@
         padding-left: 7px;
         border-left: 2px solid rgba(154, 212, 255, .35);
         margin: 2px 0;
+      }
+      /* One that was cut in rather than rolled. Same shape as its neighbours,
+         because it does the same thing in a fight — only the edge changes, and
+         only because the fire treats it differently. */
+      #item-tooltip .tt-affix.etched {
+        color: #c0a6ff;
+        border-left-color: rgba(192, 166, 255, .8);
       }
       /* How it swings — the part of a weapon no rolled number expresses. */
       #item-tooltip .tt-feel {

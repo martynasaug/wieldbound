@@ -2265,6 +2265,22 @@ export interface ItemInstance {
    * server and the character window read one set of numbers.
    */
   affixes: string[];
+  /**
+   * Which of those affixes were CUT IN rather than rolled — a subset of
+   * `affixes`, and the only provenance this system keeps.
+   *
+   * It exists for exactly one rule: a reforge re-rolls what the dice gave and
+   * keeps what the player paid for. Without it, etching decided which affixes
+   * an item had only until the next step up the ladder, which meant it did not
+   * decide anything at all for a thing you intended to keep improving — the
+   * verb was endgame-only by accident rather than by design.
+   *
+   * It is NOT a combat distinction. Two Tempests do the same thing to a
+   * monster whichever way they arrived; the mark changes what the FIRE does to
+   * them, and it is shown wherever that matters, so it is never a difference a
+   * player can feel and cannot see.
+   */
+  etched?: string[];
   // Only meaningful on weapons. Nothing gates equipping it — the family IS
   // the class, so picking up an unfamiliar weapon is an invitation to play
   // differently rather than a restriction.

@@ -1124,12 +1124,34 @@ export function rollAffixes(
    *  the affix could have rolled on this item anyway — the choice is which of
    *  its own affixes it gets, never a way past the eligibility rules. */
   chosen?: string,
+  /**
+   * Affixes that must survive this roll — the ones a player cut in with a
+   * rune. Taken before anything else, so the dice fill what is LEFT rather
+   * than competing for the whole set.
+   *
+   * Filtered against the same eligibility the roll itself uses, so a keep list
+   * is not a way past a rule either: an affix the base could never have rolled
+   * is dropped here exactly as a chosen one would be.
+   */
+  keep?: readonly string[],
 ): string[] {
   const count = RARITIES[rarity]?.affixes ?? 0;
   if (count <= 0) return [];
   const eligible = eligibleAffixes(base);
   const picked: string[] = [];
   const pool = [...eligible];
+
+  // Capped at the count rather than allowed to overflow it: quality decides
+  // how MANY affixes an item has, and preserving runes must not become the
+  // slot-adding this whole verb was written not to do. Going up the ladder
+  // never shrinks the count, so the cap only ever bites defensively.
+  for (const id of keep ?? []) {
+    if (picked.length >= count || picked.includes(id)) continue;
+    const idx = pool.findIndex((a) => a.id === id);
+    if (idx < 0) continue;
+    picked.push(pool[idx].id);
+    pool.splice(idx, 1);
+  }
 
   if (chosen && canChooseAffix(rarity)) {
     const idx = pool.findIndex((a) => a.id === chosen);
@@ -1159,6 +1181,7 @@ export function rollItem(
   rarity: ItemRarity,
   random: () => number = Math.random,
   chosenAffix?: string,
+  keepAffixes?: readonly string[],
 ): Omit<ItemInstance, "id" | "equipped"> {
   const power = RARITIES[rarity]?.power ?? 1;
   // A tenth either way, so two of the same item are not literally identical
@@ -1170,7 +1193,7 @@ export function rollItem(
     rarity,
     statValue: Math.max(0, Math.round(basePower(base) * power * jitter())),
     bonusStatValue: Math.max(0, Math.round(baseGuard(base) * power * jitter())),
-    affixes: rollAffixes(base, rarity, random, chosenAffix),
+    affixes: rollAffixes(base, rarity, random, chosenAffix, keepAffixes),
     weaponType: base.weaponType,
     style: base.style,
   };
@@ -1294,10 +1317,22 @@ export const STACK_LIMIT = 9;
  * form that sorts. Affixes are sorted before joining because the roll order is
  * an accident of the dice and two items with the same two affixes in the other
  * order are the same item.
+ *
+ * WHICH OF THEM WERE ETCHED IS PART OF THE KEY, even though it does not show in
+ * the name. A cell acts on the best of its pile and salvages the WHOLE of it,
+ * which M2.1 called safe "precisely because a stack is homogeneous by
+ * construction" — and the moment two same-named swords differ in what a reforge
+ * will do to them, that stops being true and one click can destroy a rune the
+ * player paid essence for. The bag marks the etched cell, so the two are told
+ * apart on screen rather than only in here.
  */
-export function stackKeyOf(item: Pick<ItemInstance, "baseId" | "rarity" | "affixes">): string {
-  const affixes = [...(item.affixes ?? [])].sort().join(",");
-  return `${item.baseId}|${item.rarity}|${affixes}`;
+export function stackKeyOf(
+  item: Pick<ItemInstance, "baseId" | "rarity" | "affixes" | "etched">,
+): string {
+  const carried = item.affixes ?? [];
+  const affixes = [...carried].sort().join(",");
+  const etched = [...(item.etched ?? []).filter((id) => carried.includes(id))].sort().join(",");
+  return `${item.baseId}|${item.rarity}|${affixes}|${etched}`;
 }
 
 export interface BagStack {
@@ -2056,6 +2091,9 @@ export interface ReforgePreview {
   affixCount: number;
   /** Affixes it has now, which are about to be thrown away. */
   losingAffixes: number;
+  /** Etched affixes the fire will not touch. Named rather than counted: the
+   *  whole reason to say this is so a player can see WHICH investment holds. */
+  keeping: string[];
 }
 
 /**
@@ -2074,13 +2112,54 @@ export function reforgePreview(item: ItemInstance): ReforgePreview | null {
   if (!to) return null;
   const base = itemBase(item.baseId);
   const power = RARITIES[to]?.power ?? 1;
+  const keeping = survivingEtched(item, to);
   return {
     to,
     statValue: Math.round(basePower(base) * power),
     bonusStatValue: Math.round(baseGuard(base) * power),
     affixCount: RARITIES[to]?.affixes ?? 0,
-    losingAffixes: item.affixes?.length ?? 0,
+    // What the DICE gave, which is the part that is actually at risk. Counting
+    // the etched ones here too would have the row promise to throw away the
+    // thing the line beside it promises to keep.
+    losingAffixes: (item.affixes?.length ?? 0) - keeping.length,
+    keeping,
   };
+}
+
+/**
+ * Which of an item's etched affixes come through a reforge, in order.
+ *
+ * Derived from `affixes` on every read rather than trusted from the stored
+ * list, because `etched` is a SUBSET claim and a stored subset is a claim that
+ * can go stale: a re-roll, an etch over an etch, or a row written by an older
+ * build can all leave a mark behind an affix that is no longer there. Anything
+ * the item does not currently carry is not an investment, it is a memory.
+ *
+ * One function, so the preview a player reads and the roll the server performs
+ * cannot disagree about what holds — the same argument `bagRoomFor` makes about
+ * asking with the item rather than recomputing the rule.
+ */
+export function survivingEtched(
+  item: Pick<ItemInstance, "baseId" | "affixes" | "etched">,
+  to: ItemRarity,
+): string[] {
+  const carried = item.affixes ?? [];
+  const eligible = new Set(eligibleAffixes(itemBase(item.baseId)).map((a) => a.id));
+  const slots = RARITIES[to]?.affixes ?? 0;
+  const out: string[] = [];
+  for (const id of item.etched ?? []) {
+    if (out.length >= slots) break;
+    if (carried.includes(id) && eligible.has(id) && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/** Whether this particular affix on this particular item was cut in. */
+export function isEtchedAffix(
+  item: Pick<ItemInstance, "affixes" | "etched">,
+  affixId: string,
+): boolean {
+  return !!item.etched?.includes(affixId) && (item.affixes ?? []).includes(affixId);
 }
 
 export function nextRarity(from: ItemRarity): ItemRarity | null {
@@ -2091,12 +2170,24 @@ export function nextRarity(from: ItemRarity): ItemRarity | null {
 /**
  * What an item becomes when reforged.
  *
- * The numbers are recomputed from the base at the new quality, and the affixes
- * are RE-ROLLED to the new count rather than added to. Keeping the old ones and
- * appending would make a reforged item strictly a superset of itself, which
- * turns every decision about which item to invest in into "the first one you
- * happened to find" — and it would mean an Enchanted item's three affixes were
- * chosen by what a Worn one rolled six steps earlier.
+ * The numbers are recomputed from the base at the new quality, and the ROLLED
+ * affixes are re-rolled to the new count rather than added to. Keeping the old
+ * ones and appending would make a reforged item strictly a superset of itself,
+ * which turns every decision about which item to invest in into "the first one
+ * you happened to find" — and it would mean an Enchanted item's three affixes
+ * were chosen by what a Worn one rolled six steps earlier.
+ *
+ * ETCHED AFFIXES ARE NOT ROLLED AFFIXES, and this is the one place that
+ * distinction does any work. The fire re-rolls what the dice gave and keeps
+ * what the player paid a rune and a measure of essence for — so "the ladder
+ * decides how many, etching decides which" stays true one step later, which is
+ * the only way it is true at all for an item somebody intends to keep
+ * improving.
+ *
+ * The consequence is deliberate and is the best thing about it: a player who
+ * has cut every slot on an item has bought their way OUT of the gamble, and
+ * paid a rune per slot for the privilege. The ladder is still a re-roll for
+ * everyone who has not.
  */
 export function reforgeItem(
   item: ItemInstance,
@@ -2106,8 +2197,19 @@ export function reforgeItem(
   const to = nextRarity(item.rarity);
   if (!to) return null;
   const base = itemBase(item.baseId);
-  const rolled = rollItem(base, to, random, chosenAffix);
-  return { ...item, ...rolled, id: item.id, equipped: item.equipped };
+  const keep = survivingEtched(item, to);
+  const rolled = rollItem(base, to, random, chosenAffix, keep);
+  return {
+    ...item,
+    ...rolled,
+    id: item.id,
+    equipped: item.equipped,
+    // Narrowed to what actually came through, so the mark can never outlive the
+    // affix it belongs to. `survivingEtched` reads `affixes` on every call and
+    // a stale mark would quietly make the NEXT reforge preserve a slot the item
+    // no longer has.
+    etched: keep.filter((id) => rolled.affixes.includes(id)),
+  };
 }
 
 // --- Etching ----------------------------------------------------------------
@@ -2226,7 +2328,12 @@ export function etchAffix(
   const at = carried.indexOf(replacing);
   if (at < 0) return null;
   carried[at] = affixId;
-  return { ...item, affixes: carried };
+  // The mark moves with the cut. Cutting OVER an earlier rune drops that one's
+  // mark in the same breath — it is gone, and a mark on an affix the item no
+  // longer carries is the stale subset `survivingEtched` exists to distrust.
+  const etched = (item.etched ?? []).filter((id) => id !== replacing && id !== affixId);
+  etched.push(affixId);
+  return { ...item, affixes: carried, etched };
 }
 
 // --- Salvage ----------------------------------------------------------------

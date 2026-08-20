@@ -45,6 +45,8 @@ import {
   canEtch,
   etchAffix,
   etchCost,
+  survivingEtched,
+  stackKeyOf,
   drawableAffixes,
   PALETTES,
   affixBonus,
@@ -892,6 +894,99 @@ section("9f. etching");
     `${raw(etchTop)} vs ${raw(topStep)}`);
   console.log(`  etching runs ${raw(etchCost({ baseId: ITEM_BASES.dirk.id }))} to ${raw(etchTop)} materials`);
   console.log(`  a longsword's pool is ${eligibleAffixes(sample).length} of ${AFFIXES.length} affixes`);
+}
+
+// --- 9g. a cut rune survives the fire ---------------------------------------
+// The rule that makes etching decide anything at all. Before it, a reforge
+// re-rolled etched affixes away, so cutting a rune before climbing the ladder
+// destroyed it — which made the verb endgame-only by accident and left the
+// panel with nothing to say but "do these two things in the other order".
+//
+// Every failure here is silent. A keep list that overflows the quality's slot
+// count is etching quietly ADDING affixes, which is the one thing the verb was
+// written not to do. A keep list that is not filtered against eligibility is a
+// way past the band gates. And a mark left behind an affix that is no longer
+// there makes the NEXT reforge preserve a slot the item does not have. None of
+// the three throws; all three make the ladder mean less than it says.
+section("9g. a cut rune survives the fire");
+{
+  const sample = ITEM_BASES.longsword;                       // band 3, weapon
+  const forged = { id: "s1", equipped: false, ...rollItem(sample, "forged", rand) };  // 2 affixes
+  const spare = eligibleAffixes(sample).find((a) => !forged.affixes.includes(a.id));
+  const cut = etchAffix(forged, spare.id, forged.affixes[0]);
+
+  check("etching records the mark", (cut.etched ?? []).length === 1 && cut.etched[0] === spare.id,
+    JSON.stringify(cut.etched));
+  check("and marks only what was cut, not what was rolled",
+    cut.affixes.filter((a) => !cut.etched.includes(a)).length === cut.affixes.length - 1);
+
+  // The whole point, run enough times that a lucky re-roll cannot pass for a
+  // preserved one: the pool a reforge draws from has 20-odd entries, so one
+  // sample would come up right by chance roughly every twentieth run.
+  let held = 0;
+  let grew = 0;
+  let strayMark = 0;
+  for (let i = 0; i < 400; i++) {
+    const up = reforgeItem(cut, rand);
+    if (up.affixes.includes(spare.id)) held++;
+    if (up.affixes.length > (RARITIES[up.rarity]?.affixes ?? 0)) grew++;
+    if ((up.etched ?? []).some((id) => !up.affixes.includes(id))) strayMark++;
+  }
+  check("an etched affix comes through every reforge", held === 400, `${held}/400`);
+  check("and never as an extra slot", grew === 0, `${grew} overflowed`);
+  check("no mark outlives the affix it belongs to", strayMark === 0, `${strayMark} stray`);
+
+  // The dice still get everything else. A reforge that preserved the ROLLED
+  // affixes too would make an item a superset of itself, which is the older and
+  // more load-bearing rule this feature had to fit inside rather than replace.
+  const rolledOne = forged.affixes[1];
+  let rerolled = 0;
+  for (let i = 0; i < 400; i++) if (!reforgeItem(cut, rand).affixes.includes(rolledOne)) rerolled++;
+  check("a rolled affix is still at the mercy of the fire", rerolled > 0,
+    `${rolledOne} survived all 400`);
+
+  // Marks are a SUBSET claim, and a stored subset can go stale — a row written
+  // by an older build, or an etch over an etch. Anything the item does not
+  // actually carry is a memory rather than an investment and must not reach the
+  // roller as an instruction.
+  // `forged.affixes[0]` is precisely the one the etch replaced, so a mark on it
+  // is the exact shape of stale this defends against — an affix that WAS on the
+  // item and is not any more.
+  const lying = { ...cut, etched: [...cut.etched, "not-an-affix", forged.affixes[0]] };
+  check("a mark on an affix it does not carry is ignored",
+    survivingEtched(lying, "runed").join(",") === spare.id,
+    survivingEtched(lying, "runed").join(","));
+
+  // A keep list is not a way past a rule either — the same sentence the chosen
+  // reforge affix is written under. `reaching` is weapon-only and band 3+, so a
+  // band-1 ring is wrong on both counts.
+  const ring = ITEM_BASES.copperband;                        // band 1, ring
+  const faked = { id: "s2", equipped: false, ...rollItem(ring, "honed", rand), etched: ["reaching"] };
+  check("a mark the base could never have rolled does not survive",
+    survivingEtched(faked, "tempered").length === 0);
+
+  // Cutting OVER an earlier rune moves the mark rather than accumulating one.
+  const second = eligibleAffixes(sample).find((a) => !cut.affixes.includes(a.id));
+  const twice = etchAffix(cut, second.id, spare.id);
+  check("etching over a rune replaces its mark",
+    twice.etched.length === 1 && twice.etched[0] === second.id, JSON.stringify(twice.etched));
+
+  // The preview is what the player decides on, so it has to be the same
+  // function the roll uses rather than a second copy of the rule.
+  const preview = reforgePreview(cut);
+  check("the preview names what holds", preview.keeping.join(",") === spare.id, preview.keeping.join(","));
+  check("and counts only the dice's share as lost",
+    preview.losingAffixes === cut.affixes.length - 1, `${preview.losingAffixes}`);
+
+  // A cell acts on the best of its pile and salvages the WHOLE of it, so two
+  // same-named swords that differ in what a reforge will do to them must not
+  // share one. Nothing throws if they do — it just destroys a rune.
+  check("an etched item does not share a bag cell with a plain one",
+    stackKeyOf(cut) !== stackKeyOf({ ...cut, etched: [] }));
+  check("but two identically etched ones still do",
+    stackKeyOf(cut) === stackKeyOf({ ...cut, id: "other" }));
+
+  console.log(`  ${itemName(cut)} keeps ${spare.label} through ${400} reforges`);
 }
 
 // --- 10. affix totals reach the passive vocabulary --------------------------

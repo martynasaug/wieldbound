@@ -490,21 +490,39 @@ export class CraftPanel {
       const sub = this.costLine(cost);
 
       // What it becomes, so the decision can be made without arithmetic. The
-      // numbers are exact; the affixes are not previewable because reforging
-      // re-rolls them, so this says how MANY there will be rather than
-      // pretending to know which.
+      // numbers are exact; the ROLLED affixes are not previewable because
+      // reforging re-rolls them, so this says how MANY there will be rather
+      // than pretending to know which.
+      //
+      // The etched ones ARE previewable, by name, and that is the whole point
+      // of saying anything here: the row's job is to answer "what am I about to
+      // lose", and until runes survived the fire the honest answer was
+      // "everything". Named rather than counted, because a player deciding
+      // whether to push a sword one more step is deciding about a particular
+      // rune they paid essence for, not about a quantity.
       const preview = reforgePreview(item);
       if (preview) {
         const gain = document.createElement("div");
         gain.className = "craft-row-step";
-        const parts = [
-          `${item.statValue} → ${preview.statValue}`,
-          preview.affixCount !== preview.losingAffixes
-            ? `${preview.losingAffixes} → ${preview.affixCount} affixes`
-            : `${preview.affixCount} affix${preview.affixCount === 1 ? "" : "es"}, re-rolled`,
-        ];
+        const rolling = preview.affixCount - preview.keeping.length;
+        const parts = [`${item.statValue} → ${preview.statValue}`];
+        parts.push(
+          rolling > 0
+            ? `${rolling} affix${rolling === 1 ? "" : "es"} re-rolled`
+            : "nothing left to the dice",
+        );
         gain.textContent = parts.join(" · ");
         sub.prepend(gain);
+
+        if (preview.keeping.length) {
+          const keeps = document.createElement("div");
+          keeps.className = "craft-row-step keeps";
+          const labels = preview.keeping.map((id) => AFFIXES_BY_ID[id]?.label ?? id);
+          const one = labels.length === 1;
+          keeps.textContent =
+            `Keeps ${labels.join(", ")} — etched, the fire will not touch ${one ? "it" : "them"}`;
+          sub.prepend(keeps);
+        }
       }
 
       const step = document.createElement("div");
@@ -587,11 +605,14 @@ export class CraftPanel {
       this.grid.appendChild(stock);
     }
 
-    // Said once, up front, because it is the one ordering mistake this system
-    // makes possible and it costs a rune. Reforging has always re-rolled
-    // affixes; that rule did not change, but until now nothing the player owned
-    // was worth losing to it.
-    this.note("Reforging re-rolls every affix, etched or not. Take an item up the ladder first, then cut its runes.");
+    // This used to be a warning: reforging re-rolled everything, so cutting a
+    // rune before climbing the ladder threw it away, and the only advice the
+    // panel could give was "do these two things in the other order". A verb
+    // whose whole guidance is an ordering rule is a trap with a sign on it, so
+    // the rule changed rather than the sign — and what is left to say is what
+    // the player now gets for the essence, which is a reason rather than a
+    // caution.
+    this.note("A cut rune survives the fire. Reforging re-rolls what the dice gave and leaves etched affixes standing, so a slot you have paid for stays yours the rest of the way up the ladder.");
 
     this.section("cut a rune into something");
     const targets = this.items.filter((i) => (i.affixes?.length ?? 0) > 0);

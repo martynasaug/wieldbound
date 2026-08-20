@@ -95,10 +95,18 @@ export function attachItemTooltip(
 
     // Affixes are set apart rather than listed with the rolls: they are the
     // part of an item that is not true of every copy of it.
+    //
+    // An etched one says so, because it is the one fact about an affix that is
+    // not visible in what it does: a reforge will re-roll the line above it and
+    // leave this one standing. An invisible difference is exactly what the
+    // original "indistinguishable from a rolled one" call was protecting
+    // against, and saying it here is how that stays true.
     for (const affix of d.affixes) {
       const row = document.createElement("div");
-      row.className = "tt-affix";
-      row.textContent = `${affix.label} — ${affix.value}`;
+      row.className = affix.etched ? "tt-affix etched" : "tt-affix";
+      row.textContent = affix.etched
+        ? `${affix.label} — ${affix.value} · etched, survives the fire`
+        : `${affix.label} — ${affix.value}`;
       el.appendChild(row);
     }
 

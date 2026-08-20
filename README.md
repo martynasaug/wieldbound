@@ -134,6 +134,11 @@ first run at `server/data/wieldbound.db`.
   **Etch** cuts that rune over an affix on something you are keeping. It never
   *adds* a slot, and a rune only goes where the item could have rolled it
   anyway, so the ladder and the band gates both keep meaning what they meant.
+  **And a cut rune survives the fire**: reforging re-rolls what the dice gave
+  and leaves etched affixes standing, so cutting one is an investment in a
+  particular item rather than something you may only safely do at the very top
+  of the ladder. Cut every slot and you have bought your way out of the gamble —
+  a rune and a measure of essence at a time.
 - **Two tiers of material** — wood, ore and herb come out of the ground and
   essence off a kill; **ingots and wardweave are made**, at the bench, out of
   raw, and are found nowhere. Refining is the one verb whose output is not
@@ -244,5 +249,6 @@ minimap and a real smithy), M4.6 (nameplates), M4.7 (unit frames) and M4.8
 then replaced the item system outright: a catalogue of 78 named base items, a
 seven-step quality ladder, and a smithy with three verbs — since grown to four
 with **M2.1** (a bag slot holds a kind, not an instance), **M2.2** (a refined
-material tier), **M2.3** (where a thing comes from) and **M3** (etching). See
-[`PLAN.md`](PLAN.md) for the full picture.
+material tier), **M2.3** (where a thing comes from), **M3** (etching) and
+**M3.1** (a cut rune survives the fire). See [`PLAN.md`](PLAN.md) for the full
+picture.

@@ -76,6 +76,11 @@ for (const itemMigration of [
   // (character, weapon, node) and therefore earn their own table, these are
   // read and written only ever as a whole, with the item.
   "ALTER TABLE items ADD COLUMN affixes TEXT NOT NULL DEFAULT '[]'",
+  // Which of those affixes were cut in with a rune rather than rolled. A JSON
+  // array for the same reason `affixes` is one, and defaulting to empty is
+  // exactly right for every row that predates etching: nothing was paid for on
+  // any of them, so the fire may have all of it.
+  "ALTER TABLE items ADD COLUMN etched TEXT NOT NULL DEFAULT '[]'",
 ]) {
   try {
     db.exec(itemMigration);
@@ -465,16 +470,16 @@ export function markDisconnected(
 // `markDisconnected` is kept purely to stamp the last-seen time.
 
 const insertItem = db.prepare(
-  "INSERT INTO items (id, characterId, baseId, slot, rarity, statValue, bonusStatValue, affixes, equipped, createdAt, weaponType, style) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+  "INSERT INTO items (id, characterId, baseId, slot, rarity, statValue, bonusStatValue, affixes, etched, equipped, createdAt, weaponType, style) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
 );
 const selectItemsByCharacter = db.prepare(
-  "SELECT id, baseId, slot, rarity, statValue, bonusStatValue, affixes, equipped, weaponType, style FROM items WHERE characterId = ? ORDER BY createdAt DESC",
+  "SELECT id, baseId, slot, rarity, statValue, bonusStatValue, affixes, etched, equipped, weaponType, style FROM items WHERE characterId = ? ORDER BY createdAt DESC",
 );
 const selectOneItem = db.prepare(
-  "SELECT id, baseId, slot, rarity, statValue, bonusStatValue, affixes, equipped, weaponType, style FROM items WHERE id = ? AND characterId = ?",
+  "SELECT id, baseId, slot, rarity, statValue, bonusStatValue, affixes, etched, equipped, weaponType, style FROM items WHERE id = ? AND characterId = ?",
 );
 const updateItemStmt = db.prepare(
-  "UPDATE items SET rarity = ?, statValue = ?, bonusStatValue = ?, affixes = ? WHERE id = ?",
+  "UPDATE items SET rarity = ?, statValue = ?, bonusStatValue = ?, affixes = ?, etched = ? WHERE id = ?",
 );
 const selectItemForEquip = db.prepare(
   "SELECT id, slot FROM items WHERE id = ? AND characterId = ?",
@@ -494,6 +499,7 @@ interface ItemRow {
   statValue: number;
   bonusStatValue: number;
   affixes: string | null;
+  etched: string | null;
   equipped: number;
   weaponType: string | null;
   style: string | null;
@@ -512,6 +518,10 @@ function toItemInstance(row: ItemRow): ItemInstance {
     statValue: row.statValue,
     bonusStatValue: row.bonusStatValue,
     affixes: parseAffixes(row.affixes),
+    // Narrowed to what the item actually carries on the way out, so a stale
+    // mark from an older row can never reach the reforge roller as an
+    // instruction to preserve a slot the item does not have.
+    etched: parseAffixes(row.etched).filter((id) => parseAffixes(row.affixes).includes(id)),
     equipped: row.equipped === 1,
     // Both are nullable in SQLite and optional on the wire. weaponType was
     // being dropped here even though the SELECT fetched it, which silently
@@ -555,6 +565,7 @@ export function addItem(
     rolled.statValue,
     rolled.bonusStatValue,
     JSON.stringify(rolled.affixes ?? []),
+    JSON.stringify(rolled.etched ?? []),
     Date.now(),
     rolled.weaponType ?? null,
     rolled.style ?? null,
@@ -572,7 +583,7 @@ export function getItem(characterId: string, itemId: string): ItemInstance | nul
 export function replaceItemRolls(
   characterId: string,
   itemId: string,
-  next: Pick<ItemInstance, "rarity" | "statValue" | "bonusStatValue" | "affixes">,
+  next: Pick<ItemInstance, "rarity" | "statValue" | "bonusStatValue" | "affixes" | "etched">,
 ): ItemInstance | null {
   const existing = getItem(characterId, itemId);
   if (!existing) return null;
@@ -581,6 +592,10 @@ export function replaceItemRolls(
     next.statValue,
     next.bonusStatValue,
     JSON.stringify(next.affixes ?? []),
+    // Written alongside the affixes rather than left alone, or a reforge would
+    // keep the OLD marks against the NEW rolls — which is the exact shape of
+    // stale subset this whole field has to be defended against.
+    JSON.stringify(next.etched ?? []),
     itemId,
   );
   return getItem(characterId, itemId);

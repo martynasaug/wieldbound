@@ -181,6 +181,14 @@ export class InventoryPanel {
       // stops meaning anything.
       if (rarityGlows(item.rarity)) cell.classList.add("lit");
 
+      // A cell whose contents carry a cut rune. Etching does not change an
+      // item's NAME, so two cells of the same thing sit side by side the moment
+      // one of them has been paid for — and a bag that draws those identically
+      // is a bag where the salvage button destroys the wrong pile. An edge
+      // rather than a corner mark: all four corners are already spoken for, and
+      // this is a property of the whole cell rather than a badge on it.
+      if ((item.etched?.length ?? 0) > 0) cell.classList.add("etched");
+
       // The item's OWN icon, from the catalogue — a hood and a great helm are
       // both helms and should not be the same picture in a bag of thirty.
       const icon = iconEl(itemIcon(item) || SLOT_ICON[item.slot]);
