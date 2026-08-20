@@ -107,7 +107,9 @@ import { instantiate, whenLoadsSettle } from "./assets";
 import {
   CONSUMABLES,
   ITEM_BASES,
+  MATERIALS,
   PALETTE_SETS,
+  type Material,
   activeSets,
   canForge,
   eligibleAffixes,
@@ -322,11 +324,17 @@ export class Game {
   private bootsRarity: ItemRarity | null = null;
   private items: ItemInstance[] = [];
   private appearance: Appearance = { layers: {} };
-  private wood = 0;
-  private ore = 0;
-  private herb = 0;
-  /** The fourth material, off kills rather than out of the ground. */
-  private essence = 0;
+  /**
+   * The wallet, as one record keyed by the shared material list.
+   *
+   * Four named fields is four edits every time a material is added, and the
+   * fourth one is always the one that gets missed — which is how the refined
+   * tier would have reached the bench without reaching the bag. There are six
+   * now and the next is a row in `shared/items.ts` and nothing here.
+   */
+  private wallet: Record<Material, number> = Object.fromEntries(
+    MATERIALS.map((m) => [m, 0]),
+  ) as Record<Material, number>;
   /** Base ids this character has learned to forge, by taking one apart. */
   private recipes: string[] = [];
   /** Whether the wallet has arrived once, so the opening balance is not
@@ -434,6 +442,7 @@ export class Game {
       (itemId) => this.salvageItem(itemId),
       (itemIds) => this.socket.sendSalvageMany(itemIds),
       (stationId, id) => this.socket.sendCraftConsumable(stationId, id),
+      (stationId, id, count) => this.socket.sendRefineMaterial(stationId, id, count),
     );
     this.skillPanel = new SkillPanel(
       (nodeId) => this.socket.sendLearnTalent(nodeId),
@@ -449,7 +458,7 @@ export class Game {
       onWelcome: (p) => this.onWelcome(p),
       onSnapshot: (p) => this.onSnapshot(p),
       onInventoryUpdate: (p) => {
-        this.wood = p.wood;
+        this.wallet.wood = p.wood;
         this.gatherLevel = p.gatherLevel;
         this.syncMaterials();
       },
@@ -463,7 +472,7 @@ export class Game {
         // than left as a line in the corner.
         // Not on the first message: a returning character's whole balance
         // arrives at once and is not something they just earned.
-        const gained = this.walletSeen ? p.essence - this.essence : 0;
+        const gained = this.walletSeen ? (p.essence ?? 0) - this.wallet.essence : 0;
         this.walletSeen = true;
         if (gained > 0 && this.localActor) {
           this.floaters.spawn(this.localActor.position, {
@@ -474,10 +483,9 @@ export class Game {
             weight: 0.15,
           });
         }
-        this.wood = p.wood;
-        this.ore = p.ore;
-        this.herb = p.herb;
-        this.essence = p.essence;
+        // Copied by the shared list rather than field by field, so a material
+        // the server knows about cannot go missing on the way to the panels.
+        for (const m of MATERIALS) this.wallet[m] = p[m] ?? 0;
         this.syncMaterials();
       },
       onConsumables: (p) => {
@@ -501,12 +509,12 @@ export class Game {
         this.craftPanel.setRecipes(this.recipes);
       },
       onHerbUpdate: (p) => {
-        this.herb = p.herb;
+        this.wallet.herb = p.herb;
         this.syncMaterials();
       },
       onOreUpdate: (p) => {
-        this.wood = p.wood;
-        this.ore = p.ore;
+        this.wallet.wood = p.wood;
+        this.wallet.ore = p.ore;
         this.battlePowerLevel = p.battlePowerLevel;
         this.syncMaterials();
       },
@@ -592,16 +600,16 @@ export class Game {
       onBattleResult: (p) => this.onBattleResult(p),
       onMonsterAttack: (p) => this.onMonsterAttack(p),
       onPotionsUpdate: (p) => {
-        this.wood = p.wood;
-        this.ore = p.ore;
-        this.herb = p.herb;
+        this.wallet.wood = p.wood;
+        this.wallet.ore = p.ore;
+        this.wallet.herb = p.herb;
         this.inventoryPanel.setPotions(p.potions);
         this.syncMaterials();
       },
       onTonicsUpdate: (p) => {
-        this.wood = p.wood;
-        this.ore = p.ore;
-        this.herb = p.herb;
+        this.wallet.wood = p.wood;
+        this.wallet.ore = p.ore;
+        this.wallet.herb = p.herb;
         this.inventoryPanel.setTonics(p.tonics);
         this.syncMaterials();
       },
@@ -732,9 +740,9 @@ export class Game {
     this.bootsRarity = p.bootsRarity;
     this.items = p.items;
     this.appearance = p.appearance;
-    this.wood = p.wood;
-    this.ore = p.ore;
-    this.herb = p.herb;
+    this.wallet.wood = p.wood;
+    this.wallet.ore = p.ore;
+    this.wallet.herb = p.herb;
 
     this.localActor?.snapTo(toWorldX(this.playerX), 0, toWorldZ(this.playerY));
 
@@ -1609,7 +1617,9 @@ export class Game {
   }
 
   private syncMaterials(): void {
-    const wallet = { wood: this.wood, ore: this.ore, herb: this.herb, essence: this.essence };
+    // Copied on the way out, or the two panels would hold a live reference to
+    // the field they are meant to be a snapshot of.
+    const wallet = { ...this.wallet };
     this.inventoryPanel.setMaterials(wallet);
     this.craftPanel.setMaterials(wallet);
   }

@@ -1,7 +1,7 @@
 Interface icons
 ===============
 
-167 icons from game-icons.net, baked into client/src/ui/icons.ts by
+170 icons from game-icons.net, baked into client/src/ui/icons.ts by
 tools/art/icons.mjs. Licensed CC BY 3.0 (some contributors release CC0); see
 https://github.com/game-icons/icons/blob/master/license.txt for the per-author
 terms.
@@ -183,6 +183,9 @@ Icon key -> source file:
   ring-gem               lorc/engagement-ring.svg
   ring-rune              lorc/swirl-ring.svg
   essence                delapouite/soul-vessel.svg
+  ingot                  lorc/metal-bar.svg
+  weave                  delapouite/rolled-cloth.svg
   forge                  lorc/anvil-impact.svg
+  refine                 delapouite/melting-metal.svg
   reforge                lorc/fire-shield.svg
   salvage                delapouite/hammer-break.svg

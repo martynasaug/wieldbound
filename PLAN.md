@@ -2640,8 +2640,60 @@ crafting system to go with them.
       nine-stack spills a two beside it, and the tooltip says which one the
       numbers belong to.
 
-- [ ] **M2.2 — a second material tier.** What refining buys, and whether the top
-      of the reforge ladder can want something other than more of the same.
+- [x] **M2.2 — a second material tier, and a fourth verb.** The reforge ladder
+      priced its last step at 1,256 wood and ore — about ninety gathers for one
+      click. Every number in that curve was defensible and its SHAPE was not: a
+      cost payable only by repeating the cheapest activity in the game for an
+      hour is not a decision, it is a wait, and it made the top of the ladder
+      somewhere nobody went rather than somewhere hard to get to.
+      - **REFINE is the fourth verb, and the only one whose output is not
+        something you wear.** That is also the answer to "what does the smithy do
+        that is not about items". Raw in, **ingots** and **wardweave** out
+      - **Two refined materials, not one per gatherable**, because gear is made
+        of two things: a hard part and the binding that holds it on. An ingot is
+        the blade, the plate and the ring; a weave is the wrap, the lining and
+        the cape. Every band-4 or -5 item wants both, in the ratio its slot
+        leans — the same metal/soft split `forgeCost` already made — which is
+        what stops half the bench being a button nobody presses
+      - **Wood is in both recipes, and it is the fire.** Ore does not become an
+        ingot without a forge burning under it, and it gives the cheapest and
+        most abundant gatherable a job at the top of the game instead of leaving
+        it as the thing you have four thousand of
+      - **The raw line went linear and the refined line carries the curve.** The
+        whole six-step climb of a band-5 weapon is now about what one of its old
+        steps cost — 2,066 raw-equivalent, 109 gathers — and the top of it asks
+        for a trip to the bench rather than another lap of the same trees
+      - **Salvage never returns refined stock**, so every ingot spent on the
+        ladder is spent for good. Refining is one-way, which is what makes the
+        top of the ladder a commitment rather than a position you can back out
+        of. The refine recipes take neither refined nor essence, so there is no
+        laundering loop and no second essence gate
+      - **Nothing below band 4 or ladder step 4 needs it.** A tier that reached
+        the opening hour would be a tax rather than a gate
+      - A batch button, because a hundred ore is three ingots; the server pays
+        out until the wallet runs out rather than refusing the request, since a
+        gather landing mid-click is enough to make the button's arithmetic stale
+
+      **Two things stopped being written by hand.** The wallet's SQL is now
+      generated from the shared `MATERIALS` list — four hand-typed statements
+      naming the same four columns is four places a fifth material has to be
+      remembered, and the failure is silent: a spend that forgets a column
+      simply never charges for it. The client's wallet went the same way, from
+      four fields to one record. `MATERIALS_UPDATE` stopped enumerating its keys
+      for the same reason `CONSUMABLES_UPDATE` never did.
+
+      Verified: `tools/test/items.mjs` section 9e (refined from raw only, never
+      out of a salvage, wanted by both the forge and the ladder, the slot lean
+      real, nothing below band 4 touched, and the whole climb measured in
+      raw-equivalent so the tier cannot hide a cost rather than reduce it), and
+      in a real browser — the fourth tab, six materials in the wallet and in the
+      bag footer, one ingot costing exactly 30 ore and 18 wood, a batch of ten
+      capped by the wallet and saying so, and a Tempered cloak's next step
+      asking for 1 ingot and 2 wardweave while a Worn dirk's still steps up on
+      raw alone.
+
+- [ ] **M2.3 — a boss's signature, before you kill one.** Nothing surfaces what
+      a monster is known for until it drops.
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -4113,6 +4165,37 @@ music, player-facing damage-type/resistances, more crafting recipes
   quietly have become a way around the rule that stops a stocked player being
   unkillable.
 
+- A cost that can only be paid by repeating the cheapest activity in the game is
+  not a decision, it is a wait. The reforge ladder's last step was 1,256 wood and
+  ore — ninety gathers — and every number in the curve was defensible while its
+  shape was not. The fix was not a smaller number: it was making the superlinear
+  part of the cost a DIFFERENT question, so the raw line could go linear and the
+  top of the ladder could ask for a trip to the bench rather than another lap of
+  the same trees.
+- Refining is one-way, and salvage never gives it back. Essence already came
+  only from fighting; refined stock comes only from the fire, and a laundering
+  loop through the forge would make both untrue. That is what makes the top of
+  the ladder a commitment rather than a position you can back out of.
+- Two refined materials rather than one per gatherable. Gear is made of a hard
+  part and the binding that holds it on, so every good item wants both — in the
+  ratio its slot leans, reusing the metal/soft split `forgeCost` already made.
+  One per gatherable would have been symmetry for its own sake, and one on its
+  own would have left half the wallet with nothing to do at the top of the game.
+- Wood is in both refine recipes because it is the FIRE. It gives the cheapest
+  and most abundant gatherable a job in the endgame instead of leaving it as the
+  thing every player has four thousand of and no use for.
+- A batch pays out until the wallet runs out rather than refusing the request.
+  The client sized the button off a wallet that was true when the panel last
+  drew, and a gather landing mid-click is enough to make it stale — so refining
+  nine of the ten asked for is the honest answer, and each step is its own atomic
+  spend. Same argument SALVAGE_MANY already made about a partially-stale list.
+- Wallet SQL is generated from the shared material list, not typed out. Four
+  hand-written statements naming the same four columns is four places a fifth
+  material has to be remembered in, and the failure is silent: a spend that
+  forgets a column simply never charges for it. `MATERIALS_UPDATE` stopped
+  enumerating its keys for the same reason `CONSUMABLES_UPDATE` never did — that
+  file owns the wire format and `items.ts` owns the content.
+
 - A bag slot holds a kind, not an instance, and the CAP moved with it. Grouping
   the display while leaving the cap counting rows would have been worse than not
   grouping at all — the grid would show empty cells and the game would still
@@ -4144,12 +4227,19 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M2.1 complete (2026-08-20). **The item system, rebuilt and
+Phase 0 through 48 M2.2 complete (2026-08-20). **The item system, rebuilt and
 then followed through.**
 
 **M2.1** made a bag slot hold a KIND rather than an instance. Six copies of one
 Worn dirk are one cell with a six on it, the cap counts cells instead of rows,
 and equipped items stopped taking bag space they were never shown to be using.
+
+**M2.2** gave the materials a second tier and the smithy a fourth verb. Ingots
+and wardweave are made at the bench out of raw and found nowhere; the far rings
+of the catalogue and the top half of the ladder are priced in them. The reforge
+curve went from `band × step²` raw — 1,256 on a band-5 last step — to a linear
+raw line with the superlinear part carried by refined stock, so the whole climb
+now costs about what one of its old steps did.
 
 Before that, Phase 0 through 48 M1.15.
 

@@ -1600,20 +1600,41 @@ export function setPassives(eq: EquippedGear | undefined): Required<PassiveBonus
 // reforged, or fed back into the next thing.
 
 // --- Materials --------------------------------------------------------------
-// Wood, ore and herb are gathered from the world. Essence is not: it comes off
-// kills, and only the top of the ladder needs it. That is deliberate — without
-// it, reforging is a pure function of time spent standing at trees, and the
-// most powerful gear in the game would be made by the player who fought least.
-export const MATERIALS = ["wood", "ore", "herb", "essence"] as const;
+// Materials come in two tiers, and the tier is what the bench is FOR.
+//
+//   RAW — wood, ore and herb are gathered from the world; essence is not, it
+//   comes off kills. That split is deliberate: without essence, reforging is a
+//   pure function of time spent standing at trees and the most powerful gear in
+//   the game belongs to whoever fought least.
+//
+//   REFINED — ingot and weave are MADE, at the smithy, out of raw. Nothing in
+//   the world drops them and nothing gives them back. They exist because the
+//   top of the ladder had grown to want two thousand of something you already
+//   had four thousand of, which is not a cost, it is a wait. A band-5 forge
+//   asking for three ingots and two weave is a goal a player can picture; the
+//   same effort spelled as 1,256 wood is a number they stop reading.
+//
+// That is also the answer to "what does the smithy do that is not about
+// items": refining is the one verb whose output is not a thing you wear.
+export const RAW_MATERIALS = ["wood", "ore", "herb", "essence"] as const;
+export const REFINED_MATERIALS = ["ingot", "weave"] as const;
+export const MATERIALS = [...RAW_MATERIALS, ...REFINED_MATERIALS] as const;
 export type Material = (typeof MATERIALS)[number];
+export type RefinedMaterial = (typeof REFINED_MATERIALS)[number];
 
 export type MaterialCost = Partial<Record<Material, number>>;
+
+export function isRefined(m: Material): m is RefinedMaterial {
+  return (REFINED_MATERIALS as readonly string[]).includes(m);
+}
 
 export const MATERIAL_LABEL: Record<Material, string> = {
   wood: "Wood",
   ore: "Ore",
   herb: "Herb",
   essence: "Essence",
+  ingot: "Ingot",
+  weave: "Wardweave",
 };
 
 export const MATERIAL_ICON: Record<Material, string> = {
@@ -1621,7 +1642,68 @@ export const MATERIAL_ICON: Record<Material, string> = {
   ore: "ore",
   herb: "herb",
   essence: "essence",
+  ingot: "ingot",
+  weave: "weave",
 };
+
+// --- Refining ---------------------------------------------------------------
+// The fourth verb. It takes raw and returns refined, and it is the only thing
+// the bench makes that you cannot wear.
+//
+// Two of them rather than one per gatherable, because gear is made of two
+// things: a hard part and the binding that holds it on. An ingot is the blade,
+// the plate, the shield boss and the ring; a weave is the grip wrap, the
+// lining, the cape and the cord. Every good item wants both, in a ratio its
+// slot decides — which is what stops one of the two being the only one anybody
+// refines.
+//
+// WOOD IS IN BOTH RECIPES, and that is not decoration. It is the fire. Ore does
+// not become an ingot without a forge burning under it, and it gives the
+// cheapest and most abundant gatherable a job at the top of the game instead of
+// leaving it as the thing you have four thousand of.
+
+export interface RefineDef {
+  id: RefinedMaterial;
+  name: string;
+  icon: string;
+  cost: MaterialCost;
+  /** One line, for the bench. */
+  blurb: string;
+}
+
+export const REFINING: Record<RefinedMaterial, RefineDef> = {
+  ingot: {
+    id: "ingot",
+    name: "Ingot",
+    icon: "ingot",
+    cost: { ore: 30, wood: 18 },
+    blurb: "Ore, and enough fire under it to matter. The hard half of everything.",
+  },
+  weave: {
+    id: "weave",
+    name: "Wardweave",
+    icon: "weave",
+    cost: { herb: 24, wood: 14 },
+    blurb: "Boiled, beaten and spun. The half that holds the other half on.",
+  },
+};
+
+export const REFINE_IDS: RefinedMaterial[] = Object.keys(REFINING) as RefinedMaterial[];
+
+export function refineDef(id: string): RefineDef | null {
+  return REFINING[id as RefinedMaterial] ?? null;
+}
+
+/**
+ * Which refined material a slot leans on, and which it only needs a little of.
+ *
+ * The same metal/soft split `forgeCost` already makes, so a player learns one
+ * rule rather than two — and it is the honest one: a breastplate is mostly
+ * ingot with some weave in its straps, a cape is mostly weave with a clasp.
+ */
+export function refineLean(slot: ItemSlot): RefinedMaterial {
+  return slot === "cape" ? "weave" : "ingot";
+}
 
 /** Chance a kill yields essence, and how much. Bosses always drop some. */
 export const ESSENCE_DROP_CHANCE = 0.22;
@@ -1751,6 +1833,11 @@ export function forgeCost(base: ItemBase): MaterialCost {
   };
   if (base.band >= 3) cost.herb = Math.round(2 * scale * 0.6);
   if (base.band >= 5) cost.essence = 4;
+  // The far rings want refined stock. This is what makes the fourth verb part
+  // of the item loop rather than a curiosity beside it: the best things in the
+  // catalogue cannot be made out of what you picked up off the ground, only out
+  // of what you took back to the fire first.
+  if (base.band >= 4) cost[refineLean(base.slot)] = base.band - 3;
   return cost;
 }
 
@@ -1806,22 +1893,43 @@ export const FORGE_OUTPUT_RARITY: ItemRarity = "honed";
 /**
  * The cost of one step up the ladder.
  *
- * Steeply superlinear, because the interesting question is which ONE item you
- * take to the top rather than whether you take all six. Scaled by the item's
- * band too: pushing a band-5 claymore to Enchanted should be an undertaking,
- * and pushing a band-1 dirk there should be a thing a player can do once for
- * fun and then look at.
+ * The curve used to be raw materials at `band * step²`, which put the last step
+ * of a band-5 item at 1,256 wood and ore — ninety gathers for one click. Every
+ * number in it was defensible and the shape was not: a cost that can only be
+ * paid by repeating the cheapest activity in the game for an hour is not a
+ * decision, it is a wait, and it made the top of the ladder somewhere nobody
+ * went rather than somewhere hard to get to.
+ *
+ * So the RAW line is linear in the step now and the superlinear part is carried
+ * by REFINED stock, which is a different question — refining is a trip to the
+ * bench, not another lap of the same trees. The whole six-step climb of a
+ * band-5 item is now about what one of its old steps cost, and the last two
+ * steps ask for something you cannot gather at all.
+ *
+ * Still scaled by band: pushing a band-5 claymore to Enchanted should be an
+ * undertaking, and pushing a band-1 dirk there should be a thing a player can
+ * do once for fun and then look at.
  */
 export function reforgeCost(base: ItemBase, from: ItemRarity): MaterialCost | null {
   const i = rarityIndex(from);
   if (i >= RARITY_ORDER.length - 1) return null; // already Enchanted
   const step = i + 1; // 1..6
-  const scale = base.band * step * step;
+  const scale = base.band * step;
   const cost: MaterialCost = {
     ore: Math.round(6 * scale),
     wood: Math.round(4 * scale),
   };
   if (step >= 3) cost.herb = Math.round(3 * scale * 0.5);
+  // The top HALF of the ladder wants refined stock, in the ratio the slot
+  // leans — mostly ingot for a blade, mostly weave for a cape, and never only
+  // one of the two, or half of the refining bench is something nobody uses.
+  if (step >= 4) {
+    const lean = refineLean(base.slot);
+    const other: RefinedMaterial = lean === "ingot" ? "weave" : "ingot";
+    const units = step - 3 + Math.round((base.band - 1) / 2);
+    cost[lean] = units;
+    cost[other] = Math.max(1, Math.round(units / 2));
+  }
   // The top two steps need what only killing produces. This is the sink that
   // keeps the ladder from being a gathering exercise.
   if (step >= 5) cost.essence = Math.round(base.band * (step - 3) * 1.5);
@@ -1906,8 +2014,11 @@ export function reforgeItem(
  * Roughly a third of what it would cost to forge, plus a share of what has been
  * poured into its quality — so salvaging a Runed piece you have outgrown is a
  * real decision rather than a formality, and a Broken drop is worth picking up.
- * Never returns essence: essence comes from fighting, and a laundering loop
- * through the forge would make that untrue.
+ *
+ * RAW ONLY. Essence comes from fighting and refined stock comes from the fire,
+ * and a laundering loop through the forge would make both of those untrue —
+ * every ingot spent on the ladder is spent for good, which is what makes the
+ * top of it a commitment rather than a position you can back out of.
  */
 export function salvageYield(item: ItemInstance): MaterialCost {
   const base = itemBase(item.baseId);

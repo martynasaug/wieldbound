@@ -119,12 +119,21 @@ first run at `server/data/wieldbound.db`.
   Enchanted — where Broken is genuinely *worse* than baseline and Honed is
   exactly it. Affixes on top, seven slots including an off-hand, and
   two-handed weapons that empty it.
-- **A smithy with three verbs** — Forge a named thing from the catalogue,
-  Reforge one step up the ladder, or Salvage anything down into materials.
-  **Salvaging teaches you to make it**, so the three feed each other: find a
+- **A smithy with four verbs** — Forge a named thing from the catalogue,
+  Refine raw into stock, Reforge one step up the ladder, or Salvage anything
+  down into materials.
+  **Salvaging teaches you to make it**, so they feed each other: find a
   Frostbrand, break it down, and now you can forge Frostbrands.
-  Plus **essence**, a fourth material that only comes off kills, so the top of
-  the ladder cannot be reached by gathering alone.
+  Plus **essence**, which only comes off kills, so the top of the ladder cannot
+  be reached by gathering alone.
+- **Two tiers of material** — wood, ore and herb come out of the ground and
+  essence off a kill; **ingots and wardweave are made**, at the bench, out of
+  raw, and are found nowhere. Refining is the one verb whose output is not
+  something you wear, and it is what the far rings of the catalogue and the top
+  half of the reforge ladder are priced in. Before it, the last step of a band-5
+  item cost 1,256 wood and ore — ninety gathers for one click, which is not a
+  decision, it is a wait. Salvage never gives refined stock back, so every ingot
+  spent on the ladder is spent for good.
 - **Loot lands on the ground** — a kill leaves the item's own model where the
   monster fell, turning, lit by its quality. Walk over it to take it. It is
   reserved for whoever earned the kill for a while, then anyone may have it.
@@ -220,5 +229,7 @@ ground in it), M4.3 (a day/night cycle), M4.4 (a shape per skill), M4.5 (a
 minimap and a real smithy), M4.6 (nameplates), M4.7 (unit frames) and M4.8
 (combat text, a loading screen, monster idle variety) are done. **Phase 48 M1**
 then replaced the item system outright: a catalogue of 78 named base items, a
-seven-step quality ladder, and a smithy with three verbs. See
+seven-step quality ladder, and a smithy with three verbs — since grown to four
+with **M2.1** (a bag slot holds a kind, not an instance) and **M2.2** (a refined
+material tier). See
 [`PLAN.md`](PLAN.md) for the full picture.

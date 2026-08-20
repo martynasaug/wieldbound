@@ -137,7 +137,9 @@ import {
   consumableSummary,
   hitBandOf,
   reachOf,
+  refineDef,
   swingIntervalOf,
+  type MaterialCost,
 } from "../../shared/items.ts";
 import {
   loadOrCreateCharacter,
@@ -157,6 +159,7 @@ import {
   salvageItem,
   materialsOf,
   spendMaterials,
+  addMaterial,
   addEssence,
   knownRecipes,
   addConsumable,
@@ -2109,6 +2112,42 @@ wss.on("connection", (socket) => {
       sendItemsUpdate(socket, id, items);
       sendMaterials(socket, id);
       sendInfo(socket, `Reforged: ${itemName(saved)}.`, "#ffd873");
+      return;
+    }
+
+    // --- refine: raw into stock --------------------------------------------
+    if (msg.type === "REFINE_MATERIAL" && id) {
+      if (!atStation(id, msg.payload.stationId)) return;
+      const def = refineDef(msg.payload.id);
+      if (!def) return;
+
+      // Clamped, then paid for one at a time until the wallet runs out. The
+      // alternative — price the whole batch and refuse it whole — makes the
+      // commonest case a failure: the client sized the button off a wallet that
+      // was true when the panel last drew, and a gather landing mid-click is
+      // enough to make it stale. Refining nine of the ten asked for is the
+      // honest answer, and each step is its own atomic spend so nothing is
+      // charged for stock that was never made.
+      const wanted = Math.max(1, Math.min(50, Math.round(msg.payload.count ?? 1)));
+      let made = 0;
+      for (let i = 0; i < wanted; i++) {
+        if (!spendMaterials(id, def.cost)) break;
+        addMaterial(id, def.id, 1);
+        made++;
+      }
+
+      if (made === 0) {
+        sendInfo(socket, `Not enough materials — one ${def.name} needs ${describeCost(def.cost)}.`, "#c98d5e");
+        return;
+      }
+      sendMaterials(socket, id);
+      const spent: MaterialCost = {};
+      for (const [k, v] of Object.entries(def.cost)) spent[k as keyof MaterialCost] = (v ?? 0) * made;
+      sendInfo(
+        socket,
+        `Refined ${made} ${def.name}${made === 1 ? "" : "s"} from ${describeCost(spent)}.`,
+        "#ffd873",
+      );
       return;
     }
 

@@ -59,7 +59,11 @@ export class InventoryPanel {
   private consumablesEl = document.getElementById("inv-consumables")!;
 
   private items: ItemInstance[] = [];
-  private materials: Record<Material, number> = { wood: 0, ore: 0, herb: 0, essence: 0 };
+  // Built from the shared list rather than written out, so a material added
+  // there arrives here at zero instead of arriving as undefined.
+  private materials: Record<Material, number> = Object.fromEntries(
+    MATERIALS.map((m) => [m, 0]),
+  ) as Record<Material, number>;
   private consumables: Record<string, number> = {};
   private potions = 0;
   private tonics = 0;

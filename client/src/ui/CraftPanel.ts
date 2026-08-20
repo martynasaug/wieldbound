@@ -18,6 +18,12 @@
 //   SALVAGE  what is this worth in parts? Where everything you have outgrown
 //            goes, and the reason a Broken drop is worth picking up.
 //
+//   REFINE   what is this worth as STOCK? The fourth verb, and the only one
+//            whose output is not something you wear. It is also the answer to
+//            "what does the smithy do that is not about items": raw in, ingots
+//            and wardweave out, for the far rings of the catalogue and the top
+//            half of the ladder.
+//
 // Consumables stay where they were, at the top of Forge, because they are the
 // one thing here that is still just a recipe.
 
@@ -36,6 +42,7 @@ import {
 import {
   ITEM_BASES,
   MATERIALS,
+  MATERIAL_LABEL,
   affixSummary,
   canAfford,
   canChooseAffix,
@@ -44,6 +51,8 @@ import {
   describeCost,
   CONSUMABLES,
   CONSUMABLE_IDS,
+  REFINE_IDS,
+  REFINING,
   consumableSummary,
   forgeCost,
   forgePreview,
@@ -59,7 +68,12 @@ import {
 import { iconSvg } from "./icons";
 import { itemIcon, itemShortName, rarityColor, rarityName } from "./items";
 
-type Tab = "forge" | "reforge" | "salvage";
+type Tab = "forge" | "refine" | "reforge" | "salvage";
+
+/** How many a batch button makes. Ten because refining is a bulk job and the
+ *  wallet is measured in hundreds; the server pays for as many as it can and
+ *  stops, so a button that asks for more than you can afford is not an error. */
+const BATCH = 10;
 
 interface ConsumableCost {
   wood: number;
@@ -72,7 +86,9 @@ export class CraftPanel {
   private grid = document.getElementById("craft-grid")!;
   private closeButton = document.getElementById("craft-close")!;
 
-  private materials: Record<Material, number> = { wood: 0, ore: 0, herb: 0, essence: 0 };
+  private materials: Record<Material, number> = Object.fromEntries(
+    MATERIALS.map((m) => [m, 0]),
+  ) as Record<Material, number>;
   private items: ItemInstance[] = [];
   /** Base ids this character has learned to forge. Band-1 recipes are known
    *  without being taught, so this is only what salvaging has added. */
@@ -93,6 +109,7 @@ export class CraftPanel {
     private readonly onSalvage: (itemId: string) => void,
     private readonly onSalvageMany: (itemIds: string[]) => void,
     private readonly onCraftConsumable: (stationId: string, id: string) => void,
+    private readonly onRefine: (stationId: string, id: string, count: number) => void,
   ) {
     this.closeButton.addEventListener("click", () => this.close());
   }
@@ -139,6 +156,7 @@ export class CraftPanel {
     this.renderTabs();
     this.renderWallet();
     if (this.tab === "forge") this.renderForge();
+    else if (this.tab === "refine") this.renderRefine();
     else if (this.tab === "reforge") this.renderReforge();
     else this.renderSalvage();
   }
@@ -146,8 +164,12 @@ export class CraftPanel {
   private renderTabs(): void {
     const row = document.createElement("div");
     row.className = "smith-tabs";
+    // Refine sits between Forge and Reforge because that is where it sits in
+    // the loop: you refine to afford the far end of the first and the top half
+    // of the second.
     const tabs: [Tab, string, string][] = [
       ["forge", "Forge", "forge"],
+      ["refine", "Refine", "refine"],
       ["reforge", "Reforge", "reforge"],
       ["salvage", "Salvage", "salvage"],
     ];
@@ -188,7 +210,10 @@ export class CraftPanel {
     const short = canAfford(cost, this.materials).missing;
     if (short.length) {
       el.classList.add("short");
-      el.textContent += `  (need ${short.join(", ")})`;
+      // Named the way the cost line above it names them. `canAfford` returns
+      // material IDS, and "need weave" beside "2 wardweave" reads as two
+      // different things.
+      el.textContent += `  (need ${short.map((m) => MATERIAL_LABEL[m].toLowerCase()).join(", ")})`;
     }
     return el;
   }
@@ -321,6 +346,80 @@ export class CraftPanel {
         if (this.stationId) this.onForge(this.stationId, base.id);
       },
     );
+  }
+
+  // --- refine ---------------------------------------------------------------
+
+  private renderRefine(): void {
+    this.section("raw into stock");
+    this.note(
+      "Ingots and wardweave are made here and found nowhere. The far rings of " +
+        "the catalogue want them, and so does the top half of the ladder. " +
+        "Salvage never gives them back.",
+    );
+
+    for (const id of REFINE_IDS) {
+      const def = REFINING[id];
+      const sub = this.costLine(def.cost);
+
+      // How many the wallet would actually stretch to, said before the cost
+      // rather than discovered by clicking. The bench knows the answer and the
+      // player would otherwise be doing four divisions in their head.
+      const affordable = Math.min(
+        ...MATERIALS.filter((m) => (def.cost[m] ?? 0) > 0).map((m) =>
+          Math.floor((this.materials[m] ?? 0) / (def.cost[m] ?? 1)),
+        ),
+      );
+      const held = document.createElement("div");
+      held.className = "craft-row-step";
+      held.textContent =
+        `You hold ${this.materials[id] ?? 0} · ` +
+        (affordable > 0 ? `enough raw for ${affordable}` : "not enough raw for one");
+      sub.prepend(held);
+
+      const blurb = document.createElement("div");
+      blurb.className = "craft-row-step";
+      blurb.textContent = def.blurb;
+      sub.prepend(blurb);
+
+      this.row(
+        def.icon,
+        def.name,
+        "#cbbb95",
+        sub,
+        "Refine",
+        affordable > 0 && !!this.stationId,
+        () => {
+          if (this.stationId) this.onRefine(this.stationId, def.id, 1);
+        },
+      );
+
+      // A second button for a batch, because a hundred ore is three ingots and
+      // nobody wants to click three times — and the server stops when the
+      // wallet does, so asking for ten and getting four is a normal outcome
+      // rather than a failed request.
+      if (affordable > 1) {
+        const many = Math.min(BATCH, affordable);
+        const bulk = document.createElement("div");
+        bulk.className = "craft-row-cost";
+        bulk.textContent = `All at once: ${describeCost(
+          Object.fromEntries(
+            Object.entries(def.cost).map(([k, v]) => [k, (v ?? 0) * many]),
+          ) as MaterialCost,
+        )}`;
+        this.row(
+          def.icon,
+          `${many} × ${def.name}`,
+          "#a09079",
+          bulk,
+          `Refine ${many}`,
+          !!this.stationId,
+          () => {
+            if (this.stationId) this.onRefine(this.stationId, def.id, many);
+          },
+        );
+      }
+    }
   }
 
   // --- reforge --------------------------------------------------------------

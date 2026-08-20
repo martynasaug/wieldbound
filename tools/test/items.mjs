@@ -33,6 +33,11 @@ import {
   AFFIXES_BY_ID,
   ITEM_BASES,
   MATERIALS,
+  RAW_MATERIALS,
+  REFINED_MATERIALS,
+  REFINING,
+  isRefined,
+  refineLean,
   PALETTES,
   affixBonus,
   baseGuard,
@@ -371,7 +376,10 @@ check("no item is a fist", !weapons.some((b) => b.weaponType === "fist"));
 
 // --- 9. the smithy ----------------------------------------------------------
 section("9. the smithy");
-const wallet = { wood: 1e6, ore: 1e6, herb: 1e6, essence: 1e6 };
+// Built from the shared list, not written out: a wallet that names four of six
+// materials fails every recipe that wants the other two, and the failure reads
+// as a pricing bug rather than as a test that was never updated.
+const wallet = Object.fromEntries(MATERIALS.map((m) => [m, 1e6]));
 for (const b of bases) {
   const cost = forgeCost(b);
   check(`${b.id} costs something to forge`, MATERIALS.some((m) => (cost[m] ?? 0) > 0), JSON.stringify(cost));
@@ -609,6 +617,100 @@ section("9d. richer ground further out");
   console.log(`  the dearest recipe is ${dearest} materials; a band-4 gather pays ${perGather}`);
   check("the dearest recipe is within a few hundred gathers",
     dearest / perGather < 100, `${Math.round(dearest / perGather)} gathers`);
+}
+
+// --- 9e. the refined tier ---------------------------------------------------
+// Refining is the fourth verb and the only one whose output is not something
+// you wear. The checks here are the ones that would silently not be true:
+// a refined material nothing asks for is content that does not exist, and one
+// the world can hand you is not a tier at all.
+section("9e. the refined tier");
+{
+  /** What a cost is worth in RAW, expanding refined stock into its recipe. The
+   *  only way to compare a curve before and after the tier existed. */
+  const rawWorth = (cost) =>
+    MATERIALS.reduce((sum, m) => {
+      const n = cost[m] ?? 0;
+      if (n === 0) return sum;
+      if (!isRefined(m)) return sum + n;
+      return sum + n * RAW_MATERIALS.reduce((s, r) => s + (REFINING[m].cost[r] ?? 0), 0);
+    }, 0);
+
+  // Refining must not be able to launder anything. A recipe taking refined or
+  // essence would either be a loop or a second way to spend the fight-only
+  // material, and both undo the reason the tier exists.
+  for (const id of REFINED_MATERIALS) {
+    const def = REFINING[id];
+    check(`${id} is refined from raw only`,
+      Object.keys(def.cost).every((m) => !isRefined(m) && m !== "essence"),
+      JSON.stringify(def.cost));
+    check(`${id} costs something`, rawWorth(def.cost) > 0);
+  }
+
+  // Nothing in the world hands you refined stock — not a salvage, not a drop.
+  // If it did, the bench would be optional and the tier would be decoration.
+  for (const r of RARITY_ORDER) {
+    const item = { id: "x", equipped: false, ...rollItem(ITEM_BASES.longsword, r, rand) };
+    check(`salvaging a ${r} item never returns refined stock`,
+      REFINED_MATERIALS.every((m) => !salvageYield(item)[m]));
+  }
+
+  // And every one of them has to be WANTED, or half the bench is a button
+  // nobody presses. The same argument the matched-set test makes: a bonus
+  // nothing can assemble is a bonus that never fires and nothing throws.
+  for (const m of REFINED_MATERIALS) {
+    const forgeWants = bases.some((b) => (forgeCost(b)[m] ?? 0) > 0);
+    const ladderWants = bases.some((b) =>
+      RARITY_ORDER.slice(0, -1).some((r) => (reforgeCost(b, r)?.[m] ?? 0) > 0));
+    check(`something forges with ${m}`, forgeWants);
+    check(`something on the ladder wants ${m}`, ladderWants);
+  }
+
+  // A cape leans on weave and a blade on ingot, and the lean has to be a real
+  // majority or the split is a label rather than a rule.
+  {
+    const blade = ITEM_BASES.longsword;
+    const cape = bases.find((b) => b.slot === "cape" && b.band === 5);
+    check("a blade leans on ingot", refineLean(blade.slot) === "ingot");
+    check("a cape leans on weave", refineLean(cape.slot) === "weave");
+    const top = reforgeCost(cape, "runed");
+    check("and the cape's top step really does want more weave than ingot",
+      (top.weave ?? 0) > (top.ingot ?? 0), JSON.stringify(top));
+  }
+
+  // Only the far rings and the top half of the ladder. If band 1 needed an
+  // ingot the tier would be a tax on the opening hour rather than a gate on
+  // the end of the game.
+  check("no recipe below band 4 needs refined stock",
+    bases.filter((b) => b.band < 4)
+      .every((b) => REFINED_MATERIALS.every((m) => !(forgeCost(b)[m] > 0))));
+  {
+    const sample = ITEM_BASES.longsword;
+    const stepsWanting = RARITY_ORDER.slice(0, -1)
+      .filter((r) => REFINED_MATERIALS.some((m) => (reforgeCost(sample, r)?.[m] ?? 0) > 0));
+    check("refined stock is wanted by the top half of the ladder, not all of it",
+      stepsWanting.length >= 2 && stepsWanting.length <= 3, stepsWanting.join(", "));
+  }
+
+  // The whole point of the repricing: the summit used to cost more in one step
+  // than the entire climb does now. Measured in raw-equivalent so the refined
+  // tier cannot hide the cost rather than reduce it.
+  {
+    const top = bases.find((b) => b.band === 5 && b.slot === "weapon");
+    const climb = RARITY_ORDER.slice(0, -1)
+      .reduce((sum, r) => sum + rawWorth(reforgeCost(top, r)), 0);
+    const perGather = gatherYieldFor(5, 3);
+    console.log(`  a band-5 weapon, Broken to Enchanted: ${climb} raw-equivalent` +
+      ` (${Math.round(climb / perGather)} gathers at band 5)`);
+    check("the whole climb is a long evening, not a week",
+      climb / perGather < 200, `${Math.round(climb / perGather)} gathers`);
+    // Still steep enough to be a decision about which ONE item you invest in.
+    check("and it is still a real undertaking", climb / perGather > 40);
+  }
+
+  const ingotRaw = rawWorth(REFINING.ingot.cost);
+  console.log(`  an ingot is ${ingotRaw} raw, a wardweave ${rawWorth(REFINING.weave.cost)}`);
+  check("an ingot is worth more than a gather", ingotRaw > gatherYieldFor(5, 3));
 }
 
 // --- 10. affix totals reach the passive vocabulary --------------------------

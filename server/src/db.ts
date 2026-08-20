@@ -28,9 +28,11 @@ import {
   type LeaderboardEntry,
 } from "../../shared/protocol-types.ts";
 import {
+  MATERIALS,
   isBasicRecipe,
   isTwoHanded,
   salvageYield,
+  type Material,
   type MaterialCost,
 } from "../../shared/items.ts";
 
@@ -147,6 +149,14 @@ for (const migration of [
   "ALTER TABLE characters ADD COLUMN characterClass TEXT NOT NULL DEFAULT 'warrior'",
   "ALTER TABLE characters ADD COLUMN intelligence INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE characters ADD COLUMN mana INTEGER NOT NULL DEFAULT 40",
+  // The refined tier. Made at the bench out of raw, never found and never given
+  // back — see REFINING in shared/items.ts. Columns rather than a table because
+  // the material list is small, fixed and read on every wallet update; the
+  // statements below are GENERATED from that list, so a seventh material is a
+  // row in shared and a migration line here, not four SQL strings to keep in
+  // step with each other.
+  "ALTER TABLE characters ADD COLUMN ingot INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE characters ADD COLUMN weave INTEGER NOT NULL DEFAULT 0",
 ]) {
   try {
     db.exec(migration);
@@ -656,9 +666,13 @@ export function salvageItem(
   // gives a duplicate an answer better than "throw it away".
   const learned = !isBasicRecipe(item.baseId) && learnRecipe(characterId, item.baseId);
   deleteItemStmt.run(itemId);
-  if (yielded.wood) addWood(characterId, yielded.wood);
-  if (yielded.ore) addOre(characterId, yielded.ore);
-  if (yielded.herb) addHerb(characterId, yielded.herb);
+  // Whatever `salvageYield` decided, paid generically — three named calls is
+  // three places a new material would have to be remembered in, and it never
+  // would be, because the yield table would simply stop mentioning it and
+  // nothing would throw.
+  for (const m of MATERIALS) {
+    if (yielded[m]) addMaterial(characterId, m, yielded[m]!);
+  }
 
   return {
     yielded,
@@ -770,27 +784,47 @@ export function spendConsumable(characterId: string, id: string): Record<string,
   return consumablesOf(characterId);
 }
 
-export interface MaterialTotals {
-  wood: number;
-  ore: number;
-  herb: number;
-  essence: number;
-}
+export type MaterialTotals = Record<Material, number>;
 
+// Every statement that touches the wallet is BUILT from the shared material
+// list rather than typed out. Four hand-written SQL strings naming the same
+// four columns is four places a fifth material has to be remembered in, and the
+// failure mode is silent: a spend that forgets a column simply never charges
+// for it.
 const selectMaterials = db.prepare(
-  "SELECT wood, ore, herb, essence FROM characters WHERE id = ?",
+  `SELECT ${MATERIALS.join(", ")} FROM characters WHERE id = ?`,
 );
 const addEssenceStmt = db.prepare(
   "UPDATE characters SET essence = essence + ? WHERE id = ?",
 );
 const spendMaterialsStmt = db.prepare(
-  "UPDATE characters SET wood = wood - ?, ore = ore - ?, herb = herb - ?, essence = essence - ? WHERE id = ? AND wood >= ? AND ore >= ? AND herb >= ? AND essence >= ?",
+  `UPDATE characters SET ${MATERIALS.map((m) => `${m} = ${m} - ?`).join(", ")}` +
+    ` WHERE id = ? AND ${MATERIALS.map((m) => `${m} >= ?`).join(" AND ")}`,
 );
+/** Credits one material. Used by refining, which is the only thing that pays
+ *  out something the world cannot drop. */
+const addMaterialStmt: Record<Material, ReturnType<typeof db.prepare>> = Object.fromEntries(
+  MATERIALS.map((m) => [m, db.prepare(`UPDATE characters SET ${m} = ${m} + ? WHERE id = ?`)]),
+) as Record<Material, ReturnType<typeof db.prepare>>;
+
+const EMPTY_WALLET: MaterialTotals = Object.fromEntries(
+  MATERIALS.map((m) => [m, 0]),
+) as MaterialTotals;
 
 export function materialsOf(characterId: string): MaterialTotals {
-  return (selectMaterials.get(characterId) as unknown as MaterialTotals) ?? {
-    wood: 0, ore: 0, herb: 0, essence: 0,
-  };
+  const row = selectMaterials.get(characterId) as unknown as Partial<MaterialTotals> | undefined;
+  if (!row) return { ...EMPTY_WALLET };
+  // Coerced rather than trusted: a column added by a migration on an existing
+  // row reads back as its default, but a row written before the migration ran
+  // in this process would not have the key at all.
+  const out = { ...EMPTY_WALLET };
+  for (const m of MATERIALS) out[m] = Number(row[m] ?? 0);
+  return out;
+}
+
+export function addMaterial(characterId: string, material: Material, amount: number): MaterialTotals {
+  if (amount > 0) addMaterialStmt[material].run(Math.round(amount), characterId);
+  return materialsOf(characterId);
 }
 
 export function addEssence(characterId: string, amount: number): number {
@@ -809,14 +843,11 @@ export function spendMaterials(
   characterId: string,
   cost: MaterialCost,
 ): MaterialTotals | null {
-  const wood = Math.max(0, Math.round(cost.wood ?? 0));
-  const ore = Math.max(0, Math.round(cost.ore ?? 0));
-  const herb = Math.max(0, Math.round(cost.herb ?? 0));
-  const essence = Math.max(0, Math.round(cost.essence ?? 0));
-  const result = spendMaterialsStmt.run(
-    wood, ore, herb, essence, characterId,
-    wood, ore, herb, essence,
-  );
+  const amounts = MATERIALS.map((m) => Math.max(0, Math.round(cost[m] ?? 0)));
+  // Amounts twice: once for the SET clause and once for the balance check in
+  // the WHERE, which is what makes two rapid clicks on a forge button unable to
+  // both succeed against the same wood.
+  const result = spendMaterialsStmt.run(...amounts, characterId, ...amounts);
   if (Number(result.changes) === 0) return null;
   return materialsOf(characterId);
 }

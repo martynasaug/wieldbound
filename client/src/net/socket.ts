@@ -164,6 +164,12 @@ export class GameSocket {
     this.send({ type: "USE_CONSUMABLE", payload: { id } });
   }
 
+  /** Raw into stock. `count` because refining one at a time is a chore the
+   *  bench would be inventing for itself. */
+  sendRefineMaterial(stationId: string, id: string, count = 1): void {
+    this.send({ type: "REFINE_MATERIAL", payload: { stationId, id, count } });
+  }
+
   /** Several at once. The bag holds thirty and loot is frequent. */
   sendSalvageMany(itemIds: string[]): void {
     if (itemIds.length === 0) return;

@@ -166,6 +166,18 @@ space in it — which nothing throws on.
 node tools/test/bag.mjs
 ```
 
+`../patch.mjs` — not a test. Applies a batch of exact-string edits from a JSON
+spec, normalising line endings for the match and restoring the file's own on
+write. Source files here are a mix of CRLF and LF (`core.autocrlf=true`), so a
+multi-line find-and-replace silently matches nothing on half of them. It aborts
+the WHOLE batch if any edit does not match exactly once and says how many were
+dropped — a patch script that half-applies is worse than one that does not apply
+at all, and this repo has lost three edits that way before.
+
+```powershell
+node tools/patch.mjs edits.json   # [{ file, find, replace }, ...]
+```
+
 `icons.mjs` — no server needed. Checks that every icon key the game names — the
 class, weapon, default-attack and skill tables, all 73 talent nodes, plus the
 slots, materials, consumables, dock and attribute keys the panels name directly

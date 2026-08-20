@@ -215,7 +215,11 @@ export const ICON_MAP = {
   // rather than out of the ground — so it is deliberately not another lump of
   // rock or bundle of leaves.
   essence: "delapouite/soul-vessel",
+  // The refined tier: made at the bench, found nowhere.
+  ingot: "lorc/metal-bar",
+  weave: "delapouite/rolled-cloth",
   forge: "lorc/anvil-impact",
+  refine: "delapouite/melting-metal",
   reforge: "lorc/fire-shield",
   salvage: "delapouite/hammer-break",
 };

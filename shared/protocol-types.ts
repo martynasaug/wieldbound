@@ -2064,12 +2064,34 @@ export interface SalvageManyMessage {
   payload: { itemIds: string[] };
 }
 
-/** Every material, in one message. Wood, ore and herb each had their own
- *  update; essence made that four, and four messages to say one thing is three
- *  chances for the client's idea of the wallet to drift from the server's. */
+/**
+ * Every material, in one message. Wood, ore and herb each had their own update;
+ * essence made that four, and four messages to say one thing is three chances
+ * for the client's idea of the wallet to drift from the server's.
+ *
+ * The keys are `MATERIALS` from `shared/items.ts` and are deliberately NOT
+ * enumerated here: this file owns the wire format and that one owns the
+ * content, so a sixth material is a row there and nothing at all here. Same
+ * shape and same reason as `CONSUMABLES_UPDATE`.
+ */
 export interface MaterialsUpdateMessage {
   type: "MATERIALS_UPDATE";
-  payload: { wood: number; ore: number; herb: number; essence: number };
+  payload: Record<string, number>;
+}
+
+/**
+ * REFINE asks WHAT IS THIS WORTH AS STOCK. The fourth verb, and the only one
+ * whose output is not something you wear: raw materials in, refined out.
+ *
+ * `count` because refining one at a time is a chore the bench would be
+ * inventing for itself — the same argument SALVAGE_MANY makes. The server
+ * clamps it and pays for what it can actually afford rather than refusing the
+ * whole request, since a stale wallet is the normal case when a gather lands
+ * mid-click.
+ */
+export interface RefineMaterialMessage {
+  type: "REFINE_MATERIAL";
+  payload: { stationId: string; id: string; count?: number };
 }
 
 /**
@@ -2735,6 +2757,7 @@ export type ClientToServerMessage =
   | EquipItemMessage
   | SalvageItemMessage
   | SalvageManyMessage
+  | RefineMaterialMessage
   | AllocateStatMessage
   | ForgeItemMessage
   | ReforgeItemMessage
