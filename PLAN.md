@@ -3472,6 +3472,192 @@ goes back to Adventurer, and zero console errors.
 
 ---
 
+## Phase 51 — Emberhold, dressed (and a skeleton exorcised)
+User brief, in three parts: *"Why do all the characters now have some sort of a
+skeleton on their models? it looks very bad."* Then: *"Lets also enchance and
+improve our visuals. Add more textures and details to town, lets make it look
+real good and comfy since its gonna make first impression on new players."*
+Then, with a screenshot of the obelisk: *"also remove this thing. you can add
+some sort of a very good looking statue model as a respawn point in the middle
+of town square."*
+
+### The skeleton
+Every character in the game — players, townspeople, everyone — was wearing pale
+blue-white struts across the torso, forearms and shins. In the open. At noon.
+With nothing in front of them.
+
+It was M49.2's through-walls silhouette, and the diagnosis is one word: WHICH.
+"Draws only where this actor is behind something already in the depth buffer"
+was the right idea, and "already in the depth buffer" was supposed to mean the
+world. It meant the actor's own gear. The silhouette was `transparent`, three.js
+draws every transparent object after every opaque one, and so by the time it ran
+the shoulder plates, bracers and shin guards it belongs to had all written
+depth. The body sits about a centimetre behind its own armour, so it passed
+`GreaterDepth` underneath every piece of it. It traced the gear, which is
+exactly why it read as bones.
+
+**Fixed by ordering, not by a depth bias.** The tempting one-liner is
+`polygonOffset`, and it is wrong: the body-to-gear gap is a centimetre and the
+body-to-wall gap is half a metre, but both are non-linear in the depth buffer
+and both move as the camera zooms, so any bias tuned at one distance is wrong at
+another. Instead the silhouette became OPAQUE and slots between the two groups
+by render order — world at 0, silhouettes at 1, everything any actor owns at 2,
+set in `trackMesh`, which is the single choke point body meshes, held items and
+worn armour all pass through. A silhouette now tests against a depth buffer
+holding the world and nothing else, which is precisely the question it means to
+ask.
+
+Two consequences, both taken on purpose and both written down at the constant.
+It is solid rather than 42% translucent, because the opaque pass is what gives
+it the right depth buffer and three.js picks the pass off `material.transparent`
+— and a solid shape through a wall is the conventional read anyway. And an actor
+behind another ACTOR no longer silhouettes, since all bodies now draw after all
+silhouettes; that was never one of the three cases the feature exists for, which
+are all actor-behind-scenery.
+
+Verified both directions, because half a fix here looks exactly like a whole
+one: the bones are gone standing on open paving, and walking out through a solid
+stretch of palisade still shows the legs through the timber and nothing else.
+
+### The statue
+The obelisk was four grey boxes and a cone, and it stood off to one side. Both
+halves of that were wrong, and the second explains the first: the middle of the
+square was where every player materialised, so anything standing on it was
+something they arrived inside, so the best spot in town was reserved for nobody
+to stand on — and a monument that is not on the centre is not the centre of
+anything.
+
+**`PLAYER_SPAWN` and arrival are two different things now**, which they always
+should have been. Spawn is the ORIGIN: every difficulty band, every camp, every
+node ring and the town itself are measured from it, so it cannot move without
+moving the world. Arrival is a PLACE. `PLAYER_ARRIVAL` puts it 150px out on
+bearing 60 — clear of the statue, on open paving, facing back across the square
+— and the server uses it for new characters and for every respawn. One constant,
+and the centre is free.
+
+**The figure is the game's own Warrior rig, cast in stone.** This project has no
+sculptor, and every human built out of the box kit lands somewhere between a
+snowman and a scarecrow; the obelisk existed because a figure was out of reach.
+But the game already ships people, in exactly the stylisation of everything
+round the square, and a statue is only a person who has stopped moving and
+turned the colour of rock. So: instantiate the rig, hold one frame of its own
+animation, repaint every surface in the town's stone. It is the one object in
+Emberhold that is loaded rather than generated, and the exception is the point —
+everything else is boxes because a downloaded BUILDING would arrive in a foreign
+stylisation, and a person is the opposite case.
+
+Posed by sampling a clip rather than left in bind pose, which is a T. Chosen by
+clip NAME after the first version matched `/attack|slash|swing/i` and found
+`RecieveHit_Attacking` several entries before `Sword_Attack` — a stone man
+flinching, which looked like a bad model and was a bad regex. `Idle_Weapon`
+wins: a swing frozen mid-air reads as a person who has been paused, and a figure
+standing squarely with the sword down reads as something somebody carved. It
+also has no root motion, so the feet stay over the middle of the plinth.
+
+The road now passes either side of it on a radial flagstone island, so the
+layout test's road rule became a CORRIDOR rather than a centreline — the honest
+question is whether you can get from gate to gate, not whether you can do it
+without ever stepping off the axis. The half-width is shared with the client, so
+the road a player can see and the road the test walks are one number.
+
+### The seam that was a plank
+Found while looking at the town for the dressing pass: a dead straight line
+across the whole square, day and night, darker on the near side. It survived
+shadows off, lights off and a bare-terrain test, so it looked like a renderer
+bug for three rounds of diagnosis.
+
+It was the road. One 58-unit plane laid under the plaza on the assumption that
+the paving covered it, with a hard alpha edge along its far side that this
+camera's foreshortening stretched right across the frame. The road is two
+segments now, stopping at the paving — which makes the comment that was already
+sitting above it ("where it crosses the square it is paved") literally true
+rather than aspirational.
+
+Worth recording as a method note: the thing that cracked it was hiding one mesh
+at a time rather than reasoning about it. Three plausible physical explanations
+survived every amount of thinking and none of them was right.
+
+### The dressing
+Emberhold's first pass got the architecture right and left the place empty. Six
+good buildings round twenty-seven units of bare cobble is a car park with nice
+sheds on it, and the square is the first thing a new player stands in.
+
+The whole square read BROWN, which is the diagnosis: plaster, timber, thatch,
+cobble and grass are four browns and a green, and the only saturated thing in
+town was one awning. So the additions are the cheap bright things a real village
+puts out precisely because they are cheap and bright:
+
+- **Bunting**, slung post to post right round the lantern ring, on a sagging
+  curve rather than a straight line — a straight one reads as a washing line
+  drawn in a level editor. The two spans that would cross a gateway are skipped,
+  because bunting over the road is bunting a cart takes down. It is the single
+  biggest change to how the place feels: an open plaza with flags across it
+  reads as somewhere that holds a market.
+- **Window boxes** under every upper window on every front. The cheapest colour
+  in the town and the one that does the most work, because it is the only
+  saturated thing at the height a player actually looks — everything else is
+  overhead or underfoot.
+- **Planters** either side of every bench, **a handcart** tipped onto its
+  shafts, **a notice board** with papers pinned to it, and **two braziers**
+  whose coals are a real light after dark and a warm spot of colour at noon.
+
+Blooms are deliberately larger than a real flower head: at this camera a
+botanically honest one is two pixels and reads as noise on the texture. It has
+to be legible from across the square or it is not colour, it is dither.
+
+**Every one of them is solid**, and every position lives in `shared/town.ts`
+rather than in the client's builder — the rule the well and the monument were
+already moved onto in M49.2. The client draws each from that entry and the
+collision keeps a body out of that entry, so there is no second copy to go
+stale, and the failure being avoided is a handcart you walk straight through.
+Nineteen new solid props; `tools/test/town.mjs` still finds both roads passable,
+every townsperson reachable and the anvil stood at.
+
+### Verified
+All nine offline suites, both workspaces typechecking clean, and a headless tour
+of the square, the smithy, the inn, the chapel, the watchpost, a gate, dusk and
+midnight — zero console errors at every one. Plus the two silhouette checks
+described above, and the before/after pair on the seam.
+
+### Three things the user caught after the pass
+All from looking at the running game, and all of them the same shape: something
+that was dimensionally honest and read wrong.
+
+**"What are these terrible transitions between roads?"** Cutting the road at the
+paving fixed the seam and introduced a smaller version of the same bug one step
+out — a butt joint where cobble met dirt. The fade was baked into the road
+image, and an image that tiles twenty-six times ALONG the road has no end to
+fade at, so the ends were cut by geometry with a razor edge. `roadStrip` builds
+the arms by hand with vertex alpha now and tapers all four sides; the inner
+taper is timed against the paving's own, so the road is still invisible where
+the plaza is solid and only reaches strength outside its rim. The two hand over
+inside each other's fade and there is no join to find. The verge was tightened
+at the same time — at the first setting the solid part of the track was
+narrower than the fade either side of it, which came out as a dark smear on the
+grass rather than as something carts use.
+
+**"The benches look very clunky."** They were four boxes: a plank, a panel and
+two solid blocks fourteen centimetres by forty-four for legs. Every dimension
+was right and the thing read as a crate, because what makes furniture look like
+furniture at this distance is not its outline, it is the GAPS. Three seat slats
+with daylight between them, two back slats on posts, four square legs and a
+stretcher — twelve pieces instead of four, merged into the same static mesh, so
+it costs geometry at load and nothing per frame.
+
+**The bunting was arrowheads.** A three-sided `ConeGeometry` is not a triangle,
+it is a tetrahedron, and at half a metre across the flags hung over the square
+like a row of spearheads. Cloth has no thickness, so `pennantGeometry` is a flat
+triangle emitted with both windings — two faces without making the shared cloth
+material pay for `DoubleSide`.
+
+### Still bare, and known
+The middle band of paving between the island and the benches is deliberately
+plain — that is where players stand — but the belt of grass between the
+buildings and the palisade could still take more than kitchen gardens and a
+woodpile.
+
+---
+
 ## Phase 48+ — Revisit and pick from here
 Candidates, in no fixed order: guilds, real auth (password), going live
 (VPS + hosted DB), directional (4-way) character art so facing reads on the
@@ -5360,6 +5546,30 @@ rarities), multiple crafting stations. Not committing to order yet.
   good is a decision. Guarded so it never fires into empty air, because the one
   thing worse than a decision is a decision the interface took for you.
 
+- **A statue is a person who stopped moving.** (Phase 51) Emberhold is generated
+  because a downloaded building would arrive in a different stylisation from the
+  trees behind it, and that rule held for two phases and produced an obelisk
+  where a monument should be — four boxes and a cone, because a human is out of
+  reach of a box kit. The rule is about BUILDINGS. The game already ships people
+  in exactly this stylisation, so the statue is the Warrior rig holding one
+  frame of its own idle, painted stone. Generate what a pack would clash with;
+  reuse what the project already draws.
+
+- **Spawn is an origin; arrival is a place.** (Phase 51) They were one constant
+  and that quietly reserved the middle of the town square for nobody to stand
+  on, because anything put there was something players materialised inside.
+  `PLAYER_SPAWN` still anchors every band, camp and node ring and must never
+  move; `PLAYER_ARRIVAL` is where a person turns up and is free to be a few
+  strides off it. Any "the origin is also the doormat" coupling is worth
+  splitting the moment it costs a design decision.
+
+- **Hide one mesh at a time.** (Phase 51) The seam across the square survived
+  three rounds of reasoning — shadow frustum, light falloff, terrain tiling —
+  and every one of those explanations was coherent and wrong. It fell in one
+  step to toggling `visible` on individual named meshes. For a rendering
+  artifact, bisection beats theory, and naming the ground meshes (`town-paving`,
+  `town-road`, `town-island`) is what made bisection possible from a console.
+
 - **You may put a weapon down.** (Phase 50) It reads as a convenience and it is
   not. `classForWeapon` makes bare hands an archetype with its own ten-node
   tree, and with no unequip in the protocol that archetype was reachable exactly
@@ -5367,7 +5577,7 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 50 M50.2 complete (2026-08-21). **The item system rebuilt and
+Phase 0 through 51 complete (2026-08-21). **The item system rebuilt and
 followed through, damage that knows what it is made of, every timed effect in
 one table with a row on screen, a front door worth walking through, a town to
 walk through it into — and now a material for the one element nobody could
@@ -5382,6 +5592,26 @@ lightning for a seam — so the counter to a golem is a thing you get by killing
 golems the slow way first. And the golem now THROWS lightning as well as folding
 to it, because before that, five elements could be worn against and only four
 could ever be thrown at you.
+
+**Phase 51 — Emberhold, dressed.** Three things the user saw and the tests
+could not. A SKELETON on every character — M49.2’s silhouette testing against
+the actor’s own gear instead of against the world, fixed by render order rather
+than by a depth bias. A STATUE on the centre, which needed `PLAYER_SPAWN` and
+arrival to become two different things: spawn is the origin every band is
+measured from, arrival is a place, and splitting them freed the best spot in
+town. The figure is the game’s own Warrior rig holding one frame of its own idle
+and repainted in stone — the one loaded object in a generated town, because a
+downloaded building would clash and a person is the opposite case. And a SEAM
+right across the square that survived shadows-off, lights-off and bare-terrain
+tests and turned out to be the road: one plane laid under the plaza with a hard
+alpha edge that perspective stretched across the frame.
+
+Then the dressing it was all in aid of: bunting on a sagging curve round the
+lantern ring, window boxes under every upper window, planters, a handcart, a
+notice board and two braziers. All of it solid, all of it positioned from
+`shared/town.ts` so what is drawn and what you walk round are one entry.
+
+Before that, Phase 50.
 
 **Phase 50 M50.2 — skills that read a status.** Fourteen timed effects existed
 and every skill that touched one PUT it there; nothing had ever asked whether

@@ -291,6 +291,8 @@ export const SMITHY_ANGLE_DEG = 140;
 
 /** The bearings the ring features repeat on, so the client and this agree. */
 export const BENCH_ANGLES = [22, 68, 112, 158, 202, 248, 292, 338] as const;
+/** A planter either side of every bench. Colour at eye level, and solid. */
+export const PLANTER_OFFSET_DEG = 4.5;
 export const LANTERN_ANGLES = [22, 67, 112, 157, 202, 247, 292, 337] as const;
 export const GARDEN_ANGLES = [20, 65, 110, 160, 200, 250, 295, 340] as const;
 export const BENCH_RING_PX = 540;
@@ -343,6 +345,27 @@ export const TOWN_PROPS: TownProp[] = [
     angleDeg: a,
     blockRadiusPx: 18,
   })),
+
+  // --- The dressing --------------------------------------------------------
+  // Added when the square was furnished. They live here rather than in the
+  // client's builder for the reason the well and the monument already did: the
+  // client draws each one from this entry and the collision keeps a body out of
+  // this entry, so there is no second copy to go stale — and the failure being
+  // avoided is a handcart you walk straight through, which is exactly what the
+  // palisade and the well used to do.
+  { id: "cart", radiusPx: 505, angleDeg: 128, blockRadiusPx: 52 },
+  { id: "noticeboard", radiusPx: 470, angleDeg: 168, blockRadiusPx: 38 },
+  { id: "brazier-a", radiusPx: 430, angleDeg: 312, blockRadiusPx: 26 },
+  { id: "brazier-b", radiusPx: 430, angleDeg: 88, blockRadiusPx: 26 },
+  // Two per bench. Small, but a tub of earth is a thing you walk round.
+  ...BENCH_ANGLES.flatMap((a) =>
+    [-PLANTER_OFFSET_DEG, PLANTER_OFFSET_DEG].map((offset) => ({
+      id: `planter-${a}-${offset > 0 ? "r" : "l"}`,
+      radiusPx: BENCH_RING_PX,
+      angleDeg: a + offset,
+      blockRadiusPx: 22,
+    })),
+  ),
 ];
 
 /** World position of a prop, from its polar placement. */
@@ -709,5 +732,10 @@ export const PLAYER_ARRIVAL: { x: number; y: number } = at(150, 60);
  * the island instead, which is what a square with a monument in it has always
  * looked like. The number is the DRAWN road's half-width, so the thing the test
  * checks and the thing the player can see are one fact.
+ *
+ * It has to stay comfortably clear of the statue's keep-out — 66px plus a
+ * body's 14 — or the corridor closes and the road really is blocked. 120 leaves
+ * forty pixels of walkable track either side of the island at its tightest,
+ * which is three body widths.
  */
-export const ROAD_HALF_WIDTH_PX = 150;
+export const ROAD_HALF_WIDTH_PX = 120;

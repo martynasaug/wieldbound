@@ -68,8 +68,17 @@ unavailable.
   and later than a dagger. Bare hands are a real (weak) archetype rather than
   a broken state.
 - **A town to start in** — Emberhold: six buildings on a ring inside a
-  palisade, a paved square with a monument at its centre, a road running gate
-  to gate, and the smithy in the middle of it where it always was. Every
+  palisade, a paved square with a **stone warrior on its centre** — the town's
+  own watch, cast from the game's own Warrior rig holding one frame of its own
+  idle, because a project with no sculptor already ships people in exactly the
+  right style — a road that parts either side of him on a flagstone island, and
+  the smithy off to one corner. You arrive beside the statue rather than inside
+  it: spawn is the origin every difficulty band is measured from, and where a
+  person turns up is a separate, movable thing. And it is **dressed** — bunting
+  slung post to post on a sagging line, flower boxes under every upper window,
+  planters, a handcart, a notice board and braziers that are a real light after
+  dark. All of it solid, all of it placed from one shared table, so what you see
+  and what you walk round cannot disagree. Every
   structure is *generated* — boxes and gable prisms in the game's own palette,
   surfaced with procedural plaster, coursed masonry, thatch, shingle and slate —
   because the CC0 kits this project draws on have props, plants and characters

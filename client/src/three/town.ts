@@ -38,6 +38,7 @@ import {
   LANTERN_ANGLES,
   LANTERN_RING_PX,
   ROAD_HALF_WIDTH_PX,
+  TOWN_PROPS,
   propById,
   propPosition,
   inGateway as bearingInGateway,
@@ -69,6 +70,25 @@ const PALETTE = {
   garden: 0x5e7a3a,
   glass: 0xffca74,
   banner: 0xa8503c,
+  // --- Colour, added when the square was dressed ---------------------------
+  // Emberhold read brown at noon: plaster, timber, thatch, cobble and grass are
+  // four browns and a green, and the only saturated thing in the place was one
+  // awning. A town nobody wants to stand in is a town with no colour at eye
+  // level, and the fix is cloth — bunting, banners, awnings and flowers, which
+  // are the things a real village puts out precisely because they are cheap and
+  // bright. Four of them, kept close together in value so the square reads as
+  // one palette rather than as a paint chart.
+  buntingRed: 0xb8533c,
+  buntingGold: 0xc9963f,
+  buntingTeal: 0x40756a,
+  buntingCream: 0xd9c9a4,
+  /** Window boxes and planters: leaf, and two blooms to sit in it. */
+  bloom: 0xc4577a,
+  bloomAlt: 0xd7c05a,
+  /** Sacking, sailcloth, laundry — an off-white that is not plaster. */
+  linen: 0xcfc3a6,
+  /** Fresh-cut timber, for the cart and the boards. Lighter than `timberLight`. */
+  plank: 0x8a6b45,
 } as const;
 
 type MatKey = keyof typeof PALETTE;
@@ -105,6 +125,14 @@ const TEX_SCALE: Partial<Record<MatKey, number>> = {
   awningAlt: 0.7,
   banner: 0.7,
   garden: 1.0,
+  buntingRed: 0.9,
+  buntingGold: 0.9,
+  buntingTeal: 0.9,
+  buntingCream: 0.9,
+  bloom: 1.6,
+  bloomAlt: 1.6,
+  linen: 0.8,
+  plank: 1.0,
 };
 
 function canvas2d(size: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
@@ -401,6 +429,16 @@ const TEXTURE_SOURCES: Partial<Record<MatKey, () => HTMLCanvasElement>> = {
   banner: clothTexture,
   iron: metalTexture,
   garden: foliageTexture,
+  // The new cloth shares the weave the awnings already use, and the blooms
+  // share the foliage stipple — nine canvases still, for twenty-two materials.
+  buntingRed: clothTexture,
+  buntingGold: clothTexture,
+  buntingTeal: clothTexture,
+  buntingCream: clothTexture,
+  linen: clothTexture,
+  bloom: foliageTexture,
+  bloomAlt: foliageTexture,
+  plank: woodTexture,
 };
 
 /** Built once each; several palette entries deliberately share a drawing. */
@@ -1031,19 +1069,24 @@ function lantern(
    *  together around one pale stone plinth, and at full strength they blew it
    *  out into the brightest thing in the square by a wide margin. */
   strength = 1,
+  /**
+   * Light only, no post.
+   *
+   * For fittings that build their own body — the brazier is an iron basket on
+   * three legs and wants a flame in it, not a lamp post growing out of it.
+   * Sharing the light-and-flicker half is what keeps every warm source in town
+   * on one clock.
+   */
+  bare = false,
 ): void {
-  b.cyl("iron", 0.07, height, x, 0, z, 6);
-  b.box("iron", 0.34, 0.05, 0.34, x, height, z);
-  b.box("glass", 0.26, 0.34, 0.26, x, height + 0.05, z);
-  b.box("iron", 0.34, 0.06, 0.34, x, height + 0.39, z);
-  // A little cap, so the silhouette ends in something.
-  b.add(
-    "iron",
-    new THREE.ConeGeometry(0.22, 0.22, 6),
-    x,
-    height + 0.56,
-    z,
-  );
+  if (!bare) {
+    b.cyl("iron", 0.07, height, x, 0, z, 6);
+    b.box("iron", 0.34, 0.05, 0.34, x, height, z);
+    b.box("glass", 0.26, 0.34, 0.26, x, height + 0.05, z);
+    b.box("iron", 0.34, 0.06, 0.34, x, height + 0.39, z);
+    // A little cap, so the silhouette ends in something.
+    b.add("iron", new THREE.ConeGeometry(0.22, 0.22, 6), x, height + 0.56, z);
+  }
 
   const light = new THREE.PointLight(0xffb45e, 0, 13, 2);
   light.position.set(x, height + 0.22, z);
@@ -1054,6 +1097,338 @@ function lantern(
   group.add(glow);
 
   lanterns.push({ light, glow, phase: (x * 12.9898 + z * 78.233) % (Math.PI * 2), strength });
+}
+
+
+// --- Dressing the square ----------------------------------------------------
+// Emberhold's first pass got the architecture right and left the place empty.
+// Six good buildings round twenty-seven units of bare cobble is a car park with
+// nice sheds on it, and the square is the first thing a new player stands in.
+//
+// Everything below is the cheap, bright, human-scale stuff a real village puts
+// out — bunting, window boxes, a handcart, a notice board, a brazier — built
+// from the same box kit as the buildings so none of it needs a download and all
+// of it takes the same procedural surfaces.
+
+/** The four cloth colours the bunting cycles through. */
+const BUNTING_CLOTH: MatKey[] = ["buntingRed", "buntingGold", "buntingTeal", "buntingCream"];
+
+/**
+ * A line of pennants slung between two points.
+ *
+ * The catenary is the whole trick: a straight line of flags reads as a
+ * washing line drawn in a level editor, and a sagging one reads as string.
+ * `sag` is how far the middle drops, and the flags hang from wherever the
+ * curve is rather than from a constant height.
+ */
+function bunting(
+  b: Builder,
+  ax: number,
+  ay: number,
+  az: number,
+  bx: number,
+  by: number,
+  bz: number,
+  sag: number,
+  seed: number,
+): void {
+  const rand = seeded(seed);
+  const span = Math.hypot(bx - ax, bz - az);
+  const flags = Math.max(4, Math.round(span * 1.5));
+  const heading = Math.atan2(bz - az, bx - ax);
+
+  const pointAt = (t: number) => ({
+    x: ax + (bx - ax) * t,
+    // A parabola is close enough to a catenary at this scale and is one
+    // multiply instead of a cosh.
+    y: ay + (by - ay) * t - sag * 4 * t * (1 - t),
+    z: az + (bz - az) * t,
+  });
+
+  // The cord, as short segments following the curve.
+  let prev = pointAt(0);
+  for (let i = 1; i <= flags; i++) {
+    const next = pointAt(i / flags);
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const dz = next.z - prev.z;
+    const len = Math.hypot(dx, dy, dz);
+    // Laid along its own length: `cyl` stands a cylinder up, so it is rotated
+    // onto the segment's direction instead — pitch first, then heading.
+    b.add(
+      "iron",
+      new THREE.CylinderGeometry(0.018, 0.018, len, 4),
+      prev.x + dx / 2,
+      prev.y + dy / 2,
+      prev.z + dz / 2,
+      heading,
+      Math.PI / 2 - Math.atan2(dy, Math.hypot(dx, dz)),
+    );
+    prev = next;
+  }
+
+  // A pennant under every knot, alternating colour.
+  for (let i = 1; i < flags; i++) {
+    const p = pointAt(i / flags);
+    const cloth = BUNTING_CLOTH[i % BUNTING_CLOTH.length];
+    const w = 0.15 + rand() * 0.03;
+    // Hung in the PLANE of the string, so it is broadside from where the line
+    // is being looked along — which is how bunting is actually seen.
+    b.add(cloth, pennantGeometry(w, w * 1.5), p.x, p.y, p.z, heading);
+  }
+}
+
+/**
+ * One flag: a flat triangle hanging point-down, doubled so it has two faces.
+ *
+ * FLAT, and that is the whole note. The first version used a three-sided
+ * `ConeGeometry`, which is not a triangle — it is a tetrahedron, and at half a
+ * metre across it hung over the square like a row of arrowheads. Cloth has no
+ * thickness, so the geometry should not either.
+ *
+ * Two windings rather than `side: DoubleSide`, because the material is shared
+ * with the awnings and the sacking and none of those want to pay for two-sided
+ * shading.
+ */
+function pennantGeometry(width: number, height: number): THREE.BufferGeometry {
+  const hw = width / 2;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(
+      [
+        -hw, 0, 0, hw, 0, 0, 0, -height, 0,
+        hw, 0, 0, -hw, 0, 0, 0, -height, 0,
+      ],
+      3,
+    ),
+  );
+  geo.setAttribute(
+    "uv",
+    new THREE.Float32BufferAttribute([0, 1, 1, 1, 0.5, 0, 1, 1, 0, 1, 0.5, 0], 2),
+  );
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * A window box of flowers.
+ *
+ * Three pieces: the box, a bed of leaf, and a scatter of blooms in two colours.
+ * It is the smallest thing in the town kit and does more for how the place
+ * feels than anything else here, because it is the only saturated colour at the
+ * height a player's eye actually sits.
+ */
+function windowBox(
+  b: Builder,
+  x: number,
+  y: number,
+  z: number,
+  rotY: number,
+  width: number,
+  seed: number,
+): void {
+  const rand = seeded(seed);
+  b.box("timber", width, 0.16, 0.26, x, y, z, rotY);
+  b.box("garden", width * 0.86, 0.1, 0.18, x, y + 0.14, z, rotY);
+  const cos = Math.cos(rotY);
+  const sin = Math.sin(rotY);
+  const blooms = Math.max(3, Math.round(width * 5));
+  for (let i = 0; i < blooms; i++) {
+    const lx = (i / (blooms - 1) - 0.5) * width * 0.82;
+    const lz = (rand() - 0.5) * 0.1;
+    b.add(
+      i % 2 === 0 ? "bloom" : "bloomAlt",
+      // Bigger than a real flower head, and deliberately. At the camera this
+      // game is played at, a botanically honest bloom is two pixels and reads
+      // as noise on the texture; these have to be legible from across the
+      // square or they are not colour, they are dither.
+      new THREE.IcosahedronGeometry(0.085 + rand() * 0.04, 0),
+      x + lx * cos + lz * sin,
+      y + 0.23 + rand() * 0.04,
+      z - lx * sin + lz * cos,
+    );
+  }
+}
+
+/**
+ * A bench, built out of SLATS rather than slabs.
+ *
+ * The first one was four boxes: a plank for the seat, a panel for the back, and
+ * two solid blocks 14cm by 44cm for legs. Every dimension was honest and the
+ * result was clunky — because what makes furniture read as furniture at this
+ * distance is not its outline, it is the GAPS. A seat with daylight between
+ * three slats reads as carpentry; the same seat as one solid board reads as a
+ * crate. Legs are the same story: a leg is a stick, and a block the depth of
+ * the seat is a plinth.
+ *
+ * So: three seat slats with air between them, two back slats on posts that lean
+ * away, four square legs and a stretcher between them. Twelve pieces instead of
+ * four, all of it merged into the same static mesh as everything else in town,
+ * so the cost is geometry at load and nothing at all per frame.
+ */
+function bench(b: Builder, x: number, z: number, rotY: number): void {
+  const cos = Math.cos(rotY);
+  const sin = Math.sin(rotY);
+  const at = (lx: number, lz: number) => ({ x: x + lx * cos + lz * sin, z: z - lx * sin + lz * cos });
+
+  const length = 1.8;
+  const seatY = 0.42;
+  const legInset = 0.72;
+
+  // Legs: square sticks, set in from the ends the way a real one is.
+  for (const side of [-1, 1]) {
+    for (const front of [-1, 1]) {
+      const leg = at(side * legInset, front * 0.17);
+      b.box("timber", 0.08, seatY, 0.08, leg.x, 0, leg.z, rotY);
+    }
+    // A stretcher tying each pair together, low down.
+    const rail = at(side * legInset, 0);
+    b.box("timber", 0.06, 0.05, 0.38, rail.x, 0.14, rail.z, rotY);
+  }
+  // And a rail the long way, under the seat, so the legs are not four
+  // independent sticks.
+  b.box("timber", length - 0.2, 0.05, 0.06, x, 0.16, z, rotY);
+
+  // Seat: three slats with real gaps between them.
+  for (const lz of [-0.16, 0, 0.16]) {
+    const slat = at(0, lz);
+    b.box("timberLight", length, 0.05, 0.12, slat.x, seatY, slat.z, rotY);
+  }
+
+  // Back posts, rising from the rear legs.
+  for (const side of [-1, 1]) {
+    const post = at(side * legInset, -0.17);
+    b.box("timber", 0.07, 0.5, 0.07, post.x, seatY + 0.05, post.z, rotY);
+  }
+  // Two back slats. The upper one sits further back than the lower, which fakes
+  // a recline without having to rotate anything inside an already-rotated frame
+  // — the Builder composes its Euler in world axes, so a lean here would tilt
+  // the wrong way on six of the eight bearings.
+  const lower = at(0, -0.19);
+  b.box("timberLight", length, 0.11, 0.045, lower.x, seatY + 0.16, lower.z, rotY);
+  const upper = at(0, -0.235);
+  b.box("timberLight", length, 0.11, 0.045, upper.x, seatY + 0.36, upper.z, rotY);
+}
+
+/** A planter: a tub of the same flowers, for standing on paving. */
+function planter(b: Builder, x: number, z: number, seed: number): void {
+  const rand = seeded(seed);
+  b.add("timberLight", new THREE.CylinderGeometry(0.42, 0.34, 0.46, 8), x, 0.23, z);
+  b.add("iron", new THREE.TorusGeometry(0.4, 0.03, 4, 10), x, 0.38, z, 0, Math.PI / 2);
+  b.add("garden", new THREE.SphereGeometry(0.34, 7, 5), x, 0.56, z);
+  for (let i = 0; i < 9; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = rand() * 0.3;
+    b.add(
+      i % 2 === 0 ? "bloom" : "bloomAlt",
+      new THREE.IcosahedronGeometry(0.1 + rand() * 0.045, 0),
+      x + Math.cos(a) * r,
+      0.62 + rand() * 0.12,
+      z + Math.sin(a) * r,
+    );
+  }
+}
+
+/**
+ * A handcart, tipped forward onto its shafts the way an idle one is left.
+ *
+ * Reads as a town faster than almost anything else that can be built out of
+ * boxes, because nothing else in the kit says "somebody was working here and
+ * will be back".
+ */
+function handcart(b: Builder, x: number, z: number, rotY: number): void {
+  const cos = Math.cos(rotY);
+  const sin = Math.sin(rotY);
+  const at = (lx: number, lz: number) => ({ x: x + lx * cos + lz * sin, z: z - lx * sin + lz * cos });
+
+  // Bed and sides.
+  b.box("plank", 1.7, 0.12, 0.95, x, 0.62, z, rotY);
+  for (const side of [-1, 1]) {
+    const p = at(0, side * 0.46);
+    b.box("plank", 1.7, 0.34, 0.08, p.x, 0.7, p.z, rotY);
+  }
+  const back = at(-0.85, 0);
+  b.box("plank", 0.08, 0.34, 0.95, back.x, 0.7, back.z, rotY);
+
+  // Wheels, and the axle between them.
+  for (const side of [-1, 1]) {
+    const p = at(-0.2, side * 0.55);
+    b.add("timber", new THREE.CylinderGeometry(0.42, 0.42, 0.1, 12), p.x, 0.42, p.z, rotY, 0, Math.PI / 2);
+    b.add("iron", new THREE.TorusGeometry(0.42, 0.035, 4, 14), p.x, 0.42, p.z, rotY);
+  }
+
+  // Shafts, down to the ground at the front.
+  for (const side of [-1, 1]) {
+    const p = at(0.9, side * 0.34);
+    b.add("plank", new THREE.BoxGeometry(1.5, 0.09, 0.09), p.x, 0.36, p.z, rotY, 0, -0.32);
+  }
+
+  // A sack and a barrel in the bed, so it is a cart in use rather than a prop.
+  const load = at(-0.35, 0);
+  b.add("linen", new THREE.SphereGeometry(0.3, 6, 5), load.x, 0.86, load.z);
+  const keg = at(0.3, 0.1);
+  b.add("timberLight", new THREE.CylinderGeometry(0.24, 0.24, 0.5, 10), keg.x, 0.93, keg.z, rotY, 0, Math.PI / 2);
+}
+
+/**
+ * The notice board: where the watch and the inn post what they want doing.
+ *
+ * The one piece of dressing in the square that is about the GAME rather than
+ * about the place — Emberhold hands out six quests and had nowhere that looked
+ * like it. It is scenery, not an interface: the quests come from Cabel and
+ * Marda, and a board you can click would be a second way to do a thing that
+ * already works.
+ */
+function noticeBoard(b: Builder, x: number, z: number, rotY: number): void {
+  const cos = Math.cos(rotY);
+  const sin = Math.sin(rotY);
+  const at = (lx: number, lz: number) => ({ x: x + lx * cos + lz * sin, z: z - lx * sin + lz * cos });
+  for (const side of [-1, 1]) {
+    const p = at(side * 0.62, 0);
+    b.box("timber", 0.14, 1.85, 0.14, p.x, 0, p.z, rotY);
+  }
+  b.box("plank", 1.5, 1.0, 0.08, x, 0.75, z, rotY);
+  b.box("timber", 1.62, 0.1, 0.14, x, 1.75, z, rotY);
+  // A little shingled hood, so the notices keep out of the rain.
+  b.gable("shingle", 1.75, 0.28, 0.5, x, 1.85, z, rotY);
+  // Papers pinned to it, at slight angles.
+  const rand = seeded(7781);
+  for (let i = 0; i < 5; i++) {
+    const p = at(-0.45 + (i % 3) * 0.45, 0);
+    b.box(
+      "linen",
+      0.3,
+      0.36,
+      0.02,
+      p.x,
+      0.92 + Math.floor(i / 3) * 0.42,
+      p.z + 0.05 * cos,
+      rotY,
+      (rand() - 0.5) * 0.24,
+    );
+  }
+}
+
+/** An iron fire basket on legs. Warm colour by day, a real light after dark. */
+function brazier(
+  b: Builder,
+  group: THREE.Group,
+  x: number,
+  z: number,
+  lanterns: Lantern[],
+): void {
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    b.box("iron", 0.07, 0.62, 0.07, x + Math.cos(a) * 0.26, 0, z + Math.sin(a) * 0.26, 0, (i % 2 ? 1 : -1) * 0.12);
+  }
+  b.add("iron", new THREE.CylinderGeometry(0.42, 0.28, 0.34, 8), x, 0.78, z);
+  b.add("iron", new THREE.TorusGeometry(0.4, 0.035, 4, 12), x, 0.94, z, 0, Math.PI / 2);
+  // The coals, which read as embers at noon and light the place at midnight.
+  b.add("awning", new THREE.IcosahedronGeometry(0.26, 0), x, 0.92, z);
+  // Stronger than a lamp, because an open fire is: the lanterns line the square
+  // and a brazier is meant to be a place people stand round after dark.
+  lantern(b, group, x, z, 1.05, lanterns, 1.25, true);
 }
 
 // --- Buildings --------------------------------------------------------------
@@ -1202,7 +1577,16 @@ function makeBuilding(b: TownBuilding, lanterns: Lantern[]): THREE.Group {
     const count = w > 5.5 ? 3 : 2;
     for (let i = 0; i < count; i++) {
       const t = (i / (count - 1)) * 2 - 1;
-      window4(builder, 0.8, 0.95, t * (outerHW - 0.85), upperY, outerHD + 0.01, 0, true);
+      const wx = t * (outerHW - 0.85);
+      window4(builder, 0.8, 0.95, wx, upperY, outerHD + 0.01, 0, true);
+      // A flower box under every upper window on the front.
+      //
+      // This is the cheapest colour in the whole town and it does the most
+      // work, because it is the only saturated thing at the height a player
+      // actually looks: the square's other colour is all overhead (bunting,
+      // awnings, roofs) or underfoot. A row of these turns six competent grey
+      // boxes into somewhere people live.
+      windowBox(builder, wx, upperY - 0.14, outerHD + 0.13, 0, 0.86, 3100 + i * 41);
     }
   }
   // A window on each flank, whatever the storey count. Skipping this for
@@ -1441,14 +1825,12 @@ function roadTexture(): THREE.Texture {
     ctx.ellipse(rand() * w, rand() * h, 0.8 + rand() * 2.4, 0.6 + rand() * 1.6, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  const img = ctx.getImageData(0, 0, w, h);
-  for (let y = 0; y < h; y++) {
-    // Fades along the short axis, so the road has verges rather than kerbs.
-    const t = Math.abs((y / (h - 1)) * 2 - 1);
-    const a = Math.min(1, Math.max(0, (1 - t) / 0.35));
-    for (let x = 0; x < w; x++) img.data[(y * w + x) * 4 + 3] = Math.round(a * 255);
-  }
-  ctx.putImageData(img, 0, 0);
+  // NO ALPHA IS BAKED IN HERE any more, and that is the fix for the butt joint
+  // where the road met the paving. A fade baked into the image can only run
+  // across the SHORT axis — the image tiles twenty-six times along the road's
+  // length, so there is no "end of the road" for it to fade at. The ends were
+  // therefore cut by geometry, with a razor edge. The fade is vertex alpha on
+  // the strip now (see `roadStrip`), which can taper all four sides.
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
@@ -1456,6 +1838,78 @@ function roadTexture(): THREE.Texture {
   tex.anisotropy = 8;
   tex.repeat.set(26, 1);
   return tex;
+}
+
+/**
+ * One arm of the road, as a strip that fades out at every edge.
+ *
+ * Built by hand rather than from `PlaneGeometry` for the same reason the paving
+ * is a `ringedDisc`: the fade has to live in vertex alpha, and a plane with one
+ * quad has no vertices to put it on.
+ *
+ * Runs along local +X from the square outward. Alpha tapers four ways:
+ *
+ *   THE INNER END crossfades with the paving. It is fully transparent while the
+ *   paving is still fully opaque and only reaches strength outside the plaza's
+ *   own rim, so the two hand over in the middle of each other's fade and there
+ *   is no join to see. Butting them instead — which is what the first cut of
+ *   this did — puts a hard diagonal line between cobble and dirt.
+ *
+ *   THE OUTER END simply peters out, because a cart track that stops dead in a
+ *   field is a decal, not a road.
+ *
+ *   THE TWO SIDES taper to verges rather than kerbs.
+ */
+function roadStrip(
+  innerR: number,
+  outerR: number,
+  width: number,
+  fadeInEnd: number,
+  fadeOutStart: number,
+): THREE.BufferGeometry {
+  const along = 40;
+  const across = 8;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const colors: number[] = [];
+
+  const alphaAlong = (r: number) => {
+    if (r <= innerR) return 0;
+    if (r < fadeInEnd) return (r - innerR) / (fadeInEnd - innerR);
+    if (r <= fadeOutStart) return 1;
+    return Math.max(0, 1 - (r - fadeOutStart) / (outerR - fadeOutStart));
+  };
+  // Full across the middle three quarters, tapering to nothing at the verge.
+  // Wider than this and the track stops reading as a track: at 0.4 the solid
+  // part was narrower than the fade either side of it and the whole thing came
+  // out as a soft dark smear on the grass rather than as something carts use.
+  const alphaAcross = (t: number) => Math.min(1, Math.max(0, (1 - Math.abs(t)) / 0.24));
+
+  const vertex = (i: number, j: number) => {
+    const r = innerR + ((outerR - innerR) * i) / along;
+    const t = (j / across) * 2 - 1;
+    positions.push(r, (t * width) / 2, 0);
+    uvs.push((r - innerR) * 0.35, (t + 1) / 2);
+    colors.push(1, 1, 1, alphaAlong(r) * alphaAcross(t));
+  };
+
+  for (let i = 0; i < along; i++) {
+    for (let j = 0; j < across; j++) {
+      vertex(i, j);
+      vertex(i + 1, j);
+      vertex(i + 1, j + 1);
+      vertex(i, j);
+      vertex(i + 1, j + 1);
+      vertex(i, j + 1);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
+  geo.computeVertexNormals();
+  return geo;
 }
 
 /**
@@ -1700,22 +2154,7 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
   // night is also the part with something to sit on.
   for (const deg of BENCH_ANGLES) {
     const p = polar(BENCH_RING_PX, deg);
-    const rot = -((deg + 90) * Math.PI) / 180;
-    const cos = Math.cos(rot);
-    const sin = Math.sin(rot);
-    const at = (lx: number, lz: number) => ({
-      x: p.x + lx * cos + lz * sin,
-      z: p.z - lx * sin + lz * cos,
-    });
-    b.box("timberLight", 1.9, 0.11, 0.5, p.x, 0.45, p.z, rot);
-    // The back rest goes at the BACK, which is what the local-frame helper is
-    // for — offset by z alone it stood up through the middle of the seat.
-    const back = at(0, -0.2);
-    b.box("timberLight", 1.9, 0.42, 0.09, back.x, 0.56, back.z, rot);
-    for (const side of [-1, 1]) {
-      const leg = at(side * 0.75, 0);
-      b.box("timber", 0.14, 0.45, 0.44, leg.x, 0, leg.z, rot);
-    }
+    bench(b, p.x, p.z, -((deg + 90) * Math.PI) / 180);
   }
 
   // --- The band between the buildings and the wall --------------------------
@@ -1759,6 +2198,54 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
         rot,
       );
     }
+  }
+
+  // --- Bunting -------------------------------------------------------------
+  // Strung post to post right round the lantern ring, so the square has
+  // something overhead. This is the single biggest change to how the place
+  // FEELS: an open plaza with a line of flags across it reads as somewhere that
+  // holds a market, and the same plaza without them reads as a yard.
+  //
+  // Slung between consecutive lanterns rather than corner to corner, because a
+  // rope across the middle of the square would hang over the statue and cut the
+  // one clear sight line in town.
+  for (let i = 0; i < LANTERN_ANGLES.length; i++) {
+    const from = polar(LANTERN_RING_PX, LANTERN_ANGLES[i]);
+    const to = polar(LANTERN_RING_PX, LANTERN_ANGLES[(i + 1) % LANTERN_ANGLES.length]);
+    // Skip the two spans that would cross a gateway: bunting over the road is
+    // bunting a cart takes down.
+    const mid = (LANTERN_ANGLES[i] + LANTERN_ANGLES[(i + 1) % LANTERN_ANGLES.length]) / 2;
+    if (bearingInGateway(mid)) continue;
+    bunting(b, from.x, 3.35, from.z, to.x, 3.35, to.z, 0.62, 400 + i * 37);
+  }
+
+  // --- A handcart, a notice board and two braziers --------------------------
+  // The things that say somebody works here. Every position comes out of
+  // `TOWN_PROPS`, so what is drawn and what a body is kept out of are one
+  // entry — the rule the well and the monument were already moved onto.
+  const cartProp = propById("cart")!;
+  const cart = prop("cart");
+  handcart(b, cart.x, cart.z, -(cartProp.angleDeg * Math.PI) / 180);
+
+  // The board faces the middle of the square from beside the west gate, which
+  // is where somebody walking in off the road passes it.
+  const boardProp = propById("noticeboard")!;
+  const board = prop("noticeboard");
+  noticeBoard(b, board.x, board.z, -((boardProp.angleDeg + 180) * Math.PI) / 180);
+
+  for (const id of ["brazier-a", "brazier-b"]) {
+    const p = prop(id);
+    brazier(b, group, p.x, p.z, lanterns);
+  }
+
+  // --- Planters ------------------------------------------------------------
+  // Colour at eye level, which the square had none of. Paired either side of
+  // every bench so they read as arranged rather than dropped.
+  let planterSeed = 900;
+  for (const p of TOWN_PROPS) {
+    if (!p.id.startsWith("planter-")) continue;
+    const at = polar(p.radiusPx, p.angleDeg);
+    planter(b, at.x, at.z, (planterSeed += 53));
   }
 }
 
@@ -2040,6 +2527,10 @@ export class Town {
       map: roadTexture(),
       color: 0x8f7f62,
       transparent: true,
+      // The fade lives on the mesh now rather than in the image — see
+      // `roadStrip`. An image can only taper across the axis it does not tile
+      // on, which left the road's ENDS as razor cuts.
+      vertexColors: true,
       roughness: 1,
       depthWrite: false,
       polygonOffset: true,
@@ -2051,31 +2542,42 @@ export class Town {
     // wide enough" and "the road IS wide enough" cannot come apart.
     const roadWidth = (ROAD_HALF_WIDTH_PX * 2) / PX_PER_UNIT;
 
-    // TWO SEGMENTS, STOPPING AT THE PAVING — not one strip through the middle.
+    // TWO ARMS THAT CROSSFADE WITH THE PAVING — not one plank through the middle.
     //
     // The comment that used to sit here said the road runs gate to gate and is
-    // paved where it crosses the square, and drew it as a single 58-unit plank
+    // paved where it crosses the square, and drew it as a single 58-unit plane
     // under the plaza on the strength of the paving covering it. It did not.
-    // What the player saw was a dark dirt band lying across the whole lower half
-    // of the square with a hard edge along its far side — and because the ground
-    // is so foreshortened at this camera, that edge read as a dead straight seam
-    // right across the town, in daylight and after dark.
+    // What the player saw was a dark dirt band across the whole lower half of
+    // the square with a hard edge along its far side, which this camera's
+    // foreshortening stretched into a dead straight seam right across town.
     //
-    // It survived a shadows-off test, a lights-off test and a terrain test, and
-    // it looked like a renderer bug in all three. It was a plane. Cutting the
-    // road at the paving makes the original sentence literally true: the road
-    // runs gate to gate, and where it crosses the square, it is paving.
-    const roadInner = paveRadius * 0.94;
+    // Cutting it at the paving fixed that and introduced a second, smaller
+    // version of the same mistake: a butt joint where cobble met dirt, because
+    // the fade was baked into the image and an image that tiles along the road
+    // has no end to fade at. `roadStrip` tapers all four edges in vertex alpha
+    // instead, and the inner taper is timed against the paving's own — the road
+    // is still invisible where the plaza is solid and reaches full strength only
+    // outside its rim, so the two hand over inside each other's fade.
     const roadOuter = radius * 1.45;
+    // Starts well inside the plaza and is worth nothing until it is nearly out
+    // of it. `paveRadius * 0.78` is exactly where the paving's own alpha starts
+    // dropping (see `ringedDisc`).
+    const roadInner = paveRadius * 0.78;
+    const roadSolid = paveRadius * 1.16;
+    const roadPetersOut = roadOuter - (roadOuter - roadSolid) * 0.4;
     for (const side of [-1, 1]) {
-      const length = roadOuter - roadInner;
-      const segment = new THREE.Mesh(new THREE.PlaneGeometry(length, roadWidth), roadMat);
-      segment.name = "town-road";
-      segment.rotation.x = -Math.PI / 2;
-      segment.position.set(cx + side * (roadInner + length / 2), 0.02, cz);
-      segment.receiveShadow = true;
-      segment.renderOrder = 1;
-      this.group.add(segment);
+      const arm = new THREE.Mesh(
+        roadStrip(roadInner, roadOuter, roadWidth, roadSolid, roadPetersOut),
+        roadMat,
+      );
+      arm.name = "town-road";
+      // The strip is authored along +X in its own plane; lay it flat, then turn
+      // it to point out of the gate this arm belongs to.
+      arm.rotation.set(-Math.PI / 2, 0, side < 0 ? Math.PI : 0);
+      arm.position.set(cx, 0.02, cz);
+      arm.receiveShadow = true;
+      arm.renderOrder = 1;
+      this.group.add(arm);
     }
 
     // The island the statue stands on, laid over both. Radial flagstones, so
