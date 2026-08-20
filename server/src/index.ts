@@ -133,6 +133,10 @@ import {
   rollItem,
   rollRarity,
   rollRarityWithFloor,
+  AFFIXES_BY_ID,
+  canEtch,
+  etchAffix,
+  etchCost,
   consumableDef,
   consumableSummary,
   hitBandOf,
@@ -161,6 +165,10 @@ import {
   spendMaterials,
   addMaterial,
   addEssence,
+  runesOf,
+  addRune,
+  spendRune,
+  drawRune,
   knownRecipes,
   addConsumable,
   consumablesOf,
@@ -1655,6 +1663,12 @@ function sendRecipes(socket: WebSocket, playerId: string): void {
   socket.send(JSON.stringify(update));
 }
 
+function sendRunes(socket: WebSocket, counts: Record<string, number>): void {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  const update: ServerToClientMessage = { type: "RUNES_UPDATE", payload: { counts } };
+  socket.send(JSON.stringify(update));
+}
+
 /** The whole wallet, in one message. */
 function sendMaterials(socket: WebSocket, playerId: string): void {
   if (socket.readyState !== WebSocket.OPEN) return;
@@ -1783,6 +1797,7 @@ wss.on("connection", (socket) => {
       sendMaterials(socket, id);
       sendRecipes(socket, id);
       sendConsumables(socket, consumablesOf(id));
+      sendRunes(socket, runesOf(id));
       return;
     }
 
@@ -2112,6 +2127,84 @@ wss.on("connection", (socket) => {
       sendItemsUpdate(socket, id, items);
       sendMaterials(socket, id);
       sendInfo(socket, `Reforged: ${itemName(saved)}.`, "#ffd873");
+      return;
+    }
+
+    // --- draw: an item's one worthwhile part --------------------------------
+    if (msg.type === "DRAW_RUNE" && id) {
+      if (!atStation(id, msg.payload.stationId)) return;
+      const drawn = drawRune(id, msg.payload.itemId, msg.payload.affix);
+      // Says so rather than failing silently. Every reason this can refuse is a
+      // "should not happen" from the client's side — a stale item id, something
+      // being worn, an affix the item does not carry — which is exactly why a
+      // silent return is the wrong answer: it leaves a button that does nothing
+      // and no way to tell whether the click landed.
+      if (!drawn) {
+        sendInfo(socket, "Nothing to draw there — that item is gone, worn, or carries no such rune.", "#c98d5e");
+        return;
+      }
+
+      const items = listItems(id);
+      // Drawing can only destroy something in the bag — `drawRune` refuses an
+      // equipped item — but the cache is rebuilt anyway, for the same reason
+      // reforging does it: the list every combat number reads is derived from
+      // this one and must never be a frame behind it.
+      equippedItems.set(id, computeEquipped(items));
+      sendItemsUpdate(socket, id, items);
+      sendRunes(socket, drawn.runes);
+      const affix = AFFIXES_BY_ID[msg.payload.affix];
+      sendInfo(
+        socket,
+        `Drew ${affix?.label ?? msg.payload.affix} out of ${itemName(drawn.item)}. Nothing else survived.`,
+        "#c0a6ff",
+      );
+      return;
+    }
+
+    // --- etch: a rune, cut into something you own ---------------------------
+    if (msg.type === "ETCH_AFFIX" && id) {
+      if (!atStation(id, msg.payload.stationId)) return;
+      const item = getItem(id, msg.payload.itemId);
+      if (!item) return;
+
+      // Re-checked here rather than trusted from the client, exactly as the
+      // chosen reforge affix is: the button the client greys out and the rule
+      // the server enforces have to be the same rule.
+      const gate = canEtch(item, msg.payload.affix);
+      if (!gate.ok) {
+        sendInfo(socket, `Cannot etch that: ${gate.reason}.`, "#c98d5e");
+        return;
+      }
+      const next = etchAffix(item, msg.payload.affix, msg.payload.replacing);
+      if (!next) return;
+
+      // The rune first, then the materials, then the write. Each is its own
+      // atomic statement, so the order decides what a half-failure costs — and
+      // a player who cannot pay should not have lost the rune, which is why the
+      // rune is handed back if the materials do not go through.
+      if (!spendRune(id, msg.payload.affix)) {
+        sendInfo(socket, "You have no such rune.", "#c98d5e");
+        return;
+      }
+      const cost = etchCost(item);
+      if (!spendMaterials(id, cost)) {
+        addRune(id, msg.payload.affix, 1);
+        sendRunes(socket, runesOf(id));
+        sendInfo(socket, `Not enough materials — etching needs ${describeCost(cost)}.`, "#c98d5e");
+        return;
+      }
+
+      const saved = replaceItemRolls(id, item.id, next);
+      if (!saved) return;
+      const items = listItems(id);
+      // The etched item may be the one being worn, and its passives have just
+      // changed — so the equipped cache has to be rebuilt or combat keeps
+      // resolving against the old affixes.
+      equippedItems.set(id, computeEquipped(items));
+      sendItemsUpdate(socket, id, items);
+      sendMaterials(socket, id);
+      sendRunes(socket, runesOf(id));
+      sendInfo(socket, `Etched: ${itemName(saved)}.`, "#ffd873");
       return;
     }
 

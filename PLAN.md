@@ -2732,6 +2732,60 @@ crafting system to go with them.
       the item actually turns up: 181 claims, verified against the roller itself.
       Widening the band rule by one makes 51 of them fail, so it has teeth.
 
+- [x] **M3 — etching: value that moves between items.** Quality was the only
+      axis a player could invest in, and every step up it RE-ROLLS. So the
+      affixes on a good item are entirely the dice's doing, and the moment you
+      would rather wield something else, everything that made the old thing good
+      is stranded — salvage hands back a third of its raw materials and nothing
+      at all of what you actually cared about. A perfectly rolled Frostbrand was
+      worth exactly the same in parts as a badly rolled one.
+      - **DRAW** destroys an item and keeps ONE of its affixes as a rune —
+        instead of its materials, and instead of its recipe. That makes a good
+        drop a three-way decision (wear it, take it apart, take its rune out)
+        rather than something you do to it on the way past. It sits under each
+        salvage row rather than in a tab, because it is the same gesture asked
+        for a different output and the trade should be visible
+      - **ETCH** spends a rune to REPLACE one affix on something you own. Never
+        to add one: quality still decides how many affixes an item has, so a
+        Broken sword cannot be etched at all and the ladder stays worth climbing
+        beside this rather than being replaced by it
+      - **A choice is never a way past a rule.** A rune only goes where the item
+        could have rolled it anyway — right slot, high enough band — the same
+        sentence the chosen-reforge-affix check was written under, and validated
+        on the server for the same reason
+      - **Runes are counters, not instances**, the call consumables already
+        made. There is nothing to roll and nothing to compare, and what a rune
+        is worth is decided by the band of whatever it lands on rather than by
+        where it came from — so a Tempest drawn off a band-5 sword is worth
+        band-4 magnitudes on a band-4 helm, with no new rule needed
+      - **An etched affix is indistinguishable from a rolled one.** Tracking
+        which were cut in would make two copies of the same affix behave
+        differently for a reason the player can see nowhere, and reforging would
+        then have to explain itself twice
+      - **What a rune fits is said at the moment of drawing**, not discovered
+        afterwards at the bench. Drawing is irreversible and the band gate means
+        a rune can come out unusable, which is the one way this verb wastes an
+        item outright
+      - The Etch tab is also **the only place in the game that says what an
+        item's affix pool is** — when nothing you hold fits, it lists what would
+
+      **One real bug, found by driving it.** The pickers fell back with `??`,
+      so a select left holding the empty string counted as a choice and sent the
+      server an affix nothing carried — which `drawRune` refused correctly and
+      silently, leaving a button that did nothing. `||` for the fallback, and
+      the server now says why it refused: every reason it can is a "should not
+      happen" from the client's side, which is exactly why silence was the wrong
+      answer.
+
+      Verified: `tools/test/items.mjs` section 9f (the eligibility gate across
+      all 25 affixes, no duplicates, never adds a slot, an etched affix reading
+      identically to a rolled one, the cost curve rising with the target's band
+      and staying under the top of the ladder), and in a real browser — five
+      tabs, a rune drawn out of a Runed longsword and the item gone, the rune
+      cut into a band-5 Venomkiss over the affix the player named, and a band-3
+      longsword correctly refusing a band-4 rune with a list of what it would
+      take instead.
+
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
 renderer-agnostic), and all six DOM panels (inventory, character, craft, skills,
@@ -4202,6 +4256,37 @@ music, player-facing damage-type/resistances, more crafting recipes
   quietly have become a way around the rule that stops a stocked player being
   unkillable.
 
+- Etching REPLACES an affix and never adds one. Quality decides how many affixes
+  an item has, and a verb that added slots would quietly make the ladder
+  optional — a Broken sword with three runes in it is a Broken sword that is
+  better than a Runed one. Replacing keeps the two systems answering different
+  questions: the ladder decides how many, etching decides which.
+- A rune is a counter, not an instance. Same call consumables made and for the
+  same reason — nothing to roll, nothing to compare. It also means what a rune
+  is worth is decided by the band of whatever it lands on rather than by where
+  it was drawn from, which is `affixBonus`'s existing behaviour rather than a
+  new rule.
+- An etched affix is INDISTINGUISHABLE from a rolled one. Tracking which were
+  cut in would make two copies of the same affix behave differently for a reason
+  the player can see nowhere, and reforging would then have to explain itself
+  twice. The cost is that reforging still re-rolls etched affixes away — which
+  is stated in the Etch tab rather than engineered around, because the rule
+  "reforging re-rolls" is older and more load-bearing than this feature.
+- Drawing gives no materials and teaches no recipe. Otherwise it is salvage with
+  a bonus, and a good drop stops being a decision. Three outcomes that exclude
+  each other — wear it, take it apart, take its rune out — is what makes the
+  moment worth anything.
+- An irreversible choice states its restriction BEFORE it is made. A rune can
+  come out of a band-4 item unusable on everything you own, and finding that out
+  at the etching bench is finding it out too late, so the draw picker says what
+  each rune fits.
+- `||` and not `??` for a fallback off a `<select>`. An empty string is a real
+  state — it is what a stale option list leaves behind — and `??` treats it as a
+  choice, which here sent the server an affix nothing carried. The server
+  refused correctly and silently, which left a button that did nothing: every
+  refusal that is a "should not happen" from the client's side is exactly the
+  kind that must say so out loud.
+
 - "Where does this come from" is DERIVED from the loot table, never written
   beside it. A hand-written column goes stale the first time an affinity is
   retuned, and the failure is silent — nothing throws when the game sends a
@@ -4291,7 +4376,7 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M2.3 complete (2026-08-20). **The item system, rebuilt and
+Phase 0 through 48 M3 complete (2026-08-20). **The item system, rebuilt and
 then followed through.**
 
 **M2.1** made a bag slot hold a KIND rather than an instance. Six copies of one
@@ -4309,6 +4394,12 @@ now costs about what one of its old steps did.
 M1.7 and was visible nowhere: the target frame now says what the thing in front
 of you is known for, and the item tooltip and the forge's locked rows say where
 one comes from — which turns the forge list from a rule into a lead.
+
+**M3** gave the bench a fifth verb and the item system its first way of moving
+value BETWEEN items. Draw destroys something to keep one of its affixes as a
+rune; Etch cuts that rune over an affix on something you are keeping. Never
+adding a slot, and never onto an item that could not have rolled it — so the
+quality ladder and the band gates both stay meaningful.
 
 Before that, Phase 0 through 48 M1.15.
 

@@ -25,6 +25,7 @@ export interface GameSocketHandlers {
   onRecipes: (payload: Extract<ServerToClientMessage, { type: "RECIPES_UPDATE" }>["payload"]) => void;
   /** Every consumable stack, by id. */
   onConsumables: (payload: Extract<ServerToClientMessage, { type: "CONSUMABLES_UPDATE" }>["payload"]) => void;
+  onRunes: (payload: Extract<ServerToClientMessage, { type: "RUNES_UPDATE" }>["payload"]) => void;
   onOreUpdate: (payload: Extract<ServerToClientMessage, { type: "ORE_UPDATE" }>["payload"]) => void;
   onXpUpdate: (payload: Extract<ServerToClientMessage, { type: "XP_UPDATE" }>["payload"]) => void;
   onLootUpdate: (payload: Extract<ServerToClientMessage, { type: "LOOT_UPDATE" }>["payload"]) => void;
@@ -78,6 +79,8 @@ export class GameSocket {
         this.handlers.onRecipes(msg.payload);
       } else if (msg.type === "CONSUMABLES_UPDATE") {
         this.handlers.onConsumables(msg.payload);
+      } else if (msg.type === "RUNES_UPDATE") {
+        this.handlers.onRunes(msg.payload);
       } else if (msg.type === "HERB_UPDATE") {
         this.handlers.onHerbUpdate(msg.payload);
       } else if (msg.type === "ORE_UPDATE") {
@@ -168,6 +171,16 @@ export class GameSocket {
    *  bench would be inventing for itself. */
   sendRefineMaterial(stationId: string, id: string, count = 1): void {
     this.send({ type: "REFINE_MATERIAL", payload: { stationId, id, count } });
+  }
+
+  /** Destroy an item, keep one of its affixes. */
+  sendDrawRune(stationId: string, itemId: string, affix: string): void {
+    this.send({ type: "DRAW_RUNE", payload: { stationId, itemId, affix } });
+  }
+
+  /** Cut a rune into something already owned, over one of its affixes. */
+  sendEtchAffix(stationId: string, itemId: string, affix: string, replacing: string): void {
+    this.send({ type: "ETCH_AFFIX", payload: { stationId, itemId, affix, replacing } });
   }
 
   /** Several at once. The bag holds thirty and loot is frequent. */

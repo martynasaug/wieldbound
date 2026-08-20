@@ -59,6 +59,7 @@ import {
   type ItemSlot,
   MONSTER_LABELS,
   MONSTER_STATS,
+  SLOT_LABEL,
   type MonsterKind,
   type PassiveBonus,
   type WeaponType,
@@ -2107,6 +2108,125 @@ export function reforgeItem(
   const base = itemBase(item.baseId);
   const rolled = rollItem(base, to, random, chosenAffix);
   return { ...item, ...rolled, id: item.id, equipped: item.equipped };
+}
+
+// --- Etching ----------------------------------------------------------------
+// THE FIFTH VERB, and it exists because of a hole the other four left.
+//
+// Quality was the only axis a player could invest in, and every step up it
+// RE-ROLLS. So the affixes on a good item are entirely the dice's doing, and the
+// moment you would rather wield something else, everything that made the old
+// thing good is stranded — salvage hands back a third of its raw materials and
+// nothing at all of what you actually cared about. A perfectly rolled Frostbrand
+// is worth the same in parts as a badly rolled one.
+//
+// Two operations, and they are deliberately a trade rather than an addition:
+//
+//   DRAW    destroy an item and keep ONE of its affixes as a rune. INSTEAD of
+//           its materials, and instead of learning its recipe — so a good drop
+//           is a three-way decision (wear it, take it apart, or take its rune
+//           out) rather than a thing you do to it on the way past.
+//
+//   ETCH    spend a rune to REPLACE one affix on something you own. Never to
+//           add one: quality still decides how many affixes an item has, which
+//           is what keeps the ladder worth climbing beside this rather than
+//           being replaced by it.
+//
+// A rune is a COUNTER, not an instance — the same call consumables made, for the
+// same reason. There is nothing to roll and nothing to compare: a Keen rune is a
+// Keen rune, and what it is worth is decided by the band of whatever it ends up
+// on, not by where it came from.
+
+/** Which of an item's affixes can be drawn out of it. */
+export function drawableAffixes(item: Pick<ItemInstance, "affixes">): AffixDef[] {
+  return (item.affixes ?? []).map((id) => AFFIXES_BY_ID[id]).filter(Boolean);
+}
+
+/**
+ * What a rune will and will not go on, as a sentence.
+ *
+ * Drawing destroys an item, and the band and slot gates mean a rune can come
+ * out unusable — a Tempest drawn off a band-4 sword cannot be cut into anything
+ * below band 4, and there is no way back. So the restriction is said at the
+ * moment of the decision rather than discovered afterwards at the etching
+ * bench, which is the only point at which knowing it is still worth anything.
+ */
+export function runeFitsWhat(affix: AffixDef): string {
+  const where = affix.slots
+    ? affix.slots.map((s) => SLOT_LABEL[s].toLowerCase()).join(" or ")
+    : "anything";
+  const band = affix.minBand > 1 ? `band ${affix.minBand} and up` : "any band";
+  return `${where}, ${band}`;
+}
+
+/**
+ * Whether a rune may go on an item, and why not.
+ *
+ * THE CHOICE IS NEVER A WAY PAST A RULE — the same sentence the chosen-affix
+ * check in `rollAffixes` is written under. A rune only goes where the item could
+ * have rolled it anyway (right slot, high enough band), never onto something
+ * with no affix to replace, and never twice onto the same item.
+ */
+export function canEtch(
+  item: Pick<ItemInstance, "baseId" | "affixes">,
+  affixId: string,
+): { ok: boolean; reason?: string } {
+  const base = itemBase(item.baseId);
+  const affix = AFFIXES_BY_ID[affixId];
+  if (!affix) return { ok: false, reason: "no such rune" };
+  const carried = item.affixes ?? [];
+  // Nothing to replace. This is the line that keeps the ladder relevant: a
+  // Broken sword has no affixes, so no amount of runes makes one, and the only
+  // way to give it a slot is to reforge it up.
+  if (carried.length === 0) return { ok: false, reason: "nothing on it to replace — reforge it first" };
+  if (carried.includes(affixId)) return { ok: false, reason: "it already carries that rune" };
+  if (!eligibleAffixes(base).some((a) => a.id === affixId)) {
+    return { ok: false, reason: `${base.name} could never have rolled it` };
+  }
+  return { ok: true };
+}
+
+/**
+ * What etching costs, by the band of the thing being etched.
+ *
+ * Scaled by the TARGET rather than by the rune, because that is where the value
+ * lands: `affixBonus` reads the item's band, so a Tempest drawn off a band-5
+ * sword is worth band-4 magnitudes on a band-4 helm. Wants essence at every
+ * band — this is the finishing move on gear you have already committed to, and
+ * it should not be reachable by standing at a tree.
+ */
+export function etchCost(item: Pick<ItemInstance, "baseId">): MaterialCost {
+  const band = itemBase(item.baseId).band;
+  const cost: MaterialCost = {
+    ore: 12 * band,
+    wood: 8 * band,
+    herb: 6 * band,
+    essence: 2 * band,
+  };
+  if (band >= 4) cost[refineLean(itemBase(item.baseId).slot)] = band - 3;
+  return cost;
+}
+
+/**
+ * The item after a rune is cut into it.
+ *
+ * Everything else about the item is untouched — its quality, both rolled
+ * numbers, its identity. An etched affix is INDISTINGUISHABLE from a rolled one
+ * afterwards, which is deliberate: tracking which were cut in would make two
+ * copies of the same affix behave differently for a reason the player can see
+ * nowhere, and reforging would then have to explain itself twice.
+ */
+export function etchAffix(
+  item: ItemInstance,
+  affixId: string,
+  replacing: string,
+): ItemInstance | null {
+  if (!canEtch(item, affixId).ok) return null;
+  const carried = [...(item.affixes ?? [])];
+  const at = carried.indexOf(replacing);
+  if (at < 0) return null;
+  carried[at] = affixId;
+  return { ...item, affixes: carried };
 }
 
 // --- Salvage ----------------------------------------------------------------

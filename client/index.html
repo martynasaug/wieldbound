@@ -1139,6 +1139,19 @@
          cost and the preview, because it is a lead rather than a number the
          player is about to act on. */
       .craft-row-where { font-size: 10.5px; color: #9a8a68; line-height: 1.45; margin-top: 2px; }
+      /* The rune stock, above the list of things one could be cut into. Chips
+         rather than rows because a rune is a quantity, not an object — the same
+         reading the bag's material footer already uses. */
+      .rune-stock { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 2px 8px; }
+      .rune-chip {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 3px 8px; border-radius: 3px;
+        background: linear-gradient(180deg, #241a0c, #171107);
+        border: 1px solid #6a5024;
+        font: 11px Georgia, serif; color: #cbbb95;
+      }
+      .rune-chip svg { width: 13px; height: 13px; fill: #c0a6ff; }
+      .rune-chip b { color: var(--gold-bright); font-size: 11px; }
       #item-tooltip .tt-cmp { font-size: 11px; line-height: 1.4; }
       #item-tooltip .tt-cmp.up { color: #7ed957; }
       #item-tooltip .tt-cmp.down { color: #ff8f5e; }

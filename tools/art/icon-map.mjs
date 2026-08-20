@@ -220,6 +220,8 @@ export const ICON_MAP = {
   weave: "delapouite/rolled-cloth",
   forge: "lorc/anvil-impact",
   refine: "delapouite/melting-metal",
+  // A rune, both as a thing you hold and as the verb that cuts it in.
+  etch: "lorc/rune-stone",
   reforge: "lorc/fire-shield",
   salvage: "delapouite/hammer-break",
 };

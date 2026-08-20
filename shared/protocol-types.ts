@@ -2080,6 +2080,38 @@ export interface MaterialsUpdateMessage {
 }
 
 /**
+ * DRAW asks WHAT IS THE ONE THING WORTH KEEPING. The item is destroyed and one
+ * of its affixes comes out as a rune — instead of its materials, and instead of
+ * its recipe, so a good drop is a three-way decision rather than something you
+ * do to it on the way past.
+ */
+export interface DrawRuneMessage {
+  type: "DRAW_RUNE";
+  payload: { stationId: string; itemId: string; affix: string };
+}
+
+/**
+ * ETCH asks WHAT DO I WANT THIS TO BE. A rune replaces one affix on something
+ * already owned — never adds one, since quality decides how many an item has.
+ *
+ * `replacing` is named by the client because it is the side that knows which
+ * one the player was looking at, and re-validated on the server for the same
+ * reason the chosen reforge affix is: the button greys the impossible options
+ * and a hand-written message can still name one.
+ */
+export interface EtchAffixMessage {
+  type: "ETCH_AFFIX";
+  payload: { stationId: string; itemId: string; affix: string; replacing: string };
+}
+
+/** Every rune the character holds, by affix id. Whole rather than as a delta,
+ *  like the recipe list and the consumable stacks and for the same reason. */
+export interface RunesUpdateMessage {
+  type: "RUNES_UPDATE";
+  payload: { counts: Record<string, number> };
+}
+
+/**
  * REFINE asks WHAT IS THIS WORTH AS STOCK. The fourth verb, and the only one
  * whose output is not something you wear: raw materials in, refined out.
  *
@@ -2758,6 +2790,8 @@ export type ClientToServerMessage =
   | SalvageItemMessage
   | SalvageManyMessage
   | RefineMaterialMessage
+  | DrawRuneMessage
+  | EtchAffixMessage
   | AllocateStatMessage
   | ForgeItemMessage
   | ReforgeItemMessage
@@ -2780,6 +2814,7 @@ export type ServerToClientMessage =
   | InventoryUpdateMessage
   | MaterialsUpdateMessage
   | RecipesUpdateMessage
+  | RunesUpdateMessage
   | ConsumablesUpdateMessage
   | HerbUpdateMessage
   | OreUpdateMessage

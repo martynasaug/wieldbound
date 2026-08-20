@@ -42,6 +42,10 @@ import {
   describeDropSources,
   dropSources,
   signatureOf,
+  canEtch,
+  etchAffix,
+  etchCost,
+  drawableAffixes,
   PALETTES,
   affixBonus,
   baseGuard,
@@ -795,6 +799,99 @@ section("9e. the refined tier");
   const ingotRaw = rawWorth(REFINING.ingot.cost);
   console.log(`  an ingot is ${ingotRaw} raw, a wardweave ${rawWorth(REFINING.weave.cost)}`);
   check("an ingot is worth more than a gather", ingotRaw > gatherYieldFor(5, 3));
+}
+
+// --- 9f. etching ------------------------------------------------------------
+// The fifth verb, and the only one that moves value BETWEEN items. Everything
+// checked here is a rule that would otherwise fail silently — an etch that adds
+// a slot, or lands an affix an item could never have rolled, does not throw. It
+// just quietly makes the band gates and the quality ladder mean nothing.
+section("9f. etching");
+{
+  const sample = ITEM_BASES.longsword;                       // band 3, weapon
+  const runed = { id: "e1", equipped: false, ...rollItem(sample, "runed", rand) };
+  const broken = { id: "e2", equipped: false, ...rollItem(sample, "broken", rand) };
+
+  // A rune only goes where the item could have rolled it anyway. This is the
+  // rule that keeps band gates honest: without it, drawing an archmage's affix
+  // off a band-5 staff and cutting it into a band-1 cap makes the first hour of
+  // the game the best one.
+  for (const affix of AFFIXES) {
+    const eligible = eligibleAffixes(sample).some((a) => a.id === affix.id);
+    const carried = (runed.affixes ?? []).includes(affix.id);
+    const verdict = canEtch(runed, affix.id);
+    if (!eligible) {
+      check(`${affix.id} cannot be cut into a longsword`, !verdict.ok, verdict.reason);
+    } else if (!carried) {
+      check(`${affix.id} can be cut into a longsword`, verdict.ok, verdict.reason);
+    }
+  }
+
+  // Never twice onto one item, exactly as `rollAffixes` refuses to roll a
+  // duplicate — two copies of Keen is a number that should have been one
+  // number.
+  for (const id of runed.affixes ?? []) {
+    check(`an item already carrying ${id} refuses another`, !canEtch(runed, id).ok);
+  }
+
+  // NEVER ADDS A SLOT. This is the line that keeps the ladder worth climbing
+  // beside etching rather than being replaced by it: a Broken sword has no
+  // affixes, so no rune makes it one.
+  check("an item with no affixes cannot be etched",
+    (broken.affixes ?? []).length === 0 && !canEtch(broken, "keen").ok,
+    canEtch(broken, "keen").reason);
+
+  {
+    const before = runed.affixes.length;
+    const spare = eligibleAffixes(sample).find((a) => !runed.affixes.includes(a.id));
+    const after = etchAffix(runed, spare.id, runed.affixes[0]);
+    check("etching replaces rather than appends", after.affixes.length === before,
+      `${before} -> ${after.affixes.length}`);
+    check("the new rune is on it", after.affixes.includes(spare.id));
+    check("the one it replaced is gone", !after.affixes.includes(runed.affixes[0]));
+    check("and nothing else about the item moved",
+      after.id === runed.id && after.rarity === runed.rarity &&
+        after.statValue === runed.statValue && after.bonusStatValue === runed.bonusStatValue);
+    // An etched affix has to be indistinguishable from a rolled one, or two
+    // copies of the same affix would behave differently for a reason the player
+    // can see nowhere.
+    check("an etched affix reads exactly like a rolled one",
+      itemPassives(after).critChance !== undefined &&
+        JSON.stringify(itemPassives(after)) ===
+          JSON.stringify(itemPassives({ baseId: after.baseId, affixes: after.affixes })));
+  }
+
+  // Etching over an affix the item does not carry is not a way to add one.
+  check("cannot etch over something it does not carry",
+    etchAffix(runed, eligibleAffixes(sample).find((a) => !runed.affixes.includes(a.id)).id,
+      "not-an-affix") === null);
+
+  // Drawing offers exactly what the item carries, and nothing from a bare one.
+  check("a runed item offers its own affixes to draw",
+    drawableAffixes(runed).map((a) => a.id).join(",") === runed.affixes.join(","));
+  check("a broken item offers nothing to draw", drawableAffixes(broken).length === 0);
+
+  // The cost is paid against the TARGET's band, since that is where the value
+  // lands — `affixBonus` reads the item's band, not the rune's origin.
+  let lastCost = 0;
+  for (const band of [1, 2, 3, 4, 5]) {
+    const b = bases.find((x) => x.band === band && x.slot === "weapon");
+    const cost = etchCost({ baseId: b.id });
+    const total = MATERIALS.reduce((s, m) => s + (cost[m] ?? 0), 0);
+    check(`etching a band-${band} item costs more than band ${band - 1}`, total > lastCost,
+      `${total} after ${lastCost}`);
+    check(`etching a band-${band} item wants essence`, (cost.essence ?? 0) > 0);
+    lastCost = total;
+  }
+  // Cheaper than the top of the ladder, because you have already paid by
+  // destroying a whole other item to get the rune.
+  const topStep = reforgeCost(bases.find((b) => b.band === 5 && b.slot === "weapon"), "runed");
+  const etchTop = etchCost({ baseId: bases.find((b) => b.band === 5 && b.slot === "weapon").id });
+  const raw = (c) => MATERIALS.reduce((s, m) => s + (c[m] ?? 0), 0);
+  check("etching costs less than the last step of the ladder", raw(etchTop) < raw(topStep),
+    `${raw(etchTop)} vs ${raw(topStep)}`);
+  console.log(`  etching runs ${raw(etchCost({ baseId: ITEM_BASES.dirk.id }))} to ${raw(etchTop)} materials`);
+  console.log(`  a longsword's pool is ${eligibleAffixes(sample).length} of ${AFFIXES.length} affixes`);
 }
 
 // --- 10. affix totals reach the passive vocabulary --------------------------

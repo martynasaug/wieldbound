@@ -712,6 +712,74 @@ export function learnRecipe(characterId: string, baseId: string): boolean {
   return Number(result.changes) > 0;
 }
 
+// --- Runes ------------------------------------------------------------------
+// Counters keyed by (character, affix), exactly like consumables and for the
+// same reason: a rune has nothing to roll and nothing to compare, and what it
+// is worth is decided by the band of whatever it is etched onto rather than by
+// where it was drawn from. Rows rather than a column each, so a new affix in
+// `AFFIXES` is a rune the moment it exists and nothing here changes.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS runes (
+    characterId TEXT NOT NULL,
+    affixId TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (characterId, affixId)
+  );
+`);
+
+const selectRunes = db.prepare("SELECT affixId, count FROM runes WHERE characterId = ?");
+const addRuneStmt = db.prepare(
+  "INSERT INTO runes (characterId, affixId, count) VALUES (?, ?, ?)" +
+    " ON CONFLICT(characterId, affixId) DO UPDATE SET count = count + excluded.count",
+);
+const spendRuneStmt = db.prepare(
+  "UPDATE runes SET count = count - 1 WHERE characterId = ? AND affixId = ? AND count > 0",
+);
+
+export function runesOf(characterId: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const row of selectRunes.all(characterId) as unknown as {
+    affixId: string;
+    count: number;
+  }[]) {
+    if (row.count > 0) out[row.affixId] = row.count;
+  }
+  return out;
+}
+
+export function addRune(characterId: string, affixId: string, count = 1): Record<string, number> {
+  addRuneStmt.run(characterId, affixId, count);
+  return runesOf(characterId);
+}
+
+/** Spends one, atomically — the check is in the WHERE clause for the same
+ *  reason every other spend here is: two rapid clicks must not both succeed
+ *  against one rune. */
+export function spendRune(characterId: string, affixId: string): Record<string, number> | null {
+  if (Number(spendRuneStmt.run(characterId, affixId).changes) === 0) return null;
+  return runesOf(characterId);
+}
+
+/**
+ * Destroys an item and returns one of its affixes as a rune.
+ *
+ * Deliberately NOT `salvageItem` with an extra output: this returns no
+ * materials and teaches no recipe, so drawing and salvaging are a real choice
+ * about what you want out of the thing rather than two names for one action.
+ */
+export function drawRune(
+  characterId: string,
+  itemId: string,
+  affixId: string,
+): { item: ItemInstance; items: ItemInstance[]; runes: Record<string, number> } | null {
+  const item = getItem(characterId, itemId);
+  if (!item || item.equipped) return null;
+  if (!(item.affixes ?? []).includes(affixId)) return null;
+  deleteItemStmt.run(itemId);
+  addRuneStmt.run(characterId, affixId, 1);
+  return { item, items: listItems(characterId), runes: runesOf(characterId) };
+}
+
 // --- Consumables ------------------------------------------------------------
 // Counters, keyed by (character, id). Rows rather than a column each, so adding
 // a consumable is a row in `CONSUMABLES` and nothing here — which is the whole

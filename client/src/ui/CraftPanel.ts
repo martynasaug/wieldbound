@@ -18,6 +18,12 @@
 //   SALVAGE  what is this worth in parts? Where everything you have outgrown
 //            goes, and the reason a Broken drop is worth picking up.
 //
+//   ETCH     what do I want this to BE? A rune, drawn out of something you were
+//            willing to destroy, cut over one of the affixes on something you
+//            are keeping. The only way value moves between two items — every
+//            other verb here turns one thing into materials or into a better
+//            version of itself.
+//
 //   REFINE   what is this worth as STOCK? The fourth verb, and the only one
 //            whose output is not something you wear. It is also the answer to
 //            "what does the smithy do that is not about items": raw in, ingots
@@ -25,7 +31,9 @@
 //            half of the ladder.
 //
 // Consumables stay where they were, at the top of Forge, because they are the
-// one thing here that is still just a recipe.
+// one thing here that is still just a recipe. DRAW is not a tab either: it is
+// the same gesture as salvage — destroy this — asked for a different output, so
+// it sits directly under each salvage row where the trade is visible.
 
 import {
   POTION_CRAFT_COST,
@@ -40,11 +48,16 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import {
+  AFFIXES_BY_ID,
   ITEM_BASES,
   MATERIALS,
   MATERIAL_LABEL,
   affixSummary,
+  canEtch,
   describeDropSources,
+  drawableAffixes,
+  etchCost,
+  runeFitsWhat,
   canAfford,
   canChooseAffix,
   canForge,
@@ -69,7 +82,7 @@ import {
 import { iconSvg } from "./icons";
 import { itemIcon, itemShortName, rarityColor, rarityName } from "./items";
 
-type Tab = "forge" | "refine" | "reforge" | "salvage";
+type Tab = "forge" | "refine" | "reforge" | "etch" | "salvage";
 
 /** How many a batch button makes. Ten because refining is a bulk job and the
  *  wallet is measured in hundreds; the server pays for as many as it can and
@@ -94,6 +107,8 @@ export class CraftPanel {
   /** Base ids this character has learned to forge. Band-1 recipes are known
    *  without being taught, so this is only what salvaging has added. */
   private recipes: string[] = [];
+  /** Runes held, by affix id. Counters, like consumables. */
+  private runes: Record<string, number> = {};
   private stationId: string | null = null;
   private tab: Tab = "forge";
   /** Which slot's shelf is open in Forge. Seventy-eight recipes in one
@@ -103,6 +118,14 @@ export class CraftPanel {
   /** Which rune the player has asked for, per item. Kept across re-renders so
    *  choosing one does not reset when the panel redraws on a materials update. */
   private readonly chosenAffix = new Map<string, string>();
+  /** Which rune to cut, and which affix to cut it over, per item. Kept across
+   *  re-renders for the same reason the reforge choice is: the panel redraws on
+   *  every materials update, and losing a choice mid-decision is the kind of
+   *  thing nobody reports and everybody notices. */
+  private readonly chosenRune = new Map<string, string>();
+  private readonly chosenOver = new Map<string, string>();
+  /** Which affix to keep when drawing, per item. */
+  private readonly chosenDraw = new Map<string, string>();
 
   constructor(
     private readonly onForge: (stationId: string, baseId: string) => void,
@@ -111,6 +134,10 @@ export class CraftPanel {
     private readonly onSalvageMany: (itemIds: string[]) => void,
     private readonly onCraftConsumable: (stationId: string, id: string) => void,
     private readonly onRefine: (stationId: string, id: string, count: number) => void,
+    private readonly onDraw: (stationId: string, itemId: string, affix: string) => void,
+    private readonly onEtch: (
+      stationId: string, itemId: string, affix: string, replacing: string,
+    ) => void,
   ) {
     this.closeButton.addEventListener("click", () => this.close());
   }
@@ -145,6 +172,11 @@ export class CraftPanel {
     if (this.isOpen) this.render();
   }
 
+  setRunes(counts: Record<string, number>): void {
+    this.runes = counts;
+    if (this.isOpen) this.render();
+  }
+
   /** Opening the bench lands on the shelf for what you are holding. */
   setEquippedWeapon(_type: unknown): void {
     // Kept for the caller's sake; the shelf now defaults to weapons anyway.
@@ -159,6 +191,7 @@ export class CraftPanel {
     if (this.tab === "forge") this.renderForge();
     else if (this.tab === "refine") this.renderRefine();
     else if (this.tab === "reforge") this.renderReforge();
+    else if (this.tab === "etch") this.renderEtch();
     else this.renderSalvage();
   }
 
@@ -172,6 +205,7 @@ export class CraftPanel {
       ["forge", "Forge", "forge"],
       ["refine", "Refine", "refine"],
       ["reforge", "Reforge", "reforge"],
+      ["etch", "Etch", "etch"],
       ["salvage", "Salvage", "salvage"],
     ];
     for (const [id, label, icon] of tabs) {
@@ -525,6 +559,136 @@ export class CraftPanel {
     }
   }
 
+  // --- etch -----------------------------------------------------------------
+
+  private renderEtch(): void {
+    const held = Object.entries(this.runes).filter(([, n]) => n > 0);
+    this.section("runes");
+    if (held.length === 0) {
+      this.note(
+        "No runes. Draw one out of something in the Salvage tab: you keep one of " +
+          "its affixes and lose everything else it was worth.",
+      );
+    } else {
+      const stock = document.createElement("div");
+      stock.className = "rune-stock";
+      for (const [affixId, count] of held) {
+        const affix = AFFIXES_BY_ID[affixId];
+        if (!affix) continue;
+        const chip = document.createElement("span");
+        chip.className = "rune-chip";
+        chip.innerHTML = `${iconSvg("etch")}${affix.label}<b>${count}</b>`;
+        // The magnitude is not on the chip on purpose: an affix is worth what
+        // the band of the item it lands on says it is, so a number here would
+        // be a number for no particular item.
+        chip.title = `${affix.label} — fits ${runeFitsWhat(affix)}, and is worth more the higher the band it lands on`;
+        stock.appendChild(chip);
+      }
+      this.grid.appendChild(stock);
+    }
+
+    // Said once, up front, because it is the one ordering mistake this system
+    // makes possible and it costs a rune. Reforging has always re-rolled
+    // affixes; that rule did not change, but until now nothing the player owned
+    // was worth losing to it.
+    this.note("Reforging re-rolls every affix, etched or not. Take an item up the ladder first, then cut its runes.");
+
+    this.section("cut a rune into something");
+    const targets = this.items.filter((i) => (i.affixes?.length ?? 0) > 0);
+    if (targets.length === 0) {
+      this.note(
+        "Nothing you own carries an affix to replace. Etching never ADDS one — " +
+          "quality decides how many an item has, so reforge something up first.",
+      );
+      return;
+    }
+
+    for (const item of targets) {
+      const base = itemBase(item.baseId);
+      const cost = etchCost(item);
+      const sub = this.costLine(cost);
+
+      // Which runes could go on THIS item: held, eligible, and not already on
+      // it. That triple is exactly `canEtch`, so the list a player reads and
+      // the rule the server enforces cannot drift.
+      const usable = held
+        .map(([affixId]) => AFFIXES_BY_ID[affixId])
+        .filter((a) => a && canEtch(item, a.id).ok);
+
+      const carried = (item.affixes ?? []).map((a) => AFFIXES_BY_ID[a]).filter(Boolean);
+      const has = document.createElement("div");
+      has.className = "craft-row-step";
+      has.textContent = `Carries ${carried.map((a) => a.label).join(", ")}`;
+      sub.prepend(has);
+
+      if (usable.length === 0) {
+        // What WOULD fit, which is the only place in the game that says what an
+        // item's affix pool even is. A player holding the wrong runes learns
+        // what to go looking for instead of being told "no".
+        const pool = eligibleAffixes(base)
+          .filter((a) => !(item.affixes ?? []).includes(a.id))
+          .slice(0, 6)
+          .map((a) => a.label);
+        const none = document.createElement("div");
+        none.className = "craft-row-cost short";
+        none.textContent = pool.length
+          ? `No rune you hold fits. It would take ${pool.join(", ")}…`
+          : "No rune you hold fits.";
+        sub.replaceChildren(has, none);
+        this.row(itemIcon(item), itemShortName(item), rarityColor(item.rarity), sub, "Etch", false, () => {});
+        continue;
+      }
+
+      const key = `${item.id}`;
+      // `||` for the same reason the draw picker uses it: an empty select value
+      // is a stale list, not a choice.
+      const chosenRune = this.chosenRune.get(key) || usable[0].id;
+      const chosenOver = this.chosenOver.get(key) || carried[0].id;
+
+      const pickRune = document.createElement("select");
+      pickRune.className = "smith-rune";
+      for (const affix of usable) {
+        const opt = document.createElement("option");
+        opt.value = affix.id;
+        opt.textContent = `cut ${affix.label} — ${affixSummary(affix, base.band)}`;
+        if (affix.id === chosenRune) opt.selected = true;
+        pickRune.appendChild(opt);
+      }
+      pickRune.addEventListener("change", () => this.chosenRune.set(key, pickRune.value));
+      sub.appendChild(pickRune);
+
+      const pickOver = document.createElement("select");
+      pickOver.className = "smith-rune";
+      for (const affix of carried) {
+        const opt = document.createElement("option");
+        opt.value = affix.id;
+        opt.textContent = `over ${affix.label} — ${affixSummary(affix, base.band)}`;
+        if (affix.id === chosenOver) opt.selected = true;
+        pickOver.appendChild(opt);
+      }
+      pickOver.addEventListener("change", () => this.chosenOver.set(key, pickOver.value));
+      sub.appendChild(pickOver);
+
+      this.row(
+        itemIcon(item),
+        itemShortName(item) + (item.equipped ? " (worn)" : ""),
+        rarityColor(item.rarity),
+        sub,
+        "Etch",
+        canAfford(cost, this.materials).ok && !!this.stationId,
+        () => {
+          if (!this.stationId) return;
+          this.onEtch(
+            this.stationId,
+            item.id,
+            this.chosenRune.get(key) || usable[0].id,
+            this.chosenOver.get(key) || carried[0].id,
+          );
+        },
+      );
+    }
+  }
+
   // --- salvage --------------------------------------------------------------
 
   private renderSalvage(): void {
@@ -577,6 +741,60 @@ export class CraftPanel {
         "Salvage",
         true,
         () => this.onSalvage(item.id),
+      );
+
+      // DRAW sits under the salvage row rather than in a tab of its own,
+      // because it is the same gesture — destroy this — asked for a different
+      // output, and the two belong side by side precisely so the trade is
+      // visible: materials and the recipe, or one rune and nothing else.
+      const runes = drawableAffixes(item);
+      if (runes.length === 0) continue;
+      const base = itemBase(item.baseId);
+      const key = `draw:${item.id}`;
+      // `||` and not `??`: a select whose value is the empty string is a real
+      // state — it is what a stale option list leaves behind — and `??` treats
+      // it as a choice, which sends the server an affix nothing carries and
+      // gets a silent refusal.
+      const chosen = this.chosenDraw.get(key) || runes[0].id;
+
+      const drawSub = document.createElement("div");
+      drawSub.className = "craft-row-cost";
+      drawSub.textContent = "No materials, and it teaches you nothing.";
+      if (runes.length > 1) {
+        const picker = document.createElement("select");
+        picker.className = "smith-rune";
+        for (const affix of runes) {
+          const opt = document.createElement("option");
+          opt.value = affix.id;
+          // What it fits, beside what it does — drawing is irreversible and a
+          // rune that goes nowhere you own is the one way this verb wastes an
+          // item outright.
+          opt.textContent = `keep ${affix.label} — ${affixSummary(affix, base.band)} · fits ${runeFitsWhat(affix)}`;
+          if (affix.id === chosen) opt.selected = true;
+          picker.appendChild(opt);
+        }
+        picker.addEventListener("change", () => this.chosenDraw.set(key, picker.value));
+        drawSub.appendChild(picker);
+      } else {
+        const only = document.createElement("div");
+        only.className = "craft-row-step";
+        only.textContent =
+          `Keeps ${runes[0].label} — ${affixSummary(runes[0], base.band)}` +
+          ` · fits ${runeFitsWhat(runes[0])}`;
+        drawSub.prepend(only);
+      }
+      this.row(
+        "etch",
+        `Draw a rune from ${itemShortName(item)}`,
+        "#c0a6ff",
+        drawSub,
+        "Draw",
+        !!this.stationId,
+        () => {
+          if (this.stationId) {
+            this.onDraw(this.stationId, item.id, this.chosenDraw.get(key) || runes[0].id);
+          }
+        },
       );
     }
   }

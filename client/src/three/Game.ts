@@ -338,6 +338,11 @@ export class Game {
   ) as Record<Material, number>;
   /** Base ids this character has learned to forge, by taking one apart. */
   private recipes: string[] = [];
+  /** Runes held, by affix id. Counters, like consumables. */
+  private runes: Record<string, number> = {};
+  /** Whether the rune stock has arrived once, so an opening balance is not
+   *  mistaken for something just drawn. */
+  private runesSeen = false;
   /** Whether the wallet has arrived once, so the opening balance is not
    *  mistaken for something the player just earned. */
   private walletSeen = false;
@@ -444,6 +449,9 @@ export class Game {
       (itemIds) => this.socket.sendSalvageMany(itemIds),
       (stationId, id) => this.socket.sendCraftConsumable(stationId, id),
       (stationId, id, count) => this.socket.sendRefineMaterial(stationId, id, count),
+      (stationId, itemId, affix) => this.socket.sendDrawRune(stationId, itemId, affix),
+      (stationId, itemId, affix, replacing) =>
+        this.socket.sendEtchAffix(stationId, itemId, affix, replacing),
     );
     this.skillPanel = new SkillPanel(
       (nodeId) => this.socket.sendLearnTalent(nodeId),
@@ -491,6 +499,25 @@ export class Game {
       },
       onConsumables: (p) => {
         this.inventoryPanel.setConsumables(p.counts);
+      },
+      onRunes: (p) => {
+        // A rune arriving is the payoff for having destroyed something, so it
+        // gets the same acknowledgement essence does rather than a line in the
+        // log. Guarded against the opening state on its own flag, like the
+        // wallet and the recipe list: all three land within a moment of each
+        // other on connect, and borrowing one flag for another congratulates a
+        // returning smith on everything they already had.
+        const before = Object.values(this.runes).reduce((n, v) => n + v, 0);
+        const after = Object.values(p.counts).reduce((n, v) => n + v, 0);
+        if (this.runesSeen && after > before && this.localActor) {
+          this.floaters.spawn(this.localActor.position, {
+            kind: "loot", text: "rune drawn", color: "#c0a6ff", headY: 3.2, weight: 0.15,
+          });
+          playSfx("levelup", 0.5);
+        }
+        this.runesSeen = true;
+        this.runes = p.counts;
+        this.craftPanel.setRunes(this.runes);
       },
       onRecipes: (p) => {
         // Learning a recipe is the moment the smithy's loop closes, and it
@@ -1940,6 +1967,7 @@ export class Game {
           this.syncMaterials();
           this.craftPanel.setItems(this.items);
           this.craftPanel.setRecipes(this.recipes);
+          this.craftPanel.setRunes(this.runes);
           this.craftPanel.open(id);
         } else {
           this.hud.toast("Too far from the workbench.", "#c98d5e");
