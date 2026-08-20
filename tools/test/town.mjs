@@ -41,6 +41,10 @@ import {
   pushOutOfBuildings,
   inTown,
   STATUE_SIGHT_HALF_PX,
+  NPC_BEAT_RADIUS_PX,
+  NPC_TETHER_PX,
+  npcPoseAt,
+  npcBeatCycleMs,
 } from "../../shared/town.ts";
 
 let failures = 0;
@@ -184,30 +188,56 @@ console.log(`  ${TOWN_NPCS.length} people, all outdoors and none crowding anothe
 //
 // The camera has one bearing and only its distance moves, so "behind the
 // statue" is not a position a player can walk out of — it is a permanent
-// property of a bearing. The Herald had it: she stood 8px off the statue's own
-// axis, up-screen of it, and since every actor in this game carries a
-// through-walls silhouette, the middle of the square had a blue mage-shaped
-// ghost painted down the monument at all hours.
+// property of a bearing. Somebody parked there is somebody you can neither see
+// nor click, for the life of the world.
 //
-// The silhouette was doing precisely its job. The placement was the bug, and it
-// is the kind that is invisible in the data and unmissable in a screenshot,
-// which is what a test is for.
+// It was originally written against a worse symptom: townspeople carried a
+// through-walls silhouette, so the Herald standing 8px off the axis painted a
+// solid blue mage down the middle of the monument at all hours. That is fixed
+// at the source now — townspeople have no silhouette — because fixing it here
+// would have meant this rule being RIGHT about perspective, and the honest
+// version of the question turned out to be harder than it looks.
 {
   const statue = propById("statue");
   if (!statue) fail("no statue in the prop table");
   else {
     const at = propPosition(statue);
+    // OVER THE WHOLE ROUND, not just the post. This rule was written one
+    // milestone ago against five people who could not move, and the day they
+    // could it silently stopped covering the thing it exists for: the Herald's
+    // first beat walked her back into the cone for a third of every round, and
+    // the test that had just been written to catch exactly that said nothing,
+    // because it was still only looking at where she starts.
+    //
+    // Deliberately CONSERVATIVE. Somebody far enough behind the monument is
+    // drawn clear above its crown and is measurably fine — but the arithmetic
+    // that says who is far enough turned out to be wrong when it was checked
+    // against a real raycast, and the cost of leaving a narrow wedge of the
+    // square empty is nothing at all. A rule that occasionally moves a
+    // shopkeeper who did not need moving beats one that has to be right about
+    // perspective.
     for (const npc of TOWN_NPCS) {
-      const behind = npc.y < at.y; // -z is away from the camera
-      const across = Math.abs(npc.x - at.x);
-      if (behind && across < STATUE_SIGHT_HALF_PX) {
+      const cycle = npcBeatCycleMs(npc);
+      let worst = Infinity;
+      let worstAt = 0;
+      for (let t = 0; t <= (cycle || 1); t += cycle ? 60 : 1) {
+        const pose = npcPoseAt(npc, t);
+        if (pose.y >= at.y) continue; // -z is away from the camera
+        const across = Math.abs(pose.x - at.x);
+        if (across < worst) {
+          worst = across;
+          worstAt = t;
+        }
+      }
+      if (worst < STATUE_SIGHT_HALF_PX) {
+        const when = cycle ? ` ${(worstAt / 1000).toFixed(1)}s into their round` : "";
         fail(
-          `${npc.name} stands behind the statue, ${across.toFixed(0)}px off its axis — ` +
-            `their silhouette will be painted down it`,
+          `${npc.name} passes behind the statue${when}, ${worst.toFixed(0)}px off its ` +
+            `axis — their silhouette will be painted down it`,
         );
       }
     }
-    console.log("  nobody is standing behind the monument");
+    console.log("  nobody's round takes them behind the monument");
   }
 }
 
@@ -225,6 +255,170 @@ for (const npc of TOWN_NPCS) {
   }
 }
 console.log("  vendor, guide and two quest givers present, all with something to say");
+
+// --- The rounds people walk -------------------------------------------------
+// Five people stood perfectly still for three phases, and the moment any of
+// them moves every placement rule in this file gains a time axis. A stop two
+// degrees out is a shopkeeper standing in a well; a leg two degrees out is one
+// walking through the side of the inn, four seconds at a time, which is harder
+// to catch by looking than a prop indoors because it is only wrong while it is
+// happening.
+//
+// So every rule below is checked over the WHOLE cycle rather than at the stops:
+// where somebody is at each stop is the easy half, and the legs between them
+// are where the geometry actually goes wrong.
+
+section("rounds");
+{
+  const walkers = TOWN_NPCS.filter((n) => n.beat && n.beat.length >= 2);
+  if (walkers.length === 0) fail("nobody in Emberhold moves");
+
+  const solid = TOWN_PROPS.filter((p) => p.blockRadiusPx > 0).map((p) => ({
+    id: p.id,
+    ...propPosition(p),
+    r: p.blockRadiusPx,
+  }));
+  // A person is not a body the props collide with, so nothing in the engine
+  // will ever stop them walking into the well. This margin is the only thing
+  // that does.
+  const PROP_CLEARANCE_PX = 8;
+
+  for (const npc of walkers) {
+    const cycle = npcBeatCycleMs(npc);
+    if (cycle <= 0) {
+      fail(`${npc.name}'s round takes no time at all`);
+      continue;
+    }
+
+    // The first stop is their post, so a nameplate's home is where it has
+    // always been and `x`/`y` never become a place nobody stands.
+    const first = npc.beat[0];
+    const home = npcPoseAt({ ...npc, beat: undefined }, 0);
+    const firstPose = { x: home.x, y: home.y };
+    {
+      const a = (first.angleDeg * Math.PI) / 180;
+      const fx = TOWN_CENTER.x + Math.cos(a) * first.radiusPx;
+      const fy = TOWN_CENTER.y + Math.sin(a) * first.radiusPx;
+      if (Math.hypot(fx - firstPose.x, fy - firstPose.y) > 1.5) {
+        fail(`${npc.name}'s round does not start at their post`);
+      }
+    }
+
+    for (const stop of npc.beat) {
+      if (stop.dwellMs <= 0) fail(`${npc.name} has a stop they never stand at`);
+    }
+
+    // Walk the whole cycle. 60ms is finer than anybody moves in a frame at
+    // 58px/s, so nothing thin can be stepped over.
+    let standing = 0;
+    let samples = 0;
+    let strayed = 0;
+    // Collected rather than reported as they are found: a leg through the well
+    // is wrong at every one of the forty samples that cross it, and forty
+    // identical lines bury the other four people underneath them.
+    const hitProps = new Set();
+    let throughBuilding = -1;
+    let outside = false;
+    for (let t = 0; t < cycle; t += 60) {
+      samples++;
+      const pose = npcPoseAt(npc, t);
+      if (!pose.walking) standing++;
+
+      const fromPost = Math.hypot(pose.x - npc.x, pose.y - npc.y);
+      if (fromPost > NPC_BEAT_RADIUS_PX) strayed = Math.max(strayed, fromPost);
+      if (throughBuilding < 0 && insideAnyBuilding(pose.x, pose.y, PLAYER_BODY_RADIUS_PX)) {
+        throughBuilding = t;
+      }
+      if (!inTown(pose.x, pose.y)) outside = true;
+      for (const s of solid) {
+        if (Math.hypot(s.x - pose.x, s.y - pose.y) < s.r + PROP_CLEARANCE_PX) hitProps.add(s.id);
+      }
+    }
+    if (throughBuilding >= 0) {
+      fail(
+        `${npc.name} walks through a building ${(throughBuilding / 1000).toFixed(1)}s ` +
+          `into their round`,
+      );
+    }
+    if (outside) fail(`${npc.name} walks outside the palisade`);
+    for (const id of hitProps) fail(`${npc.name} walks through "${id}"`);
+    if (strayed > 0) {
+      // The tether is derived from this bound, so breaking it does not read as
+      // "somebody wandered a bit" — it reads as a dialogue box closing itself
+      // in the middle of a purchase.
+      fail(
+        `${npc.name} strays ${strayed.toFixed(0)}px from their post, past the ` +
+          `${NPC_BEAT_RADIUS_PX}px the tether is built on`,
+      );
+    }
+
+    // A town where everybody is permanently in motion is a parade, not a place
+    // somebody lives. The stops are the point; the walking is punctuation.
+    const standingShare = standing / samples;
+    if (standingShare < 0.55) {
+      fail(`${npc.name} is walking ${((1 - standingShare) * 100).toFixed(0)}% of the time`);
+    }
+    console.log(
+      `  ${npc.name}: ${npc.beat.length} stops, ${(cycle / 1000).toFixed(0)}s round, ` +
+        `standing ${(standingShare * 100).toFixed(0)}% of it`,
+    );
+  }
+
+  // NOBODY WALKS THROUGH ANYBODY. The static version of this rule has been here
+  // since Phase 49 — two people closer than a talk radius means one click
+  // reaches both and the wrong nameplate wins — and it was checked at their
+  // posts, which is now only one instant out of a thirty-second round.
+  {
+    const cycles = walkers.map((n) => npcBeatCycleMs(n));
+    const span = Math.max(600000, ...cycles.map((c) => c * 4));
+    let closest = Infinity;
+    let who = "";
+    for (let t = 0; t < span; t += 250) {
+      const poses = TOWN_NPCS.map((n) => ({ n, p: npcPoseAt(n, t) }));
+      for (let i = 0; i < poses.length; i++) {
+        for (let j = i + 1; j < poses.length; j++) {
+          const d = Math.hypot(poses[i].p.x - poses[j].p.x, poses[i].p.y - poses[j].p.y);
+          if (d < closest) {
+            closest = d;
+            who = `${poses[i].n.name} and ${poses[j].n.name}`;
+          }
+        }
+      }
+    }
+    if (closest < 90) fail(`${who} come within ${closest.toFixed(0)}px of each other`);
+    else console.log(`  closest two people ever get: ${closest.toFixed(0)}px (${who})`);
+  }
+
+  // The round is a pure function of the clock, which is the entire reason
+  // nothing is sent over the wire for it. If it were not, the shopkeeper the
+  // client draws and the shopkeeper the server prices from would drift apart —
+  // and the symptom of that is "the buy button does nothing", which is the
+  // worst failure an interface has.
+  for (const npc of walkers) {
+    const cycle = npcBeatCycleMs(npc);
+    const t = 12345;
+    const a = npcPoseAt(npc, t);
+    const b = npcPoseAt(npc, t);
+    if (a.x !== b.x || a.y !== b.y || a.facingDeg !== b.facingDeg) {
+      fail(`${npc.name}'s position is not a pure function of the clock`);
+    }
+    const wrapped = npcPoseAt(npc, t + cycle);
+    if (Math.hypot(wrapped.x - a.x, wrapped.y - a.y) > 0.01) {
+      fail(`${npc.name}'s round does not close — it is a path, not a loop`);
+    }
+  }
+  console.log("  every round is a closed loop and a pure function of the clock");
+
+  // The tether is a SUM, not a guess, and the whole point is that it is exactly
+  // big enough. If it were smaller than this, a conversation opened at the very
+  // edge of talk range would close itself the moment the other person set off.
+  if (NPC_TETHER_PX < NPC_TALK_RANGE_PX + NPC_BEAT_RADIUS_PX) {
+    fail("the tether is shorter than the talk range plus the beat — dialogues will drop");
+  }
+  console.log(
+    `  tether ${NPC_TETHER_PX}px = talk ${NPC_TALK_RANGE_PX} + beat ${NPC_BEAT_RADIUS_PX}`,
+  );
+}
 
 // --- The pushout actually evicts --------------------------------------------
 

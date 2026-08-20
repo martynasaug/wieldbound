@@ -20,13 +20,20 @@ import {
 import { instantiate, findNode, findClip, type Instance } from "./assets";
 import { BUILTIN_WEAPON_MESHES, CLASS_BODIES, buildArmour, buildHeldItem } from "./gear";
 
-export type ActorAnim = "idle" | "run" | "attack" | "hit" | "die";
+export type ActorAnim = "idle" | "walk" | "run" | "attack" | "hit" | "die";
 
 // Which clips satisfy each state, best first. Different packs name things
 // differently, so this is a preference list rather than an exact mapping —
 // `findClip` falls back to a loose match before giving up.
 const CLIP_PREFERENCES: Record<ActorAnim, string[]> = {
   idle: ["Idle_Weapon", "Idle", "Idle2", "Flying_Idle", "Flying"],
+  // An amble, and it is a separate state from `run` rather than a slower
+  // playback of it. Every character rig in the pack ships a `Walk`, and it has
+  // been sitting unused since the port: `run` lists it only as a FALLBACK, so
+  // anything with both — which is all five class bodies — has always sprinted.
+  // A townsperson jogging between their own front door and the market stall
+  // reads as somebody late for something.
+  walk: ["Walk", "Walk_Weapon", "Run_Weapon", "Run", "Fly", "Flying"],
   run: ["Run_Weapon", "Run", "Walk", "Fly", "Flying"],
   // The class bodies each name their attack after their weapon, and the
   // generic entries below them are a trap: a loose match for "Attack" finds
@@ -137,6 +144,31 @@ export interface ActorOptions {
    * they did not choose. Nothing reads a monster's facing except the eye.
    */
   idleGlance?: boolean;
+  /**
+   * Whether this actor is drawn through scenery when something hides it.
+   *
+   * Defaults on, and TOWNSPEOPLE ARE THE ONE THING THAT TURNS IT OFF.
+   *
+   * The feature answers one question — "where is the character I am
+   * responsible for?" — and the three cases it exists for are your own body
+   * behind a palisade, another player behind the inn, and a monster you are
+   * fighting behind a tree. A shopkeeper standing behind a statue is not one of
+   * them. You do not need to see them through it; you need to walk round it,
+   * which is what a person does about a statue.
+   *
+   * And the cost of getting that wrong is high, because a townsperson stands
+   * in one place for the life of the world. Everything else this draws is
+   * transient: you move, the monster moves, the occlusion lasts a second. A
+   * resident behind a fixed piece of scenery is a solid blue figure painted
+   * onto it permanently — which is what the Herald was doing to the monument
+   * in the middle of the square, and it looked like the renderer was broken
+   * rather than like somebody standing behind something.
+   *
+   * This is the general fix. Moving one person off one sight line was the
+   * specific one, and it does not survive contact with a town whose people
+   * walk about.
+   */
+  silhouette?: boolean;
 }
 
 export class Actor {
@@ -159,6 +191,7 @@ export class Actor {
    *  between two copies of the same model. */
   private readonly variance: number;
   private readonly idleGlance: boolean;
+  private readonly wantsSilhouette: boolean;
   /** When this actor next glances somewhere while standing still. */
   private nextGlanceAt = 0;
   /** Facing it has chosen to idle at, so a glance eases rather than snaps. */
@@ -223,6 +256,7 @@ export class Actor {
     this.interpolate = options.interpolate ?? true;
     this.variance = options.variance ?? Math.random();
     this.idleGlance = options.idleGlance ?? false;
+    this.wantsSilhouette = options.silhouette ?? true;
     this.nextGlanceAt = performance.now() + this.glanceDelay();
     this.bodyModel = options.model;
     this.root.add(this.pivot);
@@ -451,6 +485,7 @@ export class Actor {
    * on the armature.
    */
   private buildSilhouette(root: THREE.Object3D): void {
+    if (!this.wantsSilhouette) return;
     for (const ghost of this.silhouettes) ghost.removeFromParent();
     this.silhouettes = [];
     if (!this.silhouetteMaterial) {
@@ -632,7 +667,7 @@ export class Actor {
    */
   play(anim: ActorAnim, immediate = false): void {
     if (!this.mixer) return;
-    if (anim === "idle" || anim === "run") {
+    if (anim === "idle" || anim === "walk" || anim === "run") {
       this.baseAnim = anim;
       // A swing that is still playing normally owns the pose — letting idle
       // cut it short would mean most attacks were never seen through.
@@ -675,6 +710,12 @@ export class Actor {
       // Run is not phase-offset: a pack chasing you is supposed to move
       // together. Only the rate varies, so their footfalls are not identical.
       next.setEffectiveTimeScale(0.94 + this.variance * 0.12);
+    } else if (anim === "walk") {
+      // Walk IS phase-offset, unlike run, and for the opposite reason: nothing
+      // is chasing anything, so two people crossing the same square in step
+      // reads as a marching band.
+      next.time = next.getClip().duration * this.variance;
+      next.setEffectiveTimeScale(0.92 + this.variance * 0.16);
     }
 
     this.currentAnim = anim;
@@ -748,7 +789,8 @@ export class Actor {
     if (this.baseAnim !== "idle" || this.currentAnim === "die") {
       // Anything that moves or fights owns the facing again, and the next
       // glance is deferred so a monster does not turn away the instant it
-      // stops chasing you.
+      // stops chasing you. Walking counts: a townsperson mid-stride whose head
+      // is being turned by the glance timer walks visibly sideways.
       this.idleFacing = null;
       this.nextGlanceAt = performance.now() + this.glanceDelay();
       return;

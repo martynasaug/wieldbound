@@ -93,17 +93,27 @@ unavailable.
   resolved on the shallowest axis so you slide along plaster rather than being
   flung round it. **And you can always see your character**: the camera pulls in
   when something gets between it and you, the blocking building fades where it
-  physically cannot, and every actor in the game additionally carries a
-  silhouette that draws only where it is behind something else. Three
-  mechanisms, because the first two cannot reach a palisade, another player, or
-  a monster behind a tree.
+  physically cannot, and every actor you have a stake in — your own character,
+  other players, monsters — additionally carries a silhouette that draws only
+  where it is behind something else. Three mechanisms, because the first two
+  cannot reach a palisade, another player, or a monster behind a tree.
+  Townspeople are the deliberate exception: they stand in one place for the life
+  of the world, so an outline through the statue would be painted onto it
+  permanently rather than being the passing hint the feature is for.
 - **Five people who each do something** — Elsbet Vane the Herald explains the
   rules the game has never said out loud; Oswyn Thale the Provisioner runs a
   shop priced in wood, ore and herb, because there is no currency and is not
   going to be one; Warden Cabel and Marda Quill hand out work; Tobin Ash at the
   anvil explains the bench's five verbs. One dialogue box serves all of them —
   what the options *do* is supplied by whoever opened it, which is why a vendor
-  and a quest giver need no second panel between them.
+  and a quest giver need no second panel between them. **And they walk their own
+  rounds** — Tobin between the anvil and his bench, Cabel turning to watch the
+  east gate, Marda crossing to the market stall — derived from the wall clock in
+  `shared/` the same way the hour is, so nothing is sent for it and the
+  shopkeeper you can see and the shopkeeper the server will sell to you cannot
+  be in different places. Talking to somebody is measured to where they are
+  standing; staying in the conversation is measured to their post, so nobody
+  walks out of their own shop.
 - **Six quests, counted off things the server already resolves** — a kill it
   credited through the threat table, a gather it worked out, a forge it charged
   you for. Kill credit follows the experience rule (everyone who damaged it)

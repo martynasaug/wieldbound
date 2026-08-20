@@ -3701,7 +3701,8 @@ is no room at all, and there never was.
 ### Still bare, and known
 The middle band of paving between the island and the benches is deliberately
 plain — that is where players stand. The chapel's back yard is the emptiest of
-the six and could take something of its own.
+the six and could take something of its own. ~~And nobody in town moves.~~ Done
+in M51.3.
 
 ### M51.2 — the monument, and the flags
 Two questions from the user, both about things the tests cannot see: *is the
@@ -3782,6 +3783,120 @@ monument in one frame gets the camera dragged to four units and fills the screen
 with the back of the player's head. Three framings were lost to that before the
 obvious answer — `setCameraColliders([])` from the console, for the diagnostic
 shot only.
+
+### M51.3 — the townspeople walk
+Emberhold's last standing complaint, and the oldest: five people had stood
+perfectly still since Phase 49. Everything else in the square moved — the
+bunting, the brazier coals, the sun, the lit windows — and the only things in it
+with legs did not.
+
+**A round is a pure function of the clock.** Nothing is sent over the wire for
+this and no tick advances it: `npcPoseAt(npc, nowMs)` walks a list of stops and
+returns where somebody is, which way they are pointing and whether they are
+mid-stride. It is the argument the day/night cycle already won — the hour is
+derived in `shared/` rather than broadcast, so every client sees the same sky
+without the server saying a word — and a townsperson's round is the same shape
+of fact, since it depends on nothing any player does.
+
+It also settles the thing that would otherwise have been genuinely hard. The
+server decides whether you are close enough to buy something and the client
+decides whether to draw the shopkeeper next to you; if those two ever disagree
+the symptom is "the button does nothing", which is the worst failure an
+interface has. Here they cannot disagree, because they are the same function of
+the same clock. The phase is seeded off the id so five people do not step off
+together.
+
+**Two distances, and separating them is what makes a moving NPC safe to talk
+to.** `NPC_TALK_RANGE_PX` is measured to where somebody is STANDING and decides
+whether you may start — you walk up to a person, not to a spot they are
+sometimes at. `NPC_TETHER_PX` is measured to their POST and decides whether you
+are still talking, because a post does not move and a conversation must not end
+because the other party took three steps. The tether is not a fudge factor, it
+is a sum: talk range plus the furthest anybody may stray. If you opened the box
+within talk range of where they were standing, and they are never more than the
+beat radius from their post, you are never more than the two added together from
+that post — and since you are standing still and the post is fixed, that
+distance does not change while they walk. It replaced a `* 1.5` on the server
+that was an honest shrug.
+
+**And the game learned to walk.** `ActorAnim` had `idle` and `run`, and every
+character rig in the pack ships a `Walk` that had never been played — `run`
+listed it only as a fallback, so anything with both, which is all five class
+bodies, had sprinted since the port. `walk` is its own state now, phase-offset
+per actor unlike `run`: a pack chasing you is supposed to move together, and two
+people crossing the same square in step read as a marching band.
+
+Where they go is the point rather than the fact that they go. Tobin has the
+longest dwell in town and it is at the anvil, because he is the only person here
+with a job that keeps him in one place — his other two stops are him stepping
+away from it. Cabel's far stop turns him toward the east gate, which is the one
+the first monster camp stands nearest. Marda crosses between her own door and
+the market stall. Everybody stands still for at least three quarters of their
+round, and the test enforces it: a town where everybody is permanently in motion
+is a parade, not a place somebody lives.
+
+### What the rounds test caught, and what it did not
+`tools/test/town.mjs` grew a section that walks every round at 60ms — finer than
+anybody moves in a frame — because a stop two degrees out is a shopkeeper
+standing in a well, and a LEG two degrees out is one walking through the side of
+the inn four seconds at a time, which is harder to see than a prop indoors
+because it is only wrong while it is happening. Nothing in the engine would ever
+stop them: townspeople are not bodies the props collide with, so this test is
+the only thing between the design and a watch captain in a water butt. It also
+pins that every round is a closed loop, that nobody comes within a talk radius
+of anybody else at any instant, and that the tether really is the sum it claims.
+
+Then the sight-line rule from M51.2 — *nobody stands behind the monument* — went
+green on a beat that walked the Herald straight back behind it, because it was
+still only checking the POST. A rule written against five people who could not
+move stopped covering the thing it exists for on the day they could, one
+milestone after it was written. It walks the whole round now.
+
+### The thing that was fixed one level too high
+Moving her stop did not work either. She came out at 82px off the axis, well
+past the 70px the rule allows, and a raycast against the real statue in the real
+client said she was still drawn through it for 21% of her round.
+
+The reason is perspective, and the arithmetic that says who clears the crown is
+a trap. Under a parallel projection anybody far enough back rises above it, and
+that derivation gives a clean number — but the camera is fourteen units away,
+not infinitely far, so a near, tall occluder subtends far more angle than the
+sums allow. Oswyn at 415px behind is measurably clear; the Herald at 296px is
+not; and the boundary between them is not where any of three plausible
+calculations put it. Same shape as the seam that turned out to be a plank:
+reasoning survived several rounds, and measurement settled it in one.
+
+So the fix moved up a level. **Townspeople no longer draw a through-walls
+silhouette at all.** M49.2's outline answers one question — *where is the
+character I am responsible for?* — and its three cases are your own body behind
+a palisade, another player behind the inn, and a monster you are fighting behind
+a tree. A shopkeeper behind a statue is not one of them: you do not need to see
+them through it, you need to walk round it, which is what a person does about a
+statue. And the cost of being wrong is worse for them than for anybody else,
+because everything else the feature draws is transient — you move, the monster
+moves, the occlusion lasts a second — while a resident behind fixed scenery is a
+solid blue figure painted onto it permanently. That is what it looked like, and
+it read as a broken renderer rather than as somebody standing behind something.
+
+One option on `Actor`, defaulting on, and townspeople are the only thing in the
+game that turns it off. It fixes the case behind the inn, the well and the
+palisade too, none of which any placement rule was ever going to reach.
+
+The sight-line rule stays, restated: not a rendering artefact any more, but the
+smaller and more durable complaint that somebody parked on that bearing is a
+person you can neither see nor click, permanently, because the camera cannot be
+walked round. Deliberately conservative — leaving a narrow wedge of a
+twenty-seven unit square empty costs nothing, and it means the rule never has to
+be right about perspective.
+
+### Verified
+All nine offline suites, `smoke.mjs` against a real socket, both workspaces
+typechecking clean. In the browser: all five townspeople measured moving 2.2 to
+4.1 units and cycling between `idle` and `walk`; zero silhouette meshes on any of
+them and two still on the local player; the player's own outline still drawing
+through the palisade; a dialogue opened with Oswyn held for forty seconds
+through a full round of his beat, and a purchase went through mid-walk. Noon,
+midnight, zero console errors.
 
 ---
 
@@ -5711,6 +5826,36 @@ rarities), multiple crafting stations. Not committing to order yet.
   artifact, bisection beats theory, and naming the ground meshes (`town-paving`,
   `town-road`, `town-island`) is what made bisection possible from a console.
 
+- **A townsperson's round is derived from the clock, not sent.** (Phase 51) The
+  same call the day/night cycle made, for a stronger reason. An NPC's position
+  depends on nothing any player does, so a message would be per-frame bandwidth
+  for a value both ends can compute — but the real prize is that the server's
+  "are you close enough to buy this" and the client's "draw the shopkeeper here"
+  become the same function of the same clock and CANNOT drift. Two systems
+  agreeing to stay in sync would have failed as "the buy button does nothing".
+- **The range to START talking and the range to KEEP talking are different
+  distances.** (Phase 51) Starting is measured to where somebody is standing,
+  because you walk up to a person. Keeping is measured to their post, because a
+  post does not move and a conversation must not end when the other party takes
+  three steps. The second is the first plus the beat radius — a sum with a proof
+  behind it, not a slack multiplier, which is what it replaced.
+- **A path is placement with a time axis, and it fails the same silent ways.**
+  (Phase 51) Every placement rule in `town.mjs` had to learn to walk the whole
+  round rather than check one position: a stop two degrees out is somebody
+  standing in a well, and a LEG two degrees out is somebody walking through the
+  inn four seconds at a time — which is harder to catch by eye precisely because
+  it is only wrong while it is happening. The sight-line rule added one
+  milestone earlier went green on a beat that reproduced the exact defect it was
+  written for, because it was still only looking at where people start.
+- **Fix an occlusion problem at the feature, not at the placement.** (Phase 51)
+  Keeping townspeople out of the monument's sight line required being right
+  about when perspective lifts somebody clear of its crown, and three plausible
+  derivations all disagreed with a raycast. Turning the through-walls silhouette
+  OFF for townspeople solved it everywhere instead — behind the inn, the well
+  and the palisade too — and it is the correct scope anyway: the outline exists
+  so you can find the character you are responsible for, and a shopkeeper is not
+  one. A permanent blue figure painted on fixed scenery is strictly worse than
+  not seeing somebody who is behind it.
 - **This game has ONE camera bearing, so "behind" is permanent.** (Phase 51)
   The camera looks along -z and only its distance moves, which means how far
   apart two things appear across the screen is their difference in world x and
@@ -5795,6 +5940,24 @@ axis, up-screen: this game has one camera bearing, so "behind the monument" is a
 permanent property of a bearing rather than a place somebody walks through, and
 every actor's through-walls silhouette had been tracing a mage down the stone all
 day. She has moved, and the town test fails anybody who stands there again.
+
+**M51.3 — the townspeople walk.** Five people had stood perfectly still since
+Phase 49, in a square where the bunting, the coals, the sun and the windows all
+moved. They have rounds now — a handful of stops each, derived from the wall
+clock in `shared/` exactly as the hour is, so nothing goes over the wire and the
+shopkeeper the client draws and the one the server prices from are the same
+function of the same clock rather than two systems agreeing to stay in sync.
+Starting a conversation is measured to where somebody is standing; keeping one
+is measured to their post, which does not move — a sum with a proof behind it in
+place of the server's old slack multiplier. The game also learned to WALK: every
+character rig ships a `Walk` clip that had never been played, because `run`
+listed it only as a fallback and so every body in the game had sprinted since
+the port. And the round-walking test immediately caught the sight-line rule from
+one milestone earlier going green on a beat that reproduced its exact defect —
+which turned out to be fixable only one level up: townspeople draw no
+through-walls silhouette at all now, because that outline is for finding the
+character you are responsible for and a resident behind fixed scenery is a
+permanent blue figure painted onto it.
 
 Before that, Phase 50.
 

@@ -311,15 +311,27 @@ export const SMITHY_ANGLE_DEG = 140;
  * Anything up-screen of the statue with a small enough x offset is therefore
  * permanently hidden by it, from every position a player can stand in.
  *
- * Which is not a rendering problem, it is a placement one: the Herald stood at
- * bearing 272, four fifths of a metre off the axis, and every actor in the game
- * carries a through-walls silhouette. So the monument the whole square is built
- * around had a blue ghost of a mage painted down it, all day, at every zoom.
+ * What that cost, the first time: the Herald stood at bearing 272, four fifths
+ * of a metre off the axis, and every actor in the game carried a through-walls
+ * silhouette — so the monument the whole square is built around had a blue
+ * ghost of a mage painted down it, all day, at every zoom.
  *
- * 70px is the statue's own half-width plus a body's, plus room to read the gap.
- * Only NPCs are checked against it — a player walking behind the statue for a
- * second is the feature working, and a townsperson standing there for the life
- * of the world is not.
+ * THE SILHOUETTE IS NOT WHAT THIS RULE FIXES ANY MORE, and that is worth
+ * stating because the two got conflated once already. Townspeople no longer
+ * draw one at all (see the `silhouette` option on `Actor`), which kills the
+ * ghost everywhere rather than only here — behind the inn, behind the well,
+ * behind anything. Trying to fix it by placement instead meant being right
+ * about how far back somebody has to stand before perspective lifts them clear
+ * of the crown, and the arithmetic that answered that was wrong when it was
+ * checked against a real raycast.
+ *
+ * What is left is the smaller and more durable complaint: somebody parked on
+ * this bearing is a person you can neither see nor click, permanently, because
+ * the camera cannot be walked round. So the rule stays, deliberately
+ * CONSERVATIVE — 70px is the statue's own half-width plus a body's, plus room
+ * to read the gap, and leaving a narrow wedge of a twenty-seven unit square
+ * empty costs nothing. Only NPCs are checked: a player passing behind the
+ * statue for a second is just occlusion doing its job.
  */
 export const STATUE_SIGHT_HALF_PX = 70;
 
@@ -604,6 +616,15 @@ export interface TownNpc {
   y: number;
   /** Which way they stand, in degrees (0 = +x). Everyone faces the square. */
   facingDeg: number;
+  /**
+   * Their round: the handful of places they stand over and over.
+   *
+   * Optional, and the fallback is the post — somebody with no beat stands where
+   * `x`/`y` put them forever, which is what everyone did before this existed.
+   * The first stop is conventionally the post itself, so a person's beat starts
+   * where their nameplate has always been.
+   */
+  beat?: readonly NpcStop[];
   /** The first thing they say, before any topic is picked. */
   greeting: string;
   topics: NpcTopic[];
@@ -611,6 +632,173 @@ export interface TownNpc {
 
 /** How close you have to stand before someone will talk to you. */
 export const NPC_TALK_RANGE_PX = 150;
+
+/**
+ * One place on somebody's round, and how long they stand in it.
+ *
+ * Polar from the town centre, like every other position in this file, so a stop
+ * can be checked against the real building footprints with the same helpers a
+ * bench is — which is the whole reason the back lane's props are placed this
+ * way. A path is only placement with a time axis on it, and it goes wrong in
+ * exactly the same silent ways.
+ */
+export interface NpcStop {
+  radiusPx: number;
+  angleDeg: number;
+  /** Which way they face while standing here. Defaults to their post's. */
+  facingDeg?: number;
+  /** How long they stand still before setting off for the next one. */
+  dwellMs: number;
+}
+
+/**
+ * How far anybody is allowed to stray from their post.
+ *
+ * This is not a tidiness rule, it is what keeps a conversation from ending
+ * because the other person walked off — see `NPC_TETHER_PX`, which is derived
+ * from it. It is also a design bound: an NPC you have to chase is worse than
+ * one that never moves, and the game already has a name for a thing that walks
+ * away from you while you are trying to reach it.
+ *
+ * 120px is three world units, so a round is six units of walking across a
+ * square twenty-seven wide. That is legible at this camera and nowhere near far
+ * enough to lose somebody.
+ */
+export const NPC_BEAT_RADIUS_PX = 120;
+
+/**
+ * How far a conversation reaches, measured to somebody's POST.
+ *
+ * Two different distances, and separating them is the whole of what makes a
+ * moving NPC safe to talk to:
+ *
+ *   * `NPC_TALK_RANGE_PX` is measured to where they are STANDING, and it is
+ *     what decides whether you may start. You walk up to a person, not to a
+ *     spot they are sometimes at.
+ *   * `NPC_TETHER_PX` is measured to their POST, and it is what decides whether
+ *     you are still talking. A post does not move, so a conversation cannot be
+ *     ended by the other party taking three steps.
+ *
+ * The sum is not a fudge factor, it is the exact bound: if you opened the box
+ * at no more than the talk range from where they were standing, and they are
+ * never more than the beat radius from their post, then you are never more than
+ * the two added together from that post. Anything the client lets you open, the
+ * server honours for as long as you stand still.
+ */
+export const NPC_TETHER_PX = NPC_TALK_RANGE_PX + NPC_BEAT_RADIUS_PX;
+
+/**
+ * An amble. Deliberately well under a player's 220px/s: a townsperson who moves
+ * at adventuring pace reads as somebody late for something, and the point of
+ * this is that the town is at rest and inhabited rather than busy.
+ */
+export const NPC_WALK_PX_PER_SEC = 58;
+
+/** Where somebody is, which way they are pointing, and whether they are walking. */
+export interface NpcPose {
+  x: number;
+  y: number;
+  facingDeg: number;
+  walking: boolean;
+}
+
+/** Unrounded polar, for a path — `at` rounds, and a walk sampled off a rounded
+ *  curve judders by a pixel a frame. */
+function atExact(radiusPx: number, angleDeg: number): { x: number; y: number } {
+  const a = (angleDeg * Math.PI) / 180;
+  return {
+    x: TOWN_CENTER.x + Math.cos(a) * radiusPx,
+    y: TOWN_CENTER.y + Math.sin(a) * radiusPx,
+  };
+}
+
+/** 0..1 from a string. The same id gives the same number on every machine,
+ *  which is the only property that matters here. */
+function hashUnit(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 10000) / 10000;
+}
+
+/**
+ * WHERE SOMEBODY IS RIGHT NOW, AS A FUNCTION OF THE CLOCK.
+ *
+ * Nothing is sent over the wire for this and no tick advances it. The argument
+ * is the one the day/night cycle already won: the hour is derived from
+ * wall-clock time in `shared/` rather than broadcast, so every client sees the
+ * same sky without the server saying a word. A townsperson's round is the same
+ * shape of fact — it depends on nothing any player does, so making it a message
+ * would be paying a per-frame bandwidth cost for a value both ends can compute.
+ *
+ * It also settles the thing that would otherwise be genuinely hard. The server
+ * decides whether you are close enough to buy something and the client decides
+ * whether to draw the shop keeper next to you, and if those two disagree the
+ * failure is "the button does nothing" — the worst kind. Here they cannot
+ * disagree, because they are literally the same function of the same clock.
+ *
+ * The phase is seeded from the id, so five people do not step off together.
+ */
+export function npcPoseAt(npc: TownNpc, nowMs: number = Date.now()): NpcPose {
+  const beat = npc.beat;
+  if (!beat || beat.length < 2) {
+    return { x: npc.x, y: npc.y, facingDeg: npc.facingDeg, walking: false };
+  }
+
+  // Each leg of the round is a dwell followed by a walk to the next stop.
+  const points = beat.map((s) => atExact(s.radiusPx, s.angleDeg));
+  const walkMs = points.map((p, i) => {
+    const q = points[(i + 1) % points.length];
+    return (Math.hypot(q.x - p.x, q.y - p.y) / NPC_WALK_PX_PER_SEC) * 1000;
+  });
+  let cycle = 0;
+  for (let i = 0; i < beat.length; i++) cycle += beat[i].dwellMs + walkMs[i];
+  if (cycle <= 0) {
+    return { x: npc.x, y: npc.y, facingDeg: npc.facingDeg, walking: false };
+  }
+
+  let t = (nowMs + hashUnit(npc.id) * cycle) % cycle;
+  for (let i = 0; i < beat.length; i++) {
+    if (t < beat[i].dwellMs) {
+      const p = points[i];
+      return { x: p.x, y: p.y, facingDeg: beat[i].facingDeg ?? npc.facingDeg, walking: false };
+    }
+    t -= beat[i].dwellMs;
+    if (t < walkMs[i]) {
+      const p = points[i];
+      const q = points[(i + 1) % points.length];
+      const k = walkMs[i] > 0 ? t / walkMs[i] : 1;
+      const x = p.x + (q.x - p.x) * k;
+      const y = p.y + (q.y - p.y) * k;
+      // Facing follows the walk. Anything else is a moonwalk, and this rig has
+      // a Walk clip that very much assumes it is going forwards.
+      const facingDeg = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI;
+      return { x, y, facingDeg, walking: true };
+    }
+    t -= walkMs[i];
+  }
+  // Only reachable on a floating-point edge at the very end of the cycle.
+  const last = points[points.length - 1];
+  return { x: last.x, y: last.y, facingDeg: npc.facingDeg, walking: false };
+}
+
+/** How long one person's whole round takes. Read by the test, which has to walk
+ *  every position anybody ever occupies rather than sampling and hoping. */
+export function npcBeatCycleMs(npc: TownNpc): number {
+  const beat = npc.beat;
+  if (!beat || beat.length < 2) return 0;
+  const points = beat.map((s) => atExact(s.radiusPx, s.angleDeg));
+  let cycle = 0;
+  for (let i = 0; i < beat.length; i++) {
+    const q = points[(i + 1) % points.length];
+    cycle +=
+      beat[i].dwellMs +
+      (Math.hypot(q.x - points[i].x, q.y - points[i].y) / NPC_WALK_PX_PER_SEC) * 1000;
+  }
+  return cycle;
+}
 
 /**
  * Everyone in Emberhold.
@@ -637,6 +825,17 @@ export const TOWN_NPCS: TownNpc[] = [
     // the check that stops it happening again.
     ...at(255, 243),
     facingDeg: 63,
+    // A herald works the square. Out toward the middle, back to her post, then
+    // round to face the east gate — which is where anybody new comes in from.
+    beat: [
+      { radiusPx: 255, angleDeg: 243, facingDeg: 63, dwellMs: 9000 },
+      // 254 rather than 262, and the eleven degrees are the sight-line rule:
+      // 262 put her behind the monument again, which is the exact defect she
+      // was moved off the post to fix. A round is placement with a time axis,
+      // and it goes wrong in every way a position does.
+      { radiusPx: 296, angleDeg: 254, facingDeg: 90, dwellMs: 6000 },
+      { radiusPx: 210, angleDeg: 224, facingDeg: 30, dwellMs: 5000 },
+    ],
     greeting:
       "New in Emberhold? Then let me save you a few deaths. This place has one rule, " +
       "and almost everything else follows from it.",
@@ -702,6 +901,17 @@ export const TOWN_NPCS: TownNpc[] = [
     icon: "dock-bag",
     ...at(415, 285),
     facingDeg: 105,
+    // A shopkeeper's round is short and it is all his own doorstep: out to the
+    // crates stacked by the shop front, and back to where he can see the square.
+    beat: [
+      { radiusPx: 415, angleDeg: 285, facingDeg: 105, dwellMs: 11000 },
+      { radiusPx: 458, angleDeg: 297, facingDeg: 140, dwellMs: 6000 },
+      // Also kept out of the monument's sight line. He is far enough back that
+      // he is measurably NOT drawn through it — the rule is conservative on
+      // purpose, because the derivation that says who clears the crown turned
+      // out to be wrong and the cheap answer is to leave the wedge empty.
+      { radiusPx: 378, angleDeg: 292, facingDeg: 96, dwellMs: 5000 },
+    ],
     greeting:
       "Wood, ore, herb, essence — I take all four, and I part with rather less than I take. " +
       "Have a look.",
@@ -731,6 +941,14 @@ export const TOWN_NPCS: TownNpc[] = [
     icon: "class-warrior",
     ...at(415, 45),
     facingDeg: 225,
+    // The watch looks OUT. His far stop turns him toward the east gate, which is
+    // the one the first monster camp stands nearest to — the same reason the
+    // Warden's Post was put on this arc in the first place.
+    beat: [
+      { radiusPx: 415, angleDeg: 45, facingDeg: 225, dwellMs: 10000 },
+      { radiusPx: 466, angleDeg: 36, facingDeg: 200, dwellMs: 7000 },
+      { radiusPx: 452, angleDeg: 60, facingDeg: 250, dwellMs: 5000 },
+    ],
     greeting:
       "You are armed and you are standing still. I can fix the second of those. The watch has " +
       "work, and the watch pays.",
@@ -761,6 +979,13 @@ export const TOWN_NPCS: TownNpc[] = [
     icon: "dock-craft",
     ...at(420, 225),
     facingDeg: 45,
+    // Between her own door and the market stall, which is the errand an
+    // innkeeper actually runs.
+    beat: [
+      { radiusPx: 420, angleDeg: 225, facingDeg: 45, dwellMs: 9000 },
+      { radiusPx: 430, angleDeg: 240, facingDeg: 70, dwellMs: 6000 },
+      { radiusPx: 372, angleDeg: 220, facingDeg: 25, dwellMs: 7000 },
+    ],
     greeting:
       "The Bent Nail. Beds upstairs, stew if you can pay, and a list of things I need fetched " +
       "that is longer every week.",
@@ -790,6 +1015,14 @@ export const TOWN_NPCS: TownNpc[] = [
     icon: "dock-craft",
     ...at(245, 152),
     facingDeg: 332,
+    // He has the longest dwell in town and it is at the anvil, because he is the
+    // only person here with a job that keeps him in one spot. The other two
+    // stops are him stepping away from it, not the other way round.
+    beat: [
+      { radiusPx: 245, angleDeg: 152, facingDeg: 332, dwellMs: 8000 },
+      { radiusPx: 322, angleDeg: 142, facingDeg: 320, dwellMs: 12000 },
+      { radiusPx: 258, angleDeg: 172, facingDeg: 350, dwellMs: 5000 },
+    ],
     greeting:
       "Mind the coals. Master's away and I am not allowed to sell you anything, but I am " +
       "allowed to talk.",

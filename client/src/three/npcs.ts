@@ -13,7 +13,7 @@
 // the shortcut that would make `pickMonsterAt` able to return a shopkeeper.
 
 import * as THREE from "three";
-import { TOWN_NPCS, type NpcBody, type TownNpc } from "../../../shared/town";
+import { TOWN_NPCS, npcPoseAt, type NpcBody, type TownNpc } from "../../../shared/town";
 import { Actor } from "./Actor";
 import { toWorldX, toWorldZ } from "./World";
 
@@ -40,9 +40,22 @@ const NPC_HEIGHT = 1.7;
 export interface NpcVisual {
   def: TownNpc;
   actor: Actor;
-  /** World-space position, cached — nothing here ever moves. */
+  /**
+   * Where they are, in SERVER pixels — the same units their post is in, and the
+   * same units every range check in the game is in.
+   *
+   * It used to be world units and it used to be cached, because nothing here
+   * ever moved. Both had to change together: a cached world position is a lie
+   * the moment somebody has a beat, and a world position is the wrong thing for
+   * the two callers that matter — deciding whether you are close enough to talk
+   * and drawing a nameplate — since both of those are in server pixels.
+   */
   x: number;
-  z: number;
+  y: number;
+  /** Whether they were walking last frame. The ONE piece of state in here, and
+   *  it exists so the standing heading is applied on arrival and then let go —
+   *  see `updateNpcs`. */
+  walking: boolean;
 }
 
 /**
@@ -73,16 +86,20 @@ export async function buildNpcs(scene: THREE.Scene): Promise<Map<string, NpcVisu
         // nothing uses it to aim — but nobody reads an NPC's, and a shopkeeper
         // who never moves their head is a statue of a shopkeeper.
         idleGlance: true,
+        // No through-walls outline. See the note on the option: the feature is
+        // about the character you are responsible for, and a resident standing
+        // behind a fixed piece of scenery is the one case where it paints a
+        // permanent blue figure onto the thing instead of a passing hint.
+        silhouette: false,
       });
 
-      const x = toWorldX(def.x);
-      const z = toWorldZ(def.y);
-      actor.snapTo(x, 0, z);
+      const pose = npcPoseAt(def);
+      actor.snapTo(toWorldX(pose.x), 0, toWorldZ(pose.y));
       // Server bearings are measured in the XY plane where +y is south, and
       // south is +z here — so a bearing turns into a direction with no sign
       // flip at all. Getting this wrong leaves everyone facing out of town,
       // which reads as a bug in the layout rather than in the conversion.
-      const a = (def.facingDeg * Math.PI) / 180;
+      const a = (pose.facingDeg * Math.PI) / 180;
       actor.faceDirection(Math.cos(a), Math.sin(a));
 
       try {
@@ -96,11 +113,60 @@ export async function buildNpcs(scene: THREE.Scene): Promise<Map<string, NpcVisu
       }
 
       scene.add(actor.root);
-      out.set(def.id, { def, actor, x, z });
+      out.set(def.id, { def, actor, x: pose.x, y: pose.y, walking: pose.walking });
     }),
   );
 
   return out;
+}
+
+/**
+ * Moves everybody along their round.
+ *
+ * There is no state here and no integration: `npcPoseAt` is a pure function of
+ * the wall clock, so this reads the answer rather than advancing toward it.
+ * That is what makes it safe — the server resolves "can this player buy
+ * something" against the identical call, so the shopkeeper the client draws and
+ * the shopkeeper the server prices from are the same person by construction
+ * rather than by two systems agreeing to stay in sync. The day/night cycle made
+ * the same call for the same reason and has never needed a message either.
+ *
+ * The actor is SNAPPED rather than eased, and that is correct: these actors are
+ * built with `interpolate: false` because nothing sends them positions, and
+ * there is nothing to smooth toward when the exact position is already known
+ * every frame.
+ */
+export function updateNpcs(npcs: Map<string, NpcVisual>, nowMs = Date.now()): void {
+  for (const vis of npcs.values()) {
+    const pose = npcPoseAt(vis.def, nowMs);
+    vis.x = pose.x;
+    vis.y = pose.y;
+    if (!vis.actor.loaded) continue;
+    vis.actor.snapTo(toWorldX(pose.x), 0, toWorldZ(pose.y));
+    // Server bearings are XY with +y south, and south is +z here, so a bearing
+    // becomes a direction with no sign flip — the same conversion the initial
+    // facing uses, and the same one that leaves everybody staring out of town
+    // if it is got wrong.
+    const face = (deg: number) => {
+      const a = (deg * Math.PI) / 180;
+      vis.actor.faceDirection(Math.cos(a), Math.sin(a));
+    };
+
+    if (pose.walking) {
+      face(pose.facingDeg);
+      vis.actor.play("walk");
+    } else {
+      // ONLY ON ARRIVAL, and this is the whole reason `walking` is remembered.
+      // Setting the standing heading every frame would pin it, and the idle
+      // glance works by nudging `targetFacing` — so a shopkeeper would be
+      // overwritten back to attention a frame after every glance and never
+      // move their head again. Handing it over once and letting go is what
+      // keeps both behaviours.
+      if (vis.walking) face(pose.facingDeg);
+      vis.actor.play("idle");
+    }
+    vis.walking = pose.walking;
+  }
 }
 
 /** 0..1 from a string, so an id maps to the same idle offset on every client. */

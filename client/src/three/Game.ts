@@ -114,7 +114,7 @@ import {
 import { instantiate, whenLoadsSettle } from "./assets";
 import { nightAmount } from "./daynight";
 import { Town } from "./town";
-import { buildNpcs, type NpcVisual } from "./npcs";
+import { buildNpcs, updateNpcs, type NpcVisual } from "./npcs";
 import { DialoguePanel, type DialogueAction } from "../ui/DialoguePanel";
 import { QuestTracker } from "../ui/QuestTracker";
 import { SHOP_STOCK } from "../../../shared/shop";
@@ -127,6 +127,7 @@ import {
 } from "../../../shared/quests";
 import {
   NPC_TALK_RANGE_PX,
+  NPC_TETHER_PX,
   TOWN_CENTER,
   TOWN_NAME,
   resolveTownCollision,
@@ -2222,7 +2223,9 @@ export class Game {
     for (const [id, npc] of this.npcs) {
       if (!npc.actor.loaded) continue;
       if (this.raycaster.intersectObject(npc.actor.root, true).length === 0) continue;
-      const dist = Math.hypot(this.playerX - npc.def.x, this.playerY - npc.def.y);
+      // Live position again: you clicked the person, so the distance that
+      // decides whether they answer has to be to the person.
+      const dist = Math.hypot(this.playerX - npc.x, this.playerY - npc.y);
       if (dist <= NPC_TALK_RANGE_PX) this.talkTo(id);
       else this.hud.toast(`${npc.def.name} is too far away.`, "#c98d5e");
       return;
@@ -2273,8 +2276,8 @@ export class Game {
   private talkTo(id: string): void {
     const npc = this.npcs.get(id);
     if (!npc) return;
-    const dx = this.playerX - npc.def.x;
-    const dy = this.playerY - npc.def.y;
+    const dx = this.playerX - npc.x;
+    const dy = this.playerY - npc.y;
     const len = Math.hypot(dx, dy) || 1;
     npc.actor.faceDirection(dx / len, dy / len);
     this.dialogue.open(npc.def, this.dialogueActionsFor(npc));
@@ -2428,8 +2431,14 @@ export class Game {
       this.dialogue.close();
       return;
     }
+    // AGAINST THEIR POST, and this is the one place that is deliberately not
+    // the live position. A conversation you opened must not be closed by the
+    // other person taking three steps, so the tether is the doorstep they never
+    // leave rather than their feet — see `NPC_TETHER_PX`, which is exactly the
+    // talk range plus the furthest anybody strays, so anything the click let
+    // you open survives for as long as you stand still.
     const dist = Math.hypot(this.playerX - npc.def.x, this.playerY - npc.def.y);
-    if (dist > NPC_TALK_RANGE_PX * 1.35) this.dialogue.close();
+    if (dist > NPC_TETHER_PX) this.dialogue.close();
   }
 
   /** Distance from the player to a monster, in server pixels. */
@@ -2650,8 +2659,12 @@ export class Game {
     this.localActor?.update(dt);
     for (const a of this.players.values()) a.update(dt);
     for (const v of this.monsters.values()) v.actor.update(dt);
-    // Nobody sends the townspeople anything, so this is the only thing that
-    // advances their idle at all — drop it and Emberhold is five statues.
+    // Nobody sends the townspeople anything, so these two lines are the only
+    // thing that moves them at all — drop either and Emberhold is five statues.
+    // `updateNpcs` places them off the shared clock and must run BEFORE the
+    // actors tick, so the facing it hands over is eased this frame rather than
+    // next one.
+    updateNpcs(this.npcs);
     for (const n of this.npcs.values()) n.actor.update(dt);
     this.updateDialogueRange();
 
@@ -3019,15 +3032,19 @@ export class Game {
     // meaning "this is the one you are acting on" that it means for a monster.
     for (const [id, npc] of this.npcs) {
       if (!npc.actor.loaded) continue;
-      const inRange =
-        Math.hypot(this.playerX - npc.def.x, this.playerY - npc.def.y) <= NPC_TALK_RANGE_PX;
-      this.hud.plate(`npc-${id}`, this.world.project(npc.x, 2.05, npc.z, 46), {
+      // Against where they ARE, not where their post is. A plate that says "too
+      // far" over somebody standing next to you is worse than one that never
+      // moved at all.
+      const inRange = Math.hypot(this.playerX - npc.x, this.playerY - npc.y) <= NPC_TALK_RANGE_PX;
+      const wx = toWorldX(npc.x);
+      const wz = toWorldZ(npc.y);
+      this.hud.plate(`npc-${id}`, this.world.project(wx, 2.05, wz, 46), {
         kind: "npc",
         name: npc.def.name,
         subtitle: npc.def.title,
         icon: npc.def.icon,
         engaged: inRange,
-        distance: rangeTo(npc.x, npc.z),
+        distance: rangeTo(wx, wz),
       });
     }
 

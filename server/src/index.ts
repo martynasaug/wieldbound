@@ -215,7 +215,7 @@ import {
   completeQuest,
 } from "./db.ts";
 import {
-  NPC_TALK_RANGE_PX,
+  NPC_TETHER_PX,
   PLAYER_ARRIVAL,
   npcById,
   propById,
@@ -2199,10 +2199,21 @@ function nearNpc(playerId: string, npcId: string): boolean {
   const npc = npcById(npcId);
   const player = players.get(playerId);
   if (!npc || !player) return false;
-  // A little slack over the client's own range, for the same reason the bench
-  // has it: the server's copy of where you are standing lags yours by up to a
-  // send interval, and a refusal at exactly the boundary reads as a bug.
-  return Math.hypot(player.x - npc.x, player.y - npc.y) <= NPC_TALK_RANGE_PX * 1.5;
+  // MEASURED TO THEIR POST, and the slack is derived rather than picked.
+  //
+  // It was `NPC_TALK_RANGE_PX * 1.5`, and 1.5 was a shrug: the server's copy of
+  // where you are standing lags yours by up to a send interval, so a refusal at
+  // exactly the boundary reads as a bug. That reason still holds, and it is now
+  // the smaller of two.
+  //
+  // The bigger one is that townspeople WALK. Every check the client makes
+  // before offering you a shop is against where somebody is standing; every
+  // check here happens later, mid-conversation, by which time they may have
+  // strolled. `NPC_TETHER_PX` is the exact bound that makes the two agree — the
+  // talk range plus the furthest anybody may stray from their post — so
+  // anything the client let you open, this honours for as long as you stand
+  // still. Not a fudge factor: a sum.
+  return Math.hypot(player.x - npc.x, player.y - npc.y) <= NPC_TETHER_PX;
 }
 
 /**
