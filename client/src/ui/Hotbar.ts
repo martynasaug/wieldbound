@@ -2,6 +2,7 @@ import {
   HOTBAR_SLOTS,
   SKILLS,
   defaultAttackFor,
+  describeRead,
   emptyHotbar,
   normalizeHotbar,
   type HotbarEntry,
@@ -276,8 +277,14 @@ export class Hotbar {
       } else {
         const skill = SKILLS[entry];
         const cost = skill.manaCost > 0 ? ` — ${skill.manaCost} mana` : "";
+        // A skill whose damage depends on what is already on the target has to
+        // say so on the button, not only in the talent tree it was bought from:
+        // the bar is where the decision is actually made, mid-fight.
+        const condition = describeRead(skill.reads);
         slot.icon.innerHTML = iconSvg(skill.icon);
-        slot.button.title = `${skill.name} (${key || "unbound"})${cost}\n${skill.description}`;
+        slot.button.title =
+          `${skill.name} (${key || "unbound"})${cost}\n${skill.description}` +
+          (condition ? `\n${condition}` : "");
       }
     }
   }

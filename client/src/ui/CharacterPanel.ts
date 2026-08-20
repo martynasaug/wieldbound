@@ -99,12 +99,25 @@ export class CharacterPanel {
   private setsEl = document.getElementById("doll-sets")!;
   private sourcesEl = document.getElementById("stat-sources")!;
 
-  constructor(private readonly onAllocate: (stat: AttributeName) => void) {
+  constructor(
+    private readonly onAllocate: (stat: AttributeName) => void,
+    /** Clicking a filled slot takes the thing off. */
+    private readonly onUnequip: (itemId: string) => void = () => {},
+  ) {
     this.closeButton.addEventListener("click", () => this.close());
 
     for (const slot of ITEM_SLOTS) {
       const el = document.querySelector<HTMLElement>(`.gear-slot[data-slot="${slot}"]`);
-      if (el) this.gearSlots.set(slot, el);
+      if (!el) continue;
+      this.gearSlots.set(slot, el);
+      // The doll was decorative: the bag could put things ON and nothing in the
+      // interface could take one OFF. Which quietly meant the whole fist tree —
+      // ten nodes and four skills — was unreachable for anybody who had ever
+      // picked up a weapon, since your class is whatever you are holding.
+      el.addEventListener("click", () => {
+        const item = this.equipped.find((i) => i.slot === slot && i.equipped);
+        if (item) this.onUnequip(item.id);
+      });
     }
     for (const id of [
       "move", "xpbonus", "gather", "battle", "hit", "accuracy",
@@ -235,8 +248,10 @@ export class CharacterPanel {
         ghost.innerHTML = iconSvg(SLOT_ICON[slot]);
         el.appendChild(ghost);
         el.title = `${slot} — empty`;
+        el.classList.remove("removable");
         continue;
       }
+      el.classList.add("removable");
       // The border carries the rarity and `currentColor` lets the glow follow
       // it, so one assignment lights the whole slot.
       el.style.borderColor = rarityColor(item.rarity);

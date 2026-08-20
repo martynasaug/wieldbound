@@ -1368,7 +1368,10 @@ export type SkillId =
   | "frostbolt" | "arcanemissiles"
   // One per weapon tree, added with the status system
   | "focus" | "rally" | "bloodlust" | "stagger"
-  | "expose" | "huntersmark" | "immolate" | "stormbolt";
+  | "expose" | "huntersmark" | "immolate" | "stormbolt"
+  // One per weapon tree again, and these READ a status instead of applying one
+  | "secondbreath" | "onslaught" | "execute" | "followthrough"
+  | "exploit" | "killshot" | "combust" | "wardoff";
 
 // A skill is something you press. Passive bonuses live in the talent trees
 // now, which is why "passive" is no longer one of these.
@@ -1514,10 +1517,77 @@ export interface SkillDef {
    * replaced one level down.
    */
   applies?: StatusId;
+  /**
+   * What this skill LOOKS FOR before it lands, and what finding it is worth.
+   *
+   * The other direction of `applies`, and the one the status table was missing.
+   * Fourteen effects existed and every skill that touched one PUT it there;
+   * nothing in the game had ever asked whether one was already running. That
+   * makes a status a timer rather than a thing a player sequences — you press
+   * Rend because Rend is off cooldown, never because of what it sets up.
+   *
+   * See `StatusRead`. Deliberately declarative, like `applies` and `school`
+   * before it: a conditional written as code is a conditional the tooltip, the
+   * talent panel and the tests cannot read.
+   */
+  reads?: StatusRead;
   selfShieldMs?: boolean;
   // Hits several separate targets rather than everything in a radius.
   chainTargets?: number;
 }
+
+/**
+ * A skill's condition, as data.
+ *
+ * Three shapes fall out of four fields, and they are the three the genre has:
+ *
+ *   A FINISHER reads a debuff on what it hits and does not spend it — Execute
+ *   against anything already bleeding, burning or poisoned.
+ *
+ *   A DETONATOR reads one and CONSUMES it, trading the rest of the effect for a
+ *   burst now. Combust spends a burn; Killshot spends a mark; Onslaught spends
+ *   your own War Cry.
+ *
+ *   A CLEANSE reads a debuff on YOU and consumes it with no bonus attached,
+ *   which is the same machinery pointed at a different problem.
+ *
+ * A `group` rather than a list of ids wherever the condition is really about a
+ * FAMILY — "anything with a dot on it" is one condition, and spelling it as
+ * three ids is a list that goes stale the next time a dot is added. Groups are
+ * resolved against `STATUSES` when the skill is read rather than when the table
+ * is built, so a fifteenth status that ticks becomes Execute-able the moment it
+ * exists, with nothing to remember. (It also has to be that way round: this
+ * table is defined above `STATUSES` in the file, and a derived constant here
+ * would be read before it was written.)
+ */
+export interface StatusRead {
+  /** Any one of these counts, and the first found is the one acted on. */
+  any?: readonly StatusId[];
+  /** Or a whole family of them, resolved from the table at read time. */
+  group?: StatusGroup;
+  /**
+   * Where to look. `target` is each thing the skill lands on, checked
+   * separately, so a detonator in a pack spends only the burns it finds.
+   * `self` is the caster — or, for a support skill aimed at somebody, whoever
+   * it was aimed at, since a cleanse you cannot hand to an ally is not a
+   * support skill.
+   */
+  on: "target" | "self";
+  /** Multiplies this skill's damage where the condition is met. Absent means
+   *  the reading is the whole point and the skill does no more damage for it. */
+  bonus?: number;
+  /** Removes what was found. What separates a detonator from a finisher. */
+  consume?: boolean;
+}
+
+/**
+ * A family of statuses, named rather than listed.
+ *
+ * `dot` is "anything that is still hurting it", which is what a finisher is
+ * about; `buff` and `debuff` are the two halves of the table itself. All three
+ * are read off `STATUSES` rather than written down twice.
+ */
+export type StatusGroup = "dot" | "buff" | "debuff";
 
 export const SKILLS: Record<SkillId, SkillDef> = {
   // ------------------------------------------------------------ adventurer
@@ -1740,6 +1810,91 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     effect: "lightning", sfx: "crit", school: "lightning", applies: "shocked",
     description: "A single hard arc. What it hits cannot aim afterwards.",
   },
+
+  // --- Skills that READ a status ---------------------------------------------
+  // Fourteen timed effects existed and every skill that touched one PUT it
+  // there. Nothing in the game had ever asked whether one was already running,
+  // which is the difference between a set of timers and something a player
+  // sequences: you pressed Rend because Rend was off cooldown, never because of
+  // what it set up.
+  //
+  // ONE PER WEAPON TREE again, for the reason M4.1 established and this makes
+  // load-bearing: a sequencing mechanic that only two trees can play is a
+  // mechanic six weapons watch. Each reads something ITS OWN tree can produce,
+  // so the pair is learnable inside one tree rather than requiring a second
+  // character standing next to you — Rend then Execute, Concuss then Follow
+  // Through, Hunter's Mark then Killshot, Immolate then Combust.
+  //
+  // The two exceptions are the two trees with no debuff to read. The fist tree
+  // has never had one and never will — bare hands are the weak archetype, and
+  // its answer to a debuff is to shake it off. The wand's is the same verb
+  // pointed outward, because it is the caster tree that expects to be moving
+  // and supporting rather than the one that expects to be winning.
+  secondbreath: {
+    id: "secondbreath", name: "Second Breath", icon: "secondwind", kind: "heal",
+    manaCost: 6, cooldownMs: 20000, rangePx: 0, radiusPx: 0, power: 14,
+    effect: "heal", sfx: "heal",
+    reads: { group: "debuff", on: "self", consume: true },
+    description: "Shake it off. Closes a little, and throws off one thing that was on you.",
+  },
+  onslaught: {
+    id: "onslaught", name: "Onslaught", icon: "onslaught", kind: "damage",
+    manaCost: 12, cooldownMs: 11000, rangePx: 64, radiusPx: 0, power: 13,
+    effect: "slash", sfx: "crit",
+    // The sword tree is the one with no debuff of its own and three buffs, so
+    // its reader looks INWARD: spend whatever is carrying you on one blow. It
+    // is the only skill in the game that consumes something good, which is what
+    // makes it a decision rather than a bonus.
+    reads: { group: "buff", on: "self", bonus: 2.1, consume: true },
+    description: "Everything at once, and nothing held back — it spends whatever is on you.",
+  },
+  execute: {
+    id: "execute", name: "Execute", icon: "execute", kind: "damage",
+    manaCost: 14, cooldownMs: 9000, rangePx: 66, radiusPx: 0, power: 17,
+    effect: "slash", sfx: "die",
+    // A finisher rather than a detonator: it does not spend the bleed, so Rend
+    // keeps ticking underneath and the axe's rotation is Rend once, Execute
+    // every time it comes up.
+    reads: { group: "dot", on: "target", bonus: 1.85 },
+    description: "Finish what is already killing it. Far heavier against anything still bleeding or burning.",
+  },
+  followthrough: {
+    id: "followthrough", name: "Follow Through", icon: "followthrough", kind: "damage",
+    manaCost: 12, cooldownMs: 10000, rangePx: 62, radiusPx: 0, power: 12,
+    effect: "impact", sfx: "crit",
+    reads: { any: ["staggered"], on: "target", bonus: 2.2, consume: true },
+    description: "Catch it while it is off its feet. Spends the stagger and lands like it.",
+  },
+  exploit: {
+    id: "exploit", name: "Exploit", icon: "exploit", kind: "damage",
+    manaCost: 10, cooldownMs: 8000, rangePx: 62, radiusPx: 0, power: 11,
+    effect: "slash", sfx: "crit",
+    reads: { any: ["exposed"], on: "target", bonus: 2.4, consume: true },
+    description: "Put the knife in the gap you made. It closes afterwards.",
+  },
+  killshot: {
+    id: "killshot", name: "Killshot", icon: "killshot", kind: "damage",
+    manaCost: 14, cooldownMs: 12000, rangePx: 340, radiusPx: 0, power: 15,
+    effect: "arrow", sfx: "crit",
+    reads: { any: ["marked"], on: "target", bonus: 2.2, consume: true },
+    description: "The shot the mark was for. It takes the mark with it.",
+  },
+  combust: {
+    id: "combust", name: "Combust", icon: "combust", kind: "damage",
+    manaCost: 18, cooldownMs: 10000, rangePx: 300, radiusPx: 110, power: 13,
+    effect: "fire", sfx: "die", school: "fire",
+    // The only detonator with a radius: the burn goes off rather than being
+    // struck, so what it costs the target it pays to everything standing near.
+    reads: { any: ["burning"], on: "target", bonus: 2.0, consume: true },
+    description: "Set the fire off all at once. Everything close enough shares it.",
+  },
+  wardoff: {
+    id: "wardoff", name: "Ward Off", icon: "wardoff", kind: "heal",
+    manaCost: 14, cooldownMs: 16000, rangePx: 260, radiusPx: 0, power: 20,
+    effect: "shield", sfx: "heal",
+    reads: { group: "debuff", on: "self", consume: true },
+    description: "Lift one thing off somebody and close what it left. Targets an ally if you have one selected.",
+  },
 };
 
 export const SKILL_IDS = Object.keys(SKILLS) as SkillId[];
@@ -1822,6 +1977,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("fist", "secondwind", 3, "Second Wind", "secondwind", 4, "Recover 4 health per rank on a killing blow.", { passive: { healOnKill: 4 } }),
     t("fist", "focus", 2, "Focus", "focus", 1, "Unlocks Focus.", { active: "focus" }),
     t("fist", "unbowed", 4, "Unbowed", "unbowed", 4, "+3 armour and +3 evasion per rank.", { passive: { armor: 3, evasion: 3 } }),
+    t("fist", "secondbreath", 3, "Second Breath", "secondwind", 1, "Unlocks Second Breath.", { active: "secondbreath" }),
   ],
 
   // Sword: the baseline every other weapon is tuned against - accurate, even,
@@ -1837,6 +1993,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("sword", "warcry", 3, "War Cry", "warcry", 1, "Unlocks War Cry.", { active: "warcry" }),
     t("sword", "rally", 3, "Rally", "rally", 1, "Unlocks Rally.", { active: "rally", requires: "temper" }),
     t("sword", "mastery", 4, "Swordmaster", "mastery", 4, "+6% damage and +10% critical damage per rank.", { passive: { damagePercent: 6, critDamagePercent: 10 } }),
+    t("sword", "onslaught", 4, "Onslaught", "onslaught", 1, "Unlocks Onslaught.", { active: "onslaught", requires: "warcry" }),
   ],
 
   // Axe: the heavy hitter. Slow swings, so everything here is about making the
@@ -1852,6 +2009,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("axe", "bloodthirst", 3, "Bloodthirst", "bloodthirst", 5, "Recover 5 health per rank on a killing blow.", { passive: { healOnKill: 5 } }),
     t("axe", "bloodlust", 3, "Bloodlust", "bloodlust", 1, "Unlocks Bloodlust.", { active: "bloodlust", requires: "brutality" }),
     t("axe", "earthshatter", 4, "Earthshatter", "earthshatter", 1, "Unlocks Earthshatter.", { active: "earthshatter", requires: "heft" }),
+    t("axe", "execute", 3, "Execute", "execute", 1, "Unlocks Execute.", { active: "execute", requires: "rend" }),
   ],
 
   // Mace: control and staying power. The warrior tree that wants the fight to
@@ -1867,6 +2025,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("mace", "warcry", 3, "War Cry", "warcry", 1, "Unlocks War Cry.", { active: "warcry" }),
     t("mace", "stagger", 2, "Stagger", "stagger", 1, "Unlocks Stagger.", { active: "stagger", requires: "concuss" }),
     t("mace", "crusher", 4, "Crusher", "crusher", 4, "+8% damage and +10% critical damage per rank.", { passive: { damagePercent: 8, critDamagePercent: 10 } }),
+    t("mace", "followthrough", 3, "Follow Through", "followthrough", 1, "Unlocks Follow Through.", { active: "followthrough", requires: "concuss" }),
   ],
 
   // Dagger: the ranger's close-quarters half. Fast, fragile, and entirely about
@@ -1882,6 +2041,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("dagger", "disengage", 3, "Disengage", "disengage", 1, "Unlocks Disengage.", { active: "disengage" }),
     t("dagger", "expose", 3, "Expose Weakness", "expose", 1, "Unlocks Expose Weakness.", { active: "expose", requires: "backstab" }),
     t("dagger", "assassin", 4, "Assassin", "assassin", 4, "+7% damage and +4% critical chance per rank.", { passive: { damagePercent: 7, critChance: 4 } }),
+    t("dagger", "exploit", 4, "Exploit", "exploit", 1, "Unlocks Exploit.", { active: "exploit", requires: "expose" }),
   ],
 
   // Bow: reach. Everything here is about landing the shot before the gap closes.
@@ -1897,6 +2057,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("bow", "marksman", 4, "Marksman", "marksman", 4, "+14% critical damage per rank.", { passive: { critDamagePercent: 14 } }),
     t("bow", "huntersmark", 2, "Hunter's Mark", "huntersmark", 1, "Unlocks Hunter's Mark.", { active: "huntersmark" }),
     t("bow", "rainofarrows", 4, "Rain of Arrows", "rainofarrows", 1, "Unlocks Rain of Arrows.", { active: "rainofarrows", requires: "multishot" }),
+    t("bow", "killshot", 3, "Killshot", "killshot", 1, "Unlocks Killshot.", { active: "killshot", requires: "huntersmark" }),
   ],
 
   // Staff: the mage's two-handed option - the biggest numbers and the deepest
@@ -1912,6 +2073,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("staff", "chainlightning", 3, "Chain Lightning", "chainlightning", 1, "Unlocks Chain Lightning.", { active: "chainlightning", requires: "firebolt" }),
     t("staff", "immolate", 3, "Immolate", "immolate", 1, "Unlocks Immolate.", { active: "immolate", requires: "firebolt" }),
     t("staff", "archmage", 4, "Archmage", "archmage", 4, "+10% skill power and +4% critical chance per rank.", { passive: { skillPowerPercent: 10, critChance: 4 } }),
+    t("staff", "combust", 4, "Combust", "combust", 1, "Unlocks Combust.", { active: "combust", requires: "immolate" }),
   ],
 
   // Wand: the mage's sidearm. Smaller numbers, far shorter cooldowns, and the
@@ -1927,6 +2089,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("wand", "mend", 3, "Mend", "mend", 1, "Unlocks Mend.", { active: "mend" }),
     t("wand", "stormbolt", 2, "Storm Bolt", "stormbolt", 1, "Unlocks Storm Bolt.", { active: "stormbolt", requires: "frostbolt" }),
     t("wand", "spellblade", 4, "Spellblade", "spellblade", 4, "+6% damage and +8% skill power per rank.", { passive: { damagePercent: 6, skillPowerPercent: 8 } }),
+    t("wand", "wardoff", 3, "Ward Off", "wardoff", 1, "Unlocks Ward Off.", { active: "wardoff", requires: "warding" }),
   ],
 };
 
@@ -2224,6 +2387,96 @@ export function statusFits(id: StatusId, target: "player" | "monster"): boolean 
   const def = STATUSES[id];
   if (!def) return false;
   return def.on === "any" || def.on === target;
+}
+
+// --- Reading a status, rather than applying one -----------------------------
+// The four functions a `StatusRead` needs, and they are shared for the usual
+// reason: the server decides whether Execute was empowered and the client
+// decides whether to say so, and the two cannot be allowed to disagree about
+// what "already bleeding" means.
+
+/** Which statuses a named family covers. Read off the table, never listed. */
+export function statusGroupIds(group: StatusGroup): StatusId[] {
+  if (group === "dot") return STATUS_IDS.filter((id) => !!STATUSES[id].dot);
+  return STATUS_IDS.filter((id) => STATUSES[id].kind === group);
+}
+
+/** Whether one status satisfies a read. Ids and a group are additive, so a
+ *  future row can say "any dot, and also Marked" without a second field. */
+export function readCovers(read: StatusRead, id: StatusId): boolean {
+  if (read.any?.includes(id)) return true;
+  return !!read.group && statusGroupIds(read.group).includes(id);
+}
+
+/**
+ * The status a read finds on a set of running ones, or null.
+ *
+ * Soonest-expiring first, which matters only for `consume` and matters a lot
+ * there: spending the burn that has half a second left rather than the one with
+ * seven is what a player would do by hand, and a detonator that eats the fresh
+ * one instead is a detonator nobody presses twice.
+ */
+export function findRead(
+  read: StatusRead | undefined,
+  active: readonly ActiveStatus[],
+): StatusId | null {
+  if (!read) return null;
+  const hits = active.filter((s) => readCovers(read, s.id));
+  if (hits.length === 0) return null;
+  return hits.reduce((a, b) => (b.endsAt < a.endsAt ? b : a)).id;
+}
+
+/** What finding it is worth. One, always, when there is no read or no find —
+ *  so every caller can multiply unconditionally instead of branching. */
+export function readMultiplier(read: StatusRead | undefined, found: StatusId | null): number {
+  if (!read || !found) return 1;
+  return read.bonus ?? 1;
+}
+
+/**
+ * The condition, as one sentence for a tooltip.
+ *
+ * Shared rather than written into the two panels that show it, and derived from
+ * the read rather than restated in the skill's prose, because a hand-written
+ * "heavier against anything bleeding" is a sentence that keeps saying so after
+ * somebody retunes the multiplier to 1.0. A condition the player cannot read is
+ * a condition the player will not play around, and a condition that LIES is
+ * worse than none.
+ *
+ * A family of more than three is NAMED rather than listed: "spends one of
+ * Weakened, Chilled, Poisoned, Burning, Bleeding, Staggered, Exposed, Marked or
+ * Shocked" is not a sentence anybody reads.
+ */
+export function describeRead(read: StatusRead | undefined): string | null {
+  if (!read) return null;
+  const ids = read.any?.length ? [...read.any] : read.group ? statusGroupIds(read.group) : [];
+  if (ids.length === 0) return null;
+
+  const names = ids.map((id) => STATUSES[id].name);
+  const listed =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+  const subject =
+    ids.length > 3 && read.group
+      ? read.group === "buff"
+        ? "a buff you are carrying"
+        : "one thing that is on you"
+      : listed;
+
+  const uplift = read.bonus ? `${Math.round(read.bonus * 100 - 100)}% more damage` : null;
+  const capped = uplift ? `${uplift[0].toUpperCase()}${uplift.slice(1)}` : null;
+
+  if (read.on === "target") {
+    if (uplift && read.consume) return `Spends ${subject} on the target, for ${uplift}.`;
+    if (capped) return `${capped} against anything ${subject}.`;
+    if (read.consume) return `Lifts ${subject} from the target.`;
+    return null;
+  }
+  if (uplift && read.consume) return `Spends ${subject}, for ${uplift}.`;
+  if (capped) return `${capped} while ${subject}.`;
+  if (read.consume) return `Lifts ${subject}.`;
+  return null;
 }
 
 /** Everything a list of running statuses adds up to, in the shared vocabulary.
@@ -3207,10 +3460,22 @@ export interface SkillResultMessage {
        *  computes its own version of a server number is a client that will one
        *  day disagree with it. */
       resisted?: number;
+      /** Whether this particular target satisfied the skill's `reads`.
+       *
+       *  Per hit rather than per cast, because a detonator in a pack finds the
+       *  condition on some of what it lands on and not the rest — and a bonus
+       *  the player cannot see is the failure mode this whole field exists to
+       *  avoid. A conditional that is wired through every table and announced
+       *  nowhere looks finished in a screenshot and feels like nothing. */
+      empowered?: boolean;
     }[];
     healed?: number;
     buffMs?: number;
     slowMs?: number;
+    /** What a `consume` read actually took off, if anything. One id: a cleanse
+     *  lifts one thing and a detonator spends one, deliberately — "removes all
+     *  debuffs" is a button with no decision behind it. */
+    consumed?: StatusId;
   };
 }
 

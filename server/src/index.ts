@@ -105,6 +105,8 @@ import {
   statusModifiers,
   statusMoveMultiplier,
   statusDamageTaken,
+  findRead,
+  readMultiplier,
   type ActiveStatus,
   type StatusId,
   type DamageSchool,
@@ -810,6 +812,34 @@ function applyStatus(
   return true;
 }
 
+/**
+ * Takes one named status off something, if it is there.
+ *
+ * The other half of `applyStatus`, and it did not exist until skills started
+ * READING statuses: everything the game did to a timed effect until now was
+ * put one on or let it run out. A detonator spends the burn it goes off, and a
+ * cleanse lifts one thing off you — both of those are this.
+ *
+ * Returns whether anything was actually removed, so the caller can tell the
+ * player "you shook it off" rather than announcing a cleanse that cleansed
+ * nothing.
+ */
+function removeStatus(
+  entityId: string,
+  id: StatusId,
+  target: "player" | "monster",
+  now: number,
+): boolean {
+  const live = statusesOf(entityId, now);
+  const next = live.filter((s) => s.id !== id);
+  if (next.length === live.length) return false;
+  if (next.length === 0) statuses.delete(entityId);
+  else statuses.set(entityId, next);
+  statusTickedAt.delete(`${entityId}|${id}`);
+  if (target === "monster") syncMonsterStatuses(entityId, now);
+  return true;
+}
+
 function clearStatuses(entityId: string): void {
   statuses.delete(entityId);
   for (const key of [...statusTickedAt.keys()]) {
@@ -1337,6 +1367,8 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
   let healed: number | undefined;
   let buffMs: number | undefined;
   let slowMs: number | undefined;
+  /** What a `consume` read took off, so the client can say which one went. */
+  let consumed: StatusId | undefined;
 
   // Support skills prefer a selected ally, falling back to yourself. This
   // is what makes two players in a camp actually cooperate rather than
@@ -1357,9 +1389,32 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
     const targetAttrs = attributes.get(beneficiaryId) ?? attrs;
     const maxHp = maxHpOf(beneficiaryId, targetAttrs);
     const before = hpBalances.get(beneficiaryId) ?? maxHp;
-    if (before >= maxHp) {
-      sendSkillResult(socket, { skillId, ok: false, reason: "already at full health", cooldownRemainingMs: 0, globalCooldownMs: 0, hits: [] });
+
+    // A CLEANSE is a heal with a read on it. Resolved before the full-health
+    // refusal below, because otherwise the one moment a cleanse is most wanted
+    // — poisoned, burning, and topped up by a potion — is the moment the button
+    // refuses to work.
+    const read = skill.reads;
+    const lifted =
+      read?.on === "self" && read.consume
+        ? findRead(read, statusesOf(beneficiaryId, now))
+        : null;
+
+    if (before >= maxHp && !lifted) {
+      sendSkillResult(socket, {
+        skillId,
+        ok: false,
+        reason: read ? "unhurt, and nothing on you to lift" : "already at full health",
+        cooldownRemainingMs: 0,
+        globalCooldownMs: 0,
+        hits: [],
+      });
       return;
+    }
+    if (lifted) {
+      removeStatus(beneficiaryId, lifted, "player", now);
+      consumed = lifted;
+      sendStatuses(beneficiarySocket, beneficiaryId, now);
     }
     const after = addHp(beneficiaryId, power, maxHp);
     hpBalances.set(beneficiaryId, after);
@@ -1485,6 +1540,23 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
       struck = struck.slice(0, MAX_AOE_TARGETS);
     }
 
+    // A read that looks at the CASTER resolves once, before anything is hit:
+    // Onslaught spends one buff on the whole swing, not one per body in front
+    // of it. And only once there is something to swing at — a finisher that
+    // eats your War Cry on empty air is a button nobody presses twice, and the
+    // rest of the hotbar has fired freely into nothing since M3.6 precisely so
+    // that pressing a key is never punished.
+    let selfBonus = 1;
+    if (struck.length > 0 && skill.reads?.on === "self") {
+      const found = findRead(skill.reads, statusesOf(playerId, now));
+      selfBonus = readMultiplier(skill.reads, found);
+      if (found && skill.reads.consume) {
+        removeStatus(playerId, found, "player", now);
+        consumed = found;
+        sendStatuses(socket, playerId, now);
+      }
+    }
+
     for (const monster of struck) {
       // The rider lands regardless of the damage roll — a nova that both
       // misses and fails to chill would be infuriating on an 11s cooldown.
@@ -1503,12 +1575,33 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
         // attacking whoever happened to be nearest.
         addThreat(monster.id, playerId, 1);
       }
+      // A read that looks at the TARGET resolves per body, which is the whole
+      // reason `empowered` is reported per hit: a detonator in a pack finds the
+      // condition on some of what it lands on and not the rest.
+      let bonus = selfBonus;
+      if (skill.reads?.on === "target") {
+        const found = findRead(skill.reads, statusesOf(monster.id, now));
+        bonus = readMultiplier(skill.reads, found);
+        if (found && skill.reads.consume) {
+          removeStatus(monster.id, found, "monster", now);
+          consumed = found;
+        }
+      }
+      const empowered = bonus > 1;
+
       // A skill that names no school is physical, and that is most of the
       // warrior and ranger trees on purpose — Earthshatter splits the ground
       // with a body behind it and Backstab is a knife, and calling either of
       // them an element to make the table look even would be inventing magic
       // where the design has none.
-      const result = applySkillDamage(playerId, monster, power, attrs, now, skill.school ?? "physical");
+      const result = applySkillDamage(
+        playerId,
+        monster,
+        Math.max(1, Math.round(power * bonus)),
+        attrs,
+        now,
+        skill.school ?? "physical",
+      );
       hits.push({
         monsterId: monster.id,
         hit: result.hit,
@@ -1516,6 +1609,7 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
         crit: result.crit,
         school: result.school,
         resisted: result.resisted,
+        empowered,
       });
     }
   }
@@ -1534,6 +1628,7 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
     healed,
     buffMs,
     slowMs,
+    consumed,
   });
 }
 

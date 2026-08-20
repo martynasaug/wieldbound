@@ -97,6 +97,20 @@ export const SKILL_FX: Record<SkillId, FxSpec> = {
   huntersmark: { shape: "none", color: 0x8fd15a },
   immolate: { shape: "none", color: 0xff7a3a, light: true },
   stormbolt: { shape: "chain", color: 0xffe066, light: true },
+
+  // The readers. They all share one visual idea on purpose — a hot amber cast
+  // to say "the condition paid" — because that is the thing the player has to
+  // learn to look for, and eight unrelated signatures would teach them nothing.
+  // The two cleanses are the exception and are green, since lifting something
+  // off is the opposite act.
+  secondbreath: { shape: "pillar", color: 0x7ed957 },
+  wardoff: { shape: "pillar", color: 0x8fe0b0 },
+  onslaught: { shape: "cone", color: 0xffa63d, light: true },
+  execute: { shape: "cone", color: 0xff8a3d },
+  followthrough: { shape: "nova", color: 0xffb05c },
+  exploit: { shape: "none", color: 0xffa63d },
+  killshot: { shape: "none", color: 0xffc46a },
+  combust: { shape: "ground", color: 0xff7a3a, light: true },
 };
 
 export function fxFor(id: SkillId): FxSpec {

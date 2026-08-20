@@ -141,6 +141,16 @@ unavailable.
   from red, and position alone stops meaning anything the moment one side is
   empty. Monsters inflict them back: a cactoro poisons, a dragon sets you
   alight, a troll takes your feet out.
+- **And eight skills that READ one instead of applying it** — which is where a
+  set of timers becomes something you sequence. Execute hits far harder against
+  anything already bleeding or burning and leaves the bleed running; Combust,
+  Killshot, Follow Through and Exploit each SPEND the condition for a burst;
+  Second Breath and Ward Off lift one thing off you; and Onslaught is the only
+  skill in the game that spends something good, trading the rest of your War
+  Cry for one blow. One per weapon tree, each reading what its own tree can
+  produce, so the pair is learnable without a second player standing next to
+  you. An empowered hit flashes amber and says which condition paid — a
+  conditional you cannot see is one you will not play around.
 - **13 monster kinds** in five difficulty bands radiating from spawn, so
   walking further from the town *is* the progression — the first camp stands
   well outside the palisade, and nothing spawns within the walls. Each kind has a
@@ -174,9 +184,12 @@ unavailable.
 - **An action bar you own** — ten slots, and only you change them: drag a
   learned skill out of the talent panel, drag slots to reorder, right-click to
   clear, click a key label to rebind. Saved per weapon, because the skills are.
+  And you can put a weapon *down*: clicking a filled slot on the paperdoll takes
+  it off, which is the only way back to being an Adventurer once you have picked
+  something up.
 - **Talent trees, one per weapon** — using a weapon levels *that weapon*, and
   its proficiency hands you points to spend where you want. Nothing unlocks
-  itself: all 35 skills and every passive is a node you buy. Eight trees, 81
+  itself: all 43 skills and every passive is a node you buy. Eight trees, 89
   nodes, and about two thirds of a tree fits in a finished weapon's points, so
   which two thirds is the build. Free respec per weapon. Every tree has at
   least one buff or debuff of its own, because a status system half the game

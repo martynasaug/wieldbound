@@ -1,7 +1,7 @@
 Interface icons
 ===============
 
-192 icons from game-icons.net, baked into client/src/ui/icons.ts by
+199 icons from game-icons.net, baked into client/src/ui/icons.ts by
 tools/art/icons.mjs. Licensed CC BY 3.0 (some contributors release CC0); see
 https://github.com/game-icons/icons/blob/master/license.txt for the per-author
 terms.
@@ -75,6 +75,13 @@ Icon key -> source file:
   huntersmark            lorc/target-arrows.svg
   immolate               sbed/flamer.svg
   stormbolt              lorc/lightning-bow.svg
+  onslaught              delapouite/swords-power.svg
+  execute                lorc/decapitation.svg
+  followthrough          lorc/hammer-drop.svg
+  exploit                lorc/piercing-sword.svg
+  killshot               lorc/crosshair-arrow.svg
+  combust                lorc/explosion-rays.svg
+  wardoff                lorc/aura.svg
   status-enraged         delapouite/enrage.svg
   status-shielded        sbed/shield.svg
   status-focused         lorc/target-dummy.svg

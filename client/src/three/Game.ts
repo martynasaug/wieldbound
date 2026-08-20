@@ -483,7 +483,10 @@ export class Game {
     this.projectiles = new Projectiles(this.world.scene);
     this.skillFx = new SkillFx(this.world.scene);
 
-    this.characterPanel = new CharacterPanel((stat) => this.socket.sendAllocateStat(stat));
+    this.characterPanel = new CharacterPanel(
+      (stat) => this.socket.sendAllocateStat(stat),
+      (itemId) => this.socket.sendEquipItem(itemId),
+    );
     this.inventoryPanel = new InventoryPanel(
       (itemId) => this.socket.sendEquipItem(itemId),
       (itemId) => this.salvageItem(itemId),
@@ -1544,10 +1547,12 @@ export class Game {
       crit: boolean;
       school?: DamageSchool;
       resisted?: number;
+      empowered?: boolean;
     }[];
     healed?: number;
     buffMs?: number;
     slowMs?: number;
+    consumed?: StatusId;
   }): void {
     const skill = SKILLS[p.skillId];
 
@@ -1607,6 +1612,13 @@ export class Game {
       }
       if (p.healed && on) this.floatOnPlayer(on, { kind: "heal", text: `+${p.healed}` }, p.healed);
       if (p.buffMs) this.hud.toast(`${skill.name} active`, "#ffd873");
+      // A cleanse that lifts something and says nothing is a cleanse the player
+      // has to verify by watching an indicator disappear. Name what went.
+      if (p.consumed) {
+        const lifted = STATUSES[p.consumed]?.name ?? p.consumed;
+        this.hud.toast(`${lifted} lifted`, "#7ed957");
+        this.combatLog.push(`${lifted} lifted.`, "#7ed957");
+      }
       return;
     }
 
@@ -1640,6 +1652,9 @@ export class Game {
     }
 
     let saidResist = false;
+    // Said once per cast for the same reason `saidResist` is: a detonator that
+    // finds the condition on four bodies is one event, not four log lines.
+    let saidEmpowered = false;
     for (const hit of p.hits) {
       const vis = this.monsters.get(hit.monsterId);
       if (!vis) continue;
@@ -1659,17 +1674,32 @@ export class Game {
         this.floatOnMonster(vis, { kind: "miss", text: "Miss" });
         continue;
       }
-      vis.actor.flash(hit.crit ? 0xffd85e : 0x9ad4ff, 150);
+      // A conditional the player cannot see is the failure this whole feature
+      // has to avoid: Execute against something bleeding just does a bigger
+      // number, and a bigger number is indistinguishable from a lucky roll. So
+      // an empowered hit gets its own flash colour and its own mark on the
+      // floater, and the log says which condition paid.
+      vis.actor.flash(hit.empowered ? 0xffa63d : hit.crit ? 0xffd85e : 0x9ad4ff, hit.empowered ? 220 : 150);
       this.floatOnMonster(
         vis,
         {
           kind: "skill",
-          text: `${hit.damage}`,
+          text: hit.empowered ? `${hit.damage}!` : `${hit.damage}`,
           crit: hit.crit,
-          color: hit.crit ? undefined : schoolDef(hit.school).color,
+          color: hit.crit ? undefined : hit.empowered ? "#ffa63d" : schoolDef(hit.school).color,
         },
         hit.damage,
       );
+      if (hit.empowered && !saidEmpowered) {
+        saidEmpowered = true;
+        const on = p.consumed ? STATUSES[p.consumed]?.name : null;
+        this.combatLog.push(
+          on
+            ? `${skill.name} spends the ${on.toLowerCase()}.`
+            : `${skill.name} finds its opening.`,
+          "#ffa63d",
+        );
+      }
       // Said once for the cast rather than once per target: a Rain of Arrows
       // into six trolls should not write "it recoils" six times, and every
       // monster a single cast lands on shares a kind more often than not.

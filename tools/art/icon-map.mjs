@@ -72,6 +72,18 @@ export const ICON_MAP = {
   immolate: "sbed/flamer",
   stormbolt: "lorc/lightning-bow",
 
+  // --- skills that READ a status, one per weapon tree ----------------------
+  // Second Breath deliberately has no entry: it reuses the fist tree's own
+  // `secondwind` glyph, because they are the same idea one rank apart and a
+  // second heart-plus would be two pictures for one thought.
+  onslaught: "delapouite/swords-power",
+  execute: "lorc/decapitation",
+  followthrough: "lorc/hammer-drop",
+  exploit: "lorc/piercing-sword",
+  killshot: "lorc/crosshair-arrow",
+  combust: "lorc/explosion-rays",
+  wardoff: "lorc/aura",
+
   // --- statuses ------------------------------------------------------------
   // Every running effect needs a picture, because the indicator row is the
   // whole point of the system: a buff nobody can see is a number that changed

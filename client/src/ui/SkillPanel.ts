@@ -4,6 +4,7 @@ import {
   TALENT_TIER_LEVELS,
   WEAPONS,
   canLearnTalent,
+  describeRead,
   spentTalentPoints,
   talentPointsAtLevel,
   talentTree,
@@ -162,6 +163,10 @@ export class SkillPanel {
       `<b>${node.name}</b>` +
       `<i>${kindLabel}</i>` +
       `<span class="tn-desc">${node.description}</span>` +
+      // The condition, derived from the skill rather than restated in the
+      // node's own prose — a hand-written "heavier against bleeding" is a
+      // sentence that keeps saying so after the multiplier is retuned.
+      (skill?.reads ? `<span class="tn-cond">${describeRead(skill.reads)}</span>` : "") +
       `</span>` +
       `<span class="tn-rank">${rank}/${node.maxRank}</span>`;
 

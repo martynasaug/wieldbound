@@ -3358,6 +3358,118 @@ band-5 storm piece. The three weapons were rendered in the contact sheet and
 read as their own material against steel, obsidian and frost. Zero console
 errors.
 
+### M50.2 — skills that read a status
+Fourteen timed effects existed and every skill that touched one PUT it there.
+Nothing in the game had ever asked whether one was already running — which is
+the difference between a set of timers and something a player sequences. You
+pressed Rend because Rend was off cooldown, never because of what it set up.
+
+**A `reads` field, not a conditional in code.** `StatusRead` is four fields —
+what to look for, where to look, what finding it multiplies, and whether to
+spend it — and three shapes fall out of them, which happen to be the three the
+genre has. A FINISHER reads a debuff and leaves it (Execute, against anything
+already bleeding, burning or poisoned). A DETONATOR reads one and consumes it,
+trading the rest of the effect for a burst now (Combust, Killshot, Follow
+Through, Exploit). A CLEANSE reads a debuff on YOU and consumes it with no
+bonus, which is the same machinery pointed at a different problem (Second
+Breath, Ward Off).
+
+Declarative for the same reason `applies` and `school` are: a conditional
+written as code is a conditional the tooltip, the talent panel and the tests
+cannot read. All three read it now, from one shared `describeRead`, so the
+sentence under the node cannot drift from the number the server multiplies by.
+
+**Families are named, not listed.** `group: "dot"` resolves against `STATUSES`
+at read time rather than at table-build time, so a fifteenth status that ticks
+becomes Execute-able the moment it exists. It also HAS to be that way round —
+the skill table is defined above the status table in the file, and a derived
+constant there would be read before it was written.
+
+**One per weapon tree, again**, and this time the rule is load-bearing rather
+than tidy: a sequencing mechanic two trees can play is a mechanic six weapons
+watch. Each reader looks for something ITS OWN tree can produce, so the pair is
+learnable inside one tree instead of requiring a second player — Rend then
+Execute, Concuss then Follow Through, Hunter's Mark then Killshot, Immolate then
+Combust. The two exceptions are the two trees with no debuff to read: the fist
+tree has never had one and its answer to a debuff is to shake it off, and the
+wand's is the same verb pointed outward at an ally.
+
+**Onslaught is the odd one and the best one.** The sword tree is the one with no
+debuff of its own and three buffs, so its reader looks inward: it spends
+whatever is carrying you on a single blow. It is the only skill in the game that
+consumes something GOOD, which is what makes it a decision rather than a bonus.
+
+**Two rules the server enforces that the table cannot.** A self-read only fires
+once there is something to swing at — a finisher that eats your War Cry on empty
+air is a button nobody presses twice, and the hotbar has fired freely into
+nothing since M3.6 precisely so that pressing a key is never punished. And a
+cleanse resolves BEFORE the "already at full health" refusal, or the one moment
+it is most wanted — poisoned, burning, and topped up by a potion — is the moment
+it refuses to work.
+
+**And the player can see it.** `empowered` is reported PER HIT rather than per
+cast, because a detonator in a pack finds the condition on some of what it lands
+on and not the rest. An empowered hit flashes amber instead of blue, its floater
+carries a mark, and the log says which condition paid. A conditional that is
+wired through every table and announced nowhere looks finished in a screenshot
+and feels like a lucky roll.
+
+### The hole this fell into
+**You could not put a weapon down.** There is no unequip anywhere in the game
+and there never has been: `equipItem` only ever equipped, no message meant "take
+this off", and the paperdoll was decorative. Which quietly meant that from the
+moment a character picked up their first weapon, the entire fist tree — ten
+nodes, four skills, and the archetype `classForWeapon` calls "a real (if weak)
+one rather than a broken state" — was unreachable for the rest of that
+character's life.
+
+It had been true since Phase 45 and nothing noticed, because nothing had ever
+needed to go back. Testing Second Breath needed to. `EQUIP_ITEM` on the item
+already worn now takes it off — a toggle rather than a second message, since the
+slot holds one thing and "equip what is equipped" had no other meaning to take —
+and a filled slot on the paperdoll is a button that does it.
+
+### What the tests refused
+`tools/test/statuses.mjs` grew a ninth section, and it is written against the
+ways a read can be silently wrong rather than against the code that resolves
+one: a condition nothing in the world can apply is a permanent miss; a condition
+a tree cannot produce is a skill that only works with company; a consuming read
+with no bonus and no cleanse behind it is a button that makes you worse; and a
+read with no tooltip sentence is a conditional the player will not play around.
+It also pins the resolver itself — soonest-expiring first, group coverage, and
+that a cleanse can lift Weakened and cannot lift a buff.
+
+The browser suite refused three things, and all three were the harness rather
+than the game, which is worth writing down because each looked exactly like a
+product bug for a run:
+
+- **Everything died before it could be read.** A seeded test character kills
+  anything in band 1 with one cast, so the debuff it had just applied was
+  sitting on a corpse. Six checks failed. Everything is fought against a golem
+  now: 240 hit points, 14 armour, 30% physical resistance, and it stays standing.
+- **Execute could not be tested in the obvious order.** Its cooldown is nine
+  seconds and Bleeding lasts eight, so applying the bleed first means it has
+  expired by the time the skill comes back up — which reads as "not empowered".
+  Wait out the cooldown, then cut, then swing.
+- **A ground-targeted detonator with nothing selected lands on your own feet.**
+  A golem that chases past its leash turns round and runs home, and Combust then
+  hit nothing at all. That one is arguably a design question rather than a bug —
+  firing into empty air is deliberate (M3.6) — but it is worth knowing that a
+  radius skill answers "out of range" by bursting where you stand.
+
+### Verified
+All nine offline suites, both workspaces typechecking clean, and a socket-level
+run against the real server covering every shape: Execute empowered against a
+bleeding golem and NOT against a clean one, hitting 81 against 41 and leaving
+the bleed running; Killshot reporting `consumed: "marked"` with the mark gone
+afterwards; Onslaught firing into empty air WITHOUT eating the buff and then
+spending it on the golem; Combust spending a burn through a radius; Second
+Breath lifting exactly one thing and refusing with a reason that mentions the
+lift rather than only the health. Plus a headless browser pass: the condition
+line renders under Execute, Onslaught and Combust in three different trees,
+clicking the weapon slot on the paperdoll takes the axe off and the class label
+goes back to Adventurer, and zero console errors.
+
 ---
 
 ## Phase 48+ — Revisit and pick from here
@@ -3368,15 +3480,8 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 **Parked deliberately, both fallen out of M4.1 rather than wished for:**
 
-- **Skills that READ a status rather than only applying one.** The plumbing
-  now exists and nothing uses it in this direction: a finisher that hits
-  harder against something already bleeding, a detonator that consumes a
-  burn for a burst, a heal that cleanses a debuff. This is where a status
-  system stops being a set of timers and becomes a thing a player sequences —
-  and it is cheap now, because `statusesOf` is one call at every resolution
-  site. The reason to wait is balance rather than effort: a conditional
-  bonus is only interesting once the condition is common, and the debuffs
-  shipped one day ago.
+- ~~**Skills that READ a status rather than only applying one.**~~ Done in
+  Phase 50 M50.2 — all three shapes it named, one per weapon tree.
 - ~~**A lightning weapon, and the palette to hang it on.**~~ Done in Phase 50
   M50.1. It read `lightning 3 weapons, 2 skills` afterwards.
 
@@ -5237,8 +5342,32 @@ rarities), multiple crafting stations. Not committing to order yet.
   stat with nothing to answer. Where the fiction supports it, a shared
   weakness-and-weapon is more interesting than a matched resist.
 
+- **A condition is DATA, and it is the same data the tooltip reads.** (Phase 50)
+  Eight skills now change what they do depending on what is already running on
+  their target. Every one of those could have been eight lines of `if` in the
+  server's damage loop, and the loop would have been shorter. What that costs is
+  that nothing else can see the rule: the talent panel cannot describe it, the
+  hotbar cannot warn about it, and a test cannot ask whether the condition is
+  reachable. `describeRead` and the server multiply from the same field, so the
+  sentence under the node cannot drift from the number. This is the third time
+  this file has made the same call — `applies`, then `school`, now `reads` — and
+  it is the house rule at this point: if the player has to know it, it is a field.
+
+- **A read may spend a BUFF.** (Phase 50) Every consuming skill in the genre
+  eats a debuff off something else. Onslaught eats your own War Cry, and it is
+  the most interesting button of the eight for exactly that reason: consuming
+  something bad is a bonus with a cooldown attached, and consuming something
+  good is a decision. Guarded so it never fires into empty air, because the one
+  thing worse than a decision is a decision the interface took for you.
+
+- **You may put a weapon down.** (Phase 50) It reads as a convenience and it is
+  not. `classForWeapon` makes bare hands an archetype with its own ten-node
+  tree, and with no unequip in the protocol that archetype was reachable exactly
+  once per character, before their first weapon. A game whose premise is "you
+  are whatever you're holding" has to let you hold nothing.
+
 ## Current status
-Phase 0 through 50 M50.1 complete (2026-08-21). **The item system rebuilt and
+Phase 0 through 50 M50.2 complete (2026-08-21). **The item system rebuilt and
 followed through, damage that knows what it is made of, every timed effect in
 one table with a row on screen, a front door worth walking through, a town to
 walk through it into — and now a material for the one element nobody could
@@ -5253,6 +5382,23 @@ lightning for a seam — so the counter to a golem is a thing you get by killing
 golems the slow way first. And the golem now THROWS lightning as well as folding
 to it, because before that, five elements could be worn against and only four
 could ever be thrown at you.
+
+**Phase 50 M50.2 — skills that read a status.** Fourteen timed effects existed
+and every skill that touched one PUT it there; nothing had ever asked whether
+one was already running. Eight skills do now, one per weapon tree, in the three
+shapes the genre has: a finisher that leaves the bleed running, four detonators
+that spend the condition for a burst, and two cleanses. Onslaught is the only
+skill in the game that spends something GOOD — the rest of your War Cry for one
+blow. It is a `reads` field rather than a conditional in code, so the tooltip,
+the talent panel and the tests all read the same rule. An empowered hit flashes
+amber and says which condition paid, because a conditional the player cannot see
+is one they will not play around.
+
+It also found a hole nine phases old: **you could not put a weapon down.** There
+was no unequip anywhere in the game, which meant the whole fist tree — and the
+archetype the README calls "a real (if weak) one rather than a broken state" —
+was unreachable for every character past their first sword. Clicking a filled
+slot on the paperdoll takes it off now.
 
 Before that, Phase 49.
 

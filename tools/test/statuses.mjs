@@ -36,6 +36,11 @@ import {
   statusMoveMultiplier,
   talentTree,
   WEAPON_TYPES,
+  describeRead,
+  findRead,
+  readCovers,
+  readMultiplier,
+  statusGroupIds,
 } from "../../shared/protocol-types.ts";
 
 let failures = 0;
@@ -294,6 +299,189 @@ for (const [id, expected] of [
 ]) {
   check(`${id} now says it applies ${expected}`, SKILLS[id].applies === expected,
     String(SKILLS[id].applies));
+}
+
+// --- 9. skills that READ a status -------------------------------------------
+// The other direction, and the one with the most ways to be quietly wrong.
+//
+//   A read that names a status NOTHING in the game applies is a condition that
+//   can never be met — the skill is simply weaker than its numbers say, for
+//   ever, and nothing throws.
+//
+//   A read whose condition its own weapon tree cannot produce is a skill that
+//   only works when somebody else is standing next to you. That is a fine thing
+//   to build ON PURPOSE and a terrible thing to build by accident, so the
+//   pairing is asserted rather than assumed.
+//
+//   A consuming read with no bonus and no cleanse behind it is a button that
+//   deletes your own buff for nothing.
+//
+//   And a condition with no sentence for the tooltip is a conditional the
+//   player cannot play around, which is the same as not having built it.
+section("9. skills that read a status");
+{
+  const readers = skills.filter((s) => !!s.reads);
+  check("something reads a status at all", readers.length > 0);
+
+  // Every group name resolves to real rows, and to more than nothing.
+  for (const group of ["dot", "buff", "debuff"]) {
+    const ids = statusGroupIds(group);
+    check(`the ${group} family is not empty`, ids.length > 0);
+    check(`every ${group} is a real status`, ids.every((id) => !!STATUSES[id]));
+  }
+  // Derived, not listed: a dot is anything with a tick, and the group must be
+  // exactly the rows that have one — so a fifteenth dot becomes Execute-able
+  // the moment it exists, with nothing to remember.
+  check(
+    "the dot family is derived from the table",
+    statusGroupIds("dot").every((id) => !!STATUSES[id].dot) &&
+      STATUS_IDS.filter((id) => STATUSES[id].dot).length === statusGroupIds("dot").length,
+  );
+
+  // What anything in the game can put on anything, so a read can be checked
+  // against what the world is actually able to produce.
+  const appliable = new Set();
+  for (const s of skills) if (s.applies) appliable.add(s.applies);
+  for (const kind of Object.keys(MONSTER_STATS)) {
+    const inflicts = MONSTER_STATS[kind].inflicts;
+    if (inflicts) appliable.add(inflicts.status);
+  }
+  // Nobody casts Weakened — dying applies it — and a cleanse must be allowed
+  // to lift it, so it counts as producible.
+  appliable.add("weakened");
+
+  for (const skill of readers) {
+    const read = skill.reads;
+    const ids = read.any?.length ? [...read.any] : statusGroupIds(read.group);
+    check(`${skill.id} reads something`, ids.length > 0);
+    check(`${skill.id} names only real statuses`, ids.every((id) => !!STATUSES[id]));
+    check(`${skill.id} says where it looks`, read.on === "self" || read.on === "target");
+
+    // A condition nothing in the world can create is a permanent miss.
+    check(
+      `${skill.id}'s condition can actually happen`,
+      ids.some((id) => appliable.has(id)),
+      ids.join(", "),
+    );
+
+    // And it has to be able to sit where the skill is looking.
+    const side = read.on === "self" ? "player" : "monster";
+    check(
+      `${skill.id}'s condition can sit on a ${side}`,
+      ids.some((id) => statusFits(id, side)),
+    );
+
+    // Consuming something for nothing is a button that makes you worse.
+    if (read.consume && !read.bonus) {
+      check(
+        `${skill.id} consumes for a reason`,
+        skill.kind === "heal",
+        "a consume with no bonus is a cleanse, or it is a mistake",
+      );
+    }
+    if (read.bonus) {
+      check(`${skill.id}'s bonus is worth pressing`, read.bonus > 1.2, `${read.bonus}`);
+      // And not so large that the unconditional case is a wasted button.
+      check(`${skill.id}'s bonus is not the whole skill`, read.bonus <= 2.5, `${read.bonus}`);
+    }
+
+    // The tooltip sentence. A conditional the player cannot read is one they
+    // will not play around.
+    const line = describeRead(read);
+    check(`${skill.id} has a sentence for the tooltip`, !!line && line.length > 8, String(line));
+  }
+
+  // ONE PER WEAPON TREE, the same rule the status system itself was built
+  // under. A sequencing mechanic six trees cannot play is one six weapons watch.
+  for (const weapon of WEAPON_TYPES.concat("fist")) {
+    const mine = talentTree(weapon).filter((n) => n.active && SKILLS[n.active].reads);
+    check(`${weapon} has a skill that reads a status`, mine.length > 0);
+  }
+
+  // And the pair is learnable inside one tree: whatever a tree's reader looks
+  // for on a TARGET, that tree must also be able to put there. A read on the
+  // caster is exempt — a cleanse needs no source, and Onslaught reads the buffs
+  // its own tree grants directly.
+  for (const weapon of WEAPON_TYPES.concat("fist")) {
+    const tree = talentTree(weapon);
+    const grants = new Set();
+    for (const n of tree) {
+      if (n.active && SKILLS[n.active].applies) grants.add(SKILLS[n.active].applies);
+    }
+    for (const n of tree) {
+      const read = n.active ? SKILLS[n.active].reads : null;
+      if (!read || read.on !== "target") continue;
+      const ids = read.any?.length ? [...read.any] : statusGroupIds(read.group);
+      check(
+        `${weapon} can set up its own ${n.active}`,
+        ids.some((id) => grants.has(id)),
+        `tree grants ${[...grants].join(", ") || "nothing"}; ${n.active} wants ${ids.join(", ")}`,
+      );
+    }
+  }
+
+  // A reader has to be reachable: the tier gates run 1/3/6/10/15 and a weapon
+  // caps at 20, so a node above the last tier could never be bought at all.
+  for (const weapon of WEAPON_TYPES.concat("fist")) {
+    for (const n of talentTree(weapon)) {
+      if (!n.active || !SKILLS[n.active].reads) continue;
+      check(`${weapon}.${n.active} sits inside the tiers`, n.tier <= 4, `tier ${n.tier}`);
+    }
+  }
+
+  // --- the resolver itself ---------------------------------------------------
+  // The half that can fail while every table above is right.
+  const now = 1_000_000;
+  const burning = [{ id: "burning", endsAt: now + 5000 }];
+  const combust = SKILLS.combust;
+  check("a detonator finds its condition", findRead(combust.reads, burning) === "burning");
+  check(
+    "and is worth its bonus",
+    readMultiplier(combust.reads, findRead(combust.reads, burning)) === combust.reads.bonus,
+  );
+  check("and finds nothing on a clean target", findRead(combust.reads, []) === null);
+  check("which is worth exactly one", readMultiplier(combust.reads, null) === 1);
+  check("no read at all is also worth one", readMultiplier(undefined, "burning") === 1);
+
+  // Soonest-expiring first. Spending the burn with half a second left rather
+  // than the fresh one is what a player would do by hand, and a detonator that
+  // eats the wrong one is a detonator nobody presses twice.
+  const two = [
+    { id: "bleeding", endsAt: now + 7000 },
+    { id: "poisoned", endsAt: now + 900 },
+  ];
+  check(
+    "a read takes the one about to run out",
+    findRead(SKILLS.execute.reads, two) === "poisoned",
+    String(findRead(SKILLS.execute.reads, two)),
+  );
+
+  // A group read covers the whole family and nothing outside it.
+  check("a dot read covers a burn", readCovers(SKILLS.execute.reads, "burning"));
+  check("and not a mark", !readCovers(SKILLS.execute.reads, "marked"));
+  check(
+    "an explicit read covers only what it names",
+    readCovers(SKILLS.killshot.reads, "marked") && !readCovers(SKILLS.killshot.reads, "burning"),
+  );
+
+  // Onslaught is the only skill in the game that spends something GOOD, which
+  // is what makes it a decision rather than a bonus.
+  check(
+    "Onslaught reads your own buffs",
+    SKILLS.onslaught.reads.group === "buff" && SKILLS.onslaught.reads.on === "self",
+  );
+  check("and spends them", SKILLS.onslaught.reads.consume === true);
+  check(
+    "a cleanse can lift Weakened",
+    readCovers(SKILLS.secondbreath.reads, "weakened") &&
+      readCovers(SKILLS.wardoff.reads, "weakened"),
+  );
+  check("and cannot lift a buff", !readCovers(SKILLS.secondbreath.reads, "rallied"));
+
+  console.log(
+    `  ${readers.length} readers: ` +
+      readers.map((s) => `${s.id}(${s.reads.consume ? "spends" : "reads"})`).join(", "),
+  );
 }
 
 // --- done -------------------------------------------------------------------

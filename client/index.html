@@ -980,7 +980,14 @@
       .tn-body { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
       .tn-body b { color: var(--gold-bright); font-size: 12px; }
       .tn-body i { color: var(--muted); font-size: 10px; font-style: normal; }
+      /* A filled doll slot is a button now: clicking it takes the thing off. */
+      .gear-slot.removable { cursor: pointer; }
+      .gear-slot.removable:hover { box-shadow: 0 0 0 1px #ffd873 inset; }
       .tn-desc { font-size: 11px; color: #cbbb95; }
+      /* A skill's CONDITION, set apart from its description because it is the
+         half a player has to act on rather than read once. Amber, the same
+         colour an empowered hit flashes in the world. */
+      .tn-cond { font-size: 11px; color: #ffa63d; display: block; margin-top: 2px; }
       .tn-rank { font-size: 11px; color: var(--gold); white-space: nowrap; }
       .skill-row {
         display: flex;

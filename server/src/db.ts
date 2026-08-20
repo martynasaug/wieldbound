@@ -491,7 +491,7 @@ const updateItemStmt = db.prepare(
   "UPDATE items SET rarity = ?, statValue = ?, bonusStatValue = ?, affixes = ?, etched = ? WHERE id = ?",
 );
 const selectItemForEquip = db.prepare(
-  "SELECT id, slot FROM items WHERE id = ? AND characterId = ?",
+  "SELECT id, slot, equipped FROM items WHERE id = ? AND characterId = ?",
 );
 const unequipSlotStmt = db.prepare(
   "UPDATE items SET equipped = 0 WHERE characterId = ? AND slot = ?",
@@ -628,12 +628,29 @@ export interface EquipResult {
   bootsRarity: ItemRarity | null;
 }
 
+/**
+ * Equips an item — or TAKES IT OFF, if it is the one already worn there.
+ *
+ * The unequip half did not exist at all until skills started reading statuses,
+ * and it is a real hole rather than a missing convenience: `classForWeapon`
+ * says bare hands are an archetype and the fist tree is ten nodes deep, and
+ * yet from the moment a character picked up their first weapon there was no
+ * message in the protocol that could put it down again. Every one of those
+ * nodes was unreachable for every character past their first sword. It only
+ * showed up now because the fist tree got a skill somebody wanted to test.
+ *
+ * A toggle rather than a second message, because the slot can only hold one
+ * thing: "equip what is already equipped" had no other meaning to take.
+ */
 export function equipItem(characterId: string, itemId: string): EquipResult | null {
-  const target = selectItemForEquip.get(itemId, characterId) as { id: string; slot: ItemSlot } | undefined;
+  const target = selectItemForEquip.get(itemId, characterId) as
+    | { id: string; slot: ItemSlot; equipped: number }
+    | undefined;
   if (!target) return null;
 
+  const takingOff = !!target.equipped;
   unequipSlotStmt.run(characterId, target.slot);
-  equipItemStmt.run(itemId);
+  if (!takingOff) equipItemStmt.run(itemId);
 
   // Two hands are two hands. A greatsword, a bow and a staff all empty the
   // off-hand, and putting something in the off-hand puts down a two-hander —
@@ -642,7 +659,9 @@ export function equipItem(characterId: string, itemId: string): EquipResult | nu
   // kit, a reward, a test) has to obey it too.
   const afterEquip = listItems(characterId);
   const worn = (slot: ItemSlot) => afterEquip.find((i) => i.slot === slot && i.equipped) ?? null;
-  if (target.slot === "weapon" && isTwoHanded(worn("weapon"))) {
+  if (takingOff) {
+    // Nothing else to reconcile: an empty slot cannot conflict with anything.
+  } else if (target.slot === "weapon" && isTwoHanded(worn("weapon"))) {
     unequipSlotStmt.run(characterId, "offhand");
   } else if (target.slot === "offhand" && isTwoHanded(worn("weapon"))) {
     unequipSlotStmt.run(characterId, "weapon");
