@@ -143,6 +143,17 @@ const CHUNK_UNITS = 26;
 export interface ScatterArea {
   halfWidth: number;
   halfHeight: number;
+  /**
+   * A circle the cover stays out of, in world units.
+   *
+   * Emberhold. The ground cover is wild growth — tufts, ferns, wildflowers —
+   * and it was scattered over the whole play area from before there was
+   * anything built on it, so the town arrived with grass and flowers growing
+   * out of its paving. Excluded here rather than hidden by the paving, because
+   * the plants stand a few centimetres proud of the ground and a decal cannot
+   * cover something taller than itself.
+   */
+  exclude?: { x: number; z: number; radius: number };
 }
 
 /**
@@ -211,9 +222,25 @@ export async function buildGroundCover(
     const AUTHORED_AREA = (4800 / 40) * (3600 / 40);
     const density = (area.halfWidth * 2 * area.halfHeight * 2) / AUTHORED_AREA;
     const total = Math.round(species.count * density);
+    // Rejection sampling against the exclusion circle. Attempts are counted
+    // rather than retried forever: at the town's share of the map this rejects
+    // roughly one placement in forty, and an unbounded retry loop is how a
+    // future exclusion covering most of the world would hang the load.
+    const excluded = (x: number, z: number) =>
+      !!area.exclude &&
+      Math.hypot(x - area.exclude.x, z - area.exclude.z) < area.exclude.radius;
+
     for (let i = 0; i < total; i++) {
-      const x = (rand() * 2 - 1) * area.halfWidth;
-      const z = (rand() * 2 - 1) * area.halfHeight;
+      let x = (rand() * 2 - 1) * area.halfWidth;
+      let z = (rand() * 2 - 1) * area.halfHeight;
+      // A handful of retries, then give the placement up. Bounded on purpose:
+      // an unbounded loop is how a future exclusion covering most of the map
+      // would hang the load rather than merely thinning the cover.
+      for (let tries = 0; tries < 8 && excluded(x, z); tries++) {
+        x = (rand() * 2 - 1) * area.halfWidth;
+        z = (rand() * 2 - 1) * area.halfHeight;
+      }
+      if (excluded(x, z)) continue;
       const h = species.size[0] + rand() * (species.size[1] - species.size[0]);
       const tilt = species.tilt ?? 0;
 

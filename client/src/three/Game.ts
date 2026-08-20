@@ -129,7 +129,7 @@ import {
   NPC_TALK_RANGE_PX,
   TOWN_CENTER,
   TOWN_NAME,
-  pushOutOfBuildings,
+  resolveTownCollision,
 } from "../../../shared/town";
 import {
   CONSUMABLES,
@@ -788,6 +788,9 @@ export class Game {
     // materialises on bare grass and watches a town assemble around them has
     // seen the seams.
     this.town.build(this.world.scene);
+    // The one thing in the world the camera may not sit behind. See
+    // World.clearDistance — walls move the camera, trees are faded instead.
+    this.world.setCameraColliders(this.town.buildings);
 
     const decor = this.world.buildDecor();
     const body = this.localActor.load();
@@ -2758,8 +2761,15 @@ export class Game {
 
     this.raycaster.set(cam, dir);
     this.raycaster.far = distance;
+    // Buildings are in here as well as the treeline now, and they are why this
+    // is a guarantee rather than a nicety. The camera already pulls in when a
+    // wall gets between it and the character (World.clearDistance), and that
+    // handles almost everything — but a player standing flat against a wall
+    // puts it closer than any camera can retreat past, and at that point moving
+    // the lens cannot help. Fading the wall can. Each building owns its own
+    // materials, so only the one actually in the way goes translucent.
     const blockers = this.raycaster.intersectObjects(
-      [...this.nodes.values(), this.world.decor],
+      [...this.nodes.values(), this.world.decor, ...this.town.buildings],
       true,
     );
 
@@ -2840,10 +2850,12 @@ export class Game {
     this.playerX = solved.x;
     this.playerY = solved.y;
 
-    // And out of any wall. Applied AFTER the bodies, because a monster that has
-    // shoved you into the inn should leave you standing outside the inn — the
-    // other order lets a body park you inside a building until it wanders off.
-    const clear = pushOutOfBuildings(this.playerX, this.playerY, PLAYER_BODY_RADIUS_PX);
+    // And out of everything the town is built of — walls, the palisade, the
+    // well, the monument, the stall, the benches, the lamp posts. Applied AFTER
+    // the bodies, because a monster that has shoved you into the inn should
+    // leave you standing outside the inn; the other order lets a body park you
+    // inside a building until it wanders off.
+    const clear = resolveTownCollision(this.playerX, this.playerY, PLAYER_BODY_RADIUS_PX);
     this.playerX = clear.x;
     this.playerY = clear.y;
   }

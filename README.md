@@ -80,8 +80,14 @@ unavailable.
   outside it; and a warm ambient lift makes the square genuinely readable at
   midnight, scaled by how close you are standing so that nobody carries it out
   past the gate. **And the walls are walls** — the first static obstacle in the
-  game, resolved on the shallowest axis so you slide along plaster rather than
-  being flung round it.
+  game — walls, the palisade, the well, the monument, the stall, the benches —
+  resolved on the shallowest axis so you slide along plaster rather than being
+  flung round it. **And you can always see your character**: the camera pulls in
+  when something gets between it and you, the blocking building fades where it
+  physically cannot, and every actor in the game additionally carries a
+  silhouette that draws only where it is behind something else. Three
+  mechanisms, because the first two cannot reach a palisade, another player, or
+  a monster behind a tree.
 - **Five people who each do something** — Elsbet Vane the Herald explains the
   rules the game has never said out loud; Oswyn Thale the Provisioner runs a
   shop priced in wood, ore and herb, because there is no currency and is not

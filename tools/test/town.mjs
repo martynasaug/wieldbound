@@ -29,6 +29,11 @@ import {
   TOWN_RADIUS_PX,
   TOWN_GATE_ANGLES,
   TOWN_GATE_HALF_DEG,
+  TOWN_PROPS,
+  propById,
+  propPosition,
+  resolveTownCollision,
+  inGateway,
   NPC_TALK_RANGE_PX,
   insideAnyBuilding,
   pushOutOfBuildings,
@@ -281,9 +286,121 @@ if (NPC_TALK_RANGE_PX <= INTERACTION_RANGE_PX) {
   fail("talk range is tighter than gather range");
 }
 
-console.log(
-  failures === 0
-    ? `\nOK — Emberhold checks out.`
-    : `\n${failures} failure(s).`,
-);
+// --- Solid things you must not be able to walk through ----------------------
+// The buildings were the only obstacles for one build, and everything else in
+// the square — the palisade, the well, the market stall, the monument — was
+// scenery you strolled straight through. Every failure below is silent, and
+// several are worse than the thing they replaced: an obstacle blocking where it
+// should not is an invisible wall in open paving, and one that closes around an
+// NPC or the anvil makes a working system unreachable with nothing thrown.
+
+section("solid things");
+{
+  const solidProps = TOWN_PROPS.filter((p) => p.blockRadiusPx > 0);
+  console.log(
+    `  ${solidProps.length} solid props, plus ${TOWN_BUILDINGS.length} buildings and the palisade`,
+  );
+
+  // Nothing may block spawn, or a new character arrives wedged.
+  const atSpawn = resolveTownCollision(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_BODY_RADIUS_PX);
+  if (atSpawn.x !== PLAYER_SPAWN.x || atSpawn.y !== PLAYER_SPAWN.y) {
+    fail("something solid is standing on spawn");
+  }
+
+  // The forge has to stay reachable. This is the one that nearly shipped: the
+  // smithy's props ring an empty middle, and a keep-out circle round it would
+  // have held every player further off than INTERACTION_RANGE_PX — a bench that
+  // looks like it has simply stopped working.
+  const smithy = propById("smithy");
+  if (!smithy) fail("no smithy in the prop table");
+  else {
+    const at = propPosition(smithy);
+    let reachable = false;
+    for (let deg = 0; deg < 360 && !reachable; deg += 10) {
+      const a = (deg * Math.PI) / 180;
+      const solved = resolveTownCollision(
+        at.x + Math.cos(a) * (INTERACTION_RANGE_PX - 6),
+        at.y + Math.sin(a) * (INTERACTION_RANGE_PX - 6),
+        PLAYER_BODY_RADIUS_PX,
+      );
+      if (Math.hypot(solved.x - at.x, solved.y - at.y) <= INTERACTION_RANGE_PX) reachable = true;
+    }
+    if (!reachable) fail("you cannot stand close enough to the forge to use it");
+    else console.log("  the forge can still be stood at");
+  }
+
+  // Every townsperson has to be approachable within talk range.
+  for (const npc of TOWN_NPCS) {
+    let ok = false;
+    for (let deg = 0; deg < 360 && !ok; deg += 10) {
+      const a = (deg * Math.PI) / 180;
+      for (const reach of [40, 70, 110]) {
+        const solved = resolveTownCollision(
+          npc.x + Math.cos(a) * reach,
+          npc.y + Math.sin(a) * reach,
+          PLAYER_BODY_RADIUS_PX,
+        );
+        if (Math.hypot(solved.x - npc.x, solved.y - npc.y) <= NPC_TALK_RANGE_PX) {
+          ok = true;
+          break;
+        }
+      }
+    }
+    if (!ok) fail(`${npc.name} cannot be reached — something solid is round them`);
+  }
+  console.log("  every townsperson can be walked up to");
+
+  // And nobody is standing INSIDE a prop, which reads as a bug even where it
+  // blocks nothing.
+  for (const npc of TOWN_NPCS) {
+    for (const p of solidProps) {
+      const at = propPosition(p);
+      if (Math.hypot(npc.x - at.x, npc.y - at.y) < p.blockRadiusPx) {
+        fail(`${npc.name} is standing inside "${p.id}"`);
+      }
+    }
+  }
+
+  // The road has to be walkable end to end, or a gate opens onto an obstacle.
+  for (const gate of TOWN_GATE_ANGLES) {
+    const a = (gate * Math.PI) / 180;
+    for (let r = 0; r <= TOWN_RADIUS_PX + 120; r += 15) {
+      const x = TOWN_CENTER.x + Math.cos(a) * r;
+      const y = TOWN_CENTER.y + Math.sin(a) * r;
+      const solved = resolveTownCollision(x, y, PLAYER_BODY_RADIUS_PX);
+      if (Math.hypot(solved.x - x, solved.y - y) > 1) {
+        fail(`the ${gate}deg road is blocked at ${r}px`);
+        break;
+      }
+    }
+  }
+  console.log("  both roads run gate to gate unobstructed");
+
+  // And the palisade genuinely stops you everywhere it is not a gateway.
+  let stopped = 0;
+  let leaks = 0;
+  for (let deg = 0; deg < 360; deg += 3) {
+    if (inGateway(deg)) continue;
+    const a = (deg * Math.PI) / 180;
+    const x = TOWN_CENTER.x + Math.cos(a) * TOWN_RADIUS_PX;
+    const y = TOWN_CENTER.y + Math.sin(a) * TOWN_RADIUS_PX;
+    const solved = resolveTownCollision(x, y, PLAYER_BODY_RADIUS_PX);
+    const movedTo = Math.hypot(solved.x - TOWN_CENTER.x, solved.y - TOWN_CENTER.y);
+    if (Math.abs(movedTo - TOWN_RADIUS_PX) < 1) leaks++;
+    else stopped++;
+  }
+  if (leaks > 0) fail(`the palisade can be walked through at ${leaks} bearings`);
+  else console.log(`  the palisade holds at all ${stopped} solid bearings`);
+
+  for (const gate of TOWN_GATE_ANGLES) {
+    const a = (gate * Math.PI) / 180;
+    const x = TOWN_CENTER.x + Math.cos(a) * TOWN_RADIUS_PX;
+    const y = TOWN_CENTER.y + Math.sin(a) * TOWN_RADIUS_PX;
+    const solved = resolveTownCollision(x, y, PLAYER_BODY_RADIUS_PX);
+    if (Math.hypot(solved.x - x, solved.y - y) > 1) fail(`the ${gate}deg gateway is shut`);
+  }
+  console.log("  both gateways are open");
+}
+
+console.log(failures === 0 ? "\nOK — Emberhold still checks out." : `\n${failures} failure(s).`);
 process.exit(failures === 0 ? 0 : 1);

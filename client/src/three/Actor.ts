@@ -43,6 +43,31 @@ const CLIP_PREFERENCES: Record<ActorAnim, string[]> = {
 
 const FADE_MS = 180;
 
+// --- Seeing a character through what is in front of them ---------------------
+// Every third-person game has to answer this and there are only three real
+// answers: move the camera, fade the obstacle, or draw the character on top.
+// This project now does all three, in that order of preference, and this is the
+// last of them — the one that cannot fail.
+//
+// The camera pulls in when a wall gets between it and the player, which handles
+// most of it (World.clearDistance). Where it cannot — a player standing flat
+// against plaster puts the wall closer than any camera can retreat past — the
+// blocking BUILDING fades. But neither reaches the rest of the world: the
+// palisade, the market stall, the well and the monument are one merged mesh
+// each with no per-object handle to fade, other players and townspeople are not
+// what the camera is following, and a monster behind a tree is nobody's line of
+// sight but its own.
+//
+// So every actor also carries a silhouette of itself. The trick that makes it
+// free of side effects is `depthFunc: GreaterDepth`: the silhouette draws only
+// where this actor is BEHIND something already in the depth buffer. Unoccluded,
+// every one of its fragments fails the test and it costs a draw call with no
+// pixels; occluded, it is exactly the missing shape and nothing else.
+const SILHOUETTE_COLOR = 0x8fd3ff;
+const SILHOUETTE_OPACITY = 0.42;
+/** Drawn after the world, so it is testing against a complete depth buffer. */
+const SILHOUETTE_RENDER_ORDER = 900;
+
 export interface ActorOptions {
   model: string;
   height: number;
@@ -161,6 +186,9 @@ export class Actor {
   /** Every material this actor owns and must free. All of them are owned: see
    *  the clone in `buildBody`. */
   private ownedMaterials = new Set<THREE.Material>();
+  /** The through-walls copy of every mesh on the rig. See SILHOUETTE_COLOR. */
+  private silhouettes: THREE.Mesh[] = [];
+  private silhouetteMaterial: THREE.MeshBasicMaterial | null = null;
 
   constructor(private readonly options: ActorOptions) {
     this.facingOffset = options.facingOffset ?? 0;
@@ -271,6 +299,10 @@ export class Actor {
     this.oneShotUntil = 0;
     this.play(this.baseAnim, true);
 
+    // Built after the materials are cloned and before the gear goes on, so it
+    // covers the body. Gear adds its own when it is attached.
+    this.buildSilhouette(instance.object);
+
     // Re-dress: the gear was hanging off the rig that just went away. The body
     // check inside will pass, because `bodyModel` is already the new one.
     if (this.appearance) this.applyAppearance(this.appearance);
@@ -369,6 +401,68 @@ export class Actor {
     object.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) this.trackMesh(o as THREE.Mesh);
     });
+  }
+
+  /**
+   * Builds the through-walls silhouette for whatever the rig currently is.
+   *
+   * A second mesh per skinned mesh, sharing the SAME geometry and the SAME
+   * skeleton — so it animates with the original for free and costs no skinning
+   * work of its own beyond the draw. Rebuilt with the body, because a class
+   * swap replaces the rig underneath it.
+   *
+   * `bind` with the original's `bindMatrix` is the part that has to be right:
+   * constructing a SkinnedMesh and merely assigning `.skeleton` leaves the bind
+   * matrix at identity, and the silhouette then floats a hundred units away
+   * from the character it belongs to, because these rigs carry a scale of 100
+   * on the armature.
+   */
+  private buildSilhouette(root: THREE.Object3D): void {
+    for (const ghost of this.silhouettes) ghost.removeFromParent();
+    this.silhouettes = [];
+    if (!this.silhouetteMaterial) {
+      this.silhouetteMaterial = new THREE.MeshBasicMaterial({
+        color: SILHOUETTE_COLOR,
+        transparent: true,
+        opacity: SILHOUETTE_OPACITY,
+        // Only where this actor is behind something. See the note above.
+        depthFunc: THREE.GreaterDepth,
+        depthWrite: false,
+        fog: false,
+      });
+    }
+
+    const sources: THREE.Mesh[] = [];
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh) sources.push(mesh);
+    });
+
+    for (const mesh of sources) {
+      const skinned = mesh as THREE.SkinnedMesh;
+      let ghost: THREE.Mesh;
+      if (skinned.isSkinnedMesh) {
+        const s = new THREE.SkinnedMesh(skinned.geometry, this.silhouetteMaterial);
+        s.bind(skinned.skeleton, skinned.bindMatrix);
+        ghost = s;
+      } else {
+        ghost = new THREE.Mesh(mesh.geometry, this.silhouetteMaterial);
+      }
+      ghost.renderOrder = SILHOUETTE_RENDER_ORDER;
+      // Never a shadow caster: the silhouette is a view-space cheat and a
+      // shadow of it would be a second character on the ground.
+      ghost.castShadow = false;
+      ghost.receiveShadow = false;
+      ghost.frustumCulled = false;
+      // Parented to the SOURCE's parent and given its transform, so anything
+      // the original inherits — the armature's scale, most of all — comes with
+      // it without being recomputed here.
+      ghost.position.copy(mesh.position);
+      ghost.quaternion.copy(mesh.quaternion);
+      ghost.scale.copy(mesh.scale);
+      mesh.parent?.add(ghost);
+      this.silhouettes.push(ghost);
+    }
   }
 
   private trackMesh(mesh: THREE.Mesh): void {

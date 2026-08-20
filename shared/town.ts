@@ -264,6 +264,151 @@ export function insideAnyBuilding(x: number, y: number, radiusPx = 0): boolean {
   return false;
 }
 
+// --- Everything else standing in the square ---------------------------------
+// The buildings were the only solid things in town for one build, and the
+// result was a player walking straight through the well, the market stall and
+// the palisade. Anything with a footprint is here, as a circle: a circle is a
+// poor fit for a bench and an excellent fit for the question actually being
+// asked, which is "how far must a body stay from the middle of this".
+//
+// The POSITIONS live here rather than in the client's builder, and that is the
+// point of the file: the client draws the monument from this entry, the
+// collision keeps you out of it from this entry, and there is no second copy to
+// go stale the next time the square is rearranged.
+
+export interface TownProp {
+  id: string;
+  /** Placement from the town centre, in the same polar terms as everything else. */
+  radiusPx: number;
+  angleDeg: number;
+  /** How far a body must stay from its centre. */
+  blockRadiusPx: number;
+}
+
+/** Where the smithy stands. The server seeds the station from this too. */
+export const SMITHY_RADIUS_PX = 330;
+export const SMITHY_ANGLE_DEG = 140;
+
+/** The bearings the ring features repeat on, so the client and this agree. */
+export const BENCH_ANGLES = [22, 68, 112, 158, 202, 248, 292, 338] as const;
+export const LANTERN_ANGLES = [22, 67, 112, 157, 202, 247, 292, 337] as const;
+export const GARDEN_ANGLES = [20, 65, 110, 160, 200, 250, 295, 340] as const;
+export const BENCH_RING_PX = 540;
+export const LANTERN_RING_PX = 620;
+export const GARDEN_RING_PX = 735;
+
+export const TOWN_PROPS: TownProp[] = [
+  // The four square features, on opposed bearings around a clear centre.
+  { id: "monument", radiusPx: 330, angleDeg: 320, blockRadiusPx: 88 },
+  { id: "well", radiusPx: 400, angleDeg: 25, blockRadiusPx: 54 },
+  { id: "stall", radiusPx: 400, angleDeg: 205, blockRadiusPx: 68 },
+  // The smithy blocks NOTHING, and that is deliberate rather than an omission.
+  // Its six props are arranged AROUND an empty origin — that empty spot is
+  // where a player stands to craft, and `atStation` wants them within 40px of
+  // it. A keep-out circle of any useful size for an anvil would put the forge
+  // permanently out of reach of the person standing at it, which is a bug that
+  // would have shipped looking like the bench had simply stopped working.
+  { id: "smithy", radiusPx: SMITHY_RADIUS_PX, angleDeg: SMITHY_ANGLE_DEG, blockRadiusPx: 0 },
+  // Odds and ends against the buildings.
+  { id: "woodpile", radiusPx: 660, angleDeg: 165, blockRadiusPx: 44 },
+  { id: "trough", radiusPx: 660, angleDeg: 105, blockRadiusPx: 42 },
+  ...BENCH_ANGLES.map((a) => ({
+    id: `bench-${a}`,
+    radiusPx: BENCH_RING_PX,
+    angleDeg: a,
+    blockRadiusPx: 40,
+  })),
+  ...GARDEN_ANGLES.map((a) => ({
+    id: `garden-${a}`,
+    radiusPx: GARDEN_RING_PX,
+    angleDeg: a,
+    blockRadiusPx: 62,
+  })),
+  // Lamp posts are thin and there are a lot of them; blocked, but only just.
+  ...LANTERN_ANGLES.map((a) => ({
+    id: `lantern-${a}`,
+    radiusPx: LANTERN_RING_PX,
+    angleDeg: a,
+    blockRadiusPx: 18,
+  })),
+];
+
+/** World position of a prop, from its polar placement. */
+export function propPosition(prop: TownProp): { x: number; y: number } {
+  return at(prop.radiusPx, prop.angleDeg);
+}
+
+export function propById(id: string): TownProp | null {
+  return TOWN_PROPS.find((p) => p.id === id) ?? null;
+}
+
+/** How thick the palisade is, for the purposes of not walking through it. */
+const WALL_THICKNESS_PX = 22;
+
+/** True when a bearing falls inside one of the gateways. */
+export function inGateway(angleDeg: number): boolean {
+  return TOWN_GATE_ANGLES.some((gate) => {
+    const delta = Math.abs(((angleDeg - gate + 540) % 360) - 180);
+    return 180 - delta < TOWN_GATE_HALF_DEG;
+  });
+}
+
+/**
+ * Everything solid in Emberhold, resolved in one call.
+ *
+ * Order matters and is not arbitrary: buildings first because they are the
+ * biggest and a body pushed off a bench into a wall should end up outside the
+ * wall, then the props, then the palisade last so that nothing can shove
+ * somebody through it on the way out.
+ */
+export function resolveTownCollision(
+  x: number,
+  y: number,
+  radiusPx = 16,
+): { x: number; y: number } {
+  const out = pushOutOfBuildings(x, y, radiusPx);
+  x = out.x;
+  y = out.y;
+
+  for (const prop of TOWN_PROPS) {
+    // Zero means "drawn here, walk through it" — see the smithy.
+    if (prop.blockRadiusPx <= 0) continue;
+    const p = propPosition(prop);
+    const dx = x - p.x;
+    const dy = y - p.y;
+    const keepOut = prop.blockRadiusPx + radiusPx;
+    const distance = Math.hypot(dx, dy);
+    if (distance >= keepOut) continue;
+    // Dead centre is the one case with no direction to push in. Any direction
+    // will do and a fixed one is reproducible, which matters more.
+    if (distance < 0.001) {
+      x = p.x + keepOut;
+      continue;
+    }
+    x = p.x + (dx / distance) * keepOut;
+    y = p.y + (dy / distance) * keepOut;
+  }
+
+  // The palisade. A ring you cross only at a gateway, pushed to whichever side
+  // you are already nearer — so being caught in it never teleports you into or
+  // out of town, only clear of the timber.
+  const dx = x - TOWN_CENTER.x;
+  const dy = y - TOWN_CENTER.y;
+  const r = Math.hypot(dx, dy);
+  const inner = TOWN_RADIUS_PX - WALL_THICKNESS_PX - radiusPx;
+  const outer = TOWN_RADIUS_PX + WALL_THICKNESS_PX + radiusPx;
+  if (r > inner && r < outer && r > 0.001) {
+    const bearing = (Math.atan2(dy, dx) * 180) / Math.PI;
+    if (!inGateway(bearing)) {
+      const target = r < TOWN_RADIUS_PX ? inner : outer;
+      x = TOWN_CENTER.x + (dx / r) * target;
+      y = TOWN_CENTER.y + (dy / r) * target;
+    }
+  }
+
+  return { x, y };
+}
+
 // --- The people -------------------------------------------------------------
 
 /**
@@ -481,8 +626,8 @@ export const TOWN_NPCS: TownNpc[] = [
     role: "flavour",
     body: "ranger",
     icon: "dock-craft",
-    ...at(130, 78),
-    facingDeg: 258,
+    ...at(245, 152),
+    facingDeg: 332,
     greeting:
       "Mind the coals. Master's away and I am not allowed to sell you anything, but I am " +
       "allowed to talk.",

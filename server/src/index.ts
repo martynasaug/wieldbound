@@ -212,7 +212,12 @@ import {
   advanceQuest,
   completeQuest,
 } from "./db.ts";
-import { NPC_TALK_RANGE_PX, npcById } from "../../shared/town.ts";
+import {
+  NPC_TALK_RANGE_PX,
+  npcById,
+  propById,
+  propPosition,
+} from "../../shared/town.ts";
 import { SHOP_OUTPUT_RARITY, shopEntry } from "../../shared/shop.ts";
 import {
   offerStateFor,
@@ -686,7 +691,21 @@ const monsters: MonsterState[] = [
 ];
 const monsterRespawnAt = new Map<string, number>();
 
-const stations: CraftingStationState[] = [{ id: "workbench-1", x: PLAYER_SPAWN.x, y: PLAYER_SPAWN.y }];
+// The smithy stands to one side of the square, not on top of spawn.
+//
+// It was at PLAYER_SPAWN for every phase up to 49 and that was fine while it
+// was the only object in the world — it WAS the landmark. In a town it is one
+// building among several, and putting it on the exact point every player
+// materialises on meant arriving inside the anvil and looking at a workbench
+// from the middle of it. Offset by a third of the way to the buildings, on a
+// bearing that clears the road and every other feature in the square.
+// Read from the town's own prop table, so the thing the client draws, the thing
+// the collision keeps you out of and the thing the server lets you craft at are
+// one entry rather than three numbers that agree today.
+const smithyProp = propById("smithy")!;
+const stations: CraftingStationState[] = [
+  { id: "workbench-1", ...propPosition(smithyProp) },
+];
 
 // There are no standing "intents" any more. Gathering and fighting are
 // decided purely by where a player is standing, evaluated fresh each tick,

@@ -3189,6 +3189,83 @@ midnight, the ambient lift reads 0.68 in the square and 0.000 twenty units
 outside the gate. Zero console errors. Plus all nine offline suites and both
 workspaces typechecking clean.
 
+### M49.1 — what the screenshots caught
+All of it came from the user looking at the running game, and none of it would
+have been caught by a test that did not already know to look.
+
+**Things floating.** Two real ones. The woodpile went through `Builder.cyl`,
+which raises a piece by half its HEIGHT — right for a post standing up, wrong
+for a log lying down, so the logs hovered 0.55 units over a stack only 0.75
+tall. And the kitchen-garden fences were rails and nothing else: two planks at
+0.24 and 0.5 with no posts under them, which is exactly what a fence looks like
+when you forget the posts. The bench's backrest was also standing up through
+the middle of its own seat, offset along world Z instead of the bench's own.
+
+**The forge in the middle.** It had been at `PLAYER_SPAWN` since Phase 16 and
+that was right while it was the only object in the world — it WAS the landmark.
+In a town it is one building among six, and sitting on the exact point every
+player materialises on meant arriving inside the anvil. Moved 330px out on
+bearing 140, with the monument, well and stall re-spaced onto opposed bearings
+around the now-clear centre.
+
+**Wildflowers through the paving.** The ground cover has been scattered over the
+whole play area since M4.2, from before anything was built on it, so the town
+arrived with grass growing out of its cobbles. `ScatterArea` takes an exclusion
+circle now — excluded rather than hidden, because the plants stand proud of the
+paving and a flat decal cannot cover something taller than itself.
+
+### M49.2 — seeing your character, and not walking through the town
+Two more from the same source, and both needed more than the obvious fix.
+
+**"You still can't see them."** Third-person games have three answers to this —
+move the camera, fade the obstacle, draw the character on top — and this now
+does all three, in that order of preference, because none of them is sufficient
+alone.
+
+*Camera collision* is the primary: five rays cast from points spread over the
+character (head, chest, knees, a shoulder either side) toward the camera, and
+the camera pulled in to just in front of whatever they hit. Snapping in and
+easing out — a wall arriving has to be answered on the same frame, a wall
+leaving can be given half a second. The first version cast from `lookTarget`
+alone and shipped a real bug: the look point is at chest height, so a camera
+with clear sight of the chest still had a wall across the legs, and the browser
+check caught the watchpost and the chapel doing exactly that.
+
+*Fading the blocking building* is the second layer, for the case camera
+collision cannot solve — a player flat against a wall puts it closer than any
+camera can retreat past, and the diagnostic showed both failures bottoming out
+at the minimum distance with the wall still 1.8 units away. Buildings joined the
+treeline in `fadeOccluders`, which required giving each building its OWN
+materials: the town shared one plaster material across all six, so fading what
+blocked you would have faded the whole town.
+
+*A silhouette on every actor* is the guarantee, and it is what the other two
+cannot reach: the palisade, the market stall, the well and the monument are one
+merged mesh each with no per-object handle to fade; other players and
+townspeople are not what the camera is following; and a monster behind a tree is
+nobody's line of sight but its own. Every actor now carries a second copy of its
+meshes sharing the same geometry and the same skeleton, drawn with `depthFunc:
+GreaterDepth` — so it draws ONLY where that actor is behind something already in
+the depth buffer. Unoccluded it costs a draw call and no pixels; occluded it is
+exactly the missing shape and nothing else. No per-frame bookkeeping, no list of
+what might be in the way, and it covers everything in the world at once.
+
+**"You shouldn't be able to pass through walls and similar objects."** The
+buildings were the only solid things in town, so the palisade, the well, the
+stall, the monument, the benches and the lamp posts were all scenery you strolled
+through. Everything with a footprint is now a circle in `TOWN_PROPS`, and the
+palisade is a ring you cross only at a gateway. The positions moved OUT of the
+client's builder and into `shared/town.ts` in the same change — the client draws
+the monument from that entry and the collision keeps you out of that entry, so
+there is no second copy to go stale, and the failure mode being avoided is an
+invisible wall in the middle of open paving.
+
+One bug caught before it shipped, by a test written for it: the smithy as a
+solid circle would have held every player further from the anvil than
+`INTERACTION_RANGE_PX`. Its six props ring an empty middle and that empty middle
+is where you stand to craft, so it is drawn but not solid — a distinction the
+prop table now carries explicitly as `blockRadiusPx: 0`.
+
 ---
 
 ## Phase 48+ — Revisit and pick from here

@@ -7,6 +7,7 @@ import { instantiate } from "./assets";
 import { createTerrainMaterial } from "./terrain";
 import { buildGroundCover } from "./scatter";
 import { DayNight } from "./daynight";
+import { TOWN_CENTER, TOWN_RADIUS_PX } from "../../../shared/town";
 
 // Server positions are in pixels from the 2D game; the simulation still runs in
 // that space and every formula in shared/ is written against it. Rendering
@@ -58,6 +59,15 @@ export function terrainHeight(x: number, z: number): number {
 // gear, far enough to still see a telegraph land beside you — and the wheel
 // covers the rest.
 export const CAMERA_MIN_DISTANCE = 5;
+/**
+ * How close a wall may push the camera, past the zoom's own floor.
+ *
+ * Deliberately tighter than CAMERA_MIN_DISTANCE: that number is a preference —
+ * how close someone likes to play — and this one is a physical constraint. In a
+ * narrow gap between two buildings the choice is between a very close camera
+ * and no character at all, and a very close camera is the better of the two.
+ */
+export const CAMERA_WALL_MIN_DISTANCE = 1.2;
 export const CAMERA_MAX_DISTANCE = 22;
 export const CAMERA_DEFAULT_DISTANCE = 9;
 
@@ -105,6 +115,23 @@ export class World {
   /** Eased toward targetDistance, so a wheel notch glides rather than jumps. */
   private distance = loadCameraDistance();
   private targetDistance = this.distance;
+  /**
+   * Solid things the camera may not sit behind. Buildings, not trees.
+   *
+   * The distinction matters: a wall is something you must never be able to see
+   * your character through, and a treeline is something you would hate the
+   * camera to lurch forward for every time you brushed a trunk. Walls are
+   * handled here by moving the camera; trunks are handled in Game by fading
+   * them, and each is the right answer for its own kind of obstacle.
+   */
+  private cameraColliders: THREE.Object3D[] = [];
+  /** Where the wall is holding the camera this frame, or Infinity. */
+  private blockedDistance = Infinity;
+  private readonly camRay = new THREE.Raycaster();
+  private readonly rayOrigin = new THREE.Vector3();
+  private readonly rayDir = new THREE.Vector3();
+  private readonly raySide = new THREE.Vector3();
+  private readonly rayUp = new THREE.Vector3(0, 1, 0);
   private readonly lookTarget = new THREE.Vector3();
   private readonly desiredLook = new THREE.Vector3();
 
@@ -235,6 +262,15 @@ export class World {
     const cover = await buildGroundCover(this.groundCover, {
       halfWidth: PLAY_HALF_W,
       halfHeight: PLAY_HALF_H,
+      // Emberhold keeps its own ground. Wildflowers coming up through a paved
+      // square read as the town having been dropped on top of the field rather
+      // than built in it — and the plants stand proud of the paving, so the
+      // cobbles cannot hide them.
+      exclude: {
+        x: toWorldX(TOWN_CENTER.x),
+        z: toWorldZ(TOWN_CENTER.y),
+        radius: (TOWN_RADIUS_PX / PX_PER_UNIT) * 0.92,
+      },
     });
     this.scene.add(this.groundCover);
     console.info(
@@ -264,6 +300,70 @@ export class World {
     return this.distance;
   }
 
+  /**
+   * Registers the geometry the camera must stay in front of.
+   *
+   * Called once, with the town. Nothing else in the world is solid enough to
+   * warrant it: a boulder is knee-high, a tree is a pole, and the terrain is
+   * flat inside the play area by construction.
+   */
+  setCameraColliders(objects: THREE.Object3D[]): void {
+    this.cameraColliders = objects;
+  }
+
+  /** True while a wall is holding the camera closer than the player asked for. */
+  get cameraBlocked(): boolean {
+    return this.blockedDistance < Infinity;
+  }
+
+  /**
+   * How far the camera may sit from the player without a wall in between.
+   *
+   * Five rays, cast from points spread over the CHARACTER rather than from one
+   * point on it. That is the whole correction over the first version: a
+   * character is about 1.7 units tall and half a unit wide, and a camera with
+   * clear sight of their chest can still have a wall across their legs. That
+   * is exactly what shipped first — it protected `lookTarget` alone, the look
+   * point sits at chest height, and the watchpost and the chapel both still ate
+   * the bottom half of the character while the ray reported clear.
+   *
+   * So: head, chest, knees, and a shoulder either side. Whichever sees a wall
+   * first decides, because any one of them being blocked is a visible piece of
+   * missing character.
+   *
+   * Returns Infinity when nothing is in the way, which is the common case and
+   * costs five short raycasts against six merged building meshes.
+   */
+  private clearDistance(want: number): number {
+    if (this.cameraColliders.length === 0) return Infinity;
+
+    this.rayDir.copy(this.cameraDir);
+    this.raySide.crossVectors(this.rayDir, this.rayUp).normalize();
+
+    // Offsets from the look point, which already sits at y = 1.0 — so these run
+    // from a little over head height down to the ankles.
+    const samples: [number, number][] = [
+      [0, 0.45],
+      [0, -0.1],
+      [0, -0.62],
+      [0.5, -0.1],
+      [-0.5, -0.1],
+    ];
+
+    let nearest = Infinity;
+    for (const [lateral, lift] of samples) {
+      this.rayOrigin
+        .set(this.lookTarget.x, this.lookTarget.y + lift, this.lookTarget.z)
+        .addScaledVector(this.raySide, lateral);
+      this.camRay.set(this.rayOrigin, this.rayDir);
+      this.camRay.far = want + 1.5;
+      const hits = this.camRay.intersectObjects(this.cameraColliders, true);
+      this.camRay.far = Infinity;
+      if (hits.length > 0 && hits[0].distance < nearest) nearest = hits[0].distance;
+    }
+    return nearest;
+  }
+
   /** Keeps the camera and the shadow frustum trailing the player. */
   follow(x: number, z: number, dtSeconds: number): void {
     this.desiredLook.set(x, 1.0, z);
@@ -273,6 +373,27 @@ export class World {
     // Zoom eases on the same clock as the follow, which is why it is applied
     // here rather than in the wheel handler.
     this.distance += (this.targetDistance - this.distance) * Math.min(1, dtSeconds * 9);
+
+    // --- Keep a wall out from between the camera and the character ----------
+    // The permanent answer to "I cannot see myself when I stand next to a
+    // building". Fading the wall was the other candidate and it is the wrong
+    // one here: the town shares one material per surface across all six
+    // buildings, so fading what blocks you would fade the whole town, and a
+    // player standing behind an inn would watch the chapel go translucent.
+    //
+    // Snapping IN and easing OUT, deliberately. A wall arriving between you and
+    // the camera has to be answered on the same frame or you spend that frame
+    // looking at plaster; a wall leaving can be given half a second, and eased
+    // it reads as the camera drifting back rather than as a jolt.
+    const clear = this.clearDistance(this.distance);
+    this.blockedDistance = clear;
+    if (clear < Infinity) {
+      // A margin, so the camera sits in front of the surface rather than in it —
+      // without this the near plane clips through and you see the inside of the
+      // wall, which looks far worse than the problem being solved.
+      const allowed = Math.max(CAMERA_WALL_MIN_DISTANCE, clear - 0.6);
+      if (allowed < this.distance) this.distance = allowed;
+    }
 
     this.camera.position.set(
       this.lookTarget.x + this.cameraDir.x * this.distance,

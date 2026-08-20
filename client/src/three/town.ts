@@ -31,6 +31,14 @@ import {
   TOWN_GATE_ANGLES,
   TOWN_GATE_HALF_DEG,
   TOWN_RADIUS_PX,
+  BENCH_ANGLES,
+  BENCH_RING_PX,
+  GARDEN_ANGLES,
+  GARDEN_RING_PX,
+  LANTERN_ANGLES,
+  LANTERN_RING_PX,
+  propById,
+  inGateway as bearingInGateway,
   type BuildingKind,
   type TownBuilding,
 } from "../../../shared/town";
@@ -472,13 +480,28 @@ function boxProjectUVs(geo: THREE.BufferGeometry, scale: number): void {
 }
 
 /**
- * One material per palette entry, for the whole town.
+ * One material per palette entry, shared by everything that is not a building.
  *
- * Built once and shared. `glass` is the reason this is a module-level cache
- * rather than something each building makes for itself: the night pass writes
- * one emissive value and every lit window in Emberhold answers.
+ * Buildings get their OWN clones — see `Builder.finish`. That is not an
+ * optimisation, it is what makes the occlusion fade possible: when a wall ends
+ * up between the camera and the character the client fades the wall, and with
+ * one plaster material for the whole town, fading the inn you are standing
+ * behind would also fade the chapel across the square.
+ *
+ * The cost of splitting is materials, not draw calls — each building still
+ * draws one mesh per surface — and the one thing that genuinely wanted sharing,
+ * the lit-window emissive, is served by `litGlass` below instead.
  */
 const materials = new Map<MatKey, THREE.MeshStandardMaterial>();
+
+/**
+ * Every window material in town, prototype and clones alike.
+ *
+ * The night pass walks this instead of writing one shared value. A dozen
+ * assignments once a frame is nothing, and it is the price of being able to
+ * fade one building without fading the rest.
+ */
+const litGlass: THREE.MeshStandardMaterial[] = [];
 
 function materialFor(key: MatKey): THREE.MeshStandardMaterial {
   const existing = materials.get(key);
@@ -502,6 +525,7 @@ function materialFor(key: MatKey): THREE.MeshStandardMaterial {
     // leaving the base at full amber pushed a lit pane past the tone mapper's
     // shoulder and every lantern in town came out as a flat white box.
     mat.color.setHex(0x3a2a16);
+    litGlass.push(mat);
   }
   materials.set(key, mat);
   return mat;
@@ -645,9 +669,15 @@ class Builder {
     );
   }
 
-  /** Merges and returns. Everything casts and receives, because a town without
-   *  self-shadowing reads as flat cardboard at every hour but noon. */
-  finish(into: THREE.Group): THREE.Group {
+  /**
+   * Merges and returns. Everything casts and receives, because a town without
+   * self-shadowing reads as flat cardboard at every hour but noon.
+   *
+   * `ownMaterials` clones the palette for this builder alone, which is what a
+   * building wants and the palisade does not: only something that can be faded
+   * independently needs materials of its own.
+   */
+  finish(into: THREE.Group, ownMaterials = false): THREE.Group {
     for (const [key, list] of this.parts) {
       const merged = mergeGeometries(list, false);
       // World-space UVs, computed once on the merged result rather than per
@@ -659,7 +689,14 @@ class Builder {
         console.error(`[town] could not merge ${list.length} pieces of "${key}"`);
         continue;
       }
-      const mesh = new THREE.Mesh(merged, materialFor(key));
+      let mat = materialFor(key);
+      if (ownMaterials) {
+        mat = mat.clone();
+        // The clone shares the texture by reference, which is the whole point:
+        // seventy materials, still nine canvases.
+        if (key === "glass") litGlass.push(mat);
+      }
+      const mesh = new THREE.Mesh(merged, mat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       into.add(mesh);
@@ -1288,7 +1325,9 @@ function makeBuilding(b: TownBuilding, lanterns: Lantern[]): THREE.Group {
     hangingSign(builder, group, b.name, outerHW - 0.5, style.plinth + doorH + 1.15, outerHD, 0);
   }
 
-  builder.finish(group);
+  // Its own materials, so this building can be faded without taking the rest
+  // of the town with it.
+  builder.finish(group, true);
 
   // One real light per building, at the door, rather than one per lantern:
   // twelve door lanterns would be twelve point lights for a difference nobody
@@ -1423,11 +1462,9 @@ function palisade(b: Builder, group: THREE.Group, lanterns: Lantern[]): void {
   const cx = toWorldX(TOWN_CENTER.x);
   const cz = toWorldZ(TOWN_CENTER.y);
 
-  const inGateway = (deg: number) =>
-    TOWN_GATE_ANGLES.some((g) => {
-      const diff = Math.abs(((deg - g + 540) % 360) - 180);
-      return 180 - diff < TOWN_GATE_HALF_DEG;
-    });
+  // The same predicate the wall collision uses, so the timber and the thing
+  // stopping you walking through it open in the same places.
+  const inGateway = bearingInGateway;
 
   let seed = 991;
   const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
@@ -1496,14 +1533,26 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
   };
 
   // --- The monument ---------------------------------------------------------
-  // What the square is FOR. A plaza with a smithy in the middle of it and
-  // nothing else is a yard; a plaza with something in it people would stand
-  // near is a square. Stepped base, plinth, obelisk, and a bronze band round
-  // the top so the eye has somewhere to land.
+  // What the square is FOR. Stepped base, plinth, obelisk, and a bronze band
+  // round the top so the eye has somewhere to land.
   //
-  // Placed off the exact centre, because the exact centre is the anvil and is
-  // also where every player in the game arrives.
-  const monument = polar(330, 62);
+  // Off the exact centre, and so is the smithy now — the middle of the square
+  // is where every player in the game materialises, and anything standing on it
+  // is something they spawn inside. The forge used to be exactly there, which
+  // made the town's focal point a workbench and left arriving players looking
+  // at an anvil from the inside. The four features are spaced round the centre
+  // instead, on opposed bearings, so the square reads as arranged rather than
+  // as a pile.
+  // Positions come from `shared/town.ts` now, not from numbers typed here.
+  // Collision keeps a body out of these same entries, and two copies of a
+  // placement is two copies to move next time the square is rearranged — with
+  // the failure being an invisible wall in the middle of open paving.
+  const prop = (id: string) => {
+    const p = propById(id)!;
+    return polar(p.radiusPx, p.angleDeg);
+  };
+
+  const monument = prop("monument");
   for (let step = 0; step < 3; step++) {
     const half = 2.5 - step * 0.42;
     b.box(step === 1 ? "stoneDark" : "stone", half * 2, 0.22, half * 2, monument.x, step * 0.22, monument.z, Math.PI / 4);
@@ -1521,7 +1570,7 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
   }
 
   // --- The well -------------------------------------------------------------
-  const well = polar(430, 330);
+  const well = prop("well");
   b.add("stone", new THREE.CylinderGeometry(1.05, 1.15, 0.9, 12), well.x, 0.45, well.z);
   b.add("stoneDark", new THREE.CylinderGeometry(1.12, 1.12, 0.14, 12), well.x, 0.93, well.z);
   b.add("iron", new THREE.CylinderGeometry(0.9, 0.9, 0.06, 12), well.x, 0.62, well.z);
@@ -1538,8 +1587,9 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
   b.box("timberLight", 0.42, 0.3, 0.42, well.x, 1.4, well.z);
 
   // --- A market stall -------------------------------------------------------
-  const stall = polar(430, 200);
-  const stallRot = -((200 - 180) * Math.PI) / 180;
+  const stallProp = propById("stall")!;
+  const stall = polar(stallProp.radiusPx, stallProp.angleDeg);
+  const stallRot = -((stallProp.angleDeg - 180) * Math.PI) / 180;
   for (const [sx, sz] of [[-1.3, -0.8], [1.3, -0.8], [-1.3, 0.8], [1.3, 0.8]] as [number, number][]) {
     const rx = stall.x + sx * Math.cos(stallRot) + sz * Math.sin(stallRot);
     const rz = stall.z - sx * Math.sin(stallRot) + sz * Math.cos(stallRot);
@@ -1559,29 +1609,32 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
   // Six, on the ring between the anvil and the buildings. This is the number
   // the night pass is tuned against; every extra one is a real per-fragment
   // cost on every lit surface in view.
-  for (const deg of [0, 45, 90, 135, 180, 225, 270, 315]) {
-    const p = polar(620, deg + 22);
+  for (const deg of LANTERN_ANGLES) {
+    const p = polar(LANTERN_RING_PX, deg);
     lantern(b, group, p.x, p.z, 3.1, lanterns);
   }
 
   // --- Fences, troughs and a woodpile --------------------------------------
-  const pile = polar(660, 165);
+  const pile = prop("woodpile");
   for (let row = 0; row < 3; row++) {
     for (let i = 0; i < 4 - row; i++) {
-      b.cyl(
+      // Placed with `add` rather than `cyl`, because `cyl` raises a piece by
+      // half its HEIGHT — which is right for a post standing up and wrong for
+      // a log lying down. Through `cyl` these floated 0.55 units off the grass
+      // on a stack that is only 0.75 tall.
+      b.add(
         "timberLight",
-        0.15,
-        1.4,
+        new THREE.CylinderGeometry(0.15, 0.15, 1.4, 7),
         pile.x + (i - (3 - row) / 2) * 0.34,
-        row * 0.3,
+        0.15 + row * 0.28,
         pile.z,
-        7,
+        0,
         Math.PI / 2,
       );
     }
   }
 
-  const trough = polar(660, 105);
+  const trough = prop("trough");
   b.box("timberLight", 1.9, 0.55, 0.75, trough.x, 0, trough.z);
   b.box("stoneDark", 1.7, 0.12, 0.6, trough.x, 0.4, trough.z);
 
@@ -1589,23 +1642,23 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
   // Somewhere to stand around, which is what this square is for. Placed facing
   // inward on the ring the lanterns are on, so the lit part of the town at
   // night is also the part with something to sit on.
-  for (const deg of [22, 68, 112, 158, 202, 248, 292, 338]) {
-    const p = polar(540, deg);
+  for (const deg of BENCH_ANGLES) {
+    const p = polar(BENCH_RING_PX, deg);
     const rot = -((deg + 90) * Math.PI) / 180;
+    const cos = Math.cos(rot);
+    const sin = Math.sin(rot);
+    const at = (lx: number, lz: number) => ({
+      x: p.x + lx * cos + lz * sin,
+      z: p.z - lx * sin + lz * cos,
+    });
     b.box("timberLight", 1.9, 0.11, 0.5, p.x, 0.45, p.z, rot);
-    b.box("timberLight", 1.9, 0.42, 0.1, p.x, 0.56, p.z, rot, 0);
+    // The back rest goes at the BACK, which is what the local-frame helper is
+    // for — offset by z alone it stood up through the middle of the seat.
+    const back = at(0, -0.2);
+    b.box("timberLight", 1.9, 0.42, 0.09, back.x, 0.56, back.z, rot);
     for (const side of [-1, 1]) {
-      const lx = side * 0.75;
-      b.box(
-        "timber",
-        0.14,
-        0.45,
-        0.44,
-        p.x + lx * Math.cos(rot),
-        0,
-        p.z - lx * Math.sin(rot),
-        rot,
-      );
+      const leg = at(side * 0.75, 0);
+      b.box("timber", 0.14, 0.45, 0.44, leg.x, 0, leg.z, rot);
     }
   }
 
@@ -1614,13 +1667,28 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
   // which reads as a fence somebody put round a field. Kitchen gardens, hedges
   // and a cart fill it — all of it built from the same kit as everything else
   // so nothing here needs a download.
-  for (const deg of [20, 65, 110, 160, 200, 250, 295, 340]) {
-    const p = polar(735, deg);
+  for (const deg of GARDEN_ANGLES) {
+    const p = polar(GARDEN_RING_PX, deg);
     const rot = -((deg + 90) * Math.PI) / 180;
-    // A fenced plot: four low rails and three rows of something growing.
+    const cos = Math.cos(rot);
+    const sin = Math.sin(rot);
+    const at = (lx: number, lz: number) => ({
+      x: p.x + lx * cos + lz * sin,
+      z: p.z - lx * sin + lz * cos,
+    });
+    // A fenced plot. The rails used to be the whole fence, hanging at 0.24 and
+    // 0.5 with nothing under them — two brown planks floating over the grass,
+    // which is what a fence looks like when you forget the posts.
+    for (const lx of [-1.5, -0.5, 0.5, 1.5]) {
+      for (const lz of [-1.1, 1.1]) {
+        const q = at(lx, lz);
+        b.box("timberLight", 0.09, 0.62, 0.09, q.x, 0, q.z, rot);
+      }
+    }
     for (const side of [-1, 1]) {
-      b.box("timberLight", 3.0, 0.09, 0.07, p.x, 0.5, p.z + side * 1.1, rot);
-      b.box("timberLight", 3.0, 0.09, 0.07, p.x, 0.24, p.z + side * 1.1, rot);
+      const q = at(0, side * 1.1);
+      b.box("timberLight", 3.1, 0.08, 0.06, q.x, 0.5, q.z, rot);
+      b.box("timberLight", 3.1, 0.08, 0.06, q.x, 0.24, q.z, rot);
     }
     for (let i = -2; i <= 2; i++) {
       const lx = i * 0.62;
@@ -1696,6 +1764,16 @@ function ringedDisc(radius: number, segments: number, bands: number[]): THREE.Bu
 
 export class Town {
   readonly group = new THREE.Group();
+  /**
+   * The six buildings, each as its own group.
+   *
+   * Held separately from `group` because the camera treats them differently
+   * from everything else in town: a wall is something it must stay in front of,
+   * and a lamp post, a bench and a picket fence are not. Handing the whole town
+   * to the camera as a collider makes it lurch forward every time a lantern
+   * passes behind the player's shoulder.
+   */
+  readonly buildings: THREE.Group[] = [];
   private readonly lanterns: Lantern[] = [];
   /** Lifts the whole square after dark. See `update`. */
   private readonly townFill = new THREE.HemisphereLight(0xffd8a0, 0x3a2c1e, 0);
@@ -1706,7 +1784,9 @@ export class Town {
     const builder = new Builder();
 
     for (const b of TOWN_BUILDINGS) {
-      this.group.add(makeBuilding(b, this.lanterns));
+      const built = makeBuilding(b, this.lanterns);
+      this.buildings.push(built);
+      this.group.add(built);
     }
 
     palisade(builder, this.group, this.lanterns);
@@ -1769,6 +1849,10 @@ export class Town {
         polygonOffsetUnits: -3,
       }),
     );
+    // Named so tooling can tell the ground decals apart from the things
+    // standing on them — a check for "is anything floating" that counts the
+    // paving as support passes no matter what is hovering over it.
+    square.name = "town-paving";
     square.rotation.x = -Math.PI / 2;
     square.position.set(cx, 0.03, cz);
     square.receiveShadow = true;
@@ -1792,6 +1876,7 @@ export class Town {
       polygonOffsetUnits: -2,
     });
     const road = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2.9, 4.2), roadMat);
+    road.name = "town-road";
     road.rotation.x = -Math.PI / 2;
     road.position.set(cx, 0.02, cz);
     road.receiveShadow = true;
@@ -1895,8 +1980,8 @@ export class Town {
       if (l.glow.visible) l.glow.scale.setScalar(0.85 + flicker * 0.3);
     }
 
-    // Every pane in town, in one assignment. See the note on `materials`.
-    const glass = materialFor("glass");
-    glass.emissiveIntensity = lit * 1.15;
+    // Every pane in town. A loop rather than one assignment, because the
+    // buildings own their materials so that they can be faded one at a time.
+    for (const glass of litGlass) glass.emissiveIntensity = lit * 1.15;
   }
 }
