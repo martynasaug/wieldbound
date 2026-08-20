@@ -470,12 +470,125 @@ export function doubleAttackChance(agility: number): number {
   return Math.min(25, agility);
 }
 
+// --- Damage has a school ----------------------------------------------------
+// Every blow in the game was one undifferentiated number. A firebolt and a
+// hammer both came out as "14", the only difference was which sprite played,
+// and so the answer to every monster was the same weapon swung harder. The
+// premise of this game is that WHAT YOU ARE HOLDING IS WHO YOU ARE, and that
+// premise was only half true: the thing in your hand decided how you fought and
+// never what you were good against.
+//
+// SIX SCHOOLS, and physical is one of them rather than the absence of one.
+// Making "no element" a real school is what lets a golem resist it, which is
+// the whole point — an untyped default would have to be the one thing nothing
+// in the world could have an opinion about.
+//
+// Five elements and no more. Every one of them has a monster that resists it, a
+// monster that folds to it, a way for a player to deal it and a way to defend
+// against it; a sixth would be a word in a tooltip. `lightning` in particular
+// existed as an effect row and a spell and had no meaning at all until now.
+export const DAMAGE_SCHOOLS = [
+  "physical",
+  "fire",
+  "frost",
+  "nature",
+  "arcane",
+  "lightning",
+] as const;
+export type DamageSchool = (typeof DAMAGE_SCHOOLS)[number];
+
+/** The elements, i.e. everything a resistance can be carried against. Armour is
+ *  the physical answer and always has been, so there is deliberately no such
+ *  thing as physical resistance — two numbers doing one job is how a stat
+ *  becomes impossible to tune. */
+export const ELEMENTAL_SCHOOLS = DAMAGE_SCHOOLS.filter((s) => s !== "physical") as Exclude<
+  DamageSchool,
+  "physical"
+>[];
+export type ElementalSchool = (typeof ELEMENTAL_SCHOOLS)[number];
+
+export interface SchoolDef {
+  id: DamageSchool;
+  name: string;
+  /** Interface colour: floating damage, the target frame's lines, the sheet. */
+  color: string;
+  /** How a hit of this school reads in a log line, lower case. */
+  verb: string;
+}
+
+export const SCHOOLS: Record<DamageSchool, SchoolDef> = {
+  physical: { id: "physical", name: "Physical", color: "#e8e2d4", verb: "struck" },
+  fire:     { id: "fire",     name: "Fire",     color: "#ff8a3d", verb: "burned" },
+  frost:    { id: "frost",    name: "Frost",    color: "#7fd4f5", verb: "chilled" },
+  nature:   { id: "nature",   name: "Nature",   color: "#8fd15a", verb: "poisoned" },
+  arcane:   { id: "arcane",   name: "Arcane",   color: "#c08aff", verb: "seared" },
+  lightning:{ id: "lightning",name: "Lightning",color: "#ffe066", verb: "shocked" },
+};
+
+export function schoolDef(school: DamageSchool | undefined | null): SchoolDef {
+  return SCHOOLS[school ?? "physical"] ?? SCHOOLS.physical;
+}
+
+/**
+ * How far a resistance may go, in either direction.
+ *
+ * NEVER IMMUNITY, and never anything close to it. The one rule this whole
+ * system has to obey is the game's own premise: you may pick up any weapon and
+ * go anywhere, so a resistance profile has to make a choice better or worse and
+ * must never make one unplayable. Fifty per cent is enough to be felt across a
+ * fight and not enough to be a wall — a wrong-school build kills a golem slowly
+ * rather than not at all.
+ */
+export const MAX_RESIST = 50;
+
+/** A resistance profile: percent taken OFF incoming damage of that school.
+ *  Negative is a vulnerability, which is the more interesting half. */
+export type ResistProfile = Partial<Record<DamageSchool, number>>;
+
+/** Clamped on every read rather than trusted from the table, so no hand-typed
+ *  row can quietly author an immunity. */
+export function resistOf(profile: ResistProfile | undefined, school: DamageSchool): number {
+  const raw = profile?.[school] ?? 0;
+  return Math.max(-MAX_RESIST, Math.min(MAX_RESIST, raw));
+}
+
+/** What a resistance does to a number. One function, so the damage the server
+ *  deals and the figure the character sheet quotes cannot disagree. */
+export function applyResist(damage: number, resistPercent: number): number {
+  const clamped = Math.max(-MAX_RESIST, Math.min(MAX_RESIST, resistPercent));
+  return Math.max(1, Math.round(damage * (1 - clamped / 100)));
+}
+
 export interface HitResult {
   hit: boolean;
   crit: boolean;
   damage: number;
+  /** Which school landed, so the client can tint the number without being told
+   *  separately. Absent means it did not land at all. */
+  school?: DamageSchool;
+  /** The defender's resistance to it, so "that did nothing" and "that hurt"
+   *  are legible rather than inferred from a number the player cannot compare
+   *  against anything. */
+  resisted?: number;
 }
 
+/**
+ * The one place a blow turns into a number.
+ *
+ * Order is load-bearing and worth stating: roll to hit, roll to crit, roll the
+ * band, multiply by the crit, apply the school RESISTANCE, then subtract
+ * armour. Resistance before armour because they answer different questions —
+ * resistance is what the target is MADE of and scales with the size of the
+ * blow, armour is a barrier in front of it and does not. Subtracting armour
+ * first would make a resistance worth less against a heavily armoured thing
+ * than a lightly armoured one, which is exactly backwards.
+ *
+ * Armour applies to every school rather than to physical alone. The tempting
+ * alternative — armour stops physical, resistance stops the rest — gives
+ * elemental damage a free pass through the one stat the whole game already
+ * balances against, and would have made a dragon's breath unanswerable by
+ * anything a player could wear.
+ */
 export function resolveHit(
   params: {
     attackerAccuracy: number;
@@ -485,9 +598,18 @@ export function resolveHit(
     attackerCritMultiplier: number;
     defenderEvasion: number;
     defenderArmor: number;
+    /** What is landing. Defaulted rather than required, so a caller that has no
+     *  opinion gets the school nothing in the world has an opinion about. */
+    school?: DamageSchool;
+    /** The defender's resistance to that school, as a percent. Passed in rather
+     *  than looked up here: this function is a formula and knows no tables, so
+     *  the same one resolves a player hitting a monster and a monster hitting a
+     *  player without either direction being a special case. */
+    defenderResist?: number;
   },
   random: () => number = Math.random,
 ): HitResult {
+  const school = params.school ?? "physical";
   const hitChance = Math.max(5, Math.min(95, params.attackerAccuracy - params.defenderEvasion));
   if (random() * 100 > hitChance) return { hit: false, crit: false, damage: 0 };
 
@@ -495,9 +617,11 @@ export function resolveHit(
   let damage = params.attackerMinHit + random() * (params.attackerMaxHit - params.attackerMinHit);
   damage = Math.round(damage);
   if (crit) damage = Math.round(damage * params.attackerCritMultiplier);
+  const resisted = Math.max(-MAX_RESIST, Math.min(MAX_RESIST, params.defenderResist ?? 0));
+  damage = applyResist(damage, resisted);
   damage = Math.max(1, damage - params.defenderArmor);
 
-  return { hit: true, crit, damage };
+  return { hit: true, crit, damage, school, resisted };
 }
 
 export function gatherDurationForLevel(level: number, agility = 0): number {
@@ -780,6 +904,31 @@ export interface MonsterStats {
   // clearing a swarm with AoE is not entirely free.
   deathBurstRadiusPx?: number;
   deathBurstDamage?: number;
+  /**
+   * What hurts it, and what it shrugs off.
+   *
+   * At most one resistance and one vulnerability per kind, and both follow from
+   * what the thing obviously IS — a cactoro is a plant, a troll regenerates
+   * unless you burn it, a golem is a rock with lightning as its one seam. A
+   * player who guesses from the name should be right, which is the same rule
+   * the matched sets are written under.
+   *
+   * BAND 1 HAS NONE. The first ring is where a player learns that swinging
+   * works at all, and a lesson about schools there would be a lesson nobody has
+   * the vocabulary for yet.
+   *
+   * Never immunity — see `MAX_RESIST`. A wrong-school build kills a golem
+   * slowly, never not at all, because the premise of this game is that you may
+   * pick up anything and go anywhere.
+   */
+  resist?: ResistProfile;
+  /**
+   * What its own blows are made of. Physical unless the creature plainly is
+   * not — which is what gives the player's elemental resistance something to
+   * be for, and stops the whole system being a one-way conversation about
+   * offence.
+   */
+  attackSchool?: DamageSchool;
 }
 
 export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
@@ -826,6 +975,9 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     bodyRadiusPx: 16,
     // Shouts for help, so a careless pull brings the whole camp.
     alertRadiusPx: 210,
+    // The first thing in the world with an opinion about schools, and it is a
+    // small one: scrap armour turns a blade a little, and nothing else.
+    resist: { physical: 15 },
   },
   // Fast and evasive rather than tanky — low HP and light hits, but its
   // own attack cadence is the quickest of any monster, and its evasion is
@@ -849,6 +1001,9 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackRangePx: 50,
     speedPxPerSec: 200,
     bodyRadiusPx: 18,
+    // An animal. It has a thick coat and it is afraid of fire, and both of
+    // those are older than any game.
+    resist: { frost: 30, fire: -30 },
     // Closes the gap in one bound rather than grinding you down over a long
     // chase, which is what makes it the enemy you need an escape tool for.
     leapRangePx: 230,
@@ -880,6 +1035,9 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     windupMs: 900,
     slamRadiusPx: 120,
     slamDamageMultiplier: 1.7,
+    // Hide like bark and it knits itself back together — unless you burn it,
+    // which is the one thing everyone has always known about trolls.
+    resist: { physical: 25, nature: 25, fire: -45 },
   },
 
   // ---------------------------------------------------------------- band 1
@@ -928,6 +1086,8 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     bodyRadiusPx: 18,
     deathBurstRadiusPx: 110,
     deathBurstDamage: 13,
+    // Spines. They break off in you and they do not burn well.
+    resist: { physical: 20, fire: -25 },
   },
   // Faster than the player and it leaps, but folds immediately once caught.
   // The answer is Frost Nova or a wall, not out-running it.
@@ -953,6 +1113,11 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     leapSpeedMultiplier: 3.2,
     leapDurationMs: 380,
     leapCooldownMs: 6000,
+    // It lives on the wing, so cold is what takes the wing away — and it never
+    // touches the ground, which is the one thing a bolt of lightning needs.
+    // Thin chitin under all of it: landing a blow is the hard part, not making
+    // one count.
+    resist: { nature: 25, lightning: 30, frost: -30, physical: -20 },
   },
 
   // ---------------------------------------------------------------- band 3
@@ -977,6 +1142,10 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     bodyRadiusPx: 20,
     deathBurstRadiusPx: 90,
     deathBurstDamage: 10,
+    // A plant, which is the whole of it: poison is water to it, fire ends it,
+    // and a blade is the thing you have always used on a plant.
+    resist: { nature: 45, fire: -45, physical: -25 },
+    attackSchool: "nature",
   },
   // The goblin's shout, with a much wider radius and a body behind it. Pulling
   // one carelessly brings a camp that can actually kill you.
@@ -999,6 +1168,9 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     speedPxPerSec: 142,
     bodyRadiusPx: 22,
     alertRadiusPx: 300,
+    // Real armour this time. And a body that size is a great deal of blood for
+    // something to travel, which is what a coated blade is for.
+    resist: { physical: 25, nature: -30 },
   },
 
   // ---------------------------------------------------------------- band 4
@@ -1022,6 +1194,12 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackRangePx: 58,
     speedPxPerSec: 168,
     bodyRadiusPx: 16,
+    // Barely there, so a blade passes through most of it — the oldest rule in
+    // the genre, and the reason a caster has a job. Kept to 30 rather than the
+    // cap because it already answers accuracy with 38 evasion, and a kind that
+    // punishes two builds at once is a kind two builds walk around.
+    resist: { physical: 30, arcane: -40 },
+    attackSchool: "arcane",
   },
   // The troll's damage without the tell — fast, hard-hitting and it crits.
   demon: {
@@ -1042,6 +1220,10 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackRangePx: 64,
     speedPxPerSec: 152,
     bodyRadiusPx: 26,
+    // It is made of the fire it throws, and cold is the opposite of it. Spells
+    // slide off a thing that is itself a spell.
+    resist: { fire: 50, arcane: 30, frost: -35 },
+    attackSchool: "fire",
   },
 
   // ---------------------------------------------------------------- band 5
@@ -1068,6 +1250,10 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     windupMs: 1100,
     slamRadiusPx: 140,
     slamDamageMultiplier: 1.8,
+    // Stone: it does not care about blades and it does not care about heat.
+    // Lightning is the seam, and it is the only creature in the world that
+    // gives Chain Lightning a reason to exist.
+    resist: { physical: 30, fire: 30, lightning: -45 },
   },
   // The apex: it telegraphs AND closes the gap, so neither standing still nor
   // running is a whole answer on its own.
@@ -1096,6 +1282,10 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     leapSpeedMultiplier: 2.8,
     leapDurationMs: 500,
     leapCooldownMs: 9000,
+    // The apex resists what it breathes and folds to the opposite of it, so the
+    // hardest thing in the world still has an answer you can go and find.
+    resist: { fire: 50, physical: 15, frost: -30 },
+    attackSchool: "fire",
   },
 };
 
@@ -1161,6 +1351,47 @@ export interface PassiveBonus {
   manaCostPercent?: number;
   /** Reduces skill cooldowns. */
   cooldownPercent?: number;
+  // --- Elemental resistance, one key per element.
+  //
+  // Five keys rather than a nested bag, because THIS vocabulary is the reason
+  // affixes, matched sets and talents all reach combat without any of them
+  // knowing the others exist — `addPassives` sums a flat record and every
+  // consumer reads a flat record. A nested `resist: {...}` would be the one
+  // member of this interface that needed its own adder, its own label rule and
+  // its own line in every place that totals one of these.
+  //
+  // No physical key on purpose: armour is the physical answer and has been
+  // since Phase 14. Two stats doing one job is how a number becomes impossible
+  // to tune.
+  resistFire?: number;
+  resistFrost?: number;
+  resistNature?: number;
+  resistArcane?: number;
+  resistLightning?: number;
+}
+
+/**
+ * Which `PassiveBonus` key carries each element's resistance.
+ *
+ * Written once here so nothing else ever spells one of those key names out. A
+ * hand-written `"resist" + capitalise(school)` in four panels is four places a
+ * sixth element has to be remembered in, and the failure is silent: a missing
+ * case reads as zero resistance rather than as an error.
+ */
+export const RESIST_KEY: Record<ElementalSchool, keyof PassiveBonus> = {
+  fire: "resistFire",
+  frost: "resistFrost",
+  nature: "resistNature",
+  arcane: "resistArcane",
+  lightning: "resistLightning",
+};
+
+/** What a player's totalled passives resist a given school by. Physical is
+ *  always zero — see the note on `RESIST_KEY`'s neighbours above. */
+export function passiveResist(passives: PassiveBonus, school: DamageSchool): number {
+  if (school === "physical") return 0;
+  const key = RESIST_KEY[school as ElementalSchool];
+  return Math.max(-MAX_RESIST, Math.min(MAX_RESIST, passives[key] ?? 0));
 }
 
 export const EMPTY_PASSIVES: Required<PassiveBonus> = {
@@ -1168,6 +1399,7 @@ export const EMPTY_PASSIVES: Required<PassiveBonus> = {
   healOnKill: 0, evasion: 0, maxHpBonus: 0, accuracyBonus: 0, damagePercent: 0,
   attackSpeedPercent: 0, critDamagePercent: 0, rangePercent: 0, skillPowerPercent: 0,
   manaCostPercent: 0, cooldownPercent: 0,
+  resistFire: 0, resistFrost: 0, resistNature: 0, resistArcane: 0, resistLightning: 0,
 };
 
 export function addPassives(
@@ -1198,6 +1430,18 @@ export interface SkillDef {
   effect: string;
   sfx: string;
   description: string;
+  /**
+   * What this skill's damage is made of. Absent means physical.
+   *
+   * Declared rather than derived from `effect`, even though the two agree for
+   * most of the table. `effect` names a ROW OF THE SPRITE ATLAS — it is how the
+   * skill looks — and quietly making it decide damage would mean a school could
+   * never be changed without changing the art, and choosing art could change
+   * the balance. Two of these disagree on purpose: Rend and Backstab draw blood
+   * with a `slash` sprite and are physical, and Earthshatter uses `quake` and is
+   * physical too.
+   */
+  school?: DamageSchool;
   passive?: PassiveBonus;
   // Optional riders, so one resolution path covers a lot of variety.
   appliesSlow?: boolean;
@@ -1257,7 +1501,8 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   poisonarrow: {
     id: "poisonarrow", name: "Poison Arrow", icon: "poisonarrow", kind: "control",
     manaCost: 12, cooldownMs: 9000, rangePx: 320, radiusPx: 0, power: 8,
-    effect: "poison", sfx: "cast", description: "A venomous shot that slows what it hits.",
+    effect: "poison", sfx: "cast", school: "nature",
+    description: "A venomous shot that slows what it hits.",
     appliesSlow: true,
   },
   disengage: {
@@ -1275,17 +1520,20 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   arcanebolt: {
     id: "arcanebolt", name: "Arcane Bolt", icon: "arcanebolt", kind: "damage",
     manaCost: 6, cooldownMs: 2500, rangePx: 300, radiusPx: 0, power: 10,
-    effect: "arcane", sfx: "cast", description: "A quick bolt of raw magic.",
+    effect: "arcane", sfx: "cast", school: "arcane",
+    description: "A quick bolt of raw magic.",
   },
   firebolt: {
     id: "firebolt", name: "Firebolt", icon: "firebolt", kind: "damage",
     manaCost: 14, cooldownMs: 5000, rangePx: 320, radiusPx: 70, power: 15,
-    effect: "fire", sfx: "cast", description: "Hurl fire that bursts on impact.",
+    effect: "fire", sfx: "cast", school: "fire",
+    description: "Hurl fire that bursts on impact.",
   },
   frostnova: {
     id: "frostnova", name: "Frost Nova", icon: "frostnova", kind: "control",
     manaCost: 18, cooldownMs: 11000, rangePx: 0, radiusPx: 150, power: 6,
-    effect: "frost", sfx: "cast", description: "Chill everything nearby, slowing it so you can break away.",
+    effect: "frost", sfx: "cast", school: "frost",
+    description: "Chill everything nearby, slowing it so you can break away.",
     appliesSlow: true,
   },
   mend: {
@@ -1296,7 +1544,8 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   chainlightning: {
     id: "chainlightning", name: "Chain Lightning", icon: "chainlightning", kind: "damage",
     manaCost: 30, cooldownMs: 13000, rangePx: 320, radiusPx: 0, power: 18,
-    effect: "lightning", sfx: "crit", description: "Arcs from target to target, up to four.",
+    effect: "lightning", sfx: "crit", school: "lightning",
+    description: "Arcs from target to target, up to four.",
     chainTargets: 4,
   },
   // --- Added with the talent trees, so two weapons of one archetype play
@@ -1353,13 +1602,15 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   frostbolt: {
     id: "frostbolt", name: "Frostbolt", icon: "frostbolt", kind: "control",
     manaCost: 10, cooldownMs: 4500, rangePx: 260, radiusPx: 0, power: 11,
-    effect: "frost", sfx: "cast", description: "A shard of cold. What it hits slows.",
+    effect: "frost", sfx: "cast", school: "frost",
+    description: "A shard of cold. What it hits slows.",
     appliesSlow: true,
   },
   arcanemissiles: {
     id: "arcanemissiles", name: "Arcane Missiles", icon: "arcanemissiles", kind: "damage",
     manaCost: 16, cooldownMs: 8000, rangePx: 240, radiusPx: 0, power: 9,
-    effect: "arcane", sfx: "cast", description: "Three darts, each seeking its own target.",
+    effect: "arcane", sfx: "cast", school: "arcane",
+    description: "Three darts, each seeking its own target.",
     chainTargets: 3,
   },
 };
@@ -2548,7 +2799,21 @@ export interface SkillResultMessage {
     globalCooldownMs: number;
     // Skills roll to hit and to crit exactly like an auto-attack, so a miss
     // is possible and Agility matters just as much when using the hotbar.
-    hits: { monsterId: string; hit: boolean; damage: number; crit: boolean }[];
+    hits: {
+      monsterId: string;
+      hit: boolean;
+      damage: number;
+      crit: boolean;
+      /** What landed, so the floating number can be tinted and the log can say
+       *  "burned" rather than "hit". */
+      school?: DamageSchool;
+      /** The target's resistance to it. Carried rather than looked up on the
+       *  client so the number on screen and the number the server subtracted
+       *  are the same fact — the client CAN look it up, and a client that
+       *  computes its own version of a server number is a client that will one
+       *  day disagree with it. */
+      resisted?: number;
+    }[];
     healed?: number;
     buffMs?: number;
     slowMs?: number;
@@ -2779,6 +3044,11 @@ export interface BattleResultMessage {
     playerCrit: boolean;
     playerDamage: number;
     monsterDefeated: boolean;
+    /** What the swing was made of — the weapon's school. */
+    school?: DamageSchool;
+    /** How much the target shrugged off, so "that did nothing" is legible
+     *  rather than inferred from a small number. */
+    resisted?: number;
   };
 }
 
@@ -2794,6 +3064,9 @@ export interface MonsterAttackMessage {
     hit: boolean;
     crit: boolean;
     damage: number;
+    /** What it hit you with. Physical for most of the bestiary; a dragon and a
+     *  demon breathe fire, a ghost is arcane, a cactoro is nature. */
+    school?: DamageSchool;
   };
 }
 

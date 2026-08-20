@@ -45,6 +45,12 @@ export interface CharacterStats {
   evasion: number;
   doubleAttackPercent: number;
   hpRegen: number;
+  /** What the weapon in hand deals, as a name and a colour. */
+  school: { name: string; color: string };
+  /** Every element, including the ones at zero — see the note on the markup.
+   *  Ordered by the shared school list so the five never reshuffle between
+   *  renders and a player can find one by position. */
+  resists: { name: string; color: string; value: number }[];
 }
 
 export interface Attributes {
@@ -103,6 +109,7 @@ export class CharacterPanel {
     for (const id of [
       "move", "xpbonus", "gather", "battle", "hit", "accuracy",
       "crit-chance", "crit-damage", "armor", "evasion", "double-attack", "hp-regen",
+      "school", "resists",
     ]) {
       const el = document.getElementById(`stat-${id}`);
       if (el) this.statEls[id] = el;
@@ -311,6 +318,28 @@ export class CharacterPanel {
     set("evasion", String(stats.evasion));
     set("double-attack", `${stats.doubleAttackPercent}%`);
     set("hp-regen", `${stats.hpRegen} hp/5s`);
+
+    const school = this.statEls["school"];
+    if (school) {
+      school.textContent = stats.school.name;
+      school.style.color = stats.school.color;
+    }
+
+    // Built rather than set as text, because each one carries its own colour —
+    // the same colour the floating damage number and the target frame use, so a
+    // player learns one association for each element rather than three.
+    const resists = this.statEls["resists"];
+    if (resists) {
+      resists.innerHTML = "";
+      for (const entry of stats.resists) {
+        const chip = document.createElement("span");
+        chip.className = entry.value !== 0 ? "res has" : "res";
+        chip.textContent = `${entry.value > 0 ? "+" : ""}${Math.round(entry.value)}%`;
+        chip.style.color = entry.color;
+        chip.title = `${entry.name} resistance`;
+        resists.appendChild(chip);
+      }
+    }
   }
 
   setAttributes(attrs: Attributes): void {

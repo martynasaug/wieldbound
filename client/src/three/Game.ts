@@ -14,6 +14,10 @@ import {
   MONSTER_LABELS,
   MONSTER_STATS,
   NODE_LABELS,
+  schoolDef,
+  passiveResist,
+  ELEMENTAL_SCHOOLS,
+  type DamageSchool,
   RARITIES,
   addPassives,
   SKILLS,
@@ -125,6 +129,8 @@ import {
   reforgeCost,
   salvageYield,
   signatureOf,
+  describeResists,
+  weaponSchool,
   swingIntervalOf,
 } from "../../../shared/items";
 
@@ -1198,6 +1204,8 @@ export class Game {
     playerCrit: boolean;
     playerDamage: number;
     monsterDefeated: boolean;
+    school?: DamageSchool;
+    resisted?: number;
   }): void {
     const vis = this.monsters.get(p.monsterId);
     this.lastCombatAt = performance.now();
@@ -1224,9 +1232,16 @@ export class Game {
         return;
       }
 
+      // The school is SAID rather than merely coloured when the target has an
+      // opinion about it. A tinted number tells a player which element landed;
+      // it cannot tell them the thing in front of them shrugged most of it off,
+      // and that second fact is the one that changes what they do next.
+      const sch = schoolDef(p.school);
+      const verdict = Game.resistNoteOf(p.resisted);
       this.combatLog.push(
-        `You hit the ${label} for ${p.playerDamage}${p.playerCrit ? " (CRIT)" : ""}.`,
-        p.playerCrit ? "#ffd85e" : "#e8dcc0",
+        `You ${p.school && p.school !== "physical" ? sch.verb : "hit"} the ${label} for ` +
+          `${p.playerDamage}${p.playerCrit ? " (CRIT)" : ""}${verdict}.`,
+        p.playerCrit ? "#ffd85e" : sch.color,
       );
       playSfx(p.playerCrit ? "crit" : "hit");
 
@@ -1241,7 +1256,15 @@ export class Game {
         target.actor.flash(p.playerCrit ? 0xffd85e : 0xffffff, p.playerCrit ? 190 : 120);
         this.floatOnMonster(
           target,
-          { kind: "hit", text: `${p.playerDamage}`, crit: p.playerCrit },
+          {
+            kind: "hit",
+            text: `${p.playerDamage}`,
+            crit: p.playerCrit,
+            // A crit keeps its own gold, because "that was a crit" is a louder
+            // fact than which element it was and two colours competing for one
+            // number is two colours nobody reads.
+            color: p.playerCrit ? undefined : schoolDef(p.school).color,
+          },
           p.playerDamage,
         );
         // The mark the weapon leaves: an arc for blades, a shockwave for a
@@ -1312,7 +1335,13 @@ export class Game {
     }
   }
 
-  private onMonsterAttack(p: { monsterId: string; hit: boolean; crit: boolean; damage: number }): void {
+  private onMonsterAttack(p: {
+    monsterId: string;
+    hit: boolean;
+    crit: boolean;
+    damage: number;
+    school?: DamageSchool;
+  }): void {
     const vis = this.monsters.get(p.monsterId);
     this.lastCombatAt = performance.now();
     if (vis) {
@@ -1327,8 +1356,12 @@ export class Game {
         playSfx("miss", 0.7);
         return;
       }
+      // Incoming damage keeps its red. Whose damage it is matters more to a
+      // player mid-fight than what it was made of, and that is the one thing
+      // the log's colours have always separated — so the school is in the WORD
+      // ("burns you") and never in the colour.
       this.combatLog.push(
-        `The ${label} ${p.crit ? "CRITs" : "hits"} you for ${p.damage}.`,
+        `The ${label} ${p.crit ? "CRITs" : p.school && p.school !== "physical" ? schoolDef(p.school).verb : "hits"} you for ${p.damage}.`,
         p.crit ? "#ff8f5e" : "#ff9d9d",
       );
       playSfx("hurt");
@@ -1417,7 +1450,14 @@ export class Game {
     reason?: string;
     cooldownRemainingMs: number;
     globalCooldownMs: number;
-    hits: { monsterId: string; hit: boolean; damage: number; crit: boolean }[];
+    hits: {
+      monsterId: string;
+      hit: boolean;
+      damage: number;
+      crit: boolean;
+      school?: DamageSchool;
+      resisted?: number;
+    }[];
     healed?: number;
     buffMs?: number;
     slowMs?: number;
@@ -1512,6 +1552,7 @@ export class Game {
       this.combatLog.push(skill.name + " finds nothing.", "#9a8d76");
     }
 
+    let saidResist = false;
     for (const hit of p.hits) {
       const vis = this.monsters.get(hit.monsterId);
       if (!vis) continue;
@@ -1532,7 +1573,27 @@ export class Game {
         continue;
       }
       vis.actor.flash(hit.crit ? 0xffd85e : 0x9ad4ff, 150);
-      this.floatOnMonster(vis, { kind: "skill", text: `${hit.damage}`, crit: hit.crit }, hit.damage);
+      this.floatOnMonster(
+        vis,
+        {
+          kind: "skill",
+          text: `${hit.damage}`,
+          crit: hit.crit,
+          color: hit.crit ? undefined : schoolDef(hit.school).color,
+        },
+        hit.damage,
+      );
+      // Said once for the cast rather than once per target: a Rain of Arrows
+      // into six trolls should not write "it recoils" six times, and every
+      // monster a single cast lands on shares a kind more often than not.
+      const note = Game.resistNoteOf(hit.resisted);
+      if (note && !saidResist) {
+        saidResist = true;
+        this.combatLog.push(
+          `${MONSTER_LABELS[vis.kind]}${note}.`,
+          schoolDef(hit.school).color,
+        );
+      }
       playSfx(hit.crit ? "crit" : "hit", 0.8);
     }
 
@@ -1591,6 +1652,21 @@ export class Game {
    *  is a per-frame allocation for nothing. */
   private readonly projectForFloat = (x: number, y: number, z: number) =>
     this.world.project(x, y, z, 90);
+
+  /**
+   * How a resistance reads in the log, or nothing at all.
+   *
+   * Only spoken when the target actually has an opinion, so an ordinary hit on
+   * an ordinary creature is still the plain sentence it always was — a suffix
+   * on every line is a suffix nobody reads.
+   */
+  private static resistNoteOf(resisted: number | undefined): string {
+    if (!resisted) return "";
+    if (resisted >= 40) return " — it barely notices";
+    if (resisted > 0) return " — resisted";
+    if (resisted <= -40) return " — it recoils";
+    return " — it feels that";
+  }
 
   private floatOnMonster(vis: MonsterVisual, spec: Omit<FloatSpec, "weight" | "headY">, damage = 0): void {
     const maxHp = Math.max(1, vis.state.maxHp);
@@ -1739,6 +1815,20 @@ export class Game {
       evasion: gearEvasion(gear) + talents.evasion,
       doubleAttackPercent: doubleAttackChance(this.agility),
       hpRegen: regenAmountForVitality(this.vitality),
+      // Read off the weapon actually in hand, through the same resolver the
+      // server swings with — so "what am I dealing" on this sheet and what the
+      // monster resists are one answer rather than two.
+      school: (() => {
+        const s = schoolDef(weaponSchool(gear.weapon ?? null));
+        return { name: s.name, color: s.color };
+      })(),
+      // `talents` is the fully totalled bag — talents, affixes and matched sets
+      // all summed — which is the same bag `passiveResist` reads on the server.
+      resists: ELEMENTAL_SCHOOLS.map((school) => ({
+        name: schoolDef(school).name,
+        color: schoolDef(school).color,
+        value: passiveResist(talents, school),
+      })),
     });
   }
 
@@ -2585,6 +2675,19 @@ export class Game {
         // the frame cannot promise something the roller does not carry. Only
         // bosses have one, which is why this needs no `elite` check of its own.
         knownFor: signatureOf(t.kind)?.name,
+        // Derived from the same profile the server resolves damage against, so
+        // the frame cannot tell a player to bring fire to something that does
+        // not mind it. Mapped to names and colours here because the frame is a
+        // renderer-agnostic panel and has no business importing the bestiary.
+        ...(() => {
+          const { resists, weakTo } = describeResists(tStats.resist);
+          const tag = (e: { school: DamageSchool }) => ({
+            school: e.school,
+            name: schoolDef(e.school).name,
+            color: schoolDef(e.school).color,
+          });
+          return { resists: resists.map(tag), weakTo: weakTo.map(tag) };
+        })(),
       });
       // Only the kinds that telegraph have a windup duration, and only they
       // ever set the flag, so the bar appears exactly when there is something

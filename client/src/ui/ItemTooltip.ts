@@ -76,6 +76,19 @@ export function attachItemTooltip(
     sub.style.color = d.color;
     el.appendChild(sub);
 
+    // What it deals. On its own line and in the school's own colour, because a
+    // player comparing two swords is now comparing two DIFFERENT questions —
+    // which hits harder, and which one the thing they are walking towards
+    // minds. Only weapons have it; a helm dealing frost would be a number that
+    // never applies.
+    if (d.school) {
+      const school = document.createElement("div");
+      school.className = "tt-school";
+      school.textContent = `Deals ${d.school.name.toLowerCase()} damage`;
+      school.style.color = d.school.color;
+      el.appendChild(school);
+    }
+
     // Said before the numbers, because it changes what the numbers mean: they
     // are the best of the pile, not the only ones in it.
     if (count > 1) {
@@ -127,10 +140,25 @@ export function attachItemTooltip(
       head.className = "tt-cmp-head";
       head.textContent = `Compared with ${d.comparison.againstName}`;
       el.appendChild(head);
+      // Said before the deltas, because it outranks every one of them: two
+      // swords with identical rolls are not the same weapon if one of them is
+      // the thing the camp you are walking into folds to.
+      if (d.comparison.schoolChange) {
+        const swap = document.createElement("div");
+        swap.className = "tt-cmp school";
+        swap.textContent =
+          `${d.comparison.schoolChange.from} → ${d.comparison.schoolChange.to} damage`;
+        swap.style.color = d.comparison.schoolChange.color;
+        el.appendChild(swap);
+      }
       if (d.comparison.deltas.length === 0) {
         const same = document.createElement("div");
         same.className = "tt-cmp";
-        same.textContent = "the same numbers";
+        // "The same numbers" was a lie the moment a weapon had a school: two
+        // items can roll identically and still answer different creatures.
+        same.textContent = d.comparison.schoolChange
+          ? "the same numbers otherwise"
+          : "the same numbers";
         el.appendChild(same);
       }
       for (const delta of d.comparison.deltas) {

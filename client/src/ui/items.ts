@@ -16,6 +16,7 @@ import {
   RARITIES,
   SECONDARY_STAT_LABEL,
   SLOT_LABEL,
+  schoolDef,
   type ItemInstance,
   type ItemRarity,
   type ItemSlot,
@@ -27,6 +28,7 @@ import {
   passiveSummary,
   feelNotes,
   isEtchedAffix,
+  weaponSchool,
   itemBase,
   itemName,
   itemScore,
@@ -139,6 +141,10 @@ export interface ItemComparison {
   /** Crude overall ordering, for the one-word summary. */
   scoreDelta: number;
   againstName: string;
+  /** Set only when the two deal different schools. A weapon swap that changes
+   *  what you are good against is a bigger change than any of the deltas above
+   *  it, and it is invisible in every one of them. */
+  schoolChange: { from: string; to: string; color: string } | null;
 }
 
 /**
@@ -201,6 +207,16 @@ export function compareToEquipped(
     deltas,
     scoreDelta: itemScore(item) - itemScore(worn),
     againstName: itemShortName(worn),
+    // Only for two things that are actually held. A cape has no school, so a
+    // cape comparison would otherwise report "physical to physical" forever.
+    schoolChange:
+      item.weaponType && worn.weaponType && weaponSchool(item) !== weaponSchool(worn)
+        ? {
+            from: schoolDef(weaponSchool(worn)).name.toLowerCase(),
+            to: schoolDef(weaponSchool(item)).name.toLowerCase(),
+            color: schoolDef(weaponSchool(item)).color,
+          }
+        : null,
   };
 }
 
@@ -218,6 +234,10 @@ export function itemDetails(item: ItemInstance, equipped: ItemInstance[] = []): 
   affixes: ItemLine[];
   feel: string[];
   twoHanded: boolean;
+  /** What this weapon's blows are made of. Null for anything not held, since a
+   *  helmet does not deal damage and a school on it would be a number that
+   *  never applies. */
+  school: { name: string; color: string } | null;
   comparison: ItemComparison | null;
 } {
   const base = itemBase(item.baseId);
@@ -239,6 +259,11 @@ export function itemDetails(item: ItemInstance, equipped: ItemInstance[] = []): 
     // leave an item describing itself wrongly.
     feel: feelNotes(item),
     twoHanded: !!base.twoHanded,
+    // Derived from the family and the material through the same resolver the
+    // server swings with, so a Frostbrand cannot say frost and deal physical.
+    school: item.weaponType
+      ? { name: schoolDef(weaponSchool(item)).name, color: schoolDef(weaponSchool(item)).color }
+      : null,
     comparison: compareToEquipped(item, equipped),
   };
 }

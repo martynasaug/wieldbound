@@ -57,6 +57,10 @@ import {
   type ItemInstance,
   type ItemRarity,
   type ItemSlot,
+  DAMAGE_SCHOOLS,
+  resistOf,
+  type DamageSchool,
+  type ResistProfile,
   MONSTER_LABELS,
   MONSTER_STATS,
   SLOT_LABEL,
@@ -777,6 +781,27 @@ export const AFFIXES: AffixDef[] = [
   { id: "mountain", label: "of the Mountain", kind: "suffix", minBand: 3, per: { armor: 1.1, maxHpBonus: 3 } },
   { id: "tempest", label: "of the Tempest", kind: "suffix", minBand: 4, per: { attackSpeedPercent: 1.2, damagePercent: 1.2 } },
   { id: "archive", label: "of the Archive", kind: "suffix", minBand: 4, per: { skillPowerPercent: 1.4, maxManaBonus: 5 } },
+
+  // --- suffixes: what it keeps out ----------------------------------------
+  // One per element, and all of them band 3 and up.
+  //
+  // The band floor is doing real work rather than being caution. A resistance
+  // is SITUATIONAL — worth a great deal against one camp and nothing at all
+  // against the next — and situational affixes are only a decision for a player
+  // who already has gear to choose between. Rolling them from band 1 would
+  // mostly mean a new player's one weapon came with a stat that does nothing
+  // for the first three rings, since band 1 and 2 creatures have no schools at
+  // all. It also keeps the general affixes from being diluted by five more
+  // entries in the pool that a first sword can land.
+  //
+  // Magnitudes are per band like everything else here, so at band 5 each is
+  // worth about what a five-piece matched set gives — which is the line that
+  // keeps a set from being strictly better than gearing for the fight.
+  { id: "salamander", label: "of the Salamander", kind: "suffix", minBand: 3, per: { resistFire: 4 } },
+  { id: "glacier", label: "of the Glacier", kind: "suffix", minBand: 3, per: { resistFrost: 4 } },
+  { id: "grove", label: "of the Grove", kind: "suffix", minBand: 3, per: { resistNature: 4 } },
+  { id: "sigil", label: "of the Sigil", kind: "suffix", minBand: 3, per: { resistArcane: 4 } },
+  { id: "earthed", label: "of Earthing", kind: "suffix", minBand: 3, per: { resistLightning: 4 } },
 ];
 
 export const AFFIXES_BY_ID: Record<string, AffixDef> = Object.fromEntries(
@@ -835,6 +860,11 @@ const PASSIVE_LABEL: Record<keyof PassiveBonus, string> = {
   skillPowerPercent: "skill power",
   manaCostPercent: "mana cost",
   cooldownPercent: "cooldown",
+  resistFire: "fire resistance",
+  resistFrost: "frost resistance",
+  resistNature: "nature resistance",
+  resistArcane: "arcane resistance",
+  resistLightning: "lightning resistance",
 };
 
 const PASSIVE_UNIT: Record<keyof PassiveBonus, string> = {
@@ -842,6 +872,8 @@ const PASSIVE_UNIT: Record<keyof PassiveBonus, string> = {
   healOnKill: "", evasion: "", maxHpBonus: "", accuracyBonus: "",
   damagePercent: "%", attackSpeedPercent: "%", critDamagePercent: "%", rangePercent: "%",
   skillPowerPercent: "%", manaCostPercent: "%", cooldownPercent: "%",
+  resistFire: "%", resistFrost: "%", resistNature: "%", resistArcane: "%",
+  resistLightning: "%",
 };
 
 // --- Rolling ----------------------------------------------------------------
@@ -1519,6 +1551,104 @@ export function feelNotes(item: ItemInstance | null | undefined): string[] {
   return notes;
 }
 
+// --- What a weapon is made of, and what that means -------------------------
+// The catalogue has kept three independent axes since it was written: MESH says
+// what shape a thing is, PALETTE what it is made of, RARITY how good it is. M1.3
+// gave palette a mechanical meaning through matched sets. This gives it a
+// second one, and it is the one the names have been promising all along:
+// Frostbrand deals frost, the Ember Wand burns, Venomkiss poisons.
+//
+// TWO SOURCES, AND THE ORDER MATTERS.
+//
+//   THE FAMILY sets the floor. Swords, axes, maces, daggers, bows and fists are
+//   physical; staves and wands are arcane, because a staff already throws a
+//   bolt and a wand already fires a beam and neither of those has ever been a
+//   blow. A mage's plain attack being arcane is what makes a mage a mage
+//   against a golem.
+//
+//   THE MATERIAL overrides it. Only four palettes are elemental — frost,
+//   crimson, arcane and verdant — and the other eight are what a weapon is
+//   ordinarily made of. That ratio is deliberate: if every material were an
+//   element then "elemental" would be the default and mean nothing, and the
+//   eight ordinary ones are exactly the ones a player picks up first.
+//
+// The alternative was a `school` field on every weapon row, which is thirty-six
+// hand-typed answers to a question the palette had already answered — and
+// thirty-six chances for Frostbrand to be steel-coloured frost damage.
+
+/**
+ * Which element a material IS, where it is one.
+ *
+ * Crimson reads as blood at least as much as fire, and it is mapped to fire
+ * anyway: it is the red material, the Ember Wand and Ruinstring both want it,
+ * and a school nothing in the catalogue could deal would be a school in name
+ * only. Bone and obsidian are deliberately absent — they are colours of ordinary
+ * things here, and inventing a shadow school to give them a job would be adding
+ * an element to fit a palette rather than the other way round.
+ */
+export const PALETTE_SCHOOL: Partial<Record<PaletteId, DamageSchool>> = {
+  frost: "frost",
+  crimson: "fire",
+  arcane: "arcane",
+  verdant: "nature",
+};
+
+/** The floor, before any material has an opinion. */
+const FAMILY_SCHOOL: Record<WeaponType, DamageSchool> = {
+  fist: "physical",
+  sword: "physical",
+  axe: "physical",
+  mace: "physical",
+  dagger: "physical",
+  bow: "physical",
+  staff: "arcane",
+  wand: "arcane",
+};
+
+/**
+ * What this particular weapon's blows are made of.
+ *
+ * Bare hands resolve rather than throwing, for the same reason every other
+ * weapon function here does: unarmed is a real archetype and not a broken state.
+ */
+export function weaponSchool(item: ItemInstance | null | undefined): DamageSchool {
+  const family = FAMILY_SCHOOL[item?.weaponType ?? "fist"] ?? "physical";
+  if (!item) return family;
+  return PALETTE_SCHOOL[itemBase(item.baseId).art.palette] ?? family;
+}
+
+/** The same question asked of a catalogue row rather than an instance — what
+ *  the forge's shelf and the bag's tooltip need, neither of which is holding a
+ *  rolled item at the time. */
+export function baseSchool(base: ItemBase): DamageSchool {
+  const family = base.weaponType ? FAMILY_SCHOOL[base.weaponType] : "physical";
+  return PALETTE_SCHOOL[base.art.palette] ?? family;
+}
+
+/**
+ * What a creature resists and what it folds to, as two short lists.
+ *
+ * Sorted by magnitude so the biggest number is the first thing read, and
+ * spoken as names rather than percentages — "weak to fire" is a plan and
+ * "-45% fire" is a spreadsheet. The exact figures are still available to the
+ * tooltip that wants them.
+ */
+export function describeResists(profile: ResistProfile | undefined): {
+  resists: { school: DamageSchool; value: number }[];
+  weakTo: { school: DamageSchool; value: number }[];
+} {
+  const resists: { school: DamageSchool; value: number }[] = [];
+  const weakTo: { school: DamageSchool; value: number }[] = [];
+  for (const school of DAMAGE_SCHOOLS) {
+    const v = resistOf(profile, school);
+    if (v > 0) resists.push({ school, value: v });
+    else if (v < 0) weakTo.push({ school, value: v });
+  }
+  resists.sort((a, b) => b.value - a.value);
+  weakTo.sort((a, b) => a.value - b.value);
+  return { resists, weakTo };
+}
+
 // --- Matched gear -----------------------------------------------------------
 // The catalogue keeps three independent axes — mesh, palette, quality — and two
 // of them already mean something mechanically. Palette did not: it decided what
@@ -1616,34 +1746,44 @@ export const PALETTE_SETS: Partial<Record<PaletteId, PaletteSet>> = {
   },
   verdant: {
     name: "Green Wardens",
-    blurb: "Cut for moving through country nobody has a map of.",
+    blurb: "Cut for country nobody has a map of, by people who knew what grows there.",
     tiers: [
       { need: 3, bonus: { moveSpeedBonus: 14, evasion: 4 } },
-      { need: 5, bonus: { moveSpeedBonus: 24, evasion: 7, attackSpeedPercent: 4 } },
+      { need: 5, bonus: { moveSpeedBonus: 24, evasion: 7, attackSpeedPercent: 4, resistNature: 20 } },
     ],
   },
+  // The four elemental materials carry their own element's resistance, and only
+  // at the FIVE-piece tier. Two reasons it sits at the top rather than being
+  // spread across both: a matched kit is meant to lose to a mixed set one
+  // quality step higher, so the bonus has to stay small at three; and dressing
+  // head to foot in Rimeward to go and fight a dragon is a decision a player
+  // makes on purpose, which is exactly the moment worth paying for.
+  //
+  // Which element each carries is not a spread to balance — it is what the
+  // material obviously is, the same rule the rest of these tiers were chosen
+  // under. A player who guesses from the name should be right.
   crimson: {
     name: "Bloodwrought",
-    blurb: "It wants the fight to be short.",
+    blurb: "It wants the fight to be short, and it does not mind the heat.",
     tiers: [
       { need: 3, bonus: { damagePercent: 6, healOnKill: 3 } },
-      { need: 5, bonus: { damagePercent: 11, healOnKill: 6, critDamagePercent: 10 } },
+      { need: 5, bonus: { damagePercent: 11, healOnKill: 6, critDamagePercent: 10, resistFire: 20 } },
     ],
   },
   frost: {
     name: "Rimeward",
-    blurb: "Cold to hold. Whatever it is doing, it is doing it slowly.",
+    blurb: "Cold to hold, and nothing colder gets through it.",
     tiers: [
       { need: 3, bonus: { skillPowerPercent: 6, manaRegenBonus: 1 } },
-      { need: 5, bonus: { skillPowerPercent: 11, manaRegenBonus: 2, cooldownPercent: 6 } },
+      { need: 5, bonus: { skillPowerPercent: 11, manaRegenBonus: 2, cooldownPercent: 6, resistFrost: 20 } },
     ],
   },
   arcane: {
     name: "Weaveworn",
-    blurb: "The stitching is not thread and does not come loose.",
+    blurb: "The stitching is not thread, and it does not come loose.",
     tiers: [
       { need: 3, bonus: { maxManaBonus: 16, manaCostPercent: 8 } },
-      { need: 5, bonus: { maxManaBonus: 28, manaCostPercent: 14, skillPowerPercent: 8 } },
+      { need: 5, bonus: { maxManaBonus: 28, manaCostPercent: 14, skillPowerPercent: 8, resistArcane: 20 } },
     ],
   },
   wood: {

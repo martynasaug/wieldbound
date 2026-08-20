@@ -178,6 +178,23 @@ at all, and this repo has lost three edits that way before.
 node tools/patch.mjs edits.json   # [{ file, find, replace }, ...]
 ```
 
+`schools.mjs` — no server needed. Checks the damage schools: that no resistance
+is ever an immunity (the cap is enforced on read, not merely authored inside),
+that every element has something dealing it, something resisting it and
+something folding to it, that every boss has an answer a player can actually
+reach, and — the section that can fail when all the others pass — 4,000 rolls
+through the real resolver proving the numbers move and that resistance is
+applied before armour.
+
+It is the one suite that has already rewritten the design it tests: its first
+run failed with nothing weak to physical, nothing weak to nature, and nothing
+resisting arcane or lightning, so the bestiary was changed rather than the
+check. None of those failures throws, and none is visible in a screenshot.
+
+```powershell
+node tools/test/schools.mjs
+```
+
 `icons.mjs` — no server needed. Checks that every icon key the game names — the
 class, weapon, default-attack and skill tables, all 73 talent nodes, plus the
 slots, materials, consumables, dock and attribute keys the panels name directly

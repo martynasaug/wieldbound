@@ -93,7 +93,22 @@ first run at `server/data/wieldbound.db`.
   walking further from the workbench *is* the progression. Each kind has a
   verb rather than a bigger stat line — one bursts on death, one outruns you,
   one can only be hit by a high-Agility build, one has armour that ignores
-  chip damage.
+  chip damage. **And each has something that hurts it**: a troll knits itself
+  back together unless you burn it, a cactoro is a plant so a blade works and
+  poison does not, a golem is stone with lightning for a seam. Never immunity —
+  a wrong-school build kills a golem slowly, not never — and nothing in the
+  first ring has an opinion at all.
+- **Damage has a school** — physical, fire, frost, nature, arcane, lightning —
+  and where it comes from is the point: your weapon's *family* sets the floor
+  (a staff throws a bolt, so it is arcane) and its *material* overrides it, so
+  Frostbrand really does deal frost and the Ember Wand really does burn. That is
+  the other half of "you are whatever you're holding": until now the thing in
+  your hand decided how you fought and never what you were good against. The
+  target frame tells you what the thing in front of you folds to before you
+  commit, the tooltip warns you when a swap would change what you deal, and the
+  log says *"You burned the Wolf for 9 — it feels that."* Monsters deal typed
+  damage back, which is what the four elemental matched sets and the resistance
+  suffixes are for.
 - **MMO-style windows** — the dock sits on the right and its panels open there
   too, laid out side by side so the bag and the character sheet can be open at
   once without covering each other or the world. Every icon in the interface is
@@ -250,5 +265,6 @@ then replaced the item system outright: a catalogue of 78 named base items, a
 seven-step quality ladder, and a smithy with three verbs — since grown to four
 with **M2.1** (a bag slot holds a kind, not an instance), **M2.2** (a refined
 material tier), **M2.3** (where a thing comes from), **M3** (etching) and
-**M3.1** (a cut rune survives the fire). See [`PLAN.md`](PLAN.md) for the full
-picture.
+**M3.1** (a cut rune survives the fire). **Phase 48 M4** then gave damage a
+school, and every creature something that hurts it. See [`PLAN.md`](PLAN.md)
+for the full picture.

@@ -97,6 +97,9 @@ import {
   playerMinHit,
   regenAmountForVitality,
   resolveHit,
+  resistOf,
+  passiveResist,
+  type DamageSchool,
 
   gearArmor,
   gearEvasion,
@@ -125,6 +128,7 @@ import {
   essenceFor,
   forgeCost,
   gearPassives,
+  weaponSchool,
   itemBase,
   itemName,
   reforgeCost,
@@ -315,6 +319,37 @@ function passivesOf(playerId: string): ReturnType<typeof talentPassives> {
   // up without any of them learning that gear exists — and the character sheet
   // reads the same totals the server resolves with.
   return addPassives(total, gearPassives(equippedItems.get(playerId)));
+}
+
+/**
+ * What the player's blows are made of right now.
+ *
+ * Derived from the weapon in hand on every read rather than cached, exactly as
+ * the CLASS is and for the same reason: the failure mode of a stale copy is a
+ * player who swapped to Frostbrand and is still dealing physical, which nothing
+ * on screen would explain.
+ */
+function schoolOf(playerId: string): DamageSchool {
+  return weaponSchool(equippedItems.get(playerId)?.weapon ?? null);
+}
+
+/**
+ * How much a monster shrugs off a school. One lookup, so the number the target
+ * frame shows a player and the number the server resolves with are the same
+ * number.
+ */
+function monsterResist(kind: MonsterKind, school: DamageSchool): number {
+  return resistOf(MONSTER_STATS[kind].resist, school);
+}
+
+/**
+ * How much the PLAYER shrugs off one. Reads the totalled passives, which is the
+ * one bag talents, affixes and matched sets all already flow into — so a
+ * Rimeward kit and a suffix of the Glacier reach a dragon's breath without
+ * either of them knowing the other exists.
+ */
+function playerResist(playerId: string, school: DamageSchool): number {
+  return passiveResist(passivesOf(playerId), school);
 }
 
 /** Whether a player is standing at the station they named. */
@@ -866,7 +901,11 @@ function applySkillDamage(
   power: number,
   attrs: Attributes,
   now: number,
-): { hit: boolean; crit: boolean; damage: number; killed: boolean } {
+  /** The school of the skill being cast. Passed in rather than read off the
+   *  weapon: a firebolt is fire in anybody's hands, which is the whole reason a
+   *  caster can answer a golem that a swordsman cannot. */
+  school: DamageSchool = "physical",
+): { hit: boolean; crit: boolean; damage: number; killed: boolean; school: DamageSchool; resisted: number } {
   const stats = MONSTER_STATS[monster.kind];
   const equipped = equippedItems.get(playerId);
   const enraged = (playerBuffUntil.get(playerId) ?? 0) > now;
@@ -891,18 +930,23 @@ function applySkillDamage(
     ),
     defenderEvasion: stats.evasion,
     defenderArmor: stats.armor,
+    school,
+    defenderResist: monsterResist(monster.kind, school),
   });
 
-  if (!result.hit) return { hit: false, crit: false, damage: 0, killed: false };
+  const resisted = monsterResist(monster.kind, school);
+  if (!result.hit) return { hit: false, crit: false, damage: 0, killed: false, school, resisted };
 
   monster.hp = Math.max(0, monster.hp - result.damage);
   addThreat(monster.id, playerId, result.damage);
   markInCombat(playerId, now);
-  if (monster.hp > 0) return { hit: true, crit: result.crit, damage: result.damage, killed: false };
+  if (monster.hp > 0) {
+    return { hit: true, crit: result.crit, damage: result.damage, killed: false, school, resisted };
+  }
 
   killMonster(monster, now);
   onPlayerKill(playerId, attrs);
-  return { hit: true, crit: result.crit, damage: result.damage, killed: true };
+  return { hit: true, crit: result.crit, damage: result.damage, killed: true, school, resisted };
 }
 
 // Passive payoff for landing a killing blow (the warrior's Second Wind).
@@ -980,7 +1024,10 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
   }
 
   const power = skillPower(skill, powerOf(playerId, attrs), attrs.vitality, level, passives.skillPowerPercent);
-  const hits: { monsterId: string; hit: boolean; damage: number; crit: boolean }[] = [];
+  // Typed off the message rather than restated, so the payload shape has one
+  // definition and this list cannot drift from it — which it just did, the
+  // first time the wire grew a field.
+  const hits: Extract<ServerToClientMessage, { type: "SKILL_RESULT" }>["payload"]["hits"] = [];
   let healed: number | undefined;
   let buffMs: number | undefined;
   let slowMs: number | undefined;
@@ -1130,8 +1177,20 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
         slowMs = SLOW_DURATION_MS;
         addThreat(monster.id, playerId, 1);
       }
-      const result = applySkillDamage(playerId, monster, power, attrs, now);
-      hits.push({ monsterId: monster.id, hit: result.hit, damage: result.damage, crit: result.crit });
+      // A skill that names no school is physical, and that is most of the
+      // warrior and ranger trees on purpose — Earthshatter splits the ground
+      // with a body behind it and Backstab is a knife, and calling either of
+      // them an element to make the table look even would be inventing magic
+      // where the design has none.
+      const result = applySkillDamage(playerId, monster, power, attrs, now, skill.school ?? "physical");
+      hits.push({
+        monsterId: monster.id,
+        hit: result.hit,
+        damage: result.damage,
+        crit: result.crit,
+        school: result.school,
+        resisted: result.resisted,
+      });
     }
   }
 
@@ -1157,6 +1216,10 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
 // which is the entire mechanic — the answer is your feet, not your stats.
 function resolveSlam(monster: MonsterState, radiusPx: number, damageMultiplier: number, now: number): void {
   const stats = MONSTER_STATS[monster.kind];
+  // The same school its ordinary swing is. A dragon that bites fire and slams
+  // physical would make resistance worth exactly half against the one creature
+  // it is most obviously for.
+  const slamSchool = stats.attackSchool ?? "physical";
   for (const [playerId, player] of players) {
     if (Math.hypot(player.x - monster.x, player.y - monster.y) > radiusPx) continue;
 
@@ -1170,6 +1233,8 @@ function resolveSlam(monster: MonsterState, radiusPx: number, damageMultiplier: 
       attackerCritMultiplier: stats.critMultiplier,
       defenderEvasion: gearEvasion(equipped),
       defenderArmor: gearArmor(equipped),
+      school: slamSchool,
+      defenderResist: playerResist(playerId, slamSchool),
     });
 
     const socket = sockets.get(playerId);
@@ -1193,6 +1258,7 @@ function resolveSlam(monster: MonsterState, radiusPx: number, damageMultiplier: 
         hit: hit.hit,
         crit: hit.crit,
         damage: hit.damage,
+        school: slamSchool,
       });
     }
   }
@@ -1354,6 +1420,11 @@ function resolvePlayerAttack(
       totalDamageBonus,
       passives.damagePercent,
     );
+    // What the thing in your hand is made of. This is the sentence the whole
+    // premise of the game was missing: until now the weapon decided how you
+    // fought and never what you were good against, so Frostbrand was a sword
+    // with a cold-coloured mesh.
+    const school = schoolOf(playerId);
     const playerAttack = resolveHit({
       attackerAccuracy: totalAccuracy,
       attackerMinHit: band.min,
@@ -1362,6 +1433,8 @@ function resolvePlayerAttack(
       attackerCritMultiplier: critMultiplier,
       defenderEvasion: monsterStats.evasion,
       defenderArmor: monsterStats.armor,
+      school,
+      defenderResist: monsterResist(monster.kind, school),
     });
 
     if (playerAttack.hit) {
@@ -1383,6 +1456,8 @@ function resolvePlayerAttack(
         playerCrit: playerAttack.crit,
         playerDamage: playerAttack.damage,
         monsterDefeated,
+        school,
+        resisted: monsterResist(monster.kind, school),
       });
     }
   }
@@ -2790,6 +2865,10 @@ setInterval(() => {
     const defPassives = passivesOf(victimId);
     const totalEvasion = gearEvasion(equipped) + defPassives.evasion;
     const playerArmor = gearArmor(equipped) + defPassives.armor;
+    // Monsters deal typed damage too, which is what stops this being a one-way
+    // conversation about offence: a dragon breathes fire, so Rimeward mail and
+    // a suffix of the Salamander have something to be for.
+    const monsterSchool = stats.attackSchool ?? "physical";
     const monsterAttack = resolveHit({
       attackerAccuracy: stats.accuracy,
       attackerMinHit: stats.minHit,
@@ -2798,6 +2877,8 @@ setInterval(() => {
       attackerCritMultiplier: stats.critMultiplier,
       defenderEvasion: totalEvasion,
       defenderArmor: playerArmor,
+      school: monsterSchool,
+      defenderResist: passiveResist(defPassives, monsterSchool),
     });
 
     const socket = sockets.get(victimId);
@@ -2828,6 +2909,7 @@ setInterval(() => {
         hit: monsterAttack.hit,
         crit: monsterAttack.crit,
         damage: monsterAttack.damage,
+        school: monsterSchool,
       });
     }
   }

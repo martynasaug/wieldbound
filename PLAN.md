@@ -2838,6 +2838,79 @@ crafting system to go with them.
       all) → Forged (where a second affix rolls in beside it) → Runed, that last
       step by clicking the bench's own button rather than by sending a message.
 
+- [x] **M4 — damage has a school.** Every blow in the game was one
+      undifferentiated number. A firebolt and a warhammer both came out as "14",
+      the only difference was which sprite played, and so the answer to every
+      monster was the same weapon swung harder. The premise of this game is that
+      what you are holding is who you are — and that premise was only half true,
+      because the thing in your hand decided how you fought and never what you
+      were good against. Frostbrand was a sword with a cold-coloured mesh.
+      - **Six schools, and physical is one of them** rather than the absence of
+        one. Making "no element" a real school is what lets a golem resist it; an
+        untyped default would have to be the one thing nothing in the world could
+        have an opinion about
+      - **A weapon's school has two sources and a fixed precedence.** The FAMILY
+        sets the floor — staves and wands are arcane because a staff already
+        throws a bolt and neither has ever been a blow — and the MATERIAL
+        overrides it. Only four of the twelve palettes are elemental, which is
+        the ratio that keeps "elemental" from being the default. It is what the
+        names have been promising since M1: Frostbrand deals frost, the Ember
+        Wand burns, Venomkiss poisons
+      - **NEVER IMMUNITY.** Fifty per cent either way, clamped on read as well as
+        authored inside the cap, and a floor of 1 damage under all of it. The one
+        rule the system has to obey is the game's own premise: you may pick up
+        anything and go anywhere, so a profile makes a choice better or worse and
+        never makes one unplayable. A wrong-school build kills a golem slowly
+      - **Band 1 has no resistances at all.** The first ring is where a player
+        learns that swinging works; a lesson about schools there is a lesson
+        nobody has the vocabulary for yet
+      - **Resistance applies before armour**, and the order is load-bearing:
+        resistance scales with the size of the blow and armour does not, so
+        subtracting armour first would make a resistance worth LESS against a
+        heavily armoured thing, which is backwards. Armour still applies to every
+        school — the tempting alternative, armour for physical and resistance for
+        the rest, hands elemental damage a free pass around the one stat the
+        whole game is already balanced against
+      - **Monsters deal typed damage too**, so this is not a one-way conversation
+        about offence. A dragon and a demon breathe fire, a ghost is arcane, a
+        cactoro is nature — which is what gives the player's resistance something
+        to be for. It comes from the four elemental matched sets at their
+        five-piece tier and from one suffix per element, all band 3 and up: a
+        resistance is situational, and situational is only a decision for someone
+        who already has gear to choose between
+      - **Five surfaces say it.** The target frame names what a creature is weak
+        to and what it resists (weakness first — that is the actionable half);
+        the item tooltip says what a weapon deals, and says so again when a swap
+        would CHANGE it, because two weapons can roll identically and answer
+        different creatures; the character sheet carries the school and all five
+        resistances; floating damage takes the school's colour; and the log says
+        "burned" and "it recoils" rather than "hit"
+
+      **The test wrote four of the balance numbers.** The first run failed with
+      nothing weak to physical, nothing weak to nature, and nothing resisting
+      arcane or lightning — so the school twenty-five of thirty-six weapons deal
+      had no camp where it excelled, and two elements were words in a tooltip.
+      The bestiary was rewritten against those failures rather than the check
+      being relaxed.
+
+      **Known thin spot, deliberately left.** Lightning has one dealer in the
+      whole game (Chain Lightning, a tier-3 staff talent) and no weapon at all,
+      because no palette reads as storm and a new skill needs an icon, which
+      means re-running the icon generator. The golem is still answerable —
+      lightning is its bonus, not its toll — but a second source is the obvious
+      next thing, and `tools/test/schools.mjs` prints the count every run.
+
+      Verified: `tools/test/schools.mjs` — the cap, the vocabulary, that every
+      element has something dealing it and something resisting it and something
+      folding to it, that every boss has a reachable answer, and 4,000 rolls
+      through the real resolver proving the numbers actually move. Sabotaged
+      three ways to check it bites: skipping the resistance, authoring a 95, and
+      swapping the armour/resistance order all fail it. Plus a real browser — a
+      levelled character at the wolf camp swinging Frostbrand ("You chilled the
+      Wolf for 17 — resisted", `school: frost, resisted: 30` on the wire) and
+      then an Ember Wand ("You burned the Wolf for 4 — it feels that",
+      `resisted: -30`) at the same creature.
+
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
 renderer-agnostic), and all six DOM panels (inventory, character, craft, skills,
@@ -4461,6 +4534,73 @@ music, player-facing damage-type/resistances, more crafting recipes
   rare enough to be maddening. Sample count is not padding when the thing under
   test shares an outcome with chance.
 
+- Physical is a SCHOOL, not the absence of one. An untyped default would be the
+  one kind of damage nothing in the world could have an opinion about, which
+  means a golem could never be the thing a sword is bad against — and "what you
+  are holding decides what you are good against" would only ever be true of
+  casters. It also gives every untaught caller a real answer: `resolveHit` with
+  no school deals physical and takes no resistance with it, so nothing that has
+  not learned about schools yet silently deals an element.
+- A resistance is never an immunity, and the cap is enforced on READ rather than
+  trusted from the table. The premise of the game is that you may pick up any
+  weapon and walk in any direction, so a profile is allowed to make a choice
+  better or worse and never to make one unplayable. Authoring inside the cap is
+  a convention; clamping in `resistOf` is a rule, and the damage floor of 1
+  underneath it is what makes "slowly" rather than "never" true at every
+  magnitude.
+- Resistance before armour. They answer different questions — resistance is what
+  a thing is MADE of and scales with the size of the blow, armour is a barrier in
+  front of it and does not — so subtracting armour first would make a resistance
+  worth less against a heavily armoured target than a lightly armoured one, which
+  is exactly backwards. And armour applies to every school rather than to
+  physical alone: the tempting split hands elemental damage a free pass around
+  the one stat the whole game is balanced against, and would have made a dragon's
+  breath unanswerable by anything a player could wear.
+- A weapon's school is DERIVED from its family and its material, never authored
+  per row. Thirty-six hand-typed answers to a question the palette had already
+  answered is thirty-six chances for Frostbrand to be steel-coloured frost
+  damage. The precedence is what needed deciding rather than the values: the
+  family is the floor (a staff throws a bolt and has never swung), the material
+  overrides it, and only four of the twelve palettes are elemental — because if
+  every material were an element then "elemental" would be the default and would
+  mean nothing.
+- A skill DECLARES its school rather than inheriting it from `effect`, even
+  though the two agree for most of the table. `effect` names a row of the sprite
+  atlas — it is how a skill LOOKS — and letting it decide damage would mean a
+  school could never change without changing the art, and choosing art could
+  change the balance. Rend and Backstab draw blood with a `slash` sprite and are
+  physical, which is the disagreement that proves the separation is real.
+- Five resistance keys on `PassiveBonus` rather than one nested bag. That
+  interface is the reason affixes, matched sets and talents all reach combat
+  without any of them knowing the others exist — `addPassives` sums a flat record
+  and every consumer reads a flat record — and a nested `resist: {...}` would be
+  the single member needing its own adder, its own label rule and its own line
+  everywhere one of these is totalled. There is deliberately no physical key:
+  armour is the physical answer and has been since Phase 14, and two stats doing
+  one job is how a number becomes impossible to tune.
+- The test wrote four of the balance numbers, and that is the point of writing it
+  first. It failed with nothing weak to physical, nothing weak to nature, and
+  nothing resisting arcane or lightning — meaning the school twenty-five of
+  thirty-six weapons deal had no camp where it excelled, and two elements existed
+  only as words. None of that throws, none of it shows in a screenshot, and no
+  reviewer would find it by reading thirteen monster rows. The bestiary was
+  rewritten against the failures rather than the check being relaxed.
+- "Every element needs something WEAK to it" is the assertion that earns its
+  place. Something resisting an element makes it a trap; something folding to it
+  is what makes it a reason to go and get one. An element that is only ever a
+  penalty is an element nobody chooses.
+- Resistance affixes are band 3 and up, and the floor is doing work rather than
+  being caution. A resistance is situational — decisive against one camp and
+  worthless at the next — and situational is only a decision for a player who
+  already owns gear to choose between. Rolling them from band 1 would mostly mean
+  a new player's only weapon carried a stat that does nothing for the first three
+  rings, since band 1 and 2 creatures have no schools at all.
+- "The same numbers" became a lie the moment a weapon had a school. Two weapons
+  can roll identically and still answer different creatures, so the tooltip's
+  comparison now leads with the school change when there is one. Found by looking
+  at a screenshot rather than by a test, which is the class of thing screenshots
+  are still for.
+
 - This machine (a fresh Windows box picking up the project) had neither Git
   nor Node.js preinstalled; both were installed via `winget` (`Git.Git`,
   `OpenJS.NodeJS`) rather than assuming either was already present. Also has
@@ -4472,8 +4612,21 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M3.1 complete (2026-08-20). **The item system, rebuilt and
-then followed through.**
+Phase 0 through 48 M4 complete (2026-08-20). **The item system rebuilt and
+followed through, and damage that finally knows what it is made of.**
+
+**M4** gave damage a school. Six of them, physical included, so that what you
+are holding decides not only how you fight but what you are good against —
+which is the half of this game's premise that was never actually true. A
+weapon's school comes from its family and its material, so Frostbrand deals
+frost; thirteen creatures resist and fold to different things, never by more
+than half and never in the first ring; monsters deal typed damage back, which
+is what the four elemental matched sets and one suffix per element are for. The
+target frame, the tooltip, the character sheet, the floating numbers and the
+combat log all say it.
+
+Before that, Phase 0 through 48 M3.1. **The item system, rebuilt and then
+followed through.**
 
 **M3.1** made a cut rune survive the fire. M3 shipped etching with a warning on
 it — reforging re-rolled etched affixes away — which made the verb endgame-only

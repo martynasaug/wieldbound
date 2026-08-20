@@ -319,6 +319,17 @@
          four corners of a slot are taken and this is not a fifth badge — it is
          a fact about the whole cell, which is exactly the pile the salvage
          button would take apart. */
+      /* Five small numbers rather than five rows: a resistance is only
+         interesting next to the other four, and a player reads this to answer
+         "am I covered for where I am going" rather than to look one up. The
+         ones at zero stay visible and dim, because an absent row would make an
+         uncovered element indistinguishable from an element that does not
+         exist. */
+      #stat-resists { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+      #stat-resists .res { font: bold 11px Georgia, serif; opacity: .3; }
+      #stat-resists .res.has { opacity: 1; }
+      .resist-row { align-items: center; }
+
       .bag-slot.filled.etched {
         box-shadow: inset 3px 0 0 0 #c0a6ff, inset 0 0 12px -5px #c0a6ff;
       }
@@ -868,6 +879,24 @@
       #target-known.shown { display: block; }
       #target-known .k-what { color: #f0d89a; font-weight: bold; }
 
+      /* What hurts it. Under the signature and above the wind-up bar, which is
+         the order you want them in: what it drops is a reason to come back,
+         what it resists is a reason to change weapons, and the wind-up is the
+         thing you answer in the next second. */
+      #target-schools {
+        display: none;
+        margin-top: 3px;
+        font: normal 10.5px Georgia, serif;
+        color: #9d8c6d;
+        text-shadow: 0 1px 2px #000;
+      }
+      #target-schools.shown { display: block; }
+      #target-schools .t-school {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        line-height: 1.5;
+      }
+      #target-schools .t-school span { font-weight: bold; }
+
       #target-hp-track {
         position: relative;
         height: 14px;
@@ -1121,6 +1150,12 @@
       #item-tooltip .tt-line { font-size: 11px; color: #cbbb95; line-height: 1.45; }
       /* Affixes are the part of an item that is not true of every copy of it,
          so they are set apart rather than listed among the rolls. */
+      /* What a weapon deals. Its own line under the quality, coloured the same
+         as the number it will make float over a monster. */
+      #item-tooltip .tt-school {
+        font: bold 11px Georgia, serif;
+        margin: 3px 0 1px;
+      }
       #item-tooltip .tt-affix {
         font-size: 11px;
         color: #9ad4ff;
@@ -1344,6 +1379,7 @@
             <div class="char-tabbody window-body hidden" data-tab="stats">
               <div class="stat-group"><h4>Offence</h4>
                 <div><span class="stat-label">Hit Damage</span><span id="stat-hit"></span></div>
+                <div><span class="stat-label">Damage School</span><span id="stat-school"></span></div>
                 <div><span class="stat-label">Attack Speed</span><span id="stat-battle"></span></div>
                 <div><span class="stat-label">Accuracy</span><span id="stat-accuracy"></span></div>
                 <div><span class="stat-label">Crit Chance</span><span id="stat-crit-chance"></span></div>
@@ -1354,6 +1390,7 @@
                 <div><span class="stat-label">Armor</span><span id="stat-armor"></span></div>
                 <div><span class="stat-label">Evasion</span><span id="stat-evasion"></span></div>
                 <div><span class="stat-label">HP Regen</span><span id="stat-hp-regen"></span></div>
+                <div class="resist-row"><span class="stat-label">Resistance</span><span id="stat-resists"></span></div>
               </div>
               <div class="stat-group"><h4>World</h4>
                 <div><span class="stat-label">Move Speed</span><span id="stat-move"></span></div>
@@ -1429,6 +1466,7 @@
             <div id="target-hp-text"></div>
           </div>
           <div id="target-known"></div>
+          <div id="target-schools"></div>
           <div id="target-cast"><div id="target-cast-fill"></div></div>
         </div>
       </div>

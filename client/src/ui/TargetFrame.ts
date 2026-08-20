@@ -23,6 +23,21 @@ export interface TargetLook {
    * never learn there was a reason to.
    */
   knownFor?: string;
+  /**
+   * What hurts it and what it shrugs off.
+   *
+   * On the FRAME and not the nameplate, the same call M2.3 made about a boss's
+   * signature and for the same reason: reading it costs a deliberate look at
+   * one creature, which is the walk-up-and-size-it-up gesture the rest of the
+   * game is built on, and a line of resistances floating over every monster in
+   * a camp is exactly the clutter the nameplate hierarchy exists to prevent.
+   *
+   * Spoken as names rather than percentages. "Weak to fire" is a plan; "-45%
+   * fire" is a spreadsheet, and the player cannot act on the difference between
+   * 45 and 30 anyway.
+   */
+  resists?: { school: string; name: string; color: string }[];
+  weakTo?: { school: string; name: string; color: string }[];
 }
 
 export class TargetFrame {
@@ -34,6 +49,7 @@ export class TargetFrame {
   private castFill = document.getElementById("target-cast-fill")!;
   private portrait = document.getElementById("target-portrait")!;
   private known = document.getElementById("target-known")!;
+  private schools = document.getElementById("target-schools")!;
   /** Last look applied, so the DOM is untouched while a target stays the same. */
   private lastLook = "";
 
@@ -43,7 +59,12 @@ export class TargetFrame {
     // Band, elite and portrait are one composed key: this runs every frame a
     // target is selected, and rewriting an identical portrait sixty times a
     // second is the sort of thing that never shows up until it does.
-    const key = `${look?.band ?? 0}|${look?.elite ? 1 : 0}|${look?.icon ?? ""}|${look?.knownFor ?? ""}`;
+    const schoolKey =
+      (look?.resists ?? []).map((r) => r.school).join(",") +
+      "/" +
+      (look?.weakTo ?? []).map((r) => r.school).join(",");
+    const key =
+      `${look?.band ?? 0}|${look?.elite ? 1 : 0}|${look?.icon ?? ""}|${look?.knownFor ?? ""}|${schoolKey}`;
     if (key !== this.lastLook) {
       this.lastLook = key;
       this.root.className =
@@ -60,6 +81,32 @@ export class TargetFrame {
         what.textContent = look.knownFor;
         this.known.appendChild(what);
       }
+
+      // Weakness first. It is the actionable half — a player reads this to
+      // decide what to bring, and "bring fire" is a decision where "do not
+      // bother bringing a sword" is only a complaint.
+      this.schools.innerHTML = "";
+      const rows: [string, TargetLook["weakTo"]][] = [
+        ["Weak to", look?.weakTo],
+        ["Resists", look?.resists],
+      ];
+      let any = false;
+      for (const [label, list] of rows) {
+        if (!list || list.length === 0) continue;
+        any = true;
+        const row = document.createElement("div");
+        row.className = "t-school";
+        row.append(`${label} `);
+        list.forEach((entry, i) => {
+          if (i > 0) row.append(", ");
+          const tag = document.createElement("span");
+          tag.textContent = entry.name.toLowerCase();
+          tag.style.color = entry.color;
+          row.appendChild(tag);
+        });
+        this.schools.appendChild(row);
+      }
+      this.schools.classList.toggle("shown", any);
     }
     // Name left, status right — "out of reach" is the thing you need to read
     // instantly mid-fight, so it gets its own column rather than being run
@@ -106,6 +153,7 @@ export class TargetFrame {
     this.root.classList.remove("shown");
     this.cast.classList.remove("shown");
     this.known.classList.remove("shown");
+    this.schools.classList.remove("shown");
     // Forces the look to be re-applied on the next target, since `show` skips
     // the work when the composed key is unchanged.
     this.lastLook = "";
