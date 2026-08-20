@@ -2104,22 +2104,6 @@ wss.on("connection", (socket) => {
       return;
     }
 
-    if (msg.type === "CRAFT_POTION" && id) {
-      const player = players.get(id);
-      const station = stations.find((s) => s.id === msg.payload.stationId);
-      if (!player || !station) return;
-      if (Math.hypot(player.x - station.x, player.y - station.y) > INTERACTION_RANGE_PX) return;
-
-      const result = craftPotion(id);
-      if (!result) return;
-
-      woodBalances.set(id, result.wood);
-      oreBalances.set(id, result.ore);
-      herbBalances.set(id, result.herb);
-      potionBalances.set(id, result.potions);
-      sendPotionsUpdate(socket, result.potions, result.wood, result.ore, result.herb);
-    }
-
     // --- consumables: one pair of handlers for the whole table --------------
     if (msg.type === "CRAFT_CONSUMABLE" && id) {
       if (!atStation(id, msg.payload.stationId)) return;
@@ -2188,73 +2172,6 @@ wss.on("connection", (socket) => {
       return;
     }
 
-    if (msg.type === "USE_POTION" && id) {
-      // Gated, because without this the whole stack can be drunk in one
-      // frame and a stocked player simply cannot be killed.
-      const readyAt = potionReadyAt.get(id) ?? 0;
-      const nowMs = Date.now();
-      if (nowMs < readyAt) {
-        sendInfo(socket, `Potion not ready (${Math.ceil((readyAt - nowMs) / 1000)}s)`, "#9e9e9e");
-        return;
-      }
-      const result = usePotion(id);
-      if (!result) return;
-      potionReadyAt.set(id, nowMs + POTION_COOLDOWN_MS);
-
-      potionBalances.set(id, result.potions);
-      const attrs = attributes.get(id) ?? EMPTY_ATTRS;
-      const maxHp = maxHpForLevel(playerLevels.get(id) ?? 1, attrs.vitality);
-      const newHp = addHp(id, POTION_HEAL_AMOUNT, maxHp);
-      hpBalances.set(id, newHp);
-      lastRegenAt.set(id, Date.now());
-
-      sendPotionsUpdate(
-        socket,
-        result.potions,
-        woodBalances.get(id) ?? 0,
-        oreBalances.get(id) ?? 0,
-        herbBalances.get(id) ?? 0,
-      );
-      sendHpUpdate(socket, newHp, maxHp, false);
-    }
-
-    if (msg.type === "CRAFT_TONIC" && id) {
-      const player = players.get(id);
-      const station = stations.find((s) => s.id === msg.payload.stationId);
-      if (!player || !station) return;
-      if (Math.hypot(player.x - station.x, player.y - station.y) > INTERACTION_RANGE_PX) return;
-
-      const result = craftTonic(id);
-      if (!result) return;
-
-      woodBalances.set(id, result.wood);
-      oreBalances.set(id, result.ore);
-      herbBalances.set(id, result.herb);
-      tonicBalances.set(id, result.tonics);
-      sendTonicsUpdate(socket, result.tonics, result.wood, result.ore, result.herb);
-    }
-
-    if (msg.type === "USE_TONIC" && id) {
-      const result = useTonic(id);
-      if (!result) return;
-
-      tonicBalances.set(id, result.tonics);
-      const { xp, level, leveledUp, statPoints } = addXp(id, TONIC_XP_AMOUNT);
-      playerLevels.set(id, level);
-      const attrs = attributes.get(id) ?? EMPTY_ATTRS;
-      attrs.statPoints = statPoints;
-      attributes.set(id, attrs);
-
-      sendTonicsUpdate(
-        socket,
-        result.tonics,
-        woodBalances.get(id) ?? 0,
-        oreBalances.get(id) ?? 0,
-        herbBalances.get(id) ?? 0,
-      );
-      sendXpUpdate(socket, xp, level, leveledUp);
-      if (leveledUp) sendStatsUpdate(socket, attrs, maxHpOf(id, attrs), maxManaOf(id, attrs));
-    }
   });
 
   socket.on("close", () => {

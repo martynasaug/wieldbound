@@ -138,16 +138,13 @@ export class GameSocket {
     this.send({ type: "MOVE", payload: { x, y } });
   }
 
-
   sendUpgradeGatherSpeed(): void {
     this.send({ type: "UPGRADE_GATHER_SPEED" });
   }
 
-
   sendUpgradeBattlePower(): void {
     this.send({ type: "UPGRADE_BATTLE_POWER" });
   }
-
 
   sendEquipItem(itemId: string): void {
     this.send({ type: "EQUIP_ITEM", payload: { itemId } });
@@ -186,22 +183,6 @@ export class GameSocket {
   /** One step up the ladder on something already owned. */
   sendReforgeItem(stationId: string, itemId: string, affix?: string): void {
     this.send({ type: "REFORGE_ITEM", payload: { stationId, itemId, affix } });
-  }
-
-  sendCraftPotion(stationId: string): void {
-    this.send({ type: "CRAFT_POTION", payload: { stationId } });
-  }
-
-  sendUsePotion(): void {
-    this.send({ type: "USE_POTION" });
-  }
-
-  sendCraftTonic(stationId: string): void {
-    this.send({ type: "CRAFT_TONIC", payload: { stationId } });
-  }
-
-  sendUseTonic(): void {
-    this.send({ type: "USE_TONIC" });
   }
 
   sendRequestLeaderboard(): void {

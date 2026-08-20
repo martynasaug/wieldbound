@@ -2117,6 +2117,9 @@ export interface PotionCraftCost {
 export const POTION_CRAFT_COST: PotionCraftCost = { wood: 2, ore: 0, herb: 8 };
 export const POTION_HEAL_AMOUNT = 30;
 
+// Superseded by CRAFT_CONSUMABLE / USE_CONSUMABLE, which read the shared
+// CONSUMABLES table. Kept as types for one release so an older client cannot
+// crash a newer server on an unknown message — nothing sends them.
 export interface CraftPotionMessage {
   type: "CRAFT_POTION";
   payload: { stationId: string };
