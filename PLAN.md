@@ -4130,6 +4130,17 @@ comes off when you draw a two-hander.
 **M1.9** turned the top of the reforge ladder from a gamble into a decision: at
 Runed and Enchanted the player names one of the affixes.
 
+**M1.12** put the same upgrade mark on drops lying in the world, and dimmed the
+ones somebody else has first claim on.
+
+**M1.13** broke the Statistics tab down by source, since four systems feed it now
+and a total cannot say which is doing the work.
+
+**M1.14-M1.15** turned consumables into a table — one pair of messages for the
+whole thing, two new entries, and the healing cooldown became a group rather
+than a potion. The four superseded paths were then deleted, since the dead one
+still carried the by-name gate.
+
 **M1.10-M1.11** followed the economy through. Gathering paid one per node while
 forge costs had grown to 327 — so yield now scales with the band a node stands
 in (2/3/5/8/12), five new node rings reach bands 4 and 5, and the two upgrade

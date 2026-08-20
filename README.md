@@ -128,6 +128,8 @@ first run at `server/data/wieldbound.db`.
 - **Loot lands on the ground** — a kill leaves the item's own model where the
   monster fell, turning, lit by its quality. Walk over it to take it. It is
   reserved for whoever earned the kill for a while, then anyone may have it.
+  What a monster carries reflects what it is made of, and each of the three
+  bosses has a signature item worth going for.
 - **Matched gear** — twelve sets, one per material, so dressing in one thing is
   worth something. Deliberately modest: a full matched kit loses to a mixed set
   one quality step higher. It is a tiebreaker with a look, not a second
