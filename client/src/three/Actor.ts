@@ -63,10 +63,38 @@ const FADE_MS = 180;
 // where this actor is BEHIND something already in the depth buffer. Unoccluded,
 // every one of its fragments fails the test and it costs a draw call with no
 // pixels; occluded, it is exactly the missing shape and nothing else.
-const SILHOUETTE_COLOR = 0x8fd3ff;
-const SILHOUETTE_OPACITY = 0.42;
-/** Drawn after the world, so it is testing against a complete depth buffer. */
-const SILHOUETTE_RENDER_ORDER = 900;
+//
+// WHICH DEPTH BUFFER, THOUGH — and getting that wrong is what shipped a
+// skeleton. "Already in the depth buffer" has to mean THE WORLD and must not
+// mean this actor's own body, and the first version could not tell the
+// difference: the silhouette was `transparent`, three.js draws every
+// transparent object after every opaque one, and so by the time the silhouette
+// ran, the actor's own gear had written depth. The body is a centimetre behind
+// its own shoulder plates, bracers and shin guards, so it passed `GreaterDepth`
+// underneath every one of them and painted a pale blue-white strut there. It
+// traced the armour, which is exactly why it read as bones.
+//
+// The fix is ordering, and it has to be ordering rather than a depth bias: the
+// gap between a body and its own gear is a centimetre and the gap to a wall is
+// half a metre, but both are non-linear in the depth buffer and vary with how
+// far the camera has zoomed out, so any `polygonOffset` tuned at one zoom is
+// wrong at another. Instead the silhouette is OPAQUE and slots between the two
+// groups by render order: world at 0, silhouettes at 1, everything any actor
+// owns at 2. A silhouette therefore tests against a depth buffer holding the
+// world and nothing else, which is precisely the question it means to ask.
+//
+// Two consequences, both accepted on purpose. It is solid rather than 42%
+// translucent, because the opaque pass is what gives it the right depth buffer
+// and three.js picks the pass off `material.transparent` — and a solid shape
+// through a wall is the conventional read anyway. And an actor behind ANOTHER
+// ACTOR no longer silhouettes, since all bodies now draw after all silhouettes.
+// That case was never the one this exists for: bodies collide, so actors cannot
+// overlap much, and the three cases named above are all actor-behind-SCENERY.
+const SILHOUETTE_COLOR = 0x7fc4ee;
+/** World is 0. The silhouette goes after it and before anything wearing it. */
+const SILHOUETTE_RENDER_ORDER = 1;
+/** Everything an actor owns — body, gear, held items — draws after that. */
+const ACTOR_RENDER_ORDER = 2;
 
 export interface ActorOptions {
   model: string;
@@ -299,8 +327,13 @@ export class Actor {
     this.oneShotUntil = 0;
     this.play(this.baseAnim, true);
 
-    // Built after the materials are cloned and before the gear goes on, so it
-    // covers the body. Gear adds its own when it is attached.
+    // Built after the materials are cloned, and from the BODY only. Gear has
+    // no silhouette of its own — the shape you see through a wall is the naked
+    // rig, which is close enough to read as a person and is the whole job. It
+    // is not free to change: a gear ghost would have to live inside the gear
+    // object so that `clearGear` takes it away, and `clearGear` disposes every
+    // material it finds down there, which would destroy the one silhouette
+    // material the body is still using.
     this.buildSilhouette(instance.object);
 
     // Re-dress: the gear was hanging off the rig that just went away. The body
@@ -423,10 +456,15 @@ export class Actor {
     if (!this.silhouetteMaterial) {
       this.silhouetteMaterial = new THREE.MeshBasicMaterial({
         color: SILHOUETTE_COLOR,
-        transparent: true,
-        opacity: SILHOUETTE_OPACITY,
+        // OPAQUE, and that is the whole fix. See the long note above: three.js
+        // splits its render lists on this flag, and a transparent silhouette is
+        // drawn after every opaque thing in the scene — including the gear on
+        // the very actor it belongs to, which is what made it draw bones.
+        transparent: false,
         // Only where this actor is behind something. See the note above.
         depthFunc: THREE.GreaterDepth,
+        // Never writes: a silhouette is a hint about something you cannot see,
+        // and it must not stop the real body drawing over it if it can.
         depthWrite: false,
         fog: false,
       });
@@ -466,6 +504,12 @@ export class Actor {
   }
 
   private trackMesh(mesh: THREE.Mesh): void {
+    // Everything an actor owns draws after every silhouette in the scene, which
+    // is what keeps a silhouette testing against the world alone. This is the
+    // one choke point all three kinds go through — body meshes from the rig
+    // traverse, held items and worn armour via `trackMaterials` — so a new kind
+    // of attachment gets the ordering by construction rather than by memory.
+    mesh.renderOrder = ACTOR_RENDER_ORDER;
     for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
       this.ownedMaterials.add(m);
       const std = m as THREE.MeshStandardMaterial;
