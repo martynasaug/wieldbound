@@ -45,6 +45,42 @@ function attachTooltip(target: HTMLElement, renderContent: () => void): void {
 }
 
 /**
+ * A plain tooltip: a title, a one-word category, and a line of prose.
+ *
+ * Shares the one tooltip element and the one placement rule with the item
+ * tooltip, so a status hovered over the unit frame and an item hovered over in
+ * the bag flip away from the same screen edges in the same way. Exported
+ * because `attachTooltip` takes a callback that writes into a module-private
+ * element, and a second surface should not have to reach around that.
+ */
+export function attachTextTooltip(
+  target: HTMLElement,
+  content: () => { title: string; tag?: string; tagColor?: string; body: string },
+): void {
+  attachTooltip(target, () => {
+    const d = content();
+    el.innerHTML = "";
+    const title = document.createElement("div");
+    title.className = "tt-title";
+    title.textContent = d.title;
+    if (d.tagColor) title.style.color = d.tagColor;
+    el.appendChild(title);
+    if (d.tag) {
+      const sub = document.createElement("div");
+      sub.className = "tt-sub";
+      sub.textContent = d.tag;
+      if (d.tagColor) sub.style.color = d.tagColor;
+      el.appendChild(sub);
+    }
+    const body = document.createElement("div");
+    body.className = "tt-flavour";
+    body.textContent = d.body;
+    el.appendChild(body);
+  });
+}
+
+
+/**
  * The whole of an item, in the order a player reads one: what it is, what
  * quality it is in, what it does, what was rolled onto it, and last the line
  * that is only there to be enjoyed.

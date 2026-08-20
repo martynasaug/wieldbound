@@ -14,6 +14,9 @@ import {
   MONSTER_LABELS,
   MONSTER_STATS,
   NODE_LABELS,
+  STATUSES,
+  statusModifiers,
+  type StatusId,
   schoolDef,
   passiveResist,
   ELEMENTAL_SCHOOLS,
@@ -77,6 +80,7 @@ import { SkillFx, fxFor } from "./skillfx";
 import { Minimap } from "../ui/Minimap";
 import { GameSocket } from "../net/socket";
 import { CharacterPanel } from "../ui/CharacterPanel";
+import { StatusBar } from "../ui/StatusBar";
 import { InventoryPanel } from "../ui/InventoryPanel";
 import { CraftPanel } from "../ui/CraftPanel";
 import { SkillPanel, type WeaponProgressView } from "../ui/SkillPanel";
@@ -297,6 +301,11 @@ export class Game {
   private readonly socket: GameSocket;
 
   private readonly characterPanel: CharacterPanel;
+  private readonly statusBar = new StatusBar();
+  /** The server's clock, from the last snapshot. Status end times are the
+   *  server's, so the sweeps have to drain against its clock rather than
+   *  against this machine's — which may be a second out either way. */
+  private serverTime = Date.now();
   private readonly inventoryPanel: InventoryPanel;
   private readonly craftPanel: CraftPanel;
   private readonly skillPanel: SkillPanel;
@@ -631,6 +640,14 @@ export class Game {
         this.hud.setMana(this.mana, this.maxMana);
         this.refreshStats();
       },
+      onStatusUpdate: (p) => {
+        this.statusBar.set(p.statuses);
+        // The sheet reads statuses now, so it has to be redrawn when they
+        // change — otherwise Rallied moves the armour the server resolves with
+        // and the character window goes on showing the old figure.
+        this.refreshStats();
+      },
+      onStatusTick: (p) => this.onStatusTick(p),
       onBattleResult: (p) => this.onBattleResult(p),
       onMonsterAttack: (p) => this.onMonsterAttack(p),
       onPotionsUpdate: (p) => {
@@ -802,12 +819,17 @@ export class Game {
   }
 
   private onSnapshot(p: {
+    serverTime?: number;
     players: PlayerState[];
     nodes: ResourceNodeState[];
     monsters: MonsterState[];
     stations: CraftingStationState[];
     drops?: DroppedItemState[];
   }): void {
+    // Every status end time in the game is stamped on the server's clock, so
+    // the sweeps drain against the server's clock. A machine an hour out of
+    // step would otherwise show every buff as already expired.
+    if (p.serverTime) this.serverTime = p.serverTime;
     this.syncPlayers(p.players);
     this.syncMonsters(p.monsters);
     // The monsters just moved, so where the player may stand has changed.
@@ -1679,6 +1701,44 @@ export class Game {
     });
   }
 
+
+  /**
+   * One tick of a poison, a burn or a bleed.
+   *
+   * Its own path rather than the battle-result one, because nobody swung: there
+   * is no attacker to animate and no swing sound to play. What it needs is a
+   * number over the right body and a line in the log — which is the whole
+   * difference between a debuff that feels like a decision and one that is an
+   * invisible subtraction from a health bar.
+   */
+  private onStatusTick(p: {
+    entityId: string;
+    statusId: StatusId;
+    damage: number;
+    school: DamageSchool;
+    monster: boolean;
+  }): void {
+    const def = STATUSES[p.statusId];
+    const colour = schoolDef(p.school).color;
+    if (p.monster) {
+      const vis = this.monsters.get(p.entityId);
+      if (!vis) return;
+      this.floatOnMonster(
+        vis,
+        { kind: "skill", text: `${p.damage}`, color: colour },
+        p.damage,
+      );
+      return;
+    }
+    // On the player. Red, like every other thing that takes health off you —
+    // whose damage it is matters more mid-fight than what it was made of, which
+    // is the same call the monster-attack line makes.
+    if (this.localActor) {
+      this.floatOnPlayer(this.localActor, { kind: "taken", text: `-${p.damage}` }, p.damage);
+    }
+    this.combatLog.push(`${def.name} takes ${p.damage} off you.`, colour);
+  }
+
   /** Combat text over a player — yours or an ally's. */
   private floatOnPlayer(actor: Actor, spec: Omit<FloatSpec, "weight" | "headY">, amount = 0): void {
     this.floaters.spawn(actor.position, {
@@ -1782,10 +1842,21 @@ export class Game {
       const item = gear[slot];
       if (item) addPassives(affixTotals, itemPassives(item));
     }
+    // `talents` already has the running statuses folded in, so the breakdown
+    // subtracts them back out to show each source on its own. Recomputed from
+    // the same shared function rather than tracked separately, for the same
+    // reason the other three are: a second bookkeeping of where a number came
+    // from is a second thing that can disagree with the number.
+    const statusTotals = statusModifiers(this.statusBar.active);
+    const talentOnly = { ...talents };
+    for (const key of Object.keys(talentOnly) as (keyof typeof talentOnly)[]) {
+      talentOnly[key] -= statusTotals[key];
+    }
     this.characterPanel.setSources([
-      { name: "Talents", bonus: talents },
+      { name: "Talents", bonus: talentOnly },
       { name: "Affixes", bonus: affixTotals },
       { name: "Matched gear", bonus: setPassives(gear) },
+      { name: "Running effects", bonus: statusTotals },
     ]);
 
     this.characterPanel.setStats({
@@ -1855,8 +1926,24 @@ export class Game {
 
   /** Passive totals from the held weapon's learned talents — the same shared
    *  aggregation the server resolves combat with. */
+  /**
+   * The player's talent totals, plus whatever is running on them.
+   *
+   * Statuses have to be in here, and the reason is the oldest rule in this
+   * file: the stat sheet must compute exactly what the server resolves combat
+   * with. `passivesOf` on the server folds the same bag in, so leaving it out
+   * here meant Rallied gave you eight armour in a fight and the character
+   * window went on reporting the number you had before you cast it — which is
+   * the same class of disagreement the gear-aggregation helpers were written
+   * to make impossible.
+   *
+   * The gear affixes and matched sets are added by the CALLER rather than here,
+   * because two of the three call sites want them split out by source for the
+   * Statistics tab's breakdown.
+   */
   private passives(): ReturnType<typeof talentPassives> {
-    return talentPassives(this.appearance.weaponType, this.weaponProgress?.ranks ?? {});
+    const total = talentPassives(this.appearance.weaponType, this.weaponProgress?.ranks ?? {});
+    return addPassives(total, statusModifiers(this.statusBar.active));
   }
 
   // ------------------------------------------------------------------ input
@@ -2306,6 +2393,10 @@ export class Game {
     // After the actors have moved and before the frame is drawn, so a number
     // never lags the body it came off by a frame.
     this.floaters.update(this.projectForFloat);
+    // Advanced locally between snapshots, so the sweeps move smoothly rather
+    // than in the ten steps a second the snapshots arrive in.
+    this.serverTime += dt * 1000;
+    this.statusBar.update(this.serverTime);
     this.updateForges();
     this.updateMinimap();
     // Derived before anything draws, so the ring, the frame and the nameplate
@@ -2679,6 +2770,13 @@ export class Game {
         // the frame cannot tell a player to bring fire to something that does
         // not mind it. Mapped to names and colours here because the frame is a
         // renderer-agnostic panel and has no business importing the bestiary.
+        // Read off the snapshot rather than tracked locally: the server owns
+        // when a status ends, and a client counting its own timers would show
+        // a poison still running after it had stopped doing anything.
+        statuses: (t.state.statuses ?? [])
+          .map((s) => STATUSES[s.id])
+          .filter(Boolean)
+          .map((d) => ({ id: d.id, name: d.name, icon: d.icon, kind: d.kind, blurb: d.blurb })),
         ...(() => {
           const { resists, weakTo } = describeResists(tStats.resist);
           const tag = (e: { school: DamageSchool }) => ({

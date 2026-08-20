@@ -929,6 +929,19 @@ export interface MonsterStats {
    * offence.
    */
   attackSchool?: DamageSchool;
+  /**
+   * A status its blows can leave behind, and how often.
+   *
+   * The other half of the same argument the attack school makes. Without it
+   * a player's debuff indicator has exactly one thing it can ever show —
+   * Weakened, after dying — and the whole harmful half of the system is
+   * something the player does and never something done to them.
+   *
+   * A CHANCE rather than every hit, and never on band 1 or 2. Every swing
+   * landing a debuff makes it a stat rather than an event, and the point of
+   * an indicator is that something changed.
+   */
+  inflicts?: { status: StatusId; chance: number };
 }
 
 export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
@@ -1038,6 +1051,8 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // Hide like bark and it knits itself back together — unless you burn it,
     // which is the one thing everyone has always known about trolls.
     resist: { physical: 25, nature: 25, fire: -45 },
+    // A club that size does not cut, it knocks the feet out.
+    inflicts: { status: "staggered", chance: 0.3 },
   },
 
   // ---------------------------------------------------------------- band 1
@@ -1146,6 +1161,9 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // and a blade is the thing you have always used on a plant.
     resist: { nature: 45, fire: -45, physical: -25 },
     attackSchool: "nature",
+    // Spines with something on them. The first thing in the world that puts
+    // a debuff on the player rather than the other way round.
+    inflicts: { status: "poisoned", chance: 0.3 },
   },
   // The goblin's shout, with a much wider radius and a body behind it. Pulling
   // one carelessly brings a camp that can actually kill you.
@@ -1200,6 +1218,9 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // punishes two builds at once is a kind two builds walk around.
     resist: { physical: 30, arcane: -40 },
     attackSchool: "arcane",
+    // A cold touch that stays with you. It is the fast one, so slowing you
+    // is the thing it least deserves to be able to do and most wants to.
+    inflicts: { status: "chilled", chance: 0.25 },
   },
   // The troll's damage without the tell — fast, hard-hitting and it crits.
   demon: {
@@ -1224,6 +1245,9 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // slide off a thing that is itself a spell.
     resist: { fire: 50, arcane: 30, frost: -35 },
     attackSchool: "fire",
+    // It sets you alight, which is what makes fire resistance worth wearing
+    // rather than worth knowing about.
+    inflicts: { status: "burning", chance: 0.3 },
   },
 
   // ---------------------------------------------------------------- band 5
@@ -1286,6 +1310,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // hardest thing in the world still has an answer you can go and find.
     resist: { fire: 50, physical: 15, frost: -30 },
     attackSchool: "fire",
+    inflicts: { status: "burning", chance: 0.4 },
   },
 };
 
@@ -1311,7 +1336,10 @@ export type SkillId =
   | "backstab" | "flurry"
   // Staff / wand
   | "arcanebolt" | "firebolt" | "frostnova" | "mend" | "chainlightning"
-  | "frostbolt" | "arcanemissiles";
+  | "frostbolt" | "arcanemissiles"
+  // One per weapon tree, added with the status system
+  | "focus" | "rally" | "bloodlust" | "stagger"
+  | "expose" | "huntersmark" | "immolate" | "stormbolt";
 
 // A skill is something you press. Passive bonuses live in the talent trees
 // now, which is why "passive" is no longer one of these.
@@ -1444,7 +1472,19 @@ export interface SkillDef {
   school?: DamageSchool;
   passive?: PassiveBonus;
   // Optional riders, so one resolution path covers a lot of variety.
-  appliesSlow?: boolean;
+  /**
+   * The status this skill puts on whatever it lands on — or on the caster,
+   * when the status is a buff.
+   *
+   * Replaces `appliesSlow`, which was a boolean meaning one particular
+   * effect. Six skills set it and every one of them meant something slightly
+   * different by it: a frost nova chills, a poison arrow poisons, a gut
+   * punch winds. A boolean can only ever say `slow`, so the moment a second
+   * kind of debuff existed it would have needed a second boolean beside it —
+   * which is precisely the four-bespoke-maps shape the status table
+   * replaced one level down.
+   */
+  applies?: StatusId;
   selfShieldMs?: boolean;
   // Hits several separate targets rather than everything in a radius.
   chainTargets?: number;
@@ -1503,7 +1543,7 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     manaCost: 12, cooldownMs: 9000, rangePx: 320, radiusPx: 0, power: 8,
     effect: "poison", sfx: "cast", school: "nature",
     description: "A venomous shot that slows what it hits.",
-    appliesSlow: true,
+    applies: "poisoned",
   },
   disengage: {
     id: "disengage", name: "Disengage", icon: "disengage", kind: "mobility",
@@ -1534,7 +1574,7 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     manaCost: 18, cooldownMs: 11000, rangePx: 0, radiusPx: 150, power: 6,
     effect: "frost", sfx: "cast", school: "frost",
     description: "Chill everything nearby, slowing it so you can break away.",
-    appliesSlow: true,
+    applies: "chilled",
   },
   mend: {
     id: "mend", name: "Mend", icon: "mend", kind: "heal",
@@ -1559,7 +1599,7 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     id: "gutpunch", name: "Gut Punch", icon: "gutpunch", kind: "control",
     manaCost: 4, cooldownMs: 8000, rangePx: 58, radiusPx: 0, power: 6,
     effect: "impact", sfx: "hit", description: "Wind it. Whatever you hit moves slower.",
-    appliesSlow: true,
+    applies: "staggered",
   },
   riposte: {
     id: "riposte", name: "Riposte", icon: "riposte", kind: "buff",
@@ -1570,7 +1610,7 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     id: "rend", name: "Rend", icon: "rend", kind: "control",
     manaCost: 12, cooldownMs: 9000, rangePx: 64, radiusPx: 0, power: 16,
     effect: "slash", sfx: "crit", description: "A deep cut. It labours afterwards.",
-    appliesSlow: true,
+    applies: "bleeding",
   },
   reckless: {
     id: "reckless", name: "Reckless Swing", icon: "reckless", kind: "buff",
@@ -1586,7 +1626,7 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     id: "concuss", name: "Concuss", icon: "concuss", kind: "control",
     manaCost: 10, cooldownMs: 10000, rangePx: 62, radiusPx: 0, power: 9,
     effect: "impact", sfx: "hit", description: "A blow to the head. It staggers away slowed.",
-    appliesSlow: true,
+    applies: "staggered",
   },
   backstab: {
     id: "backstab", name: "Backstab", icon: "backstab", kind: "damage",
@@ -1604,7 +1644,7 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     manaCost: 10, cooldownMs: 4500, rangePx: 260, radiusPx: 0, power: 11,
     effect: "frost", sfx: "cast", school: "frost",
     description: "A shard of cold. What it hits slows.",
-    appliesSlow: true,
+    applies: "chilled",
   },
   arcanemissiles: {
     id: "arcanemissiles", name: "Arcane Missiles", icon: "arcanemissiles", kind: "damage",
@@ -1612,6 +1652,64 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     effect: "arcane", sfx: "cast", school: "arcane",
     description: "Three darts, each seeking its own target.",
     chainTargets: 3,
+  },
+
+  // --- Added with the status system -----------------------------------------
+  // ONE PER WEAPON TREE, which is the rule that decided the list rather than a
+  // wish for particular effects. A status system whose skills all landed in the
+  // caster trees would be a system half the game could not use, and "you are
+  // whatever you're holding" only means something if every weapon gets a new
+  // thing to hold.
+  //
+  // Each is also the first REAL buff or debuff in its tree: before this, a
+  // warrior's only timed effect was War Cry and a ranger had none at all.
+  focus: {
+    id: "focus", name: "Focus", icon: "focus", kind: "buff",
+    manaCost: 0, cooldownMs: 20000, rangePx: 0, radiusPx: 0, power: 0,
+    effect: "buff", sfx: "levelup", applies: "focused",
+    description: "Stop swinging wildly and start watching. Your blows tell.",
+  },
+  rally: {
+    id: "rally", name: "Rally", icon: "rally", kind: "buff",
+    manaCost: 12, cooldownMs: 24000, rangePx: 260, radiusPx: 0, power: 0,
+    effect: "buff", sfx: "levelup", applies: "rallied",
+    description: "Stand your ground, and stand it harder. Targets an ally if you have one selected.",
+  },
+  bloodlust: {
+    id: "bloodlust", name: "Bloodlust", icon: "bloodlust", kind: "buff",
+    manaCost: 14, cooldownMs: 22000, rangePx: 0, radiusPx: 0, power: 0,
+    effect: "quake", sfx: "crit", applies: "bloodlust",
+    description: "Stop pacing yourself. Faster and heavier at once, while it lasts.",
+  },
+  stagger: {
+    id: "stagger", name: "Stagger", icon: "stagger", kind: "control",
+    manaCost: 10, cooldownMs: 9000, rangePx: 62, radiusPx: 0, power: 10,
+    effect: "impact", sfx: "hit", applies: "staggered",
+    description: "A blow that takes the feet out. It moves slower and hits softer.",
+  },
+  expose: {
+    id: "expose", name: "Expose Weakness", icon: "expose", kind: "control",
+    manaCost: 10, cooldownMs: 12000, rangePx: 62, radiusPx: 0, power: 8,
+    effect: "slash", sfx: "crit", applies: "exposed",
+    description: "Find the gap in the guard and keep it open. Its armour stops counting for much.",
+  },
+  huntersmark: {
+    id: "huntersmark", name: "Hunter's Mark", icon: "huntersmark", kind: "control",
+    manaCost: 8, cooldownMs: 14000, rangePx: 340, radiusPx: 0, power: 0,
+    effect: "arrow", sfx: "swing", applies: "marked",
+    description: "Pick one out of the pack. Everything that lands on it lands harder — yours and anyone else's.",
+  },
+  immolate: {
+    id: "immolate", name: "Immolate", icon: "immolate", kind: "damage",
+    manaCost: 16, cooldownMs: 10000, rangePx: 300, radiusPx: 0, power: 8,
+    effect: "fire", sfx: "cast", school: "fire", applies: "burning",
+    description: "Set it alight. Most of what this does happens after the cast.",
+  },
+  stormbolt: {
+    id: "stormbolt", name: "Storm Bolt", icon: "stormbolt", kind: "damage",
+    manaCost: 12, cooldownMs: 6000, rangePx: 280, radiusPx: 0, power: 13,
+    effect: "lightning", sfx: "crit", school: "lightning", applies: "shocked",
+    description: "A single hard arc. What it hits cannot aim afterwards.",
   },
 };
 
@@ -1693,6 +1791,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("fist", "gutpunch", 2, "Gut Punch", "gutpunch", 1, "Unlocks Gut Punch.", { active: "gutpunch", requires: "haymaker" }),
     t("fist", "quickhands", 3, "Quick Hands", "quickhands", 5, "+6% attack speed per rank.", { passive: { attackSpeedPercent: 6 } }),
     t("fist", "secondwind", 3, "Second Wind", "secondwind", 4, "Recover 4 health per rank on a killing blow.", { passive: { healOnKill: 4 } }),
+    t("fist", "focus", 2, "Focus", "focus", 1, "Unlocks Focus.", { active: "focus" }),
     t("fist", "unbowed", 4, "Unbowed", "unbowed", 4, "+3 armour and +3 evasion per rank.", { passive: { armor: 3, evasion: 3 } }),
   ],
 
@@ -1707,6 +1806,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("sword", "riposte", 2, "Riposte", "riposte", 1, "Unlocks Riposte.", { active: "riposte", requires: "precision" }),
     t("sword", "momentum", 3, "Momentum", "momentum", 5, "+5% attack speed per rank.", { passive: { attackSpeedPercent: 5 } }),
     t("sword", "warcry", 3, "War Cry", "warcry", 1, "Unlocks War Cry.", { active: "warcry" }),
+    t("sword", "rally", 3, "Rally", "rally", 1, "Unlocks Rally.", { active: "rally", requires: "temper" }),
     t("sword", "mastery", 4, "Swordmaster", "mastery", 4, "+6% damage and +10% critical damage per rank.", { passive: { damagePercent: 6, critDamagePercent: 10 } }),
   ],
 
@@ -1721,6 +1821,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("axe", "reckless", 2, "Reckless Swing", "reckless", 1, "Unlocks Reckless Swing.", { active: "reckless", requires: "brutality" }),
     t("axe", "sweeping", 3, "Sweeping Arc", "sweeping", 4, "+5% reach and +4% damage per rank.", { passive: { rangePercent: 5, damagePercent: 4 } }),
     t("axe", "bloodthirst", 3, "Bloodthirst", "bloodthirst", 5, "Recover 5 health per rank on a killing blow.", { passive: { healOnKill: 5 } }),
+    t("axe", "bloodlust", 3, "Bloodlust", "bloodlust", 1, "Unlocks Bloodlust.", { active: "bloodlust", requires: "brutality" }),
     t("axe", "earthshatter", 4, "Earthshatter", "earthshatter", 1, "Unlocks Earthshatter.", { active: "earthshatter", requires: "heft" }),
   ],
 
@@ -1735,6 +1836,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("mace", "shieldwall", 2, "Shield Wall", "shieldwall", 1, "Unlocks Shield Wall.", { active: "shieldwall", requires: "bulwark" }),
     t("mace", "relentless", 3, "Relentless", "relentless", 5, "+4% attack speed and +3 accuracy per rank.", { passive: { attackSpeedPercent: 4, accuracyBonus: 3 } }),
     t("mace", "warcry", 3, "War Cry", "warcry", 1, "Unlocks War Cry.", { active: "warcry" }),
+    t("mace", "stagger", 2, "Stagger", "stagger", 1, "Unlocks Stagger.", { active: "stagger", requires: "concuss" }),
     t("mace", "crusher", 4, "Crusher", "crusher", 4, "+8% damage and +10% critical damage per rank.", { passive: { damagePercent: 8, critDamagePercent: 10 } }),
   ],
 
@@ -1749,6 +1851,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("dagger", "venom", 2, "Envenom", "venom", 1, "Unlocks Poison Arrow - a coated blade works as well.", { active: "poisonarrow", requires: "deadly" }),
     t("dagger", "opportunist", 3, "Opportunist", "opportunist", 5, "+12% critical damage per rank.", { passive: { critDamagePercent: 12 } }),
     t("dagger", "disengage", 3, "Disengage", "disengage", 1, "Unlocks Disengage.", { active: "disengage" }),
+    t("dagger", "expose", 3, "Expose Weakness", "expose", 1, "Unlocks Expose Weakness.", { active: "expose", requires: "backstab" }),
     t("dagger", "assassin", 4, "Assassin", "assassin", 4, "+7% damage and +4% critical chance per rank.", { passive: { damagePercent: 7, critChance: 4 } }),
   ],
 
@@ -1763,6 +1866,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("bow", "fleet", 3, "Fleet Footed", "fleet", 5, "+14 movement and +3 evasion per rank.", { passive: { moveSpeedBonus: 14, evasion: 3 } }),
     t("bow", "disengage", 3, "Disengage", "disengage", 1, "Unlocks Disengage.", { active: "disengage" }),
     t("bow", "marksman", 4, "Marksman", "marksman", 4, "+14% critical damage per rank.", { passive: { critDamagePercent: 14 } }),
+    t("bow", "huntersmark", 2, "Hunter's Mark", "huntersmark", 1, "Unlocks Hunter's Mark.", { active: "huntersmark" }),
     t("bow", "rainofarrows", 4, "Rain of Arrows", "rainofarrows", 1, "Unlocks Rain of Arrows.", { active: "rainofarrows", requires: "multishot" }),
   ],
 
@@ -1777,6 +1881,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("staff", "mend", 2, "Mend", "mend", 1, "Unlocks Mend.", { active: "mend" }),
     t("staff", "efficiency", 3, "Efficiency", "efficiency", 5, "Spells cost 10% less mana per rank.", { passive: { manaCostPercent: 10 } }),
     t("staff", "chainlightning", 3, "Chain Lightning", "chainlightning", 1, "Unlocks Chain Lightning.", { active: "chainlightning", requires: "firebolt" }),
+    t("staff", "immolate", 3, "Immolate", "immolate", 1, "Unlocks Immolate.", { active: "immolate", requires: "firebolt" }),
     t("staff", "archmage", 4, "Archmage", "archmage", 4, "+10% skill power and +4% critical chance per rank.", { passive: { skillPowerPercent: 10, critChance: 4 } }),
   ],
 
@@ -1791,6 +1896,7 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
     t("wand", "frostnova", 2, "Frost Nova", "frostnova", 1, "Unlocks Frost Nova.", { active: "frostnova", requires: "frostbolt" }),
     t("wand", "rapid", 3, "Rapid Channel", "rapid", 5, "+7% attack speed per rank.", { passive: { attackSpeedPercent: 7 } }),
     t("wand", "mend", 3, "Mend", "mend", 1, "Unlocks Mend.", { active: "mend" }),
+    t("wand", "stormbolt", 2, "Storm Bolt", "stormbolt", 1, "Unlocks Storm Bolt.", { active: "stormbolt", requires: "frostbolt" }),
     t("wand", "spellblade", 4, "Spellblade", "spellblade", 4, "+6% damage and +8% skill power per rank.", { passive: { damagePercent: 6, skillPowerPercent: 8 } }),
   ],
 };
@@ -1908,6 +2014,253 @@ export function skillPower(
 // Shield Wall's duration and how much it cuts.
 export const SHIELD_WALL_MS = 6000;
 export const SHIELD_WALL_REDUCTION = 0.5;
+
+// --- Statuses ---------------------------------------------------------------
+// TIMED EFFECTS WERE FOUR BESPOKE MAPS AND NO VOCABULARY.
+//
+// War Cry set `playerBuffUntil`, Shield Wall set `shieldUntil`, dying set
+// `weakenedUntil`, and a frost spell set `monsterSlowUntil`. Each had its own
+// store, its own expiry loop, its own way of reaching combat, and — the part
+// that mattered to whoever was playing — its own way of being invisible. The
+// only thing that ever announced one was a corner toast at the moment it
+// started, so "why am I hitting for less" had no answer anywhere on screen.
+//
+// That is the same shape the consumables table replaced, and for the same
+// reason: four hand-written versions of one idea means the fifth is another
+// map, another expiry branch and another silent integration — and the fifth is
+// exactly where the bug lives.
+//
+// ONE TABLE. A status is a row: what it is called, whether it helps or hurts,
+// how long it lasts, and a bag of the SAME modifiers talents, affixes and
+// matched sets already speak. That last part is the whole trick — a buff
+// granting `damagePercent` reaches damage, and nothing in the damage path had
+// to learn that buffs exist.
+//
+// What could not be said in `PassiveBonus` is deliberately narrow, and three of
+// the four extras are things the game already did before this existed: a
+// movement multiplier (the old slow), a damage-taken multiplier (Shield Wall),
+// and a repeating tick — which is the one genuinely new idea, and is what makes
+// a debuff worth putting on something you are about to kill anyway.
+
+export type StatusKind = "buff" | "debuff";
+
+export type StatusId =
+  // buffs
+  | "enraged" | "shielded" | "focused" | "rallied" | "bloodlust"
+  // debuffs
+  | "weakened" | "chilled" | "poisoned" | "burning" | "bleeding"
+  | "staggered" | "exposed" | "marked" | "shocked";
+
+export interface StatusDef {
+  id: StatusId;
+  name: string;
+  icon: string;
+  kind: StatusKind;
+  durationMs: number;
+  /** One line, for the indicator's tooltip. Says what it DOES, not what it is. */
+  blurb: string;
+  /**
+   * Stat changes, in the one vocabulary everything else already speaks.
+   *
+   * This is why a status needs no plumbing of its own: `passivesOf` folds these
+   * into the same bag talents and affixes total into, so a buff reaches damage,
+   * accuracy, armour, mana and cooldowns without any of those learning that
+   * timed effects exist.
+   */
+  modifiers?: PassiveBonus;
+  /** Multiplies movement. Below 1 is a slow; this is what `chilled` is. */
+  moveMultiplier?: number;
+  /** Multiplies damage taken. Below 1 mitigates (Shield Wall), above 1 is the
+   *  entire point of marking something. */
+  damageTakenMultiplier?: number;
+  /** Damage every `tickMs`, and what it is made of — so a burn is resisted by
+   *  fire resistance exactly as a firebolt is, with no second rule. */
+  dot?: { damage: number; school: DamageSchool };
+  /** How often `dot` fires. Ignored without one. */
+  tickMs?: number;
+  /** Where it may sit. Enforced where it is applied, so a self-buff can never
+   *  be pushed onto a monster by a hand-written message. */
+  on: "player" | "monster" | "any";
+}
+
+/** The one place every timed effect in the game is defined. */
+export const STATUSES: Record<StatusId, StatusDef> = {
+  // ----------------------------------------------------------------- buffs
+  enraged: {
+    id: "enraged", name: "Enraged", icon: "status-enraged", kind: "buff",
+    durationMs: WARCRY_DURATION_MS, on: "player",
+    blurb: "Everything you swing lands harder.",
+    modifiers: { damagePercent: Math.round(WARCRY_DAMAGE_BONUS * 100) },
+  },
+  shielded: {
+    id: "shielded", name: "Shield Wall", icon: "status-shielded", kind: "buff",
+    durationMs: SHIELD_WALL_MS, on: "player",
+    blurb: "Braced. Incoming damage is halved.",
+    damageTakenMultiplier: SHIELD_WALL_REDUCTION,
+  },
+  focused: {
+    id: "focused", name: "Focused", icon: "status-focused", kind: "buff",
+    durationMs: 10000, on: "player",
+    blurb: "You are reading the fight. Far more of your blows tell.",
+    modifiers: { critChance: 15, accuracyBonus: 8 },
+  },
+  rallied: {
+    id: "rallied", name: "Rallied", icon: "status-rallied", kind: "buff",
+    durationMs: 14000, on: "player",
+    blurb: "Standing straighter. Tougher, and harder to put down.",
+    modifiers: { armor: 8, maxHpBonus: 40 },
+  },
+  bloodlust: {
+    id: "bloodlust", name: "Bloodlust", icon: "status-bloodlust", kind: "buff",
+    durationMs: 10000, on: "player",
+    blurb: "Swinging faster than is wise, and it is working.",
+    modifiers: { attackSpeedPercent: 25, damagePercent: 10 },
+  },
+
+  // --------------------------------------------------------------- debuffs
+  weakened: {
+    id: "weakened", name: "Weakened", icon: "status-weakened", kind: "debuff",
+    durationMs: WEAKENED_DURATION_MS, on: "player",
+    blurb: "Still shaking it off. Everything you do lands lighter.",
+    modifiers: { damagePercent: -Math.round(WEAKENED_DAMAGE_PENALTY * 100) },
+  },
+  chilled: {
+    id: "chilled", name: "Chilled", icon: "status-chilled", kind: "debuff",
+    durationMs: SLOW_DURATION_MS, on: "any",
+    blurb: "Moving at a fraction of its usual pace.",
+    moveMultiplier: SLOW_MULTIPLIER,
+  },
+  poisoned: {
+    id: "poisoned", name: "Poisoned", icon: "status-poisoned", kind: "debuff",
+    durationMs: 8000, on: "any",
+    blurb: "Venom in the blood. It bleeds away, and it slows what it is in.",
+    dot: { damage: 4, school: "nature" }, tickMs: 1000, moveMultiplier: 0.65,
+  },
+  burning: {
+    id: "burning", name: "Burning", icon: "status-burning", kind: "debuff",
+    durationMs: 8000, on: "any",
+    blurb: "Alight, and it will go on burning without you.",
+    dot: { damage: 6, school: "fire" }, tickMs: 1000,
+  },
+  bleeding: {
+    id: "bleeding", name: "Bleeding", icon: "status-bleeding", kind: "debuff",
+    durationMs: 8000, on: "any",
+    blurb: "A cut that will not close on its own.",
+    dot: { damage: 5, school: "physical" }, tickMs: 1000,
+  },
+  staggered: {
+    id: "staggered", name: "Staggered", icon: "status-staggered", kind: "debuff",
+    durationMs: 5000, on: "any",
+    blurb: "Off balance. Slower, and its own blows have nothing behind them.",
+    moveMultiplier: 0.5, modifiers: { damagePercent: -20 },
+  },
+  exposed: {
+    id: "exposed", name: "Exposed", icon: "status-exposed", kind: "debuff",
+    durationMs: 10000, on: "any",
+    blurb: "A gap in the guard. Its armour counts for much less.",
+    modifiers: { armor: -6 },
+  },
+  marked: {
+    id: "marked", name: "Marked", icon: "status-marked", kind: "debuff",
+    durationMs: 15000, on: "any",
+    blurb: "Singled out. Everything that lands on it hits harder, yours and anyone else's.",
+    damageTakenMultiplier: 1.25,
+  },
+  shocked: {
+    id: "shocked", name: "Shocked", icon: "status-shocked", kind: "debuff",
+    durationMs: 6000, on: "any",
+    blurb: "Twitching. It cannot aim.",
+    modifiers: { accuracyBonus: -20 },
+  },
+};
+
+export const STATUS_IDS = Object.keys(STATUSES) as StatusId[];
+
+export function statusDef(id: StatusId | string | undefined | null): StatusDef | null {
+  return (id && STATUSES[id as StatusId]) || null;
+}
+
+/** One status, running. `by` is who applied it, so a poison that lands the
+ *  killing blow still credits whoever cast it. */
+export interface ActiveStatus {
+  id: StatusId;
+  endsAt: number;
+  by?: string;
+}
+
+/** Whether a status may sit on this sort of thing. Checked where it is applied
+ *  rather than at the message handler, so every source — a skill, a consumable,
+ *  a death — obeys it by construction rather than by three separate remembering. */
+export function statusFits(id: StatusId, target: "player" | "monster"): boolean {
+  const def = STATUSES[id];
+  if (!def) return false;
+  return def.on === "any" || def.on === target;
+}
+
+/** Everything a list of running statuses adds up to, in the shared vocabulary.
+ *  Folded into `passivesOf` beside talents, affixes and matched gear. */
+export function statusModifiers(active: readonly ActiveStatus[]): Required<PassiveBonus> {
+  const total = { ...EMPTY_PASSIVES };
+  for (const s of active) {
+    const def = STATUSES[s.id];
+    if (def?.modifiers) addPassives(total, def.modifiers);
+  }
+  return total;
+}
+
+/**
+ * How fast something moves, as a multiplier, with every slow on it applied.
+ *
+ * Multiplicative rather than "the worst one wins", so two slows are worse than
+ * one — and each additional one is worth less than the last, which is what
+ * stops a stack of them being a root by another name. Floored for the same
+ * reason the resistance cap exists: a creature that cannot move at all is one
+ * the player kites forever.
+ */
+export function statusMoveMultiplier(active: readonly ActiveStatus[]): number {
+  let m = 1;
+  for (const s of active) m *= STATUSES[s.id]?.moveMultiplier ?? 1;
+  return Math.max(0.25, m);
+}
+
+/** How much damage lands, as a multiplier. Shield Wall halves it; a mark raises
+ *  it. Clamped at both ends, so no stack of these is immunity or a one-shot. */
+export function statusDamageTaken(active: readonly ActiveStatus[]): number {
+  let m = 1;
+  for (const s of active) m *= STATUSES[s.id]?.damageTakenMultiplier ?? 1;
+  return Math.max(0.2, Math.min(2, m));
+}
+
+/** The player's own running statuses. Sent whole rather than as deltas, like
+ *  every other small set in this protocol and for the same reason. */
+export interface StatusUpdateMessage {
+  type: "STATUS_UPDATE";
+  payload: { statuses: ActiveStatus[] };
+}
+
+/**
+ * One tick of one damage-over-time effect.
+ *
+ * Its own message rather than a BATTLE_RESULT, because it is not a swing:
+ * nobody attacked, there is no attacker animation to play, and it can land on
+ * something the player is not fighting or has walked away from. What the
+ * client does with it is float a number and write a line — which is exactly
+ * what makes a dot worth casting rather than an invisible subtraction.
+ */
+export interface StatusTickMessage {
+  type: "STATUS_TICK";
+  payload: {
+    /** Whatever is carrying the effect — a monster id, or the player's own. */
+    entityId: string;
+    statusId: StatusId;
+    damage: number;
+    school: DamageSchool;
+    /** Whether `entityId` names a monster, so the client knows which pool to
+     *  look it up in rather than guessing from a miss. */
+    monster: boolean;
+  };
+}
+
 
 // --- Weapon proficiency ------------------------------------------------------
 // Character level and weapon level answer different questions and are earned
@@ -2713,8 +3066,20 @@ export interface MonsterState {
   hp: number;
   maxHp: number;
   // Broadcast so the client can tint a chilled monster; also what tells the
-  // player their Frost Nova is still doing something.
+  // player their Frost Nova is still doing something. Derived from
+  // `statuses` now rather than being the only record of one — kept as a flag
+  // because the renderer reads it every frame for every body on screen and a
+  // list scan per body per frame is work for nothing.
   slowed: boolean;
+  /**
+   * Everything running on it, so a nameplate can show pips and the target
+   * frame can show a row.
+   *
+   * Ids and end times only — no modifiers. The client already has the table,
+   * so sending what a status DOES on every snapshot would be sending a
+   * constant sixty times a second.
+   */
+  statuses: { id: StatusId; endsAt: number }[];
   // True while a telegraphed attack is charging. Carried on the snapshot
   // rather than as its own message: the client only needs to know that a
   // wind-up is in progress to draw the danger zone, and the radius is a
@@ -3122,4 +3487,6 @@ export type ServerToClientMessage =
   | DailyBonusMessage
   | InfoMessage
   | ManaUpdateMessage
+  | StatusUpdateMessage
+  | StatusTickMessage
   | SkillResultMessage;

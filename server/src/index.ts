@@ -98,7 +98,15 @@ import {
   regenAmountForVitality,
   resolveHit,
   resistOf,
+  applyResist,
   passiveResist,
+  STATUSES,
+  statusFits,
+  statusModifiers,
+  statusMoveMultiplier,
+  statusDamageTaken,
+  type ActiveStatus,
+  type StatusId,
   type DamageSchool,
 
   gearArmor,
@@ -233,7 +241,6 @@ const lastRegenAt = new Map<string, number>();
 const manaBalances = new Map<string, number>();
 const lastManaRegenAt = new Map<string, number>();
 // Shield Wall halves incoming damage while it lasts.
-const shieldUntil = new Map<string, number>();
 
 interface Attributes {
   strength: number;
@@ -313,6 +320,11 @@ function weaponLevelOf(playerId: string, weapon = heldWeapon(playerId)): number 
 function passivesOf(playerId: string): ReturnType<typeof talentPassives> {
   const weapon = heldWeapon(playerId);
   const total = talentPassives(weapon, ranksOf(playerId, weapon));
+  // Running statuses total into the SAME bag, which is the whole reason a
+  // buff needed no plumbing of its own: War Cry reaches damage, Focused
+  // reaches accuracy and crit, and Rallied reaches armour and max health,
+  // through code that was written years before any of them existed.
+  addPassives(total, statusModifiers(statusesOf(playerId, Date.now())));
   // Gear affixes total into the SAME bag, here, in the one function every
   // combat number already flows through. That is the whole reason affixes reuse
   // `PassiveBonus`: damage, accuracy, armour, mana and cooldowns all pick them
@@ -535,7 +547,7 @@ const nodeRespawnAt = new Map<string, number>();
 
 function spawnMonster(id: string, kind: MonsterState["kind"], x: number, y: number): MonsterState {
   const maxHp = MONSTER_STATS[kind].maxHp;
-  return { id, kind, x, y, status: "alive", hp: maxHp, maxHp, slowed: false, windingUp: false };
+  return { id, kind, x, y, status: "alive", hp: maxHp, maxHp, slowed: false, windingUp: false, statuses: [] };
 }
 
 // Monsters live in tight packs, not scattered individually, so clearing a
@@ -657,23 +669,239 @@ const nextGatherAt = new Map<string, number>();
 const playerTargets = new Map<string, string | null>();
 // Per-player, per-skill "ready at" timestamps.
 const skillReadyAt = new Map<string, Map<SkillId, number>>();
-// Timed status effects. Both are just "modifier expires at T", which is why
-// one shape covers a monster being chilled and a player being enraged.
-const monsterSlowUntil = new Map<string, number>();
-const playerBuffUntil = new Map<string, number>();
 const globalCooldownUntil = new Map<string, number>();
 const potionReadyAt = new Map<string, number>();
 // Last moment this player dealt or took damage. Regen waits on it, so
 // healing only resumes once the fight has genuinely stopped.
 const lastCombatAt = new Map<string, number>();
-// Post-death penalty: you hit softer for a while after respawning.
-const weakenedUntil = new Map<string, number>();
 // The ally a player has selected, for the skills that can help someone else.
 const playerAllyTargets = new Map<string, string | null>();
 
 function markInCombat(playerId: string, now: number): void {
   lastCombatAt.set(playerId, now);
 }
+
+// --- Statuses ---------------------------------------------------------------
+// ONE STORE, keyed by entity id, and the id may be a player or a monster.
+//
+// This replaced four Maps that each held "a modifier expires at T" and each
+// reached combat by its own route: `playerBuffUntil`, `shieldUntil`,
+// `weakenedUntil` and `monsterSlowUntil`. They were never four ideas, they were
+// one idea written four times — and the cost was not the duplication, it was
+// that adding a fifth timed effect meant adding a fifth map, a fifth expiry
+// branch, a fifth integration into damage, and a fifth chance to forget one.
+//
+// Players and monsters share it deliberately. `STATUSES[id].on` is what decides
+// where a given effect may sit, checked in `applyStatus`, so the rule lives in
+// the table rather than in which Map somebody reached for.
+const statuses = new Map<string, ActiveStatus[]>();
+/** When each running dot last ticked, keyed `entityId|statusId`. */
+const statusTickedAt = new Map<string, number>();
+
+/** Everything currently on an entity, expired entries dropped. */
+function statusesOf(entityId: string, now: number): ActiveStatus[] {
+  const list = statuses.get(entityId);
+  if (!list || list.length === 0) return [];
+  const live = list.filter((s) => s.endsAt > now);
+  if (live.length !== list.length) {
+    if (live.length === 0) statuses.delete(entityId);
+    else statuses.set(entityId, live);
+  }
+  return live;
+}
+
+function hasStatus(entityId: string, id: StatusId, now: number): boolean {
+  return statusesOf(entityId, now).some((s) => s.id === id);
+}
+
+/**
+ * Puts a status on something, or refreshes it if it is already there.
+ *
+ * REFRESH RATHER THAN STACK. Two casts of the same debuff on one target extend
+ * it instead of doubling it, which is what keeps a stack of slows from being a
+ * root and a pair of marks from being a one-shot — the same "never immunity"
+ * argument the resistance cap is written under, one level up. Duration is the
+ * thing a second cast buys.
+ *
+ * Returns whether anything changed, so a caller can decide whether to tell the
+ * player about it without asking twice.
+ */
+function applyStatus(
+  entityId: string,
+  id: StatusId,
+  target: "player" | "monster",
+  now: number,
+  by?: string,
+): boolean {
+  if (!statusFits(id, target)) return false;
+  const def = STATUSES[id];
+  const list = statusesOf(entityId, now);
+  const endsAt = now + def.durationMs;
+  const existing = list.find((s) => s.id === id);
+  if (existing) {
+    // Never shortens. A weak source refreshing a strong one down would make
+    // casting something a way of helping whatever you cast it at.
+    existing.endsAt = Math.max(existing.endsAt, endsAt);
+    existing.by = by ?? existing.by;
+  } else {
+    list.push({ id, endsAt, by });
+    // The tick clock starts now rather than at zero, so a dot applied this
+    // instant does not fire immediately and hand the caster a free tick.
+    if (def.dot) statusTickedAt.set(`${entityId}|${id}`, now);
+  }
+  statuses.set(entityId, list);
+  if (target === "monster") syncMonsterStatuses(entityId, now);
+  return true;
+}
+
+function clearStatuses(entityId: string): void {
+  statuses.delete(entityId);
+  for (const key of [...statusTickedAt.keys()]) {
+    if (key.startsWith(`${entityId}|`)) statusTickedAt.delete(key);
+  }
+}
+
+/** Copies a monster's running statuses onto its broadcast state, which is how
+ *  the client draws nameplate pips and the target frame's row. */
+function syncMonsterStatuses(monsterId: string, now: number): void {
+  const monster = monsters.find((m) => m.id === monsterId);
+  if (!monster) return;
+  monster.statuses = statusesOf(monsterId, now).map((s) => ({ id: s.id, endsAt: s.endsAt }));
+}
+
+function sendStatuses(socket: WebSocket | undefined, playerId: string, now: number): void {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  const msg: ServerToClientMessage = {
+    type: "STATUS_UPDATE",
+    payload: { statuses: statusesOf(playerId, now) },
+  };
+  socket.send(JSON.stringify(msg));
+}
+
+
+/**
+ * Expires everything that has run out, and fires every dot that is due.
+ *
+ * Runs before anything reads a status, so a modifier can never outlive its own
+ * end time by a tick — which is the class of bug the four separate expiry
+ * branches used to make possible one at a time.
+ *
+ * A dot is resolved as REAL DAMAGE of its own school, so a burn is reduced by
+ * fire resistance exactly as a firebolt is and there is no second rule about
+ * how much a tick hurts. And it credits whoever applied it: without `by`, a
+ * poison landing the killing blow would hand the experience to nobody and the
+ * loot to no one.
+ */
+function tickStatuses(now: number): void {
+  for (const [entityId, list] of [...statuses]) {
+    const live = list.filter((s) => s.endsAt > now);
+    if (live.length !== list.length) {
+      if (live.length === 0) statuses.delete(entityId);
+      else statuses.set(entityId, live);
+      const expiredMonster = monsters.find((m) => m.id === entityId);
+      if (expiredMonster) {
+        syncMonsterStatuses(entityId, now);
+        expiredMonster.slowed = statusMoveMultiplier(live) < 1;
+      } else {
+        sendStatuses(sockets.get(entityId), entityId, now);
+      }
+    }
+    for (const s of live) {
+      const def = STATUSES[s.id];
+      if (!def.dot) continue;
+      const key = `${entityId}|${s.id}`;
+      const last = statusTickedAt.get(key) ?? now;
+      const every = def.tickMs ?? 1000;
+      if (now - last < every) continue;
+      statusTickedAt.set(key, now);
+      applyDotTick(entityId, s, def.dot, now);
+    }
+  }
+}
+
+/** One tick of one dot, on whichever kind of thing is carrying it. */
+function applyDotTick(
+  entityId: string,
+  active: ActiveStatus,
+  dot: { damage: number; school: DamageSchool },
+  now: number,
+): void {
+  const monster = monsters.find((m) => m.id === entityId);
+  if (monster) {
+    if (monster.status !== "alive") return;
+    // The same two multipliers a swing goes through: what the creature is made
+    // of, and whatever is raising or lowering what it takes. A burn on a troll
+    // is worth what fire is worth on a troll.
+    const resist = resistOf(MONSTER_STATS[monster.kind].resist, dot.school);
+    const taken = statusDamageTaken(statusesOf(entityId, now));
+    const damage = Math.max(1, Math.round(applyResist(dot.damage, resist) * taken));
+    monster.hp = Math.max(0, monster.hp - damage);
+    const by = active.by;
+    if (by) addThreat(monster.id, by, damage);
+    for (const [pid, socket] of sockets) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) continue;
+      // Only to people who can see it. A tick is a floating number over a
+      // body, and a body nobody is near is a message nobody can use.
+      const p = players.get(pid);
+      if (!p || Math.hypot(p.x - monster.x, p.y - monster.y) > 900) continue;
+      sendStatusTick(socket, { entityId, statusId: active.id, damage, school: dot.school, monster: true });
+    }
+    if (monster.hp <= 0) {
+      killMonster(monster, now);
+      if (by) {
+        const attrs = attributes.get(by) ?? EMPTY_ATTRS;
+        onPlayerKill(by, attrs);
+      }
+    }
+    return;
+  }
+
+  const player = players.get(entityId);
+  if (!player) return;
+  const attrs = attributes.get(entityId) ?? EMPTY_ATTRS;
+  const resist = playerResist(entityId, dot.school);
+  const taken = statusDamageTaken(statusesOf(entityId, now));
+  const damage = Math.max(1, Math.round(applyResist(dot.damage, resist) * taken));
+  const maxHp = maxHpOf(entityId, attrs);
+  markInCombat(entityId, now);
+  const result = applyDamage(entityId, damage, maxHp);
+  hpBalances.set(entityId, result.hp);
+  const socket = sockets.get(entityId);
+  if (result.defeated) {
+    player.x = PLAYER_SPAWN.x;
+    player.y = PLAYER_SPAWN.y;
+    handlePlayerDeath(entityId, socket, now);
+  }
+  if (socket) {
+    sendHpUpdate(socket, result.hp, maxHp, result.defeated, result.defeated ? PLAYER_SPAWN : undefined);
+    sendStatusTick(socket, { entityId, statusId: active.id, damage, school: dot.school, monster: false });
+  }
+}
+
+function sendStatusTick(
+  socket: WebSocket,
+  payload: Extract<ServerToClientMessage, { type: "STATUS_TICK" }>["payload"],
+): void {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ type: "STATUS_TICK", payload } satisfies ServerToClientMessage));
+}
+
+/** A monster's armour with whatever is on it applied — Expose Weakness is the
+ *  only thing that moves it, and it moves it here rather than at three call
+ *  sites. Never below zero: a negative armour would ADD damage, which is what
+ *  a vulnerability is for and is not what stripping armour means. */
+function monsterArmor(monster: MonsterState, now: number): number {
+  const base = MONSTER_STATS[monster.kind].armor;
+  const mod = statusModifiers(statusesOf(monster.id, now)).armor;
+  return Math.max(0, base + mod);
+}
+
+/** A monster's accuracy, likewise — `shocked` is what moves it. */
+function monsterAccuracy(monster: MonsterState, now: number): number {
+  const base = MONSTER_STATS[monster.kind].accuracy;
+  return Math.max(5, base + statusModifiers(statusesOf(monster.id, now)).accuracyBonus);
+}
+
 
 // Everything that happens when a player drops. Kept in one place because
 // both normal attacks and telegraphed slams can kill, and the penalty must
@@ -683,7 +911,8 @@ function handlePlayerDeath(playerId: string, socket: WebSocket | undefined, now:
   // standing, not mid-fight with whatever killed you.
   clearCombatClocks(playerId);
   sendAttackState(playerId);
-  weakenedUntil.set(playerId, now + WEAKENED_DURATION_MS);
+  applyStatus(playerId, "weakened", "player", now);
+  sendStatuses(socket, playerId, now);
   const { xp, lost } = loseXpFraction(playerId, DEATH_XP_LOSS_FRACTION);
   // Threat dies with you: a corpse should not still be holding a pack's
   // attention while it walks home.
@@ -841,8 +1070,11 @@ function killMonster(monster: MonsterState, now: number): void {
   monster.windingUp = false;
   monsterRespawnAt.set(monster.id, now + MONSTER_RESPAWN_MS * MONSTER_STATS[monster.kind].respawnMultiplier);
   monsterAttackAt.delete(monster.id);
-  monsterSlowUntil.delete(monster.id);
+  // Everything on it dies with it. Without this a respawn walks back out
+  // still poisoned by a fight that happened five minutes ago.
+  clearStatuses(monster.id);
   monster.slowed = false;
+  monster.statuses = [];
   const ai = monsterAi.get(monster.id);
   if (ai) {
     monster.x = ai.home.x;
@@ -908,13 +1140,12 @@ function applySkillDamage(
 ): { hit: boolean; crit: boolean; damage: number; killed: boolean; school: DamageSchool; resisted: number } {
   const stats = MONSTER_STATS[monster.kind];
   const equipped = equippedItems.get(playerId);
-  const enraged = (playerBuffUntil.get(playerId) ?? 0) > now;
-  const weakened = (weakenedUntil.get(playerId) ?? 0) > now;
-  let scaled = enraged ? power * (1 + WARCRY_DAMAGE_BONUS) : power;
-  if (weakened) scaled *= 1 - WEAKENED_DAMAGE_PENALTY;
-
+  // Enraged and Weakened used to be two bespoke multiplications right here.
+  // They are `damagePercent` on a status row now, so they arrive inside
+  // `passives` with the talents and the affixes and need no arithmetic of
+  // their own — which is the entire argument for the status table.
   const passives = passivesOf(playerId);
-  scaled = applyDamagePercent(scaled, passives.damagePercent);
+  const scaled = applyDamagePercent(power, passives.damagePercent);
   const result = resolveHit({
     attackerAccuracy:
       playerAccuracy(attrs.agility, passives.accuracyBonus) + (equipped?.ring?.bonusStatValue ?? 0),
@@ -929,7 +1160,9 @@ function applySkillDamage(
       passives.critDamagePercent,
     ),
     defenderEvasion: stats.evasion,
-    defenderArmor: stats.armor,
+    // Its armour with whatever is on it applied, so Expose Weakness reaches
+    // a spell and a swing through one function rather than two.
+    defenderArmor: monsterArmor(monster, now),
     school,
     defenderResist: monsterResist(monster.kind, school),
   });
@@ -937,6 +1170,13 @@ function applySkillDamage(
   const resisted = monsterResist(monster.kind, school);
   if (!result.hit) return { hit: false, crit: false, damage: 0, killed: false, school, resisted };
 
+  // Whatever is raising or lowering what it takes — a mark is the only thing
+  // that raises it today, and it works on anything that can land.
+  const damage = Math.max(
+    1,
+    Math.round(result.damage * statusDamageTaken(statusesOf(monster.id, now))),
+  );
+  result.damage = damage;
   monster.hp = Math.max(0, monster.hp - result.damage);
   addThreat(monster.id, playerId, result.damage);
   markInCombat(playerId, now);
@@ -1063,16 +1303,27 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
       sendInfo(beneficiarySocket, `${players.get(playerId)?.name ?? "Someone"} healed you for ${healed}.`, "#7ed957");
     }
   } else if (skill.kind === "buff") {
-    if (skill.selfShieldMs) {
-      // Shield Wall is self-only: a damage-reduction cooldown you hand to
-      // someone else stops being the warrior's own survival tool.
-      shieldUntil.set(playerId, now + SHIELD_WALL_MS);
-      buffMs = SHIELD_WALL_MS;
-    } else {
-      playerBuffUntil.set(beneficiaryId, now + WARCRY_DURATION_MS);
-      buffMs = WARCRY_DURATION_MS;
-      if (beneficiaryId !== playerId && beneficiarySocket) {
-        sendInfo(beneficiarySocket, `${players.get(playerId)?.name ?? "Someone"} empowered you!`, "#ffc107");
+    // Which buff comes off the SKILL now rather than out of a two-armed
+    // branch that knew the names of the only two that existed. Adding Focus,
+    // Rally and Bloodlust needed nothing here at all, which is the test of
+    // whether the table was worth building.
+    const applied = skill.applies ?? "enraged";
+    // Self-only when the skill says so. A damage-reduction cooldown you can
+    // hand to someone else stops being the warrior's own survival tool, and
+    // Bloodlust is the same argument: recklessness is not a gift.
+    const selfOnly = !!skill.selfShieldMs || skill.rangePx === 0;
+    const on = selfOnly ? playerId : beneficiaryId;
+    applyStatus(on, applied, "player", now, playerId);
+    sendStatuses(sockets.get(on), on, now);
+    buffMs = STATUSES[applied].durationMs;
+    if (on !== playerId) {
+      const theirs = sockets.get(on);
+      if (theirs) {
+        sendInfo(
+          theirs,
+          `${players.get(playerId)?.name ?? "Someone"} put ${STATUSES[applied].name} on you.`,
+          "#ffc107",
+        );
       }
     }
   } else {
@@ -1169,12 +1420,21 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
     }
 
     for (const monster of struck) {
-      // Control lands regardless of the damage roll — a nova that both
-      // misses and fails to slow would be infuriating on an 11s cooldown.
-      if (skill.kind === "control" || skill.appliesSlow) {
-        monsterSlowUntil.set(monster.id, now + SLOW_DURATION_MS);
-        monster.slowed = true;
-        slowMs = SLOW_DURATION_MS;
+      // The rider lands regardless of the damage roll — a nova that both
+      // misses and fails to chill would be infuriating on an 11s cooldown.
+      // Which status it is comes off the skill now, so a poison arrow
+      // poisons and a gut punch staggers instead of both being called a slow
+      // because a slow was the only thing the engine could do.
+      if (skill.applies) {
+        applyStatus(monster.id, skill.applies, "monster", now, playerId);
+        const def = STATUSES[skill.applies];
+        if (def.moveMultiplier) {
+          monster.slowed = true;
+          slowMs = def.durationMs;
+        }
+        // A debuff is an act of aggression even when it does no damage, or
+        // marking something from three hundred pixels away would leave it
+        // attacking whoever happened to be nearest.
         addThreat(monster.id, playerId, 1);
       }
       // A skill that names no school is physical, and that is most of the
@@ -1225,10 +1485,13 @@ function resolveSlam(monster: MonsterState, radiusPx: number, damageMultiplier: 
 
     const attrs = attributes.get(playerId) ?? EMPTY_ATTRS;
     const equipped = equippedItems.get(playerId);
+    // A slam obeys the same debuffs its ordinary swing does — a staggered
+    // troll should not be able to answer with its best attack at full force.
+    const slamPassives = statusModifiers(statusesOf(monster.id, now));
     const hit = resolveHit({
-      attackerAccuracy: stats.accuracy,
-      attackerMinHit: Math.round(stats.minHit * damageMultiplier),
-      attackerMaxHit: Math.round(stats.maxHit * damageMultiplier),
+      attackerAccuracy: monsterAccuracy(monster, now),
+      attackerMinHit: applyDamagePercent(Math.round(stats.minHit * damageMultiplier), slamPassives.damagePercent),
+      attackerMaxHit: applyDamagePercent(Math.round(stats.maxHit * damageMultiplier), slamPassives.damagePercent),
       attackerCritChance: stats.critChance,
       attackerCritMultiplier: stats.critMultiplier,
       defenderEvasion: gearEvasion(equipped),
@@ -1393,14 +1656,12 @@ function resolvePlayerAttack(
   const baseDamageBonus = gearDamageBonus(equipped);
   // War Cry rides on top of gear rather than replacing it, so the buff is
   // worth more the better geared you already are.
-  const enraged = (playerBuffUntil.get(playerId) ?? 0) > now;
-  const weakened = (weakenedUntil.get(playerId) ?? 0) > now;
-  let totalDamageBonus = enraged
-    ? Math.round(baseDamageBonus + playerMaxHit(powerOf(playerId, attrs)) * WARCRY_DAMAGE_BONUS)
-    : baseDamageBonus;
-  // Weakened bites into the same number War Cry inflates, so the two are
-  // directly comparable and can cancel each other out.
-  if (weakened) totalDamageBonus -= Math.round(playerMaxHit(powerOf(playerId, attrs)) * WEAKENED_DAMAGE_PENALTY);
+  // War Cry and Weakened used to be two hand-written adjustments to this
+  // number, one adding a fraction of max hit and one subtracting another.
+  // Both are `damagePercent` on a status row now, which `hitBandOf` already
+  // applies below — so they are gone from here rather than reimplemented,
+  // and any future buff reaches the swing for free.
+  const totalDamageBonus = baseDamageBonus;
   const totalAccuracy =
     playerAccuracy(attrs.agility, passives.accuracyBonus) + (equipped?.ring?.bonusStatValue ?? 0);
 
@@ -1432,12 +1693,16 @@ function resolvePlayerAttack(
       attackerCritChance: critChance,
       attackerCritMultiplier: critMultiplier,
       defenderEvasion: monsterStats.evasion,
-      defenderArmor: monsterStats.armor,
+      defenderArmor: monsterArmor(monster, now),
       school,
       defenderResist: monsterResist(monster.kind, school),
     });
 
     if (playerAttack.hit) {
+      playerAttack.damage = Math.max(
+        1,
+        Math.round(playerAttack.damage * statusDamageTaken(statusesOf(monster.id, now))),
+      );
       monster.hp = Math.max(0, monster.hp - playerAttack.damage);
       // Damage is threat: it is what decides who this monster turns on, and
       // what earns a share of the XP when it dies.
@@ -1873,6 +2138,11 @@ wss.on("connection", (socket) => {
       sendRecipes(socket, id);
       sendConsumables(socket, consumablesOf(id));
       sendRunes(socket, runesOf(id));
+      // Whatever is still running. Statuses do not survive a disconnect — they
+      // live in memory and a character who logged out is not standing anywhere
+      // to be on fire — but a reconnect inside one still has to be told, or the
+      // indicator row starts empty while the server keeps applying the numbers.
+      sendStatuses(socket, id, Date.now());
       return;
     }
 
@@ -2381,7 +2651,8 @@ wss.on("connection", (socket) => {
       if (def.effect.buffMs) {
         // The same buff War Cry grants, which is the point: a consumable that
         // needed a new mechanic would be a new mechanic wearing a potion bottle.
-        playerBuffUntil.set(id, nowMs + def.effect.buffMs);
+        applyStatus(id, "enraged", "player", nowMs, id);
+        sendStatuses(socket, id, nowMs);
         sendInfo(socket, `${def.name} — ${consumableSummary(def)}.`, "#ffd873");
       }
       return;
@@ -2412,13 +2683,11 @@ wss.on("connection", (socket) => {
     clearCombatClocks(id);
     playerTargets.delete(id);
     skillReadyAt.delete(id);
-    playerBuffUntil.delete(id);
     globalCooldownUntil.delete(id);
       manaBalances.delete(id);
     lastManaRegenAt.delete(id);
-    shieldUntil.delete(id);
     potionReadyAt.delete(id);
-    weakenedUntil.delete(id);
+    clearStatuses(id);
     lastCombatAt.delete(id);
     playerAllyTargets.delete(id);
     for (const [pid, allyId] of playerAllyTargets) if (allyId === id) playerAllyTargets.set(pid, null);
@@ -2464,17 +2733,7 @@ setInterval(() => {
     }
   }
 
-  // Expire timed status effects before anything reads them.
-  for (const [monsterId, until] of monsterSlowUntil) {
-    if (now >= until) {
-      monsterSlowUntil.delete(monsterId);
-      const m = monsters.find((mm) => mm.id === monsterId);
-      if (m) m.slowed = false;
-    }
-  }
-  for (const [pid, until] of playerBuffUntil) {
-    if (now >= until) playerBuffUntil.delete(pid);
-  }
+  tickStatuses(now);
 
   // --- Monster AI ---------------------------------------------------------
   // Monsters coming to you is what makes this a fight rather than a
@@ -2483,8 +2742,10 @@ setInterval(() => {
     const ai = monsterAi.get(monster.id);
     if (!ai) continue;
     const stats = MONSTER_STATS[monster.kind];
-    const slowed = (monsterSlowUntil.get(monster.id) ?? 0) > now;
-    const stepPx = ((stats.speedPxPerSec * (slowed ? SLOW_MULTIPLIER : 1)) * TICK_MS) / 1000;
+    // Every slow on it, composed — a chill and a poison together are worse
+    // than either alone, and neither can root it.
+    const stepPx =
+      ((stats.speedPxPerSec * statusMoveMultiplier(statusesOf(monster.id, now))) * TICK_MS) / 1000;
 
     if (monster.status !== "alive") {
       ai.state = "idle";
@@ -2869,10 +3130,14 @@ setInterval(() => {
     // conversation about offence: a dragon breathes fire, so Rimeward mail and
     // a suffix of the Salamander have something to be for.
     const monsterSchool = stats.attackSchool ?? "physical";
+    // The monster's own statuses cut both ways: Shocked takes its aim and
+    // Staggered takes the weight out of its blows. Without this half, every
+    // debuff in the game would be a damage bonus wearing a different name.
+    const foePassives = statusModifiers(statusesOf(monster.id, now));
     const monsterAttack = resolveHit({
-      attackerAccuracy: stats.accuracy,
-      attackerMinHit: stats.minHit,
-      attackerMaxHit: stats.maxHit,
+      attackerAccuracy: monsterAccuracy(monster, now),
+      attackerMinHit: applyDamagePercent(stats.minHit, foePassives.damagePercent),
+      attackerMaxHit: applyDamagePercent(stats.maxHit, foePassives.damagePercent),
       attackerCritChance: stats.critChance,
       attackerCritMultiplier: stats.critMultiplier,
       defenderEvasion: totalEvasion,
@@ -2885,10 +3150,21 @@ setInterval(() => {
     if (monsterAttack.hit) {
       const maxHp = maxHpOf(victimId, attrs);
       markInCombat(victimId, now);
-      const shielded = (shieldUntil.get(victimId) ?? 0) > now;
-      const incoming = shielded ? Math.max(1, Math.round(monsterAttack.damage * (1 - SHIELD_WALL_REDUCTION))) : monsterAttack.damage;
+      // Every damage-taken multiplier on the victim, composed. Shield Wall
+      // used to be a bespoke branch here, which is why nothing else could
+      // ever raise or lower incoming damage without a second one beside it.
+      const taken = statusDamageTaken(statusesOf(victimId, now));
+      const incoming = Math.max(1, Math.round(monsterAttack.damage * taken));
       const result = applyDamage(victimId, incoming, maxHp);
       hpBalances.set(victimId, result.hp);
+      // What the blow leaves behind. Only on a hit, and only sometimes —
+      // every swing landing a debuff makes it a stat rather than an event,
+      // and the whole point of the indicator is that something changed.
+      if (stats.inflicts && Math.random() < stats.inflicts.chance) {
+        if (applyStatus(victimId, stats.inflicts.status, "player", now, monster.id)) {
+          sendStatuses(socket, victimId, now);
+        }
+      }
 
       if (result.defeated) {
         const p = players.get(victimId);

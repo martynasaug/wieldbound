@@ -89,6 +89,17 @@ first run at `server/data/wieldbound.db`.
   sweeps a wedge, a heal throws light up from the feet, arrows fall as a volley
   and chain lightning hops target to target. Real geometry, sized from each
   skill's own radius and range rather than from a constant beside it.
+- **Buffs and debuffs, in one table and on the screen** — fourteen timed
+  effects, from Rallied and Bloodlust to Burning, Exposed and Marked. Each is
+  a row speaking the same vocabulary talents and affixes do, so a buff reaches
+  damage through code written long before buffs existed. Damage-over-time is
+  real damage of its own school, so a burn is resisted by fire resistance with
+  no second rule. **The indicator separates the two three ways** — buffs left
+  and round-shouldered, debuffs right and notched, and only debuffs pulse as
+  they run out — because colour alone excludes anyone who cannot tell green
+  from red, and position alone stops meaning anything the moment one side is
+  empty. Monsters inflict them back: a cactoro poisons, a dragon sets you
+  alight, a troll takes your feet out.
 - **13 monster kinds** in five difficulty bands radiating from spawn, so
   walking further from the workbench *is* the progression. Each kind has a
   verb rather than a bigger stat line — one bursts on death, one outruns you,
@@ -120,9 +131,11 @@ first run at `server/data/wieldbound.db`.
   clear, click a key label to rebind. Saved per weapon, because the skills are.
 - **Talent trees, one per weapon** — using a weapon levels *that weapon*, and
   its proficiency hands you points to spend where you want. Nothing unlocks
-  itself: all 27 skills and every passive is a node you buy. Eight trees, 73
+  itself: all 35 skills and every passive is a node you buy. Eight trees, 81
   nodes, and about two thirds of a tree fits in a finished weapon's points, so
-  which two thirds is the build. Free respec per weapon.
+  which two thirds is the build. Free respec per weapon. Every tree has at
+  least one buff or debuff of its own, because a status system half the game
+  cannot use is half a system.
 - **Two progressions that answer different questions** — character level is who
   you are (hit points, stat points, carried across every weapon); weapon
   proficiency is what you can do with the thing in your hand, and it is earned
@@ -266,5 +279,6 @@ seven-step quality ladder, and a smithy with three verbs — since grown to four
 with **M2.1** (a bag slot holds a kind, not an instance), **M2.2** (a refined
 material tier), **M2.3** (where a thing comes from), **M3** (etching) and
 **M3.1** (a cut rune survives the fire). **Phase 48 M4** then gave damage a
-school, and every creature something that hurts it. See [`PLAN.md`](PLAN.md)
-for the full picture.
+school and every creature something that hurts it, and **M4.1** put every
+timed effect in the game into one table with eight new skills and a row of
+indicators. See [`PLAN.md`](PLAN.md) for the full picture.

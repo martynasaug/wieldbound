@@ -38,6 +38,16 @@ export interface TargetLook {
    */
   resists?: { school: string; name: string; color: string }[];
   weakTo?: { school: string; name: string; color: string }[];
+  /**
+   * What is running on it right now.
+   *
+   * Answers the question a debuff makes a player ask constantly and that
+   * nothing could answer before: is my poison still on it, or am I about to
+   * waste a nine-second cooldown re-applying something that has four seconds
+   * left. Same two-column split as the player's own row, so there is one
+   * arrangement to learn rather than two.
+   */
+  statuses?: { id: string; name: string; icon: string; kind: "buff" | "debuff"; blurb: string }[];
 }
 
 export class TargetFrame {
@@ -50,6 +60,12 @@ export class TargetFrame {
   private portrait = document.getElementById("target-portrait")!;
   private known = document.getElementById("target-known")!;
   private schools = document.getElementById("target-schools")!;
+  private statusRow = document.getElementById("target-statuses")!;
+  /** Composed separately from `lastLook`: a creature's resistances never
+   *  change while you are looking at it and its statuses change constantly,
+   *  so folding the two into one key would rebuild the portrait every time a
+   *  poison ticked. */
+  private lastStatuses = "";
   /** Last look applied, so the DOM is untouched while a target stays the same. */
   private lastLook = "";
 
@@ -108,6 +124,30 @@ export class TargetFrame {
       }
       this.schools.classList.toggle("shown", any);
     }
+    const statusKey = (look?.statuses ?? []).map((s) => s.id).join(",");
+    if (statusKey !== this.lastStatuses) {
+      this.lastStatuses = statusKey;
+      this.statusRow.innerHTML = "";
+      // Debuffs first here, unlike the player's own row where buffs lead.
+      // On something you are fighting, what YOU have put on it is the
+      // actionable half — the same reason the schools line leads with the
+      // weakness rather than the resistance.
+      const ordered = [...(look?.statuses ?? [])].sort(
+        (a, b) => Number(a.kind === "buff") - Number(b.kind === "buff"),
+      );
+      for (const status of ordered) {
+        const cell = document.createElement("div");
+        cell.className = `status-cell ${status.kind}`;
+        const icon = document.createElement("span");
+        icon.className = "status-icon";
+        icon.innerHTML = iconSvg(status.icon, "icon");
+        cell.appendChild(icon);
+        cell.title = `${status.name} — ${status.blurb}`;
+        this.statusRow.appendChild(cell);
+      }
+      this.statusRow.classList.toggle("shown", ordered.length > 0);
+    }
+
     // Name left, status right — "out of reach" is the thing you need to read
     // instantly mid-fight, so it gets its own column rather than being run
     // together with the name.
@@ -154,6 +194,8 @@ export class TargetFrame {
     this.cast.classList.remove("shown");
     this.known.classList.remove("shown");
     this.schools.classList.remove("shown");
+    this.statusRow.classList.remove("shown");
+    this.lastStatuses = "";
     // Forces the look to be re-applied on the next target, since `show` skips
     // the work when the composed key is unchanged.
     this.lastLook = "";

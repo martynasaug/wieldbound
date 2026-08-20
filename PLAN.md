@@ -2911,6 +2911,83 @@ crafting system to go with them.
       then an Ember Wand ("You burned the Wolf for 4 — it feels that",
       `resisted: -30`) at the same creature.
 
+- [x] **M4.1 — one table for every timed effect, and eight new skills.** The
+      game had four timed effects and they were four hand-written versions of
+      one idea: `playerBuffUntil`, `shieldUntil`, `weakenedUntil` and
+      `monsterSlowUntil`, each with its own store, its own expiry branch and its
+      own route into combat. The cost was not the duplication — it was that a
+      fifth timed effect meant a fifth of all of those, and that every one of
+      them was INVISIBLE. War Cry announced itself with a toast that faded in
+      two seconds and then you hit 35% harder for another six with nothing on
+      screen saying so; dying left you Weakened for twenty seconds and the log
+      mentioned it once. "Why am I doing less damage" had no answer anywhere.
+      - **A status is a row**: a name, whether it helps or hurts, a duration, and
+        a bag of the SAME `PassiveBonus` modifiers talents, affixes and matched
+        sets already speak. That is the whole trick — `passivesOf` folds them in,
+        so a buff granting `damagePercent` reaches damage and nothing in the
+        damage path had to learn that buffs exist. Two bespoke multiplications in
+        the combat code were DELETED rather than reimplemented
+      - **What could not be said in that vocabulary is deliberately narrow**, and
+        three of the four extras are things the game already did: a movement
+        multiplier (the old slow), a damage-taken multiplier (Shield Wall), and a
+        repeating tick — which is the one new idea, and is what makes a debuff
+        worth putting on something you are about to kill anyway
+      - **Refresh, never stack.** A second cast extends rather than doubles, so a
+        pile of slows cannot become a root and two marks cannot become a
+        one-shot. Both multipliers are clamped on top of that, the same "never
+        immunity" argument the resistance cap is written under
+      - **A dot is real damage of its own school**, so a burn is reduced by fire
+        resistance exactly as a firebolt is, and it credits whoever applied it —
+        without that, a poison landing the killing blow hands the experience to
+        nobody
+      - **Eight new skills, one per weapon tree**, and that rule chose the list
+        rather than a wish for particular effects. A status system half the game
+        cannot use is half a system. Focus, Rally, Bloodlust, Stagger, Expose
+        Weakness, Hunter's Mark, Immolate and Storm Bolt
+      - **Storm Bolt closes M4's documented gap.** Lightning had one dealer in
+        the whole game and no weapon at all, so a golem's only real weakness sat
+        behind a single tier-3 node in a single tree
+      - **`appliesSlow` became `applies: StatusId`.** Six skills set that boolean
+        and every one meant something slightly different by it — two of them were
+        never really slows. Rend opens a cut and Poison Arrow puts venom in the
+        blood, and both had to be called a slow because a slow was the only thing
+        the engine could do
+      - **Monsters inflict too.** A cactoro poisons, a ghost chills, a demon and
+        a dragon set you alight, a troll knocks your feet out — as a chance, and
+        never below band 3. Without this half the player's own debuff row had
+        exactly one thing it could ever show, and only after dying
+
+      **The indicator was the point, and one signal is not enough.** Buffs sit
+      left and debuffs right, always. A buff is round-shouldered and green; a
+      debuff is hard-cornered, red, and NOTCHED at the top, so the silhouette
+      differs with no colour at all — colour alone excludes anyone who cannot
+      tell green from red, and position alone stops working the moment one side
+      is empty. Time drains as a conic sweep rather than as digits, and only
+      debuffs pulse in their last two seconds, because what you want to know
+      about a debuff is when it stops. The same two-column arrangement appears
+      on the target frame, so there is one thing to learn.
+
+      **Two real bugs, both found by looking rather than by asserting.** The
+      character sheet did not fold statuses into its totals, so Rallied gave you
+      eight armour in a fight while the window went on reporting the number you
+      had before you cast it — the exact disagreement the gear-aggregation
+      helpers exist to make impossible. And the indicator row was positioned with
+      a hand-picked pixel offset that put it underneath the target frame; every
+      DOM assertion passed straight through it, because the markup was perfectly
+      correct and invisible. It now publishes its own height into the same
+      measured chain the unit frame already uses, and the suite asserts on
+      rectangles.
+
+      Verified: `tools/test/statuses.mjs` — the table, that buffs help and
+      debuffs hurt, that every modifier key is one the stat sheet reads, that
+      nothing composes into a root or an immunity, that every status has a source
+      and every source can actually land it, and that every weapon tree got one.
+      Sabotaged three ways to check it bites. Plus a real browser: Storm Bolt
+      shocking a golem, Immolate burning it for 4 a tick against its 30% fire
+      resistance, Rally moving the sheet's armour from 2 to 10, a cactoro
+      poisoning the player back, and the rendered rectangles proving the row is
+      somewhere you can see it.
+
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
 renderer-agnostic), and all six DOM panels (inventory, character, craft, skills,
@@ -4601,6 +4678,76 @@ music, player-facing damage-type/resistances, more crafting recipes
   at a screenshot rather than by a test, which is the class of thing screenshots
   are still for.
 
+- One table for every timed effect, and the argument is the one the consumables
+  table already won. Four hand-written versions of "a modifier expires at T" was
+  never four ideas; the cost was that the fifth needed a fifth store, a fifth
+  expiry branch and a fifth integration into damage — and that every one of them
+  reached combat by its own route, so no two behaved quite alike and none of
+  them could be shown on screen without bespoke work.
+- A status speaks `PassiveBonus` and therefore needs no plumbing. That interface
+  is why affixes, matched sets and talents all reach combat without knowing
+  about each other, and a timed effect is the fourth thing of the same shape.
+  The proof it was the right call: War Cry's and Weakened's bespoke damage
+  multiplications were DELETED from the combat code rather than rewritten, and
+  three of the eight new skills needed no server branch at all.
+- Refresh rather than stack, and clamp on top. A second cast buys DURATION. Two
+  slows that multiply without a floor are a root, two marks that multiply
+  without a ceiling are a one-shot, and both are the same failure the resistance
+  cap exists to prevent one system over: a rule that makes a choice better or
+  worse must never make the game unplayable.
+- A dot is real damage of its own school rather than a special kind of tick.
+  That means a burn is resisted by fire resistance with no second rule, and it
+  means the number that floats off a tick is comparable with the number that
+  floats off a firebolt. It also has to carry WHO applied it, or a poison that
+  lands the killing blow credits nobody with the kill.
+- One new skill per weapon TREE, which is a rule about coverage rather than a
+  wish for particular effects. Left to taste the list would have been three
+  caster spells, because that is where buffs and debuffs are easiest to imagine
+  — and a status system half the game cannot use is half a system. "You are
+  whatever you're holding" only means something if every weapon gets a new thing
+  to hold.
+- `appliesSlow: boolean` had to become `applies: StatusId`. A boolean can only
+  ever name one effect, so six skills used it to mean six slightly different
+  things and two of them were not slows at all — Rend opens a cut and Poison
+  Arrow puts venom in the blood. That is the same four-bespoke-maps shape one
+  level up: the moment a second kind of rider existed, a boolean would have
+  needed a second boolean beside it.
+- Monsters inflict statuses too, or the harmful half is something the player
+  does and never something done to them. Before this the player's own debuff row
+  had exactly one thing it could ever show — Weakened, after dying — which made
+  the whole left/right, buff/debuff separation an arrangement for a row that was
+  never going to have two sides. As a CHANCE and never below band 3: every swing
+  landing a debuff makes it a stat rather than an event, and the point of an
+  indicator is that something changed.
+- Three signals separate a buff from a debuff, and the redundancy is deliberate.
+  Colour alone excludes anyone who cannot tell green from red. Position alone
+  stops working the moment one side is empty. Shape alone is subtle at 26px.
+  Position, shape (a notch, so the silhouette differs in greyscale) and colour
+  together mean any one of them is enough, and the tooltip says the word as
+  well, because that is the one place there is room to be unambiguous.
+- Time drains as a sweep, not as digits. Digits at that size are unreadable at a
+  glance and the question is never "how many seconds" — it is "is this nearly
+  gone". Only debuffs pulse at the end, because what you want to know about a
+  debuff is when it STOPS and what you want to know about a buff is when to cast
+  it again, which the sweep already says.
+- The sweeps drain against the SERVER's clock, advanced locally between
+  snapshots. End times are the server's; a machine whose clock is a second out
+  would show every effect ending early, and a machine an hour out would show
+  every effect as already expired.
+- The status row publishes its own height into the measured layout chain rather
+  than sitting at a chosen offset. Its first version was positioned by looking at
+  one screenshot and drew the whole row underneath the target frame — which
+  EVERY DOM assertion passed straight through, because the markup was correct
+  and only the pixels overlapped. Worth generalising: a test that queries the
+  DOM cannot see a layout bug, and the fix for a layout that has four
+  show/hide combinations is never a number.
+- The character sheet had to learn about statuses the same day the server did.
+  The oldest rule in this project is that the stat sheet computes exactly what
+  the server resolves combat with; `passivesOf` folded statuses in and the
+  client's `passives()` did not, so Rallied gave eight armour in a fight and the
+  window reported the figure from before the cast. The Statistics tab now lists
+  "Running effects" as a fourth source beside talents, affixes and matched gear.
+
 - This machine (a fresh Windows box picking up the project) had neither Git
   nor Node.js preinstalled; both were installed via `winget` (`Git.Git`,
   `OpenJS.NodeJS`) rather than assuming either was already present. Also has
@@ -4612,8 +4759,18 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M4 complete (2026-08-20). **The item system rebuilt and
-followed through, and damage that finally knows what it is made of.**
+Phase 0 through 48 M4.1 complete (2026-08-20). **The item system rebuilt and
+followed through, damage that knows what it is made of, and every timed effect
+in the game in one table with a row on screen.**
+
+**M4.1** replaced four hand-written status timers with one table, added eight
+skills — one per weapon tree, so no weapon was left out — and gave the whole
+thing an indicator row. A status is a row speaking the same `PassiveBonus`
+vocabulary everything else does, so a buff reaches damage through code written
+years before buffs existed; two bespoke multiplications were deleted rather
+than rewritten. Buffs sit left and round-shouldered, debuffs right and notched,
+and time drains as a sweep. Monsters inflict them back, which is what gives the
+harmful half two sides. Storm Bolt closes M4's documented lightning gap.
 
 **M4** gave damage a school. Six of them, physical included, so that what you
 are holding decides not only how you fight but what you are good against —

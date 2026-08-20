@@ -84,6 +84,19 @@ export const SKILL_FX: Record<SkillId, FxSpec> = {
   chainlightning: { shape: "chain", color: 0xaee0ff, light: true },
   frostbolt: { shape: "none", color: 0x8ad0ff },
   arcanemissiles: { shape: "chain", color: 0xc79aff },
+
+  // Added with the status system. The shape follows what the skill DOES
+  // rather than which tree it sits in: the three self-buffs bloom around the
+  // caster, the three debuffs land on the target with nothing thrown, and the
+  // two that are spells travel like the spells beside them.
+  focus: { shape: "nova", color: 0xffe08a },
+  rally: { shape: "pillar", color: 0xffd873 },
+  bloodlust: { shape: "nova", color: 0xff6a4a, light: true },
+  stagger: { shape: "none", color: 0xd8c7a0 },
+  expose: { shape: "none", color: 0xffab6a },
+  huntersmark: { shape: "none", color: 0x8fd15a },
+  immolate: { shape: "none", color: 0xff7a3a, light: true },
+  stormbolt: { shape: "chain", color: 0xffe066, light: true },
 };
 
 export function fxFor(id: SkillId): FxSpec {

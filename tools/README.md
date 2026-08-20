@@ -195,6 +195,22 @@ check. None of those failures throws, and none is visible in a screenshot.
 node tools/test/schools.mjs
 ```
 
+`statuses.mjs` — no server needed. Checks the buff/debuff table: that every
+status does something, that a buff carries no penalty and a debuff no benefit,
+that every modifier key is one the stat sheet actually reads, that no pile of
+slows composes into a root and no pile of marks into a one-shot, that every
+status has a source and every source can actually land it on what it targets,
+and that every weapon tree got one.
+
+The failures are silent to a fault. A self-buff aimed at a monster spends its
+cooldown and does nothing; a status nothing applies is a row no player will
+ever see; a modifier using a key outside `PassiveBonus` is the exact bug helm
+and cape shipped with for a year.
+
+```powershell
+node tools/test/statuses.mjs
+```
+
 `icons.mjs` — no server needed. Checks that every icon key the game names — the
 class, weapon, default-attack and skill tables, all 73 talent nodes, plus the
 slots, materials, consumables, dock and attribute keys the panels name directly

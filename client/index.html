@@ -333,6 +333,86 @@
       .bag-slot.filled.etched {
         box-shadow: inset 3px 0 0 0 #c0a6ff, inset 0 0 12px -5px #c0a6ff;
       }
+
+      /* --- Running effects --------------------------------------------------
+         Directly under the player's own unit frame, because that is where a
+         player already looks for "how am I doing" — health, mana, and now what
+         is being done to it.
+
+         THREE SIGNALS SEPARATE A BUFF FROM A DEBUFF, and the redundancy is the
+         point. Colour alone excludes anyone who cannot tell green from red;
+         position alone stops working the moment one side is empty; shape alone
+         is subtle at 26px. Together, any one of them is enough. */
+      /* Slots into the same measured chain the target frame already uses:
+         the unit frame publishes its own bottom, this sits under it and
+         publishes its own height, and the target frame starts below both.
+         A hand-picked pixel offset here put the row underneath the target
+         frame the first time both were on screen at once — which every DOM
+         assertion in the suite passed straight through, because the markup
+         was perfectly correct and invisible. */
+      #status-bar {
+        position: absolute;
+        top: var(--unit-frame-bottom, 122px);
+        left: 14px;
+        display: none;
+        gap: 14px;
+        align-items: flex-start;
+        pointer-events: none;
+        z-index: 6;
+      }
+      #status-bar.shown { display: flex; }
+      #status-buffs, #status-debuffs { display: flex; gap: 5px; pointer-events: auto; }
+      /* Buffs left, debuffs right, always — so the two never trade places as
+         they come and go, and a glance at one end is a real answer. */
+      #status-debuffs { margin-left: 6px; }
+
+      .status-cell {
+        position: relative;
+        width: 26px; height: 26px;
+        display: grid; place-items: center;
+        background: linear-gradient(180deg, #241a0c, #150e05);
+        box-shadow: 0 1px 4px rgba(0,0,0,.6);
+      }
+      /* A buff is round-shouldered and green-edged. */
+      .status-cell.buff {
+        border: 1.5px solid #7ed957;
+        border-radius: 7px;
+        color: #b8e986;
+      }
+      /* A debuff is hard-cornered, red-edged, and notched at the top — the
+         silhouette differs even in greyscale and even at this size. */
+      .status-cell.debuff {
+        border: 1.5px solid #e05a4a;
+        border-radius: 2px;
+        color: #ffab9c;
+        clip-path: polygon(0 0, 38% 0, 50% 8px, 62% 0, 100% 0, 100% 100%, 0 100%);
+      }
+      .status-cell .status-icon { display: grid; place-items: center; }
+      .status-cell .icon { width: 17px; height: 17px; }
+      /* The remaining time, as a sweep that empties clockwise. Above the icon
+         and below nothing, so the glyph stays readable while it drains. */
+      .status-sweep {
+        position: absolute; inset: 0;
+        pointer-events: none;
+      }
+      /* The last two seconds. Only debuffs pulse: what you want to know about a
+         debuff is when it STOPS, and what you want to know about a buff is that
+         it is nearly time to cast again — which the sweep already says. */
+      .status-cell.debuff.urgent { animation: status-pulse .6s ease-in-out infinite; }
+      @keyframes status-pulse {
+        0%, 100% { border-color: #e05a4a; }
+        50%      { border-color: #ffd0c6; }
+      }
+
+      /* --- Statuses on a target --------------------------------------------
+         The same two-column split as the player's own row, so a player learns
+         one arrangement. Smaller, because the target frame has less to spare
+         and these are read as "is my poison still on it" rather than studied. */
+      #target-statuses { display: none; gap: 4px; margin-top: 4px; }
+      #target-statuses.shown { display: flex; }
+      #target-statuses .status-cell { width: 20px; height: 20px; }
+      #target-statuses .icon { width: 13px; height: 13px; }
+
       /* Sell lives on the item, appears on hover, and says the price — a
          destructive action should never be a bare click. */
       .bag-sell {
@@ -786,7 +866,7 @@
          silently began to overlap. */
       #target-frame {
         position: absolute;
-        top: var(--unit-frame-bottom, 122px);
+        top: calc(var(--unit-frame-bottom, 122px) + var(--status-row-height, 0px));
         left: 14px;
         width: 272px;
         display: none;
@@ -1456,6 +1536,10 @@
           </div>
         </div>
       </div>
+      <div id="status-bar">
+        <div id="status-buffs"></div>
+        <div id="status-debuffs"></div>
+      </div>
       <div id="combat-log"></div>
       <div id="target-frame">
         <div id="target-portrait"></div>
@@ -1467,6 +1551,7 @@
           </div>
           <div id="target-known"></div>
           <div id="target-schools"></div>
+          <div id="target-statuses"></div>
           <div id="target-cast"><div id="target-cast-fill"></div></div>
         </div>
       </div>

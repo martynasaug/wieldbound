@@ -62,6 +62,40 @@ export const ICON_MAP = {
   frostbolt: "lorc/frozen-arrow",
   arcanemissiles: "lorc/star-swirl",
 
+  // --- skills added with the status system, one per weapon tree ------------
+  focus: "lorc/all-seeing-eye",
+  rally: "lorc/rally-the-troops",
+  bloodlust: "lorc/wolf-howl",
+  stagger: "lorc/stomp",
+  expose: "lorc/cracked-shield",
+  huntersmark: "lorc/target-arrows",
+  immolate: "sbed/flamer",
+  stormbolt: "lorc/lightning-bow",
+
+  // --- statuses ------------------------------------------------------------
+  // Every running effect needs a picture, because the indicator row is the
+  // whole point of the system: a buff nobody can see is a number that changed
+  // for no reason the player can name.
+  //
+  // Where a status has exactly one source it SHARES that skill's glyph, so the
+  // mark on the bar is recognisably the thing you just cast. Where it has
+  // several — staggered comes off three different skills — or none at all, as
+  // weakened and chilled do, it gets its own.
+  "status-enraged": "delapouite/enrage",
+  "status-shielded": "sbed/shield",
+  "status-focused": "lorc/target-dummy",
+  "status-rallied": "delapouite/vertical-banner",
+  "status-bloodlust": "lorc/bloody-sword",
+  "status-weakened": "lorc/broken-heart",
+  "status-chilled": "lorc/frostfire",
+  "status-poisoned": "lorc/poison-bottle",
+  "status-burning": "carl-olsen/flame",
+  "status-bleeding": "lorc/bleeding-wound",
+  "status-staggered": "skoll/knockout",
+  "status-exposed": "lorc/cracked-shield",
+  "status-marked": "skoll/bullseye",
+  "status-shocked": "lorc/lightning-storm",
+
   // --- talent passives -----------------------------------------------------
   grit: "lorc/muscle-up",
   footwork: "lorc/boot-prints",
