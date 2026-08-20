@@ -57,6 +57,8 @@ import {
   type ItemInstance,
   type ItemRarity,
   type ItemSlot,
+  MONSTER_LABELS,
+  MONSTER_STATS,
   type MonsterKind,
   type PassiveBonus,
   type WeaponType,
@@ -926,6 +928,107 @@ export const MONSTER_LOOT: Record<MonsterKind, MonsterLoot> = {
   golem: { palettes: ["iron", "steel"], signature: "deepsledge" },
   dragon: { palettes: ["crimson", "gold"], signature: "dragonscale" },
 };
+
+// --- Which creature carries this ---------------------------------------------
+// The affinity table above answers "what does a golem drop". Nothing answered
+// the question a player actually asks, which is the other way round: I want
+// that, where do I go?
+//
+// A boss's signature is the oldest hook in the genre and the game had it in the
+// data and nowhere on the screen — you could kill a dragon a dozen times and
+// never learn that Dragonscale Plate was the thing it was known for, because
+// the only way to find out was for it to happen.
+//
+// DERIVED from `MONSTER_LOOT` and the same band rule `rollBase` pools by, never
+// a second list. A hand-written "where to find it" column is a column that goes
+// stale the first time an affinity is retuned, and the failure is silent —
+// nothing throws when the game tells you to hunt the wrong monster.
+
+export interface DropSource {
+  kind: MonsterKind;
+  /** The one thing this kind is known for. Bosses only, by construction. */
+  signature: boolean;
+}
+
+/**
+ * Which creatures carry a base item, signatures first.
+ *
+ * "Carries" means what the roller means by it: the kind's band is within one of
+ * the item's — `rollBase` pools no further than that — and the item is made of
+ * something the kind is made of. Anything in the band can still drop from
+ * anywhere, so this is where it is LIKELIEST rather than where it is possible;
+ * a list of thirteen kinds would tell a player nothing.
+ */
+export function dropSources(baseId: string): DropSource[] {
+  const base = ITEM_BASES[baseId];
+  if (!base) return [];
+  const out: DropSource[] = [];
+  for (const kind of Object.keys(MONSTER_LOOT) as MonsterKind[]) {
+    const loot = MONSTER_LOOT[kind];
+    if (loot.signature === baseId) {
+      out.push({ kind, signature: true });
+      continue;
+    }
+    const band = MONSTER_STATS[kind]?.band;
+    if (band === undefined || Math.abs(base.band - band) > 1) continue;
+    if (loot.palettes.includes(base.art.palette)) out.push({ kind, signature: false });
+  }
+  return out.sort((a, b) => Number(b.signature) - Number(a.signature));
+}
+
+/** The one item a kind is known for, if it is a boss. */
+export function signatureOf(kind: MonsterKind): ItemBase | null {
+  const id = MONSTER_LOOT[kind]?.signature;
+  return id ? (ITEM_BASES[id] ?? null) : null;
+}
+
+/**
+ * How far out a band is, in the only unit this world has: distance from the
+ * anvil. The whole map is laid out as difficulty radiating from the smithy, so
+ * a band IS a direction to walk, and saying "band 4" instead would be quoting
+ * an internal number at somebody holding a shield.
+ */
+const BAND_PLACE: Record<ItemBand, string> = {
+  1: "Within sight of the anvil.",
+  2: "The near camps.",
+  3: "A good walk out.",
+  4: "The outer ring.",
+  5: "The far corners.",
+};
+
+/**
+ * Where to look for one, as a sentence.
+ *
+ * A signature is stated ON ITS OWN and never merged into the list of things
+ * that merely tend to carry it — "the troll's own" is a reason to go somewhere
+ * and "often carried by trolls and ghosts" is a shrug, and blurring the two
+ * would spend the one real hook in the loot table on a hint.
+ *
+ * Everything else gets where it is likeliest, and always at least the RING,
+ * because twenty-two of the hundred and seven are made of something no
+ * creature's affinity covers — and "nothing is known about this" is a worse
+ * answer than "walk further out", which is true, useful, and the one rule the
+ * whole world is arranged by. Capped at three names: past that it is not a
+ * hint, it is the bestiary.
+ */
+export function describeDropSources(baseId: string): string {
+  const base = ITEM_BASES[baseId];
+  if (!base) return "";
+  const sources = dropSources(baseId);
+  const name = (k: MonsterKind) => MONSTER_LABELS[k].toLowerCase();
+
+  const signature = sources.find((s) => s.signature);
+  if (signature) return `The ${name(signature.kind)}'s own.`;
+
+  const where = BAND_PLACE[base.band];
+  const carriers = sources.filter((s) => !s.signature).slice(0, 3).map((s) => name(s.kind));
+  if (carriers.length === 0) return where;
+  const list =
+    carriers.length === 1
+      ? `${carriers[0]}s`
+      : `${carriers.slice(0, -1).map((n) => `${n}s`).join(", ")} and ${carriers[carriers.length - 1]}s`;
+  return `${where} Often carried by ${list}.`;
+}
 
 /**
  * How much more likely a kind's own materials are than anything else.

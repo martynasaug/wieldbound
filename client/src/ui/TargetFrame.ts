@@ -13,6 +13,16 @@ export interface TargetLook {
   elite?: boolean;
   /** Icon key for the portrait. */
   icon?: string;
+  /**
+   * The one item this creature is known for.
+   *
+   * Bosses only, which is what makes it worth saying — "the thing it is known
+   * for" stops meaning anything if everything has one, the same rule that gives
+   * only bosses a framed nameplate. It was in the loot table from the start and
+   * nowhere on the screen, so a player could kill a dragon a dozen times and
+   * never learn there was a reason to.
+   */
+  knownFor?: string;
 }
 
 export class TargetFrame {
@@ -23,6 +33,7 @@ export class TargetFrame {
   private cast = document.getElementById("target-cast")!;
   private castFill = document.getElementById("target-cast-fill")!;
   private portrait = document.getElementById("target-portrait")!;
+  private known = document.getElementById("target-known")!;
   /** Last look applied, so the DOM is untouched while a target stays the same. */
   private lastLook = "";
 
@@ -32,7 +43,7 @@ export class TargetFrame {
     // Band, elite and portrait are one composed key: this runs every frame a
     // target is selected, and rewriting an identical portrait sixty times a
     // second is the sort of thing that never shows up until it does.
-    const key = `${look?.band ?? 0}|${look?.elite ? 1 : 0}|${look?.icon ?? ""}`;
+    const key = `${look?.band ?? 0}|${look?.elite ? 1 : 0}|${look?.icon ?? ""}|${look?.knownFor ?? ""}`;
     if (key !== this.lastLook) {
       this.lastLook = key;
       this.root.className =
@@ -40,6 +51,15 @@ export class TargetFrame {
         (look?.band ? ` band-${look.band}` : "") +
         (look?.elite ? " elite" : "");
       this.portrait.innerHTML = look?.icon ? iconSvg(look.icon, "icon") : "";
+      this.known.classList.toggle("shown", !!look?.knownFor);
+      this.known.innerHTML = "";
+      if (look?.knownFor) {
+        this.known.append("Known for ");
+        const what = document.createElement("span");
+        what.className = "k-what";
+        what.textContent = look.knownFor;
+        this.known.appendChild(what);
+      }
     }
     // Name left, status right — "out of reach" is the thing you need to read
     // instantly mid-fight, so it gets its own column rather than being run
@@ -85,6 +105,7 @@ export class TargetFrame {
   hide(): void {
     this.root.classList.remove("shown");
     this.cast.classList.remove("shown");
+    this.known.classList.remove("shown");
     // Forces the look to be re-applied on the next target, since `show` skips
     // the work when the composed key is unchanged.
     this.lastLook = "";

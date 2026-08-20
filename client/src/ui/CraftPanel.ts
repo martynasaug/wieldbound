@@ -44,6 +44,7 @@ import {
   MATERIALS,
   MATERIAL_LABEL,
   affixSummary,
+  describeDropSources,
   canAfford,
   canChooseAffix,
   canForge,
@@ -321,7 +322,7 @@ export class CraftPanel {
     const sub = unlocked ? this.costLine(cost) : document.createElement("div");
     if (!unlocked) {
       sub.className = "craft-row-cost short";
-      sub.textContent = `Unknown — salvage one to learn it (band ${base.band})`;
+      sub.textContent = "Unknown — salvage one to learn it";
     } else {
       // What it makes, in the same shape the reforge rows use. The forge always
       // outputs Honed, so this is exactly the base's authored numbers — which
@@ -335,6 +336,21 @@ export class CraftPanel {
         (base.twoHanded ? " · two-handed" : "");
       sub.prepend(line);
     }
+
+    // WHERE TO FIND ONE. The locked rows are what make this list the closest
+    // thing the game has to a catalogue of its own items, and until now they
+    // said only that the player had never seen one — which is a rule, not a
+    // lead. A locked row that names the creature carrying it turns the list
+    // into somewhere to go, and it is the only place a boss's signature was
+    // ever visible before the boss dropped it.
+    const source = describeDropSources(base.id);
+    if (source) {
+      const where = document.createElement("div");
+      where.className = "craft-row-where";
+      where.textContent = source;
+      sub.appendChild(where);
+    }
+
     this.row(
       base.icon,
       base.name,

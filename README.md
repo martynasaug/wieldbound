@@ -138,7 +138,12 @@ first run at `server/data/wieldbound.db`.
   monster fell, turning, lit by its quality. Walk over it to take it. It is
   reserved for whoever earned the kill for a while, then anyone may have it.
   What a monster carries reflects what it is made of, and each of the three
-  bosses has a signature item worth going for.
+  bosses has a signature item worth going for — **which the game now tells you
+  before you kill one.** Target a boss and its frame says what it is known for;
+  hover any item, or read the forge's list of things you have not learned yet,
+  and it says where one comes from. All of it derived from the loot table the
+  server actually rolls with, so the game cannot send you after the wrong
+  monster.
 - **Matched gear** — twelve sets, one per material, so dressing in one thing is
   worth something. Deliberately modest: a full matched kit loses to a mixed set
   one quality step higher. It is a tiebreaker with a look, not a second
@@ -230,6 +235,6 @@ minimap and a real smithy), M4.6 (nameplates), M4.7 (unit frames) and M4.8
 (combat text, a loading screen, monster idle variety) are done. **Phase 48 M1**
 then replaced the item system outright: a catalogue of 78 named base items, a
 seven-step quality ladder, and a smithy with three verbs — since grown to four
-with **M2.1** (a bag slot holds a kind, not an instance) and **M2.2** (a refined
-material tier). See
+with **M2.1** (a bag slot holds a kind, not an instance), **M2.2** (a refined
+material tier) and **M2.3** (where a thing comes from). See
 [`PLAN.md`](PLAN.md) for the full picture.

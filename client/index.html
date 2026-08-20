@@ -840,6 +840,22 @@
         flex: none;
       }
 
+      /* What this thing is known for. Only bosses have one, so this line is
+         part of the promotion a framed plate and a bright border already give
+         them — and it is under the health bar rather than beside the name
+         because it is a reason to keep fighting, not something to read at a
+         glance mid-swing. */
+      #target-known {
+        display: none;
+        margin-top: 5px;
+        font: normal 10.5px Georgia, serif;
+        color: #d9a441;
+        text-shadow: 0 1px 2px #000;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      #target-known.shown { display: block; }
+      #target-known .k-what { color: #f0d89a; font-weight: bold; }
+
       #target-hp-track {
         position: relative;
         height: 14px;
@@ -1119,9 +1135,26 @@
         text-transform: uppercase;
         color: #8d7c5c;
       }
+      /* Where a recipe's item comes from, on the forge rows. Dimmer than the
+         cost and the preview, because it is a lead rather than a number the
+         player is about to act on. */
+      .craft-row-where { font-size: 10.5px; color: #9a8a68; line-height: 1.45; margin-top: 2px; }
       #item-tooltip .tt-cmp { font-size: 11px; line-height: 1.4; }
       #item-tooltip .tt-cmp.up { color: #7ed957; }
       #item-tooltip .tt-cmp.down { color: #ff8f5e; }
+      /* Where one comes from. Sits on the same rule the flavour used to own,
+         because the two together are the item's "outside the numbers" half —
+         and it is upright rather than italic, since it is a fact about the
+         world rather than a line of colour. */
+      #item-tooltip .tt-source {
+        margin-top: 6px;
+        padding-top: 5px;
+        border-top: 1px solid rgba(226, 176, 79, .18);
+        font-size: 10.5px;
+        color: #a3906a;
+        line-height: 1.5;
+      }
+      #item-tooltip .tt-source + .tt-flavour { margin-top: 2px; padding-top: 0; border-top: 0; }
       #item-tooltip .tt-flavour {
         margin-top: 6px;
         padding-top: 5px;
@@ -1363,6 +1396,7 @@
             <div id="target-hp-fill"></div>
             <div id="target-hp-text"></div>
           </div>
+          <div id="target-known"></div>
           <div id="target-cast"><div id="target-cast-fill"></div></div>
         </div>
       </div>

@@ -124,6 +124,7 @@ import {
   reachOf,
   reforgeCost,
   salvageYield,
+  signatureOf,
   swingIntervalOf,
 } from "../../../shared/items";
 
@@ -2552,6 +2553,10 @@ export class Game {
         band: tStats.band,
         elite: tStats.guaranteedDrop,
         icon: MONSTER_PORTRAIT[t.kind],
+        // Read from the loot table itself rather than from a list beside it, so
+        // the frame cannot promise something the roller does not carry. Only
+        // bosses have one, which is why this needs no `elite` check of its own.
+        knownFor: signatureOf(t.kind)?.name,
       });
       // Only the kinds that telegraph have a windup duration, and only they
       // ever set the flag, so the bar appears exactly when there is something

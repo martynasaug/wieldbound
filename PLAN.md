@@ -2692,8 +2692,45 @@ crafting system to go with them.
       asking for 1 ingot and 2 wardweave while a Worn dirk's still steps up on
       raw alone.
 
-- [ ] **M2.3 — a boss's signature, before you kill one.** Nothing surfaces what
-      a monster is known for until it drops.
+- [x] **M2.3 — where a thing comes from.** Each of the three bosses has had a
+      signature drop since M1.7 and it was in the data and nowhere on the screen:
+      you could kill a dragon a dozen times and never learn that Dragonscale
+      Plate was the thing it was known for, because the only way to find out was
+      for it to happen. "I want that, so I am going to go and kill that" is the
+      oldest hook in the genre and the game had it switched off.
+      - **`dropSources` is the reverse of the affinity table.** That table
+        answers "what does a golem drop"; nothing answered the question a player
+        actually asks, which is the other way round. DERIVED from `MONSTER_LOOT`
+        and the same band rule `rollBase` pools by — a hand-written "where to
+        find it" column goes stale the first time an affinity is retuned, and
+        the failure is silent: nothing throws when the game sends somebody after
+        the wrong monster
+      - **Three surfaces, two directions.** The target frame on a boss says
+        *Known for Bulwark* (creature → item); the item tooltip and the forge
+        rows say where one comes from (item → creature). The forge's LOCKED rows
+        are the ones this changes most — they said only that you had never seen
+        one, which is a rule rather than a lead, and the off-hand shelf now reads
+        as somewhere to go
+      - **Everything says something, and the fallback is the ring.**
+        Twenty-two of the hundred and seven are made of a material no creature's
+        affinity covers, and "nothing is known about this" is a worse answer than
+        "the far corners" — which is true, useful, and the one rule the whole
+        world is laid out by. Bands are spoken as distances from the anvil, never
+        as numbers
+      - **A signature is stated on its own** and never merged into the list of
+        things that merely tend to carry it. "The troll's own" is a reason to go
+        somewhere; "often carried by trolls and ghosts" is a shrug
+      - Deliberately NOT on the nameplate. The frame requires selecting the
+        thing, which is the walk-up-and-look gesture; a line over every boss in a
+        camp is the clutter the nameplate hierarchy exists to avoid
+
+      **The first version of the test was worthless and it is worth recording
+      why.** It checked each claim by recomputing the index's own predicate, so
+      it passed by construction and would have gone on passing on the day
+      `rollBase` changed how it pools — which is the one failure this feature can
+      have. It now rolls six thousand drops from each named creature and checks
+      the item actually turns up: 181 claims, verified against the roller itself.
+      Widening the band rule by one makes 51 of them fail, so it has teeth.
 
 **Survives the rewrite untouched:** `server/` entirely, `shared/protocol-types.ts`
 (every formula and the whole wire format), `client/src/net/socket.ts` (verified
@@ -4165,6 +4202,33 @@ music, player-facing damage-type/resistances, more crafting recipes
   quietly have become a way around the rule that stops a stocked player being
   unkillable.
 
+- "Where does this come from" is DERIVED from the loot table, never written
+  beside it. A hand-written column goes stale the first time an affinity is
+  retuned, and the failure is silent — nothing throws when the game sends a
+  player after the wrong monster. Same rule the signature check already followed
+  in M1.7: assert against `guaranteedDrop`, not against a second list.
+- A test that recomputes the predicate it is checking is not a test. The first
+  version of the drop-source check asked "is this claim consistent with the rule
+  that produced it", which passes by construction and would have gone on passing
+  the day `rollBase` changed how it pools. Asking the ROLLER — six thousand
+  samples per creature — is the only version that can fail, and widening the
+  band rule by one makes 51 of the 181 claims fail.
+- A signature is stated on its own and never merged into the list of things that
+  merely tend to carry it. "The troll's own" is a reason to go somewhere and
+  "often carried by trolls and ghosts" is a shrug, and blurring the two spends
+  the one real hook in the loot table on a hint.
+- Everything says something, and the fallback is the RING. Twenty-two of the
+  hundred and seven are made of a material no creature's affinity covers, and
+  "nothing is known about this" is a worse answer than "the far corners" — which
+  is true, useful, and the one rule the whole world is laid out by. Bands are
+  spoken as distances from the anvil, because quoting an internal number at
+  somebody holding a shield is not an answer.
+- The signature goes on the target frame and NOT the nameplate. The frame
+  requires selecting the thing, which is the walk-up-and-look gesture the rest of
+  the game is built on; a line over every boss in a camp is exactly the clutter
+  the nameplate hierarchy exists to avoid — the same argument that reserves the
+  corner toast for the top two qualities.
+
 - A cost that can only be paid by repeating the cheapest activity in the game is
   not a decision, it is a wait. The reforge ladder's last step was 1,256 wood and
   ore — ninety gathers — and every number in the curve was defensible while its
@@ -4227,7 +4291,7 @@ music, player-facing damage-type/resistances, more crafting recipes
   rather than re-deriving a driver each time.
 
 ## Current status
-Phase 0 through 48 M2.2 complete (2026-08-20). **The item system, rebuilt and
+Phase 0 through 48 M2.3 complete (2026-08-20). **The item system, rebuilt and
 then followed through.**
 
 **M2.1** made a bag slot hold a KIND rather than an instance. Six copies of one
@@ -4240,6 +4304,11 @@ of the catalogue and the top half of the ladder are priced in them. The reforge
 curve went from `band × step²` raw — 1,256 on a band-5 last step — to a linear
 raw line with the superlinear part carried by refined stock, so the whole climb
 now costs about what one of its old steps did.
+
+**M2.3** turned the affinity table round. A boss's signature has existed since
+M1.7 and was visible nowhere: the target frame now says what the thing in front
+of you is known for, and the item tooltip and the forge's locked rows say where
+one comes from — which turns the forge list from a rule into a lead.
 
 Before that, Phase 0 through 48 M1.15.
 

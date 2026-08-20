@@ -17,6 +17,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   ITEM_SLOTS,
+  MONSTER_LABELS,
   MONSTER_STATS,
   PLAYER_SPAWN,
   bandAt,
@@ -38,6 +39,9 @@ import {
   REFINING,
   isRefined,
   refineLean,
+  describeDropSources,
+  dropSources,
+  signatureOf,
   PALETTES,
   affixBonus,
   baseGuard,
@@ -617,6 +621,86 @@ section("9d. richer ground further out");
   console.log(`  the dearest recipe is ${dearest} materials; a band-4 gather pays ${perGather}`);
   check("the dearest recipe is within a few hundred gathers",
     dearest / perGather < 100, `${Math.round(dearest / perGather)} gathers`);
+}
+
+// --- 8b. where a thing comes from -------------------------------------------
+// The reverse of the affinity table: not "what does a golem drop" but "I want
+// that, where do I go". The whole point is that it is DERIVED from the same
+// table the roller pools from — a hand-written "where to find it" column goes
+// stale the first time an affinity is retuned, and nothing throws when the game
+// sends a player after the wrong monster.
+section("8b. where a thing comes from");
+{
+  // A signature must be reported by exactly the boss that carries it, and by
+  // nothing else — "the thing it is known for" stops meaning anything the
+  // moment two creatures are known for the same thing.
+  const signed = Object.keys(MONSTER_LOOT).filter((k) => MONSTER_LOOT[k].signature);
+  check("only bosses have a signature",
+    signed.every((k) => MONSTER_STATS[k].guaranteedDrop), signed.join(", "));
+  for (const kind of signed) {
+    const base = signatureOf(kind);
+    check(`${kind}'s signature is a real item`, !!base, MONSTER_LOOT[kind].signature);
+    const sources = dropSources(base.id).filter((s) => s.signature);
+    check(`${base.id} names exactly one creature as its own`,
+      sources.length === 1 && sources[0].kind === kind,
+      sources.map((s) => s.kind).join(", "));
+    check(`and ${base.id} reads as that creature's own`,
+      describeDropSources(base.id) === `The ${MONSTER_LABELS[kind].toLowerCase()}'s own.`,
+      describeDropSources(base.id));
+  }
+  check("no non-boss is anything's signature",
+    Object.keys(MONSTER_LOOT).filter((k) => !MONSTER_STATS[k].guaranteedDrop)
+      .every((k) => !MONSTER_LOOT[k].signature));
+
+  // THE CLAIM HAS TO BE TRUE, and the only way to know that is to ask the
+  // roller. Recomputing the index's own predicate here would pass by
+  // construction and catch nothing — it would still pass on the day `rollBase`
+  // changes how it pools and the hint starts sending players after the wrong
+  // monster, which is the one failure this whole feature can have and the one
+  // nothing throws on.
+  //
+  // So: roll a few thousand drops from each named creature and check the item
+  // it is credited with actually turns up. A sample rather than an enumeration
+  // because "can this be produced" is a property of the roller, not of a table.
+  {
+    const sampled = new Map();
+    const rollsFor = (kind) => {
+      let seen = sampled.get(kind);
+      if (seen) return seen;
+      seen = new Set();
+      const band = MONSTER_STATS[kind].band;
+      for (let i = 0; i < 6000; i++) seen.add(rollBase(band, kind, rand).id);
+      sampled.set(kind, seen);
+      return seen;
+    };
+    let claims = 0;
+    for (const id of Object.keys(ITEM_BASES)) {
+      for (const s of dropSources(id)) {
+        claims++;
+        check(`a ${s.kind} really can drop ${id}`, rollsFor(s.kind).has(id));
+      }
+    }
+    console.log(`  ${claims} claims checked against the roller itself`);
+  }
+
+  // And every base says SOMETHING, because "nothing is known about this" is a
+  // worse answer than the ring it comes from — which is true, useful, and the
+  // one rule the whole world is laid out by. Twenty-odd bases are made of
+  // something no creature's affinity covers, and they are exactly the ones a
+  // silent function would have failed on.
+  const silent = Object.keys(ITEM_BASES).filter((id) => !describeDropSources(id));
+  check("every item says where it comes from", silent.length === 0,
+    `${silent.length} silent: ${silent.slice(0, 5).join(", ")}`);
+  const ringOnly = Object.keys(ITEM_BASES)
+    .filter((id) => dropSources(id).length === 0);
+  console.log(`  ${Object.keys(ITEM_BASES).length - ringOnly.length} of ` +
+    `${Object.keys(ITEM_BASES).length} name a creature; the rest name a ring`);
+  console.log(`  ${describeDropSources("bulwark")}  /  ${describeDropSources("longsword")}`);
+
+  // A hint stops being a hint when it is a list. Three names is the cap.
+  const longest = Math.max(...Object.keys(ITEM_BASES).map((id) =>
+    (describeDropSources(id).match(/,/g) ?? []).length));
+  check("no hint lists more than three creatures", longest <= 2, `${longest + 1} names`);
 }
 
 // --- 9e. the refined tier ---------------------------------------------------

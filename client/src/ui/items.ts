@@ -23,6 +23,7 @@ import {
 import {
   AFFIXES_BY_ID,
   affixSummary,
+  describeDropSources,
   passiveSummary,
   feelNotes,
   itemBase,
@@ -198,6 +199,8 @@ export function itemDetails(item: ItemInstance, equipped: ItemInstance[] = []): 
   kind: string;
   band: number;
   flavour: string;
+  /** Where one comes from, and which creature is known for it. */
+  source: string;
   stats: ItemLine[];
   affixes: ItemLine[];
   feel: string[];
@@ -214,6 +217,9 @@ export function itemDetails(item: ItemInstance, equipped: ItemInstance[] = []): 
       : SLOT_LABEL[item.slot],
     band: base.band,
     flavour: base.flavour,
+    // Derived from the affinity table the server rolls loot with, so the game
+    // cannot tell a player to hunt something that does not carry it.
+    source: describeDropSources(item.baseId),
     stats: itemStatLines(item),
     affixes: itemAffixLines(item),
     // Read off the same multipliers combat resolves with, so a rebalance cannot

@@ -142,6 +142,18 @@ export function attachItemTooltip(
       el.appendChild(equippedLine);
     }
 
+    // Where one comes from, above the flavour and in its own colour, because it
+    // is the one line here that is an instruction rather than a description —
+    // everything above says what the item IS, and this says where to get
+    // another. A signature reads differently on purpose: "the troll's own" is a
+    // reason to go somewhere.
+    if (d.source) {
+      const source = document.createElement("div");
+      source.className = "tt-source";
+      source.textContent = d.source;
+      el.appendChild(source);
+    }
+
     const flavour = document.createElement("div");
     flavour.className = "tt-flavour";
     flavour.textContent = d.flavour;
