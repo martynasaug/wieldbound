@@ -20,8 +20,23 @@ export const BATTLE_RANGE_PX = 110;
 // monster camp sat close enough to the palisade that a slime could aggro a
 // player standing at the anvil, and the five bands were packed into a strip
 // barely wider than the town itself.
-export const WORLD_WIDTH = 7200;
-export const WORLD_HEIGHT = 5400;
+//
+// AND NOW MUCH BIGGER AGAIN — 16000 x 12000, five times the ground. The reason
+// is a second town: Emberhold's five bands fit inside a 2,700px radius, and a
+// road to somewhere else has to be a JOURNEY rather than a walk to the edge of
+// the map. There are 6,000px north of spawn now, and the road uses five of them.
+//
+// THE BANDS DID NOT MOVE WITH IT, and that is the important half. Last time the
+// world grew, every ring grew with it, on the argument that a band is a fraction
+// of the map. That argument stops holding the moment the map has more than one
+// centre in it: the five rings are TUNED — a level-1 character clears band 1,
+// the reforge ladder is priced against band 5 — and stretching them to fill a
+// world five times the size would have re-paced the entire game to make room for
+// a road. So Emberhold's neighbourhood is exactly where it was, and every new
+// pixel is FRONTIER: land past the last ring, where the road runs and the next
+// town will stand.
+export const WORLD_WIDTH = 16000;
+export const WORLD_HEIGHT = 12000;
 
 export const GATHER_DURATION_MS = 3000;
 export const GATHER_LEVEL_STEP_MS = 400;

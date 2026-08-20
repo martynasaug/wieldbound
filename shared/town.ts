@@ -63,10 +63,55 @@ export const TOWN_PAVED_RADIUS_PX = Math.round(TOWN_RADIUS_PX * 0.66);
  * each, and comfortable gaps everywhere. It is also simply what a village on a
  * road looks like.
  */
-export const TOWN_GATE_ANGLES = [0, 180] as const;
+/**
+ * The gates, each with its own opening.
+ *
+ * A TABLE now rather than two bearings and one shared half-width, because the
+ * third one is not the same kind of thing as the first two. East and west are
+ * the highway: one road straight through the square, twelve degrees of arc
+ * either side, wide enough for carts to pass. North is a POSTERN onto a country
+ * track, and it has to be narrower — the gap between the inn at 225 and the shop
+ * at 285 is sixty degrees wide, and a twelve-degree opening centred in it runs
+ * the near corner of the shop straight through the road.
+ *
+ * 256 is the middle of the clear run, measured against the real footprints at
+ * every radius from the square to the wall rather than picked by eye — the same
+ * method `clearRingAngles` uses, and for the same reason: the last thing placed
+ * on this ring by guessing ended up inside a building.
+ */
+export interface TownGate {
+  angleDeg: number;
+  halfDeg: number;
+  /** What the signpost by it says. */
+  name: string;
+}
 
-/** Half-width of a gateway, in degrees of arc. */
+export const TOWN_GATES: readonly TownGate[] = [
+  { angleDeg: 0, halfDeg: 12, name: "East Gate" },
+  { angleDeg: 180, halfDeg: 12, name: "West Gate" },
+  { angleDeg: 256, halfDeg: 8, name: "North Postern" },
+];
+
+/** Just the bearings. Derived, so a gate cannot exist in one list and not the other. */
+export const TOWN_GATE_ANGLES: readonly number[] = TOWN_GATES.map((g) => g.angleDeg);
+
+/** The highway's half-width. Still the default anything unnamed assumes. */
 export const TOWN_GATE_HALF_DEG = 12;
+
+/** How wide the opening is at a given gate bearing. */
+export function gateHalfDeg(angleDeg: number): number {
+  let best = TOWN_GATE_HALF_DEG;
+  let closest = Infinity;
+  for (const g of TOWN_GATES) {
+    const delta = Math.abs(((g.angleDeg - angleDeg + 540) % 360) - 180);
+    const off = 180 - delta;
+    if (off < closest) {
+      closest = off;
+      best = g.halfDeg;
+    }
+  }
+  return best;
+}
 
 function at(radiusPx: number, angleDeg: number): { x: number; y: number } {
   const a = (angleDeg * Math.PI) / 180;
@@ -511,11 +556,27 @@ export function propById(id: string): TownProp | null {
 /** How thick the palisade is, for the purposes of not walking through it. */
 const WALL_THICKNESS_PX = 22;
 
-/** True when a bearing falls inside one of the gateways. */
+/**
+ * True when a bearing falls inside one of the gateways.
+ *
+ * THIS ASKED THE OPPOSITE QUESTION FOR FOUR PHASES. It was
+ * `180 - delta < HALF` over a correctly-computed shortest angular difference,
+ * which is "is this bearing nearly OPPOSITE a gate" — and with exactly two
+ * gates a hundred and eighty degrees apart, that is accidentally the right
+ * answer every time. `inGateway(0)` came out true because of the gate at 180,
+ * and `inGateway(180)` because of the gate at 0. Two wrongs, one for each gate,
+ * cancelling perfectly.
+ *
+ * The third gate is what broke the coincidence: at 256 it made a hole in the
+ * palisade at 76 degrees — open ground behind the chapel — and left its own
+ * bearing walled shut. Nothing else in the game would have found this, because
+ * nothing else ever asked the question anywhere but on a gate bearing.
+ */
 export function inGateway(angleDeg: number): boolean {
-  return TOWN_GATE_ANGLES.some((gate) => {
-    const delta = Math.abs(((angleDeg - gate + 540) % 360) - 180);
-    return 180 - delta < TOWN_GATE_HALF_DEG;
+  return TOWN_GATES.some((g) => {
+    // Shortest signed difference between two bearings, folded to a magnitude.
+    const delta = Math.abs(((angleDeg - g.angleDeg + 540) % 360) - 180);
+    return delta < g.halfDeg;
   });
 }
 

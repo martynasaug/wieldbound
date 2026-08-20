@@ -7,6 +7,7 @@ import { instantiate } from "./assets";
 import { createTerrainMaterial } from "./terrain";
 import { buildGroundCover } from "./scatter";
 import { DayNight } from "./daynight";
+import { ROAD_HALF_WIDTH_PX, distanceToRoad } from "../../../shared/road";
 import {
   TOWN_BUILDINGS,
   TOWN_CENTER,
@@ -293,6 +294,13 @@ export class World {
           radius: (Math.hypot(b.widthPx, b.depthPx) / 2 + 20) / PX_PER_UNIT,
         })),
       ],
+      // And nothing grows in the wheel ruts. A circle cannot describe a four
+      // kilometre curve, which is why the scatter takes a predicate as well as
+      // a list — a hundred circles laid along the road would still leave grass
+      // on every bend, and the bends are where a track most needs to read as a
+      // track.
+      reject: (x, z) =>
+        distanceToRoad(toServerX(x), toServerY(z)) < ROAD_HALF_WIDTH_PX * 0.82,
     });
     this.scene.add(this.groundCover);
     console.info(

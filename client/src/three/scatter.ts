@@ -162,6 +162,17 @@ export interface ScatterArea {
    * them keeps growing.
    */
   exclude?: { x: number; z: number; radius: number }[];
+  /**
+   * Anything a circle cannot describe. Returns true where nothing may grow.
+   *
+   * Added for the North Road, which is a four-kilometre curve — approximating
+   * it with circles would take a hundred of them and still leave grass in the
+   * wheel ruts on every bend. Called once per placement attempt, so it has to
+   * be cheap; the road's own distance query walks a 145-point polyline, which
+   * at twenty-odd thousand attempts is the most expensive thing in the load and
+   * still under a frame.
+   */
+  reject?: (x: number, z: number) => boolean;
 }
 
 /**
@@ -235,11 +246,12 @@ export async function buildGroundCover(
     // roughly one placement in eighty, and an unbounded retry loop is how a
     // future exclusion covering most of the world would hang the load.
     const zones = area.exclude ?? [];
+    const reject = area.reject;
     const excluded = (x: number, z: number) => {
       for (const c of zones) {
         if (Math.hypot(x - c.x, z - c.z) < c.radius) return true;
       }
-      return false;
+      return reject ? reject(x, z) : false;
     };
 
     for (let i = 0; i < total; i++) {

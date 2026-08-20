@@ -554,7 +554,13 @@ const nodes: ResourceNodeState[] = [
   // square rather than outside the ring, which is the better answer anyway — a
   // herb garden between the anvil and the well is a thing a town would have,
   // and it keeps the one gatherable a beginner needs within sight of spawn.
-  ...ringNodes("bush", "bush", 1000, 6, 15),
+  // Started at 45 rather than 15, and the five extra degrees per bush are the
+  // North Road: at 15 the ring puts a bush at bearing 255, which is four
+  // degrees off the postern and squarely in the wheel ruts. Rotating the phase
+  // moves all six and costs nothing — six bushes evenly spaced do not care
+  // where the first one starts — where nudging the road would have meant
+  // re-checking it against every camp again.
+  ...ringNodes("bush", "bush", 1000, 6, 45),
   // Wood and ore spread outward. The outer rings sit in the same ground as the
   // band-2/3 camps, so gathering out there is a decision rather than a chore.
   //

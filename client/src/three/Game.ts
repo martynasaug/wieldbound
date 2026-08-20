@@ -129,6 +129,8 @@ import {
 } from "../../../shared/quests";
 import { landmarkById, landmarkPosition } from "../../../shared/landmarks";
 import { buildWaystones, WAYSTONE_PLATE_HEIGHT, type WaystoneVisual } from "./waystones";
+import { NorthRoad } from "./road";
+import { NORTH_TOWN_NAME, NORTH_TOWN_SITE } from "../../../shared/road";
 import {
   NPC_TALK_RANGE_PX,
   NPC_TETHER_PX,
@@ -353,6 +355,8 @@ export class Game {
   private npcs = new Map<string, NpcVisual>();
   /** The four standing stones. Built once and never touched again. */
   private waystones: WaystoneVisual[] = [];
+  /** The way out of town. Its torches are the only lights outside the walls. */
+  private readonly northRoad = new NorthRoad();
 
   // --- authoritative local state (server position is in px, as in the 2D game)
   private playerId = "";
@@ -822,6 +826,12 @@ export class Game {
     // Into `decor`, which is the group the camera fades — see the note in
     // waystones.ts.
     this.waystones = buildWaystones(this.world.decor);
+
+    // The road, and the fourteen torches down it. Into the scene rather than
+    // `decor`: the ribbon is flat on the ground and can never stand between the
+    // camera and the player, and fading a road would be fading the thing the
+    // player is standing on.
+    this.world.scene.add(this.northRoad.build());
 
     const decor = this.world.buildDecor();
     const body = this.localActor.load();
@@ -2750,6 +2760,14 @@ export class Game {
     const hour = this.world.updateDayNight();
     // After updateDayNight, so the town is lit against the sky it is standing
     // under rather than against last frame's.
+    // The road runs on the town's clock. A frontier that lit on its own
+    // schedule would put two times of day in one frame.
+    this.northRoad.update(
+      nightAmount(hour.clock),
+      this.localActor?.position.x ?? 0,
+      this.localActor?.position.z ?? 0,
+      performance.now() / 1000,
+    );
     this.town.update(
       nightAmount(hour.clock),
       Math.hypot(this.playerX - TOWN_CENTER.x, this.playerY - TOWN_CENTER.y) / PX_PER_UNIT,
@@ -3100,6 +3118,24 @@ export class Game {
           distance: rangeTo(stone.x, stone.z),
         },
       );
+    }
+
+    // Where the road goes. One plate, over the cairn at the far end, because a
+    // road with nothing written on it is a dirt track and a player who walks
+    // out of the postern has no way to know this one leads anywhere. It is a
+    // `station` banner rather than a `node` pill on purpose — the gold is the
+    // interface saying "this is a destination", which is exactly what it is,
+    // even though there is nothing there yet.
+    {
+      const sx = toWorldX(NORTH_TOWN_SITE.x);
+      const sz = toWorldZ(NORTH_TOWN_SITE.y);
+      this.hud.plate("north-town", this.world.project(sx, 2.6, sz, 48), {
+        kind: "station",
+        name: NORTH_TOWN_NAME,
+        subtitle: "nothing here yet",
+        icon: "waystone",
+        distance: rangeTo(sx, sz),
+      });
     }
 
     // Townspeople. `engaged` is reused to mean "close enough to talk", which is

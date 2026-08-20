@@ -21,6 +21,8 @@ import {
   bandAt,
   INTERACTION_RANGE_PX,
   PLAYER_BODY_RADIUS_PX,
+  WORLD_WIDTH,
+  WORLD_HEIGHT,
 } from "../../shared/protocol-types.ts";
 import {
   TOWN_BUILDINGS,
@@ -29,6 +31,7 @@ import {
   TOWN_RADIUS_PX,
   TOWN_GATE_ANGLES,
   TOWN_GATE_HALF_DEG,
+  TOWN_GATES,
   TOWN_PROPS,
   PLAYER_ARRIVAL,
   ROAD_HALF_WIDTH_PX,
@@ -150,12 +153,17 @@ for (const deg of TOWN_GATE_ANGLES) {
 }
 console.log(`  all ${TOWN_GATE_ANGLES.length} roads leave the square unobstructed`);
 
-// The gateways have to be wide enough to walk through with a body on.
-const gateWidthPx = 2 * TOWN_RADIUS_PX * Math.sin((TOWN_GATE_HALF_DEG * Math.PI) / 180);
-if (gateWidthPx < 4 * PLAYER_BODY_RADIUS_PX) {
-  fail(`a gateway is only ${gateWidthPx.toFixed(0)}px wide`);
-} else {
-  console.log(`  each gateway is ${gateWidthPx.toFixed(0)}px wide`);
+// Every gateway has to be wide enough to walk through with a body on, and they
+// are no longer all the same width — the north postern is narrower than the
+// highway because the gap between the inn and the shop is where it had to go.
+let gateWidthPx = Infinity;
+for (const g of TOWN_GATES) {
+  const w = 2 * TOWN_RADIUS_PX * Math.sin((g.halfDeg * Math.PI) / 180);
+  if (w < 4 * PLAYER_BODY_RADIUS_PX) fail(`the ${g.name} is only ${w.toFixed(0)}px wide`);
+  gateWidthPx = Math.min(gateWidthPx, w);
+}
+{
+  console.log(`  ${TOWN_GATES.length} gateways, the narrowest ${gateWidthPx.toFixed(0)}px`);
 }
 
 // --- Nobody and nothing is standing in a wall -------------------------------
@@ -484,8 +492,13 @@ console.log(`  the wall stops ${NEAREST_MONSTER_PX - TOWN_RADIUS_PX}px short of 
 const seeding = readFileSync(new URL("../../server/src/index.ts", import.meta.url), "utf8");
 const ringCalls = [...seeding.matchAll(/ringNodes\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(-?\d+)/g)];
 if (ringCalls.length === 0) fail("could not read any node rings out of the server");
-const HALF_W = 7200 / 2;
-const HALF_H = 5400 / 2;
+// Read from the shared constants, not typed. These were literals — 7200 and
+// 5400 — and they were wrong within a minute of the world growing: eleven node
+// rings "fell outside the world" while sitting comfortably inside it. A test
+// that keeps its own copy of a number the game derives is a test that reports
+// the copy going stale as a fault in the game.
+const HALF_W = WORLD_WIDTH / 2;
+const HALF_H = WORLD_HEIGHT / 2;
 for (const [, prefix, , radiusText, countText, startText] of ringCalls) {
   const radius = Number(radiusText);
   const count = Number(countText);

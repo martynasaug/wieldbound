@@ -4042,6 +4042,120 @@ Plus a browser pass: all four stones present and distinct, the tracker counting
 down 1700 → 1000 → 200 as the player walks, the minimap's gold marker tracking
 it, and zero console errors.
 
+## Phase 53 — A world worth crossing
+User brief, in one go: *"Lets massively increase the world and create a dirt
+path from beginners town, to another town north somewhere (will be building in
+the future). Path should be lighten up with torches so its visible during night.
+Start building good looking custom terrain/environment in the world — forests,
+hills, rivers and so on. Revamp our world textures... Also remake ground/grass
+to a better looking/more texture/high quality, because it looks too simple,
+plain."*
+
+Four milestones, in the order they unblock each other: the ground has to be
+somewhere before it is worth resurfacing, and the road has to exist before the
+land around it is worth dressing.
+
+### M53.1 — five times the ground, and a road out of it
+**16,000 x 12,000, up from 7,200 x 5,400.** Two constants, and everything else
+in the game derives from them — `PLAYER_SPAWN`, the world-to-server transforms,
+the movement clamps, the treeline perimeter, the ground-cover density. That the
+resize was a two-line change is worth noting as the payoff for four phases of
+not typing coordinates.
+
+**THE BANDS DID NOT MOVE WITH IT**, and that is the decision. Last time the world
+grew, every ring grew with it, on the argument that a band is a fraction of the
+map. That argument stops holding the moment the map has more than one place in
+it: the five rings are TUNED — a level-1 character clears band 1, the reforge
+ladder is priced against band 5 — and stretching them to fill a world five times
+the size would have re-paced the whole game to make room for a road. Emberhold's
+neighbourhood is exactly where it was; every new pixel is frontier.
+
+**A third gate**, and it could not go where it obviously should. Due north (270)
+runs the road through the near corner of the shop. The natural opening is the
+sixty-degree gap between the inn at 225 and the shop at 285, so the North
+Postern is at 256 — the middle of the clear run, measured against the real
+footprints at every radius rather than picked by eye. It is also NARROWER than
+the east and west gates: at the highway's twelve degrees the road's rim still
+clips the shop. Gates are a table now rather than two bearings and one shared
+half-width.
+
+**The road is a polyline, and that is the first thing in this world that is not
+polar.** Everything else — bands, camps, node rings, waystones, the town — is a
+radius and a bearing, which is the right shape for a world with one place in it
+because distance from spawn IS difficulty. A road does not fit that: it is not
+AT a distance, it crosses all of them. So `shared/road.ts` holds waypoints (still
+polar, because that is the language the rest of the file speaks and because it
+is how the route was checked) smoothed through a Catmull-Rom, and the client
+draws the ribbon from it, the torches are placed from it and the test walks it.
+One curve, three readers.
+
+It has exactly one gameplay property and it is the reason to build a road rather
+than draw one: **the road is the safe way through.** It passes near four camps
+and inside none of them. Follow it and you get from the palisade to the frontier
+without a fight; cut the corner and you meet mushnubs, then wolves, then orc
+brutes. Every waypoint was moved until that was true — the first draft ran 147px
+from a mushnub camp, which is well inside aggro.
+
+**Fourteen torches, and the lights are the interesting part.** Three evaluates
+every point light against every fragment of every lit surface, so a torch every
+three hundred pixels down four kilometres would be an unaffordable number of
+them — and most of them would be lighting ground nobody can see, since the fog
+closes at 110 units. So a torch is two separable things. Every torch always has
+a FLAME: an unlit emissive ball in the merged mesh, visible as far as the fog
+allows, which is what makes the road read at night as a chain of lights going
+north. Only the nearest five have a LIGHT, from a fixed pool re-pointed every
+frame. The seam is invisible because a torch far enough away to lose its light
+is far enough away that the ground under it was already dark.
+
+They run on the town's clock, not their own — a frontier that lit on a separate
+schedule would put two times of day in one frame.
+
+### A bug the third gate found, four phases old
+`inGateway` asked the OPPOSITE question. It computed a correct shortest angular
+difference and then tested `180 - delta < HALF`, which is "is this bearing nearly
+opposite a gate" — and with exactly two gates a hundred and eighty degrees
+apart, that is accidentally the right answer every single time. `inGateway(0)`
+came out true because of the gate at 180, and `inGateway(180)` because of the
+gate at 0. Two wrongs, one per gate, cancelling perfectly.
+
+Adding a third broke the coincidence in both directions at once: it opened a
+hole in the palisade at 76 degrees, on the open ground behind the chapel, and
+left the new postern's own bearing walled shut. Nothing else would ever have
+found it, because nothing else asks the question anywhere but on a gate bearing
+— the ring furniture derives its gaps from it, and it had been quietly excluding
+the wrong arcs since Phase 49.
+
+### And a test that kept its own copy of the world
+`tools/test/town.mjs` had `const HALF_W = 7200 / 2` typed into it, and the moment
+the world grew it reported eleven node rings as falling outside a world they sit
+comfortably inside. A test holding its own copy of a number the game derives is
+a test that reports the copy going stale as a fault in the game — which is
+exactly the failure the same file's camp-reading code was written to avoid.
+
+### The road was invisible for one run, and the reason is handedness
+Every one of its 5,184 normals pointed at the ground. `roadStrip` and `beltPath`
+emit the same vertex order and come out facing up, because they are authored in
+XY and rotated -90 degrees about X on the way, which flips the handedness. The
+new ribbon is built directly in XZ with no rotation, so the identical winding
+produces the mirror image. The torches beside it stood there looking completely
+correct, which is what made it read as "the road did not get built" rather than
+"the road is facing down".
+
+Found by asking the mesh rather than by reading the code: one `page.evaluate`
+that counted normal signs said `{ up: 0, down: 5184 }` and the diagnosis was
+over. Same method note as the seam that was a plank.
+
+### Verified
+All ten offline suites — `road.mjs` is new and checks the route leaves by a real
+gateway, ends at the town site, never doubles back, keeps outside every pack's
+aggro, keeps its full 190px width clear of buildings, and that the torches are
+evenly spaced ALONG the curve rather than by index (which would bunch them on
+the bends, exactly where a traveller needs to see where the road goes). Plus
+`smoke.mjs`, both workspaces clean, and a browser pass at noon and midnight:
+53,510 plants across 192 chunks, 434 draw calls, zero console errors, and the
+road reading at midnight as a line of fires going north.
+
+
 ---
 
 ## Phase 48+ — Revisit and pick from here
@@ -5970,6 +6084,39 @@ rarities), multiple crafting stations. Not committing to order yet.
   artifact, bisection beats theory, and naming the ground meshes (`town-paving`,
   `town-road`, `town-island`) is what made bisection possible from a console.
 
+- **A world may grow without its difficulty rings growing with it.** (Phase 53)
+  The bands were scaled with `WORLD_WIDTH` last time, on the argument that a
+  band is a fraction of the map. That is true of a world with one place in it
+  and false the moment there are two: the rings are tuned against character
+  level and the reforge ladder, so stretching them to fill five times the ground
+  would have re-paced the whole game to make room for a road. New land is
+  FRONTIER — past the last ring — rather than a wider version of the old land.
+- **A road is the first thing here that is not polar.** (Phase 53) Every other
+  position in this world is a radius and a bearing, because distance from spawn
+  IS difficulty. A road is not AT a distance, it crosses all of them, so it is a
+  polyline — waypoints still in polar, because that is how the route was checked
+  against the camp tables, smoothed into one curve that the client draws from,
+  the torches are placed from, and the test walks.
+- **The road is the safe way through.** (Phase 53) It passes near four camps and
+  inside none of them, and that is a measured property with a test behind it
+  rather than a happy accident. It is also the whole reason to build a road
+  instead of drawing one: following it is a decision with a payoff, and cutting
+  the corner meets mushnubs, wolves and orc brutes in that order.
+- **A light and a flame are separable, and only one of them is expensive.**
+  (Phase 53) Fourteen torches down four kilometres cannot each own a PointLight —
+  three evaluates every one against every fragment of every lit surface. Every
+  torch always has an emissive flame in the merged mesh, which is what makes the
+  road read at night from as far as the fog allows; a fixed pool of five real
+  lights is re-pointed at the nearest torches each frame. The seam is invisible
+  because a torch too far away for its light is too far away for its ground to
+  have been lit anyway.
+- **A strip built in XZ winds the opposite way to one built in XY and rotated.**
+  (Phase 53) The town's road arms and back lane are authored flat in XY and
+  turned -90 degrees about X, which flips handedness on the way. The North Road
+  is built directly in XZ, so copying their vertex order pointed all 5,184
+  normals at the ground and the road was invisible from every angle a player can
+  occupy. Diagnosed by counting normal signs in the live page, not by reading
+  the code.
 - **A verb needs somewhere to go before it is worth having.** (Phase 52) `reach`
   is a distance check and about ten lines. It was worthless until there was
   something to arrive AT: "go to (4880, 3104)" is a coordinate and the walk pays
@@ -6058,7 +6205,7 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 52 complete (2026-08-21). **The item system rebuilt and
+Phase 0 through 52 complete, Phase 53 in progress (2026-08-21). **The item system rebuilt and
 followed through, damage that knows what it is made of, every timed effect in
 one table with a row on screen, a front door worth walking through, a town to
 walk through it into — and now a material for the one element nobody could
@@ -6073,6 +6220,21 @@ lightning for a seam — so the counter to a golem is a thing you get by killing
 golems the slow way first. And the golem now THROWS lightning as well as folding
 to it, because before that, five elements could be worn against and only four
 could ever be thrown at you.
+
+**Phase 53 M53.1 — five times the ground, and a road out of it.** The world is
+16,000 x 12,000 now, and the difficulty rings deliberately did NOT grow with it:
+Emberhold's neighbourhood is tuned, so every new pixel is frontier rather than a
+wider version of the old land. A third gate opens on the north side — at 256
+rather than 270, because due north runs the road through the shop — and a dirt
+track curves 108 units from it to the site of Coldharrow, threading between four
+monster camps so that following the road is the safe way north and cutting the
+corner is not. Fourteen torches light it after dark, and only the nearest five
+own a real light: every torch always has a flame, which is what makes the road
+read at midnight as a line of fires going north, and a fixed pool of PointLights
+follows the player. Two things fell out of it — `inGateway` had asked the
+opposite question since Phase 49 and got away with it because two gates were
+exactly antipodal, and the road spent one run invisible with all 5,184 normals
+facing the ground.
 
 **Phase 52 — Waystones, and two verbs the world was already laid out for.** Six
 quests had three verbs between them and none of them mentioned the deepest thing
