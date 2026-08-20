@@ -316,6 +316,29 @@ section("solid things");
     fail("something solid is standing where players arrive");
   }
 
+  // NOTHING SOLID MAY STAND INSIDE A BUILDING.
+  //
+  // Added with the back lane, which is the first dressing placed by BEARING
+  // behind the houses rather than out in the open square — and a hay rick two
+  // degrees off ends up in somebody's kitchen. The failure is silent from every
+  // angle but one: the prop is drawn inside the walls, so unless you happen to
+  // look at that building from the back you never see it, and the collision
+  // circle just becomes an odd sticky patch indoors.
+  for (const p of solidProps) {
+    const at = propPosition(p);
+    if (insideAnyBuilding(at.x, at.y)) {
+      fail(`"${p.id}" is standing inside a building`);
+    }
+  }
+
+  // And nothing solid may be outside the wall either — the belt runs out at the
+  // palisade, and a beehive in the field is a beehive a slime walks through.
+  for (const p of solidProps) {
+    if (p.radiusPx > TOWN_RADIUS_PX) {
+      fail(`"${p.id}" is outside the palisade at ${p.radiusPx}px`);
+    }
+  }
+
   // The forge has to stay reachable. This is the one that nearly shipped: the
   // smithy's props ring an empty middle, and a keep-out circle round it would
   // have held every player further off than INTERACTION_RANGE_PX — a bench that

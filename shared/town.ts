@@ -40,6 +40,19 @@ export const TOWN_CENTER = PLAYER_SPAWN;
 export const TOWN_RADIUS_PX = 800;
 
 /**
+ * How far the paved square reaches.
+ *
+ * Two thirds of the way to the wall, which is what leaves the belt of grass the
+ * gardens, the woodpile and the back doors live in. It lives HERE rather than
+ * as `radius * 0.66` inside the client's ground builder, because it is not only
+ * the client that needs it: the ground-cover scatter has to know exactly where
+ * the cobbles start so it can grow right up to them and no further. When those
+ * two numbers were separate, the scatter kept out of the whole town to be safe
+ * and the belt lost every blade of grass in it.
+ */
+export const TOWN_PAVED_RADIUS_PX = Math.round(TOWN_RADIUS_PX * 0.66);
+
+/**
  * Gate bearings, in degrees. The wall opens where the road runs through.
  *
  * ONE road, east to west, straight through the square — not four spokes. Four
@@ -289,15 +302,72 @@ export interface TownProp {
 export const SMITHY_RADIUS_PX = 330;
 export const SMITHY_ANGLE_DEG = 140;
 
-/** The bearings the ring features repeat on, so the client and this agree. */
-export const BENCH_ANGLES = [22, 68, 112, 158, 202, 248, 292, 338] as const;
 /** A planter either side of every bench. Colour at eye level, and solid. */
 export const PLANTER_OFFSET_DEG = 4.5;
-export const LANTERN_ANGLES = [22, 67, 112, 157, 202, 247, 292, 337] as const;
-export const GARDEN_ANGLES = [20, 65, 110, 160, 200, 250, 295, 340] as const;
 export const BENCH_RING_PX = 540;
 export const LANTERN_RING_PX = 620;
 export const GARDEN_RING_PX = 735;
+
+/**
+ * Where the square's ring furniture stands — benches, lamp posts, planters.
+ *
+ * DERIVED, not typed. These were eight hand-picked bearings meant to sit in the
+ * gaps between the buildings, and two of them did not: the bench, the lamp post
+ * and a planter at 292 stood inside the shop, and the same three at 338 stood
+ * inside the east cottage. Nothing said so, because a lamp post inside a
+ * building is invisible from every angle except the back of that building.
+ *
+ * So the gaps are worked out instead of guessed. Every whole bearing is tested
+ * against the real footprints at BOTH ring radii — a bench ring and a lamp ring
+ * are different distances out and a building is a rectangle, so clearing one
+ * does not clear the other — and against the planter offsets either side, and
+ * against the gateways, since furniture in the road is furniture a cart takes
+ * out. The widest clear run in each window gets the piece.
+ *
+ * It comes out at SEVEN rather than eight, and that is the finding: between the
+ * east cottage and the east gate there is no room at all, and there never was.
+ * The eighth bench had been standing in a shop since the day the square was
+ * widened.
+ */
+function clearRingAngles(): number[] {
+  const clearAt = (deg: number, radiusPx: number) => {
+    const a = (deg * Math.PI) / 180;
+    const x = TOWN_CENTER.x + Math.cos(a) * radiusPx;
+    const y = TOWN_CENTER.y + Math.sin(a) * radiusPx;
+    return !insideAnyBuilding(x, y, RING_FURNITURE_CLEARANCE_PX) && !inGateway(deg);
+  };
+  const usable = (deg: number) =>
+    clearAt(deg, BENCH_RING_PX) &&
+    clearAt(deg, LANTERN_RING_PX) &&
+    clearAt(deg - PLANTER_OFFSET_DEG, BENCH_RING_PX) &&
+    clearAt(deg + PLANTER_OFFSET_DEG, BENCH_RING_PX);
+
+  // Collect the runs of consecutive clear bearings, then take the middle of
+  // each: the middle of a gap is the furthest a bench can be from both walls.
+  const runs: number[][] = [];
+  for (let deg = 0; deg < 360; deg++) {
+    if (!usable(deg)) continue;
+    const last = runs[runs.length - 1];
+    if (last && deg === last[1] + 1) last[1] = deg;
+    else runs.push([deg, deg]);
+  }
+  // A run that wraps past 360 is one window, not two.
+  if (runs.length > 1 && runs[0][0] === 0 && runs[runs.length - 1][1] === 359) {
+    const first = runs.shift()!;
+    runs[runs.length - 1][1] += first[1] + 1;
+  }
+  // Anything narrower than a bench is not a gap, it is a crack.
+  return runs
+    .filter(([a, b]) => b - a >= 6)
+    .map(([a, b]) => Math.round((a + b) / 2) % 360);
+}
+
+/** How much daylight ring furniture keeps between itself and a wall. */
+const RING_FURNITURE_CLEARANCE_PX = 16;
+
+export const BENCH_ANGLES: readonly number[] = clearRingAngles();
+export const LANTERN_ANGLES: readonly number[] = BENCH_ANGLES;
+export const GARDEN_ANGLES = [20, 65, 110, 160, 200, 250, 295, 340] as const;
 
 export const TOWN_PROPS: TownProp[] = [
   // THE STATUE, and it stands in the middle.
@@ -353,10 +423,38 @@ export const TOWN_PROPS: TownProp[] = [
   // this entry, so there is no second copy to go stale — and the failure being
   // avoided is a handcart you walk straight through, which is exactly what the
   // palisade and the well used to do.
-  { id: "cart", radiusPx: 505, angleDeg: 128, blockRadiusPx: 52 },
+  // Behind the inn rather than out on the paving. It was at 505/128 and that
+  // put it inside the west cottage — which nothing noticed, because a handcart
+  // indoors is invisible from every angle but one.
+  { id: "cart", radiusPx: 690, angleDeg: 240, blockRadiusPx: 52 },
   { id: "noticeboard", radiusPx: 470, angleDeg: 168, blockRadiusPx: 38 },
   { id: "brazier-a", radiusPx: 430, angleDeg: 312, blockRadiusPx: 26 },
   { id: "brazier-b", radiusPx: 430, angleDeg: 88, blockRadiusPx: 26 },
+  // --- The back lane -------------------------------------------------------
+  // The belt of grass between the houses and the palisade. A village's back
+  // land is the most WORKED ground it has — firewood, laundry, hens, hay — and
+  // this was mown lawn with a fence round it for two milestones. Each of these
+  // sits behind the building it belongs to: the pell and the spears behind the
+  // watch, hay and hens behind a cottage, hives beside the herb garden.
+  { id: "trainingpost", radiusPx: 690, angleDeg: 36, blockRadiusPx: 34 },
+  { id: "spearrack", radiusPx: 686, angleDeg: 54, blockRadiusPx: 32 },
+  { id: "hayrick", radiusPx: 700, angleDeg: 133, blockRadiusPx: 48 },
+  { id: "beehive-a", radiusPx: 672, angleDeg: 74, blockRadiusPx: 20 },
+  { id: "beehive-b", radiusPx: 672, angleDeg: 79, blockRadiusPx: 20 },
+  { id: "beehive-c", radiusPx: 690, angleDeg: 258, blockRadiusPx: 20 },
+  { id: "rainbarrel-a", radiusPx: 662, angleDeg: 98, blockRadiusPx: 18 },
+  { id: "rainbarrel-b", radiusPx: 664, angleDeg: 232, blockRadiusPx: 18 },
+  { id: "rainbarrel-c", radiusPx: 660, angleDeg: 300, blockRadiusPx: 18 },
+  { id: "rainbarrel-d", radiusPx: 664, angleDeg: 324, blockRadiusPx: 18 },
+  // Washing lines, as a post at each end. The inn has beds upstairs, so the inn
+  // has sheets; the second is the two cottages' between them. Bearings picked
+  // out of the clear runs behind those buildings rather than guessed — see the
+  // note on `clearRingAngles` for what guessing cost last time.
+  { id: "laundry-a1", radiusPx: 700, angleDeg: 212, blockRadiusPx: 14 },
+  { id: "laundry-a2", radiusPx: 700, angleDeg: 226, blockRadiusPx: 14 },
+  { id: "laundry-b1", radiusPx: 700, angleDeg: 84, blockRadiusPx: 14 },
+  { id: "laundry-b2", radiusPx: 700, angleDeg: 96, blockRadiusPx: 14 },
+
   // Two per bench. Small, but a tub of earth is a thing you walk round.
   ...BENCH_ANGLES.flatMap((a) =>
     [-PLANTER_OFFSET_DEG, PLANTER_OFFSET_DEG].map((offset) => ({

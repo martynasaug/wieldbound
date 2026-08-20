@@ -7,7 +7,12 @@ import { instantiate } from "./assets";
 import { createTerrainMaterial } from "./terrain";
 import { buildGroundCover } from "./scatter";
 import { DayNight } from "./daynight";
-import { TOWN_CENTER, TOWN_RADIUS_PX } from "../../../shared/town";
+import {
+  TOWN_BUILDINGS,
+  TOWN_CENTER,
+  TOWN_PAVED_RADIUS_PX,
+  TOWN_RADIUS_PX,
+} from "../../../shared/town";
 
 // Server positions are in pixels from the 2D game; the simulation still runs in
 // that space and every formula in shared/ is written against it. Rendering
@@ -266,11 +271,28 @@ export class World {
       // square read as the town having been dropped on top of the field rather
       // than built in it — and the plants stand proud of the paving, so the
       // cobbles cannot hide them.
-      exclude: {
-        x: toWorldX(TOWN_CENTER.x),
-        z: toWorldZ(TOWN_CENTER.y),
-        radius: (TOWN_RADIUS_PX / PX_PER_UNIT) * 0.92,
-      },
+      //
+      // THE PAVING AND THE BUILDINGS, not the town. One circle over the whole
+      // enclosure was the safe-looking version and it was wrong: it also swept
+      // the ring of grass between the houses and the palisade, which is the one
+      // part of Emberhold that is meant to read as ground rather than as floor.
+      // The belt came out as flat green baize with a fence round it.
+      exclude: [
+        {
+          x: toWorldX(TOWN_CENTER.x),
+          z: toWorldZ(TOWN_CENTER.y),
+          // A little past the cobbles, so nothing sprouts through the rim where
+          // the paving is already fading out.
+          radius: (TOWN_PAVED_RADIUS_PX / PX_PER_UNIT) * 1.06,
+        },
+        // One per building, sized to the corner of its footprint — a plant
+        // coming up through a wall is worse than a bare patch.
+        ...TOWN_BUILDINGS.map((b) => ({
+          x: toWorldX(b.x),
+          z: toWorldZ(b.y),
+          radius: (Math.hypot(b.widthPx, b.depthPx) / 2 + 20) / PX_PER_UNIT,
+        })),
+      ],
     });
     this.scene.add(this.groundCover);
     console.info(

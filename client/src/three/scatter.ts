@@ -144,7 +144,7 @@ export interface ScatterArea {
   halfWidth: number;
   halfHeight: number;
   /**
-   * A circle the cover stays out of, in world units.
+   * Circles the cover stays out of, in world units.
    *
    * Emberhold. The ground cover is wild growth — tufts, ferns, wildflowers —
    * and it was scattered over the whole play area from before there was
@@ -152,8 +152,16 @@ export interface ScatterArea {
    * out of its paving. Excluded here rather than hidden by the paving, because
    * the plants stand a few centimetres proud of the ground and a decal cannot
    * cover something taller than itself.
+   *
+   * A LIST, not one circle, and that is a correction. One circle meant one
+   * radius, and the only radius that kept plants out of the paving AND out of
+   * six buildings was the whole town — which stripped the ring of grass between
+   * the houses and the palisade down to bare green baize. The belt is the part
+   * of Emberhold that is supposed to look like ground. Several circles let the
+   * paving and each building be excluded on their own, and the grass between
+   * them keeps growing.
    */
-  exclude?: { x: number; z: number; radius: number };
+  exclude?: { x: number; z: number; radius: number }[];
 }
 
 /**
@@ -222,13 +230,17 @@ export async function buildGroundCover(
     const AUTHORED_AREA = (4800 / 40) * (3600 / 40);
     const density = (area.halfWidth * 2 * area.halfHeight * 2) / AUTHORED_AREA;
     const total = Math.round(species.count * density);
-    // Rejection sampling against the exclusion circle. Attempts are counted
+    // Rejection sampling against the exclusion circles. Attempts are counted
     // rather than retried forever: at the town's share of the map this rejects
-    // roughly one placement in forty, and an unbounded retry loop is how a
+    // roughly one placement in eighty, and an unbounded retry loop is how a
     // future exclusion covering most of the world would hang the load.
-    const excluded = (x: number, z: number) =>
-      !!area.exclude &&
-      Math.hypot(x - area.exclude.x, z - area.exclude.z) < area.exclude.radius;
+    const zones = area.exclude ?? [];
+    const excluded = (x: number, z: number) => {
+      for (const c of zones) {
+        if (Math.hypot(x - c.x, z - c.z) < c.radius) return true;
+      }
+      return false;
+    };
 
     for (let i = 0; i < total; i++) {
       let x = (rand() * 2 - 1) * area.halfWidth;

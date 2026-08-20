@@ -38,6 +38,7 @@ import {
   LANTERN_ANGLES,
   LANTERN_RING_PX,
   ROAD_HALF_WIDTH_PX,
+  TOWN_PAVED_RADIUS_PX,
   TOWN_PROPS,
   propById,
   propPosition,
@@ -1431,6 +1432,199 @@ function brazier(
   lantern(b, group, x, z, 1.05, lanterns, 1.25, true);
 }
 
+
+// --- The back lane ----------------------------------------------------------
+// The ring of grass between the houses and the palisade was the last bare part
+// of Emberhold: six buildings turn their fronts to the square, and everything
+// behind them was mown lawn with a fence round it. A village's back land is the
+// most USED ground it has — it is where the firewood, the laundry, the hens and
+// the midden are — so this is the half of the town that should look worked
+// rather than arranged.
+
+/**
+ * A worn earth path running round behind the buildings.
+ *
+ * An annulus with vertex alpha at both rims, the same trick the road arms use,
+ * so it fades into the grass instead of stopping at a circle. It is the piece
+ * that makes the belt read as somewhere people walk rather than as a lawn:
+ * scenery says a place was built, and a desire path says it is lived in.
+ */
+function beltPath(innerR: number, outerR: number): THREE.BufferGeometry {
+  const segments = 96;
+  const across = 6;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const colors: number[] = [];
+
+  // Full down the middle, gone at both rims.
+  const alphaAcross = (t: number) => Math.min(1, Math.max(0, (1 - Math.abs(t * 2 - 1)) / 0.55));
+
+  const vertex = (i: number, j: number) => {
+    const a = (i / segments) * Math.PI * 2;
+    const t = j / across;
+    const r = innerR + (outerR - innerR) * t;
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    positions.push(x, y, 0);
+    // Along the path rather than across it, so the ruts run the way feet go.
+    uvs.push(a * r * 0.34, t * 2);
+    colors.push(1, 1, 1, alphaAcross(t));
+  };
+
+  for (let i = 0; i < segments; i++) {
+    for (let j = 0; j < across; j++) {
+      vertex(i, j);
+      vertex(i + 1, j);
+      vertex(i + 1, j + 1);
+      vertex(i, j);
+      vertex(i + 1, j + 1);
+      vertex(i, j + 1);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 4));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * A washing line with sheets on it.
+ *
+ * Reuses the bunting's sagging cord — the same parabola, because a rope does
+ * the same thing whatever is pegged to it — and hangs rectangles of linen
+ * instead of pennants. The inn has beds upstairs, so the inn has sheets; that
+ * is the entire justification and it is enough.
+ */
+function laundryLine(
+  b: Builder,
+  ax: number,
+  ay: number,
+  az: number,
+  bx: number,
+  by: number,
+  bz: number,
+  seed: number,
+): void {
+  const rand = seeded(seed);
+  const heading = Math.atan2(bz - az, bx - ax);
+  const sag = 0.34;
+  const pointAt = (t: number) => ({
+    x: ax + (bx - ax) * t,
+    y: ay + (by - ay) * t - sag * 4 * t * (1 - t),
+    z: az + (bz - az) * t,
+  });
+
+  // The cord.
+  const steps = 10;
+  let prev = pointAt(0);
+  for (let i = 1; i <= steps; i++) {
+    const next = pointAt(i / steps);
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const dz = next.z - prev.z;
+    const len = Math.hypot(dx, dy, dz);
+    b.add(
+      "linen",
+      new THREE.CylinderGeometry(0.015, 0.015, len, 4),
+      prev.x + dx / 2,
+      prev.y + dy / 2,
+      prev.z + dz / 2,
+      heading,
+      Math.PI / 2 - Math.atan2(dy, Math.hypot(dx, dz)),
+    );
+    prev = next;
+  }
+
+  // Four sheets, hung in the plane of the line so they read broadside.
+  for (let i = 1; i <= 4; i++) {
+    const p = pointAt(i / 5);
+    const w = 0.5 + rand() * 0.22;
+    const h = 0.55 + rand() * 0.3;
+    b.box("linen", w, h, 0.02, p.x, p.y - h, p.z, heading);
+  }
+}
+
+/**
+ * A pell and a rack of arms, for behind the Warden's Post.
+ *
+ * The watch is the one building in town with a JOB, and a training post is what
+ * that job looks like when nobody is doing it. Straw-bound, notched about, and
+ * leaning very slightly, because a dummy that has never been hit is a dummy
+ * nobody trains on.
+ */
+function trainingPost(b: Builder, x: number, z: number, rotY: number): void {
+  const cos = Math.cos(rotY);
+  const sin = Math.sin(rotY);
+  const at = (lx: number, lz: number) => ({ x: x + lx * cos + lz * sin, z: z - lx * sin + lz * cos });
+
+  // The post, and a wedge of earth round its foot.
+  b.cyl("timber", 0.11, 1.7, x, 0, z, 8);
+  b.add("garden", new THREE.CylinderGeometry(0.34, 0.42, 0.12, 10), x, 0.06, z);
+  // Cross arm.
+  b.box("timber", 1.0, 0.09, 0.09, x, 1.24, z, rotY);
+  // A straw body lashed to it.
+  b.add("thatch", new THREE.CylinderGeometry(0.26, 0.22, 0.62, 9), x, 1.05, z);
+  b.add("iron", new THREE.TorusGeometry(0.26, 0.022, 4, 10), x, 1.16, z, 0, Math.PI / 2);
+  b.add("iron", new THREE.TorusGeometry(0.24, 0.022, 4, 10), x, 0.86, z, 0, Math.PI / 2);
+  // A battered shield hung on one arm.
+  const shield = at(0.44, 0);
+  b.box("timberLight", 0.06, 0.44, 0.38, shield.x, 0.95, shield.z, rotY);
+  b.box("iron", 0.02, 0.1, 0.1, shield.x, 1.12, shield.z, rotY);
+}
+
+/** A rack of spears leaning against the watch's wall. */
+function spearRack(b: Builder, x: number, z: number, rotY: number): void {
+  const cos = Math.cos(rotY);
+  const sin = Math.sin(rotY);
+  const at = (lx: number, lz: number) => ({ x: x + lx * cos + lz * sin, z: z - lx * sin + lz * cos });
+  for (const side of [-1, 1]) {
+    const p = at(side * 0.5, 0);
+    b.box("timber", 0.08, 1.05, 0.08, p.x, 0, p.z, rotY);
+  }
+  b.box("timber", 1.15, 0.07, 0.09, x, 0.95, z, rotY);
+  b.box("timber", 1.15, 0.07, 0.09, x, 0.3, z, rotY);
+  // Five shafts, standing in it at slightly different leans.
+  const rand = seeded(5150);
+  for (let i = 0; i < 5; i++) {
+    const p = at(-0.42 + i * 0.21, 0);
+    b.cyl("timberLight", 0.03, 1.55, p.x, 0, p.z, 5, (rand() - 0.5) * 0.09);
+    b.add("iron", new THREE.ConeGeometry(0.05, 0.2, 5), p.x, 1.62, p.z);
+  }
+}
+
+/** A hay rick under a thatched cap. Round, because a square one is a shed. */
+function hayRick(b: Builder, x: number, z: number): void {
+  b.add("timberLight", new THREE.CylinderGeometry(0.9, 0.95, 0.16, 10), x, 0.08, z);
+  b.add("thatch", new THREE.CylinderGeometry(0.86, 0.94, 1.15, 10), x, 0.74, z);
+  b.add("thatch", new THREE.ConeGeometry(1.05, 0.72, 10), x, 1.66, z);
+  // A pitchfork left in it, which is the detail that says somebody is coming back.
+  b.cyl("timberLight", 0.028, 1.3, x + 0.95, 0, z + 0.2, 5, 0.22);
+  b.box("iron", 0.02, 0.22, 0.24, x + 1.24, 1.24, z + 0.2);
+}
+
+/** A straw skep on a plank stand. Bees, which is what a herb garden is for. */
+function beehive(b: Builder, x: number, z: number): void {
+  b.box("timberLight", 0.62, 0.1, 0.5, x, 0.28, z);
+  for (const side of [-1, 1]) {
+    b.box("timber", 0.07, 0.28, 0.07, x + side * 0.24, 0, z);
+  }
+  // Three tapering courses of coiled straw.
+  b.add("thatch", new THREE.CylinderGeometry(0.24, 0.28, 0.16, 10), x, 0.46, z);
+  b.add("thatch", new THREE.CylinderGeometry(0.19, 0.24, 0.16, 10), x, 0.62, z);
+  b.add("thatch", new THREE.SphereGeometry(0.19, 10, 6), x, 0.74, z);
+}
+
+/** A water butt under a downpipe, at the corner of a building. */
+function rainBarrel(b: Builder, x: number, z: number): void {
+  b.add("timberLight", new THREE.CylinderGeometry(0.34, 0.3, 0.78, 12), x, 0.39, z);
+  b.add("iron", new THREE.TorusGeometry(0.33, 0.028, 4, 14), x, 0.62, z, 0, Math.PI / 2);
+  b.add("iron", new THREE.TorusGeometry(0.31, 0.028, 4, 14), x, 0.2, z, 0, Math.PI / 2);
+  b.add("slate", new THREE.CylinderGeometry(0.3, 0.3, 0.03, 12), x, 0.79, z);
+}
+
 // --- Buildings --------------------------------------------------------------
 
 interface KindStyle {
@@ -2247,6 +2441,47 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
     const at = polar(p.radiusPx, p.angleDeg);
     planter(b, at.x, at.z, (planterSeed += 53));
   }
+
+  // --- The back lane --------------------------------------------------------
+  // The belt between the houses and the palisade. Everything here belongs to
+  // the building it stands behind — the pell and the spears to the watch, hay
+  // and a cart to the inn, hives beside the herb gardens — so the ring reads as
+  // six households' back yards rather than as one decorated circle.
+  const facingOut = (id: string) => -((propById(id)!.angleDeg + 180) * Math.PI) / 180;
+
+  const pell = prop("trainingpost");
+  trainingPost(b, pell.x, pell.z, facingOut("trainingpost"));
+  const rack = prop("spearrack");
+  spearRack(b, rack.x, rack.z, facingOut("spearrack"));
+
+  const rick = prop("hayrick");
+  hayRick(b, rick.x, rick.z);
+
+  for (const id of ["beehive-a", "beehive-b", "beehive-c"]) {
+    const p = prop(id);
+    beehive(b, p.x, p.z);
+  }
+  for (const id of ["rainbarrel-a", "rainbarrel-b", "rainbarrel-c", "rainbarrel-d"]) {
+    const p = prop(id);
+    rainBarrel(b, p.x, p.z);
+  }
+
+  // Washing, on its own pair of posts behind the inn and behind the cottages.
+  //
+  // A SHORT span — four or five units, which is a washing line. The first
+  // version strung it between two lamp posts forty-four degrees apart: thirteen
+  // units of cord with four small sheets lost somewhere along it, which from
+  // the square read as nothing at all.
+  for (const [p1, p2] of [
+    ["laundry-a1", "laundry-a2"],
+    ["laundry-b1", "laundry-b2"],
+  ]) {
+    const a = prop(p1);
+    const c = prop(p2);
+    b.cyl("timber", 0.07, 2.3, a.x, 0, a.z, 6);
+    b.cyl("timber", 0.07, 2.3, c.x, 0, c.z, 6);
+    laundryLine(b, a.x, 2.25, a.z, c.x, 2.25, c.z, 6100 + a.x);
+  }
 }
 
 /**
@@ -2480,7 +2715,10 @@ export class Town {
     // them: paving that reaches the palisade makes the whole enclosure one
     // surface, and the belt of grass between the houses and the wall is what
     // gives the gardens and the woodpile somewhere to be.
-    const paveRadius = radius * 0.66;
+    //
+    // Shared, because the ground-cover scatter has to keep out of exactly this
+    // circle and no more — see the note on `TOWN_PAVED_RADIUS_PX`.
+    const paveRadius = TOWN_PAVED_RADIUS_PX / PX_PER_UNIT;
 
     // Rings, so the fade has somewhere to happen. Three's own CircleGeometry is
     // a fan from a single centre vertex, and an alpha interpolated straight
@@ -2598,6 +2836,38 @@ export class Town {
         polygonOffsetUnits: -4,
       }),
     );
+    // The back lane's own worn earth, between the houses and the wall. Laid
+    // before the island so the ordering reads outward: road, paving, lane,
+    // island — and drawn under everything standing in it.
+    // Its own copy of the rutted earth, with the repeat turned OFF: the road's
+    // texture carries `repeat.set(26, 1)` because a road is one long quad with
+    // 0..1 UVs, and `beltPath` already writes world-scale UVs of its own. Left
+    // as it came, the two multiplied out to three hundred and seventy tiles
+    // round the ring and the lane aliased into flat noise — which read as
+    // nothing at all.
+    const laneTex = roadTexture();
+    laneTex.repeat.set(1, 1);
+    const lane = new THREE.Mesh(
+      beltPath((TOWN_PAVED_RADIUS_PX * 1.16) / PX_PER_UNIT, (TOWN_RADIUS_PX * 0.97) / PX_PER_UNIT),
+      new THREE.MeshStandardMaterial({
+        map: laneTex,
+        color: 0x6f6047,
+        transparent: true,
+        vertexColors: true,
+        roughness: 1,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      }),
+    );
+    lane.name = "town-lane";
+    lane.rotation.x = -Math.PI / 2;
+    lane.position.set(cx, 0.025, cz);
+    lane.receiveShadow = true;
+    lane.renderOrder = 1;
+    this.group.add(lane);
+
     island.name = "town-island";
     island.rotation.x = -Math.PI / 2;
     island.position.set(toWorldX(at.x), 0.04, toWorldZ(at.y));

@@ -3650,11 +3650,58 @@ like a row of spearheads. Cloth has no thickness, so `pennantGeometry` is a flat
 triangle emitted with both windings — two faces without making the shared cloth
 material pay for `DoubleSide`.
 
+### M51.1 — the back lane
+The belt of grass between the houses and the palisade was the last bare part of
+Emberhold, and the first thing found there was not a missing prop.
+
+**The ground cover had been switched off across the whole town.** M49.1 excluded
+the scatter from a circle of `TOWN_RADIUS * 0.92` to stop wildflowers coming up
+through the paving — but the paving only reaches two thirds of the way to the
+wall, so the exclusion also swept the entire belt. Every blade of grass, every
+tuft and every flower inside the palisade had been deleted to protect cobbles
+that were nowhere near them, and the result was flat green baize with a fence
+round it. The exclusion is a LIST of circles now — the paving, and one per
+building — so the belt grows and nothing sprouts through a wall. That is the
+whole of why it looked bare, and it cost no new art to fix.
+
+The paved radius moved into `shared/town.ts` as `TOWN_PAVED_RADIUS_PX` in the
+same change: it had been `radius * 0.66` inside the client's ground builder, and
+the scatter needs to know exactly where the cobbles stop. Two copies of that
+number is what let the safe-looking version happen.
+
+**Then the things a village keeps out the back**, each behind the building it
+belongs to so the ring reads as six households' yards rather than one decorated
+circle: a pell and a rack of spears behind the Warden's Post, a hay rick and a
+handcart behind the inn, straw skeps beside the herb gardens, rain butts at the
+back corners, and two washing lines. Plus a worn earth lane running round the
+whole belt — the piece that makes it read as ground people walk on rather than
+as lawn.
+
+### What the new rule caught
+The back lane is the first dressing placed by BEARING behind the houses rather
+than out in the open square, and a hay rick two degrees off ends up in somebody's
+kitchen. So `tools/test/town.mjs` grew "nothing solid may stand inside a
+building", and it immediately failed on SEVEN props — none of them new.
+
+The bench, the lamp post and a planter at 292 degrees were inside the shop. The
+same three at 338 were inside the east cottage. The handcart added one milestone
+earlier was inside the west cottage. All of them had been there since the square
+was widened, and none of them was visible: a lamp post inside a building can
+only be seen from the back of that building, and nobody walks there — which is
+exactly why the belt needed work in the first place.
+
+The ring bearings are DERIVED now rather than typed. Every whole bearing is
+tested against the real footprints at both ring radii — a bench ring and a lamp
+ring are different distances out and a building is a rectangle, so clearing one
+does not clear the other — and against the planter offsets and the gateways. The
+middle of each clear run gets the furniture. It comes out at SEVEN rather than
+eight, and that is the finding: between the east cottage and the east gate there
+is no room at all, and there never was.
+
 ### Still bare, and known
 The middle band of paving between the island and the benches is deliberately
-plain — that is where players stand — but the belt of grass between the
-buildings and the palisade could still take more than kitchen gardens and a
-woodpile.
+plain — that is where players stand. The chapel's back yard is the emptiest of
+the six and could take something of its own.
 
 ---
 
@@ -5563,6 +5610,20 @@ rarities), multiple crafting stations. Not committing to order yet.
   strides off it. Any "the origin is also the doormat" coupling is worth
   splitting the moment it costs a design decision.
 
+- **An exclusion zone is the shape of the thing, not the shape of the area.**
+  (Phase 51) The ground cover was kept out of a circle covering all of
+  Emberhold so that flowers would not grow through the paving — and the paving
+  is two thirds of that radius, so the fix deleted every plant in the belt as
+  well. "Big enough to definitely cover it" is the reflex and it is how a
+  precise problem becomes a blunt one. Exclusions get a list.
+
+- **Placement by bearing needs a test.** (Phase 51) Seven props had been
+  standing INSIDE buildings — a bench, two lamp posts, planters, a handcart —
+  some of them for two milestones. Nothing threw, nothing looked wrong, because
+  a prop inside a building is only visible from the back of that building. Any
+  time a position is authored as an angle against a ring, the thing it might
+  land in has to be asserted against, or the failure is silent by construction.
+
 - **Hide one mesh at a time.** (Phase 51) The seam across the square survived
   three rounds of reasoning — shadow frustum, light falloff, terrain tiling —
   and every one of those explanations was coherent and wrong. It fell in one
@@ -5610,6 +5671,17 @@ Then the dressing it was all in aid of: bunting on a sagging curve round the
 lantern ring, window boxes under every upper window, planters, a handcart, a
 notice board and two braziers. All of it solid, all of it positioned from
 `shared/town.ts` so what is drawn and what you walk round are one entry.
+
+**M51.1 — the back lane.** The belt between the houses and the palisade looked
+bare because the ground-cover scatter had been excluded from the whole town to
+protect paving that only reaches two thirds of the way out — every blade of
+grass inside the wall had been deleted for it. Fixed by making the exclusion a
+list (the paving, and each building), then dressed with the things a village
+keeps out the back. A new rule — nothing solid may stand inside a building —
+then caught seven props that had been standing in the shop and the cottages
+since the square was widened, none of them visible from anywhere anyone walks.
+The ring bearings are derived from the real footprints now, and there is room
+for seven, not eight.
 
 Before that, Phase 50.
 
