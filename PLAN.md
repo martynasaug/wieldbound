@@ -3898,6 +3898,150 @@ through the palisade; a dialogue opened with Oswyn held for forty seconds
 through a full round of his beat, and a purchase went through mid-walk. Noon,
 midnight, zero console errors.
 
+## Phase 52 — Waystones, and two verbs the world was already laid out for
+Emberhold had six quests and three verbs between them: kill it, gather it, forge
+it. The deepest thing about this world went unmentioned by all six — that every
+camp, every node ring and every band is measured from spawn, so walking further
+out IS the progression. Nothing had ever asked anybody to walk.
+
+### The stones came first, because the verb needs somewhere to go
+`reach` is trivial to implement and worthless on its own. "Go to (4880, 3104)"
+is a coordinate, not work, and the walk pays off in an empty field. So the
+milestone is really four **waystones** — the first built things outside the
+palisade — and the objective is what points at them.
+
+One for each band past the first, spiralling outward around the compass so no
+two are on the same trip: the Gate Stone at 1,560px, the Sunken Stone at 1,980,
+the Hollow Stone at 2,400 and the Ashen Stone at 2,780. Bearings were not chosen
+by eye. A probe read the real camp and node tables out of the server and swept
+every bearing at each radius for one that clears both, which is how the third
+one ended up at 210 rather than the 240 the first draft wanted — 240 stands in
+an ore node.
+
+**Four silhouettes, not one slab four times.** Each has a blurb saying what it
+looks like, and somebody who walks two thousand pixels on the strength of "split
+top to bottom, and the gap is wide enough to walk through" should find a stone
+with a gap in it. The Gate Stone is upright with a tally scratched into the
+face; the Sunken leans south out of a heap of its own spoil; the Hollow is two
+halves and a fallen wedge; the Ashen is blunt, dark and arranged.
+
+Built with Emberhold's own `Builder`, which is now exported for the purpose —
+same palette, same procedural surfaces, one merged mesh each. A landmark cut in
+a different grey from the town wall is the same mistake a downloaded building
+pack would have been. **One mesh per stone rather than one for all four**,
+because Game fades whatever stands between the camera and the player per
+material, and merged they would all dim together.
+
+They are NOT solid. Nothing outside the walls is — not a tree, not a boulder —
+and a second collision system for four props in a field is a rule the player
+meets four times and a mechanism to keep honest forever.
+
+### `reach`, and where the expensive half goes
+The count is always 1, which is the honest shape rather than a degenerate case:
+a place is somewhere you have been or have not. Keeping it in the same
+one-counter-one-threshold mould means the tracker, the offer states, the
+completion toast and the server's funnel all take it without a branch.
+
+The interesting part is cost. `MOVE` arrives many times a second per player and
+`advanceQuests` opens the quest table, so crediting on position naively would
+put a database read on the movement path for every player in the world,
+permanently, to answer a question whose answer changes about once an hour. So
+**arriving is an event and standing is not**: four hypots run every packet, and
+the table is only opened on the tick where somebody who was nowhere is suddenly
+somewhere. The socket test walks in and out four times and the counter does not
+move.
+
+### `salvage` was already in the type and nothing pointed at it
+It had been a `QuestObjective` variant since the day quests shipped, with no
+quest using it — the same dangling limb as `lightning 0 weapons`. Two lines on
+the server, and Marda's chain gained "Take It Apart", which exists to say out
+loud the one thing about the anvil nobody finds on their own: taking something
+apart is how you learn to make it. The batch handler counts by the batch's real
+total rather than as one event, for the reason gathering counts by yield — the
+same three items are one click on one tab and three on another, and a tracker
+that disagreed with the bag reads as a bug.
+
+### What the interface had to learn
+A `reach` row cannot say "places reached 0 / 1". `objectiveIsCounted` splits the
+two, and a place shows its own name and how far it still is — recomputed every
+frame and rendered about twice a second, because the render key rounds the
+distance to fifty pixels.
+
+The minimap grew an **Objectives** layer, and it is arrows rather than blips for
+a measurable reason: the nearest waystone is 1,560px from spawn and the widest
+zoom shows about a third of that, so a dot would only appear once you had nearly
+arrived. A guide is clamped to the rim along its true bearing, drawn as an arrow
+with the remaining distance under it, and becomes a ring the moment it comes on
+the map — which is the map saying "you can see it now". Only ACTIVE, unfinished
+reach quests: marking all four stones permanently would make it a tourist guide,
+and marking the one you took work for makes it an instruction.
+
+Each stone carries a nameplate — the dim `node` pill normally, the gold banner
+while it is what somebody has told you to walk to.
+
+### Three things the tests refused
+**The essence rule held.** The Ashen Stone paid 6 essence, and
+`tools/test/quests.mjs` has asserted since Phase 49 that no quest may: essence
+comes only off kills by design, and a quest reward is the exact back door that
+would quietly stop that being true. The more so for the one quest in the game
+whose whole point is that you did not have to fight anything. It pays refined
+ingots instead.
+
+**Two briefs never said what to look for.** A new rule — a `reach` brief must
+mention a stone — failed "The Split Stone" and "Where Nobody Has Stood", both of
+which said "third one" and "the last one" and never once named the object. That
+is not pedantry: the brief is the only place the game explains the task, and
+"go north-west" with no description is a player wandering past their own
+objective.
+
+**And the waystone section is the town test's prop rules, moved outdoors.**
+Nothing in the engine keeps a landmark out of a goblin camp or off an ore node,
+so the test reads the real `ringPack` and `ringNodes` tables out of the server
+rather than restating them — a copy would agree the day it was written and stop
+agreeing the first time a camp moved, which is the whole failure it exists to
+catch. It also pins that no two stones are within one reach radius of each other
+(two quests one walk finishes), that `landmarkAt` is therefore unambiguous, that
+every stone is somewhere a quest sends you, and that each level gate follows the
+band the stone is ACTUALLY in rather than a number typed beside the radius.
+
+### Two things that were wrong on the screen
+**The stone was a brick chimney.** It borrowed the town's `stone`, which carries
+a coursed-masonry texture because every grey surface in Emberhold is something
+somebody BUILT. A standing stone is a rock that was dragged upright. `rock` is a
+new palette entry with a new procedural surface — broad blotches, a few cracks,
+grit, and deliberately no repeating structure at all, because the moment a
+monolith shows a grid it stops being a rock.
+
+**And the trodden ring round each one was a hole cut in the field.** A flat
+`CircleGeometry` with a hard alpha edge, which is precisely the artefact the
+road's seam across the square cost three rounds of diagnosis in Phase 51. It is
+a faded `ringedDisc` now, in the back lane's own brown — the same number, not a
+shade near it, because a path behind the inn and the ground round a waystone are
+the same substance.
+
+### And one that had been wrong for three phases
+The quest tracker sits at `right: 14px` and the dock rail is at the far right,
+so the panel had always been underneath the buttons. Nobody had seen it, because
+no row had ever been long enough to reach that far. "The Sunken Stone — 1700
+away" reaches that far. It takes the minimap's own 82px now, which is what it
+should always have done: it hangs off the map, so it takes the map's edge.
+
+### Verified
+All nine offline suites, `smoke.mjs`, both workspaces typechecking clean.
+
+Two seeded socket runs against the real server, because both new verbs are gated
+behind chains a fresh character cannot walk in a test. **`reach`:** standing at
+the stone before taking the quest credits nothing; taking it sets the counter to
+0; standing 80px outside the ring credits nothing; stepping in credits it and
+the server says so; walking in and out four times does not over-count; handing
+it back completes it and unlocks the next stone. **`salvage`:** `SALVAGE_ITEM`
+advances by one, `SALVAGE_MANY` advances by the batch's real total, and the
+completion is announced.
+
+Plus a browser pass: all four stones present and distinct, the tracker counting
+down 1700 → 1000 → 200 as the player walks, the minimap's gold marker tracking
+it, and zero console errors.
+
 ---
 
 ## Phase 48+ — Revisit and pick from here
@@ -5826,6 +5970,37 @@ rarities), multiple crafting stations. Not committing to order yet.
   artifact, bisection beats theory, and naming the ground meshes (`town-paving`,
   `town-road`, `town-island`) is what made bisection possible from a console.
 
+- **A verb needs somewhere to go before it is worth having.** (Phase 52) `reach`
+  is a distance check and about ten lines. It was worthless until there was
+  something to arrive AT: "go to (4880, 3104)" is a coordinate and the walk pays
+  off in an empty field. Four waystones were most of the work and the objective
+  was the small part, which is the right ratio — the same reason Storm was a
+  palette rather than a field on a weapon.
+- **Arriving is an event; standing is not.** (Phase 52) `MOVE` lands many times
+  a second per player and the quest table is a database read, so crediting a
+  position naively puts a query on the movement path for every player in the
+  world, forever, to answer a question that changes about once an hour. Four
+  hypots run per packet and the table opens only on the tick where the answer
+  changed from nothing to something. Any check driven by position wants this
+  shape: cheap geometry every frame, the expensive half on the edge.
+- **Read the world's tables, do not restate them.** (Phase 52) The waystone test
+  parses the real `ringPack` and `ringNodes` calls out of the server rather than
+  keeping its own copy of where the camps are. A copy agrees on the day it is
+  written and stops agreeing the first time a camp moves — which is precisely
+  the failure the test exists to catch, so a copy would fail silently at the one
+  moment it mattered.
+- **A counter is only worth showing when it can be part way along.** (Phase 52)
+  Every objective in the game reads "n / m" and a place cannot: you are there or
+  you are not, and "places reached 0 / 1" is noise dressed as progress sitting
+  next to the only word the player wants. `objectiveIsCounted` splits them, and
+  a place shows its name and how far it still is instead.
+- **An off-screen objective is an arrow, not a blip.** (Phase 52) The nearest
+  waystone is 1,560px out and the widest minimap zoom shows about a third of
+  that, so a dot appears exactly when it stops being needed. Clamped to the rim
+  along its true bearing, with the distance under it, becoming a ring when it
+  comes on the map. Only for work actually taken: marking every landmark makes
+  the map a tourist guide, marking the one you were sent to makes it an
+  instruction.
 - **A townsperson's round is derived from the clock, not sent.** (Phase 51) The
   same call the day/night cycle made, for a stronger reason. An NPC's position
   depends on nothing any player does, so a message would be per-frame bandwidth
@@ -5883,7 +6058,7 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 51 complete (2026-08-21). **The item system rebuilt and
+Phase 0 through 52 complete (2026-08-21). **The item system rebuilt and
 followed through, damage that knows what it is made of, every timed effect in
 one table with a row on screen, a front door worth walking through, a town to
 walk through it into — and now a material for the one element nobody could
@@ -5898,6 +6073,20 @@ lightning for a seam — so the counter to a golem is a thing you get by killing
 golems the slow way first. And the golem now THROWS lightning as well as folding
 to it, because before that, five elements could be worn against and only four
 could ever be thrown at you.
+
+**Phase 52 — Waystones, and two verbs the world was already laid out for.** Six
+quests had three verbs between them and none of them mentioned the deepest thing
+about this world: every camp, ring and band is measured from spawn, so walking
+further out IS the progression. There are four standing stones out there now —
+the first built things past the palisade, one per band, spiralling outward round
+the compass — and `reach` sends you to them. The stones were most of the work,
+because the verb is ten lines and is worthless without somewhere worth arriving.
+`salvage`, which had been a `QuestObjective` variant with nothing pointing at it
+since the day quests shipped, is wired too. Crediting a position is deliberately
+not a per-packet database read: four hypots run every `MOVE` and the quest table
+opens only on the tick somebody actually arrives. The minimap grew rim arrows
+for work in hand, because the nearest stone is four times further than the
+widest zoom can show.
 
 **Phase 51 — Emberhold, dressed.** Three things the user saw and the tests
 could not. A SKELETON on every character — M49.2’s silhouette testing against

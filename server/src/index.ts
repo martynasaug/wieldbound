@@ -222,6 +222,7 @@ import {
   propPosition,
 } from "../../shared/town.ts";
 import { SHOP_OUTPUT_RARITY, shopEntry } from "../../shared/shop.ts";
+import { landmarkAt } from "../../shared/landmarks.ts";
 import {
   offerStateFor,
   questDef,
@@ -2250,6 +2251,38 @@ function advanceQuests(
   if (changed) sendQuestState(sockets.get(playerId), playerId);
 }
 
+/**
+ * Where each player was last seen standing, as a waystone id or null.
+ *
+ * The whole point of holding this is that ARRIVING is an event and STANDING is
+ * not. `MOVE` arrives many times a second per player; `advanceQuests` opens the
+ * quest table, so running it per packet would put a database read on the
+ * movement path for every player in the world, permanently, to answer a
+ * question whose answer changes about once an hour.
+ *
+ * So the cheap geometric test runs every packet and the expensive one runs on
+ * the EDGE — the tick where somebody who was nowhere is suddenly somewhere.
+ */
+const standingAt = new Map<string, string | null>();
+
+/**
+ * Credits a `reach` objective the moment somebody walks into a waystone's ring.
+ *
+ * Counted off the position the server already holds and already corrects, which
+ * is the rule every other objective obeys: a kill it credited through the
+ * threat table, a gather it resolved, a forge it charged for. Nothing here
+ * introduces a new thing to track — it reads the one number movement was
+ * already writing.
+ */
+function noteLandmarkArrival(playerId: string, x: number, y: number): void {
+  const here = landmarkAt(x, y);
+  const id = here?.id ?? null;
+  if (standingAt.get(playerId) === id) return;
+  standingAt.set(playerId, id);
+  if (!here) return;
+  advanceQuests(playerId, (o) => (o.kind === "reach" && o.landmark === here.id ? 1 : 0));
+}
+
 /** The whole wallet, in one message. */
 function sendMaterials(socket: WebSocket, playerId: string): void {
   if (socket.readyState !== WebSocket.OPEN) return;
@@ -2408,6 +2441,7 @@ wss.on("connection", (socket) => {
       );
       p.x = wanted.x;
       p.y = wanted.y;
+      noteLandmarkArrival(id, p.x, p.y);
 
       const now = Date.now();
       if (now - (lastSavedAt.get(id) ?? 0) >= SAVE_INTERVAL_MS) {
@@ -2606,6 +2640,11 @@ wss.on("connection", (socket) => {
         `Salvaged ${count} item${count === 1 ? "" : "s"}: ${describeCost(total)}.`,
         "#c9b47a",
       );
+      // Counted by the batch's real total rather than as one event, for the
+      // reason gathering is counted by yield: the same three items are one
+      // click here and three clicks on the other tab, and a tracker that
+      // disagreed with the bag would read as a bug.
+      advanceQuests(id, (o) => (o.kind === "salvage" ? count : 0));
       return;
     }
 
@@ -2627,6 +2666,7 @@ wss.on("connection", (socket) => {
         );
         sendRecipes(socket, id);
       }
+      advanceQuests(id, (o) => (o.kind === "salvage" ? 1 : 0));
       return;
     }
 

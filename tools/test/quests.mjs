@@ -14,6 +14,9 @@ import {
   MONSTER_LABELS,
   bandAt,
   PLAYER_SPAWN,
+  WORLD_WIDTH,
+  WORLD_HEIGHT,
+  AGGRO_RANGE_PX,
   xpToNextLevel,
 } from "../../shared/protocol-types.ts";
 import { ITEM_BASES, CONSUMABLES, MATERIALS } from "../../shared/items.ts";
@@ -28,7 +31,18 @@ import {
   rewardLabel,
   lockReason,
 } from "../../shared/quests.ts";
-import { TOWN_NPCS } from "../../shared/town.ts";
+import { TOWN_NPCS, TOWN_RADIUS_PX } from "../../shared/town.ts";
+import {
+  LANDMARKS,
+  LANDMARK_REACH_PX,
+  LANDMARK_SPACING_PX,
+  atLandmark,
+  landmarkAt,
+  landmarkBand,
+  landmarkById,
+  landmarkPosition,
+} from "../../shared/landmarks.ts";
+import { readFileSync } from "node:fs";
 
 let failures = 0;
 const fail = (msg) => {
@@ -222,6 +236,171 @@ for (const q of QUESTS) {
 }
 // Spawn is band 1, which is what makes "the first quest is next door" true.
 if (bandAt(PLAYER_SPAWN.x, PLAYER_SPAWN.y) !== 1) fail("spawn is not in band 1");
+
+// --- The waystones ----------------------------------------------------------
+// Four standing stones in open country, and every way they can be wrong is
+// silent in exactly the way a misplaced town prop was:
+//
+//   * One inside a monster camp is a landmark you cannot stand at without a
+//     fight you were never asked to have — and a `reach` quest that is really a
+//     kill quest is a quest whose level gate is a lie.
+//   * One on top of an ore node is a landmark that eats a resource, and a node
+//     drawn inside a five-metre slab.
+//   * Two close together are two quests one walk finishes.
+//   * One outside the world is a quest that cannot be completed at all.
+//
+// None of them throws. All of them are one bearing away.
+
+section("the waystones");
+{
+  const src = readFileSync(new URL("../../server/src/index.ts", import.meta.url), "utf8");
+  const at = (r, a) => ({
+    x: PLAYER_SPAWN.x + Math.cos((a * Math.PI) / 180) * r,
+    y: PLAYER_SPAWN.y + Math.sin((a * Math.PI) / 180) * r,
+  });
+
+  // Read the real camp and node tables out of the server rather than restating
+  // them. A copy here would agree on the day it was written and quietly stop
+  // agreeing the first time a camp moved — which is the whole failure this is
+  // meant to catch.
+  const camps = [
+    ...src.matchAll(/ringPack\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(\d+)\s*,\s*(\d+)/g),
+  ].map((m) => ({ id: m[1], ...at(+m[3], +m[4]) }));
+  const nodes = [];
+  for (const m of src.matchAll(
+    /ringNodes\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(-?\d+)/g,
+  )) {
+    const [, prefix, , radius, count, start] = m;
+    for (let i = 0; i < +count; i++) {
+      nodes.push({ id: `${prefix}-${i + 1}`, ...at(+radius, +start + (360 / +count) * i) });
+    }
+  }
+  if (camps.length === 0 || nodes.length === 0) fail("could not read the camps or nodes");
+
+  // A pack reaches this far in from its own centre — the same number the town
+  // test uses for "nothing spawns inside the walls".
+  const PACK_REACH_PX = 70;
+  // Comfortably outside aggro, so arriving is not automatically a fight.
+  const CAMP_CLEARANCE_PX = AGGRO_RANGE_PX;
+  // Far enough that a node is not standing in the stone.
+  const NODE_CLEARANCE_PX = 140;
+
+  for (const l of LANDMARKS) {
+    const p = landmarkPosition(l);
+
+    if (l.radiusPx <= TOWN_RADIUS_PX) {
+      fail(`"${l.name}" stands inside Emberhold — the whole point is that it is out there`);
+    }
+    // The world is wider than it is tall, so the short axis is the real bound.
+    if (
+      Math.abs(p.x - PLAYER_SPAWN.x) > WORLD_WIDTH / 2 - 200 ||
+      Math.abs(p.y - PLAYER_SPAWN.y) > WORLD_HEIGHT / 2 - 200
+    ) {
+      fail(`"${l.name}" is outside the world, or close enough to its edge to be unreachable`);
+    }
+
+    let worstCamp = Infinity;
+    let campId = "";
+    for (const c of camps) {
+      const d = Math.hypot(c.x - p.x, c.y - p.y) - PACK_REACH_PX;
+      if (d < worstCamp) {
+        worstCamp = d;
+        campId = c.id;
+      }
+    }
+    if (worstCamp < CAMP_CLEARANCE_PX) {
+      fail(
+        `"${l.name}" stands ${worstCamp.toFixed(0)}px from the "${campId}" pack — ` +
+          `inside its aggro, so reaching it is a fight nobody asked for`,
+      );
+    }
+
+    let worstNode = Infinity;
+    let nodeId = "";
+    for (const n of nodes) {
+      const d = Math.hypot(n.x - p.x, n.y - p.y);
+      if (d < worstNode) {
+        worstNode = d;
+        nodeId = n.id;
+      }
+    }
+    if (worstNode < NODE_CLEARANCE_PX) {
+      fail(`"${l.name}" stands ${worstNode.toFixed(0)}px from node "${nodeId}"`);
+    }
+
+    if (!l.blurb || l.blurb.length < 40) fail(`"${l.name}" has no blurb`);
+    // Standing at it has to satisfy the check, and standing well short must not.
+    if (!atLandmark(l, p.x, p.y)) fail(`"${l.name}" does not register when you stand on it`);
+    if (atLandmark(l, p.x + LANDMARK_REACH_PX * 2, p.y)) {
+      fail(`"${l.name}" registers from twice its own reach away`);
+    }
+
+    console.log(
+      `  ${l.name}: band ${landmarkBand(l)}, ${l.radiusPx}px out on bearing ${l.angleDeg} — ` +
+        `nearest camp ${worstCamp.toFixed(0)}px, nearest node ${worstNode.toFixed(0)}px`,
+    );
+  }
+
+  // No two close enough that one walk finishes both.
+  for (let i = 0; i < LANDMARKS.length; i++) {
+    for (let j = i + 1; j < LANDMARKS.length; j++) {
+      const a = landmarkPosition(LANDMARKS[i]);
+      const b = landmarkPosition(LANDMARKS[j]);
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < LANDMARK_SPACING_PX) {
+        fail(`${LANDMARKS[i].name} and ${LANDMARKS[j].name} are ${d.toFixed(0)}px apart`);
+      }
+    }
+  }
+
+  // `landmarkAt` has to be unambiguous, which is the property the spacing rule
+  // exists to guarantee — assert the consequence rather than trusting it.
+  for (const l of LANDMARKS) {
+    const p = landmarkPosition(l);
+    const found = landmarkAt(p.x, p.y);
+    if (found?.id !== l.id) {
+      fail(`standing at "${l.name}" resolves to "${found?.id ?? "nothing"}"`);
+    }
+  }
+  if (landmarkAt(PLAYER_SPAWN.x, PLAYER_SPAWN.y)) fail("spawn counts as standing at a waystone");
+
+  // Every `reach` quest must name a real one, and its level gate must follow
+  // the band the stone is ACTUALLY in — the walk is the difficulty, so a gate
+  // typed independently of the radius is two numbers that agree until one moves.
+  for (const q of QUESTS) {
+    if (q.objective.kind !== "reach") continue;
+    const mark = landmarkById(q.objective.landmark);
+    if (!mark) {
+      fail(`"${q.name}" sends you to "${q.objective.landmark}", which does not exist`);
+      continue;
+    }
+    if (q.objective.count !== 1) {
+      fail(`"${q.name}" asks you to reach a place ${q.objective.count} times`);
+    }
+    const band = landmarkBand(mark);
+    // Roughly the kill-quest rule, loosened by one because walking past a camp
+    // is a choice and standing in one is not.
+    if (band > q.requiresLevel + 2) {
+      fail(
+        `"${q.name}" sends a level-${q.requiresLevel} character to band ${band} — ` +
+          `too far for the gate it is behind`,
+      );
+    }
+    if (!/stone/i.test(q.brief)) {
+      fail(`"${q.name}" never mentions a stone, so nobody knows what they are looking for`);
+    }
+    console.log(`  "${q.name}" — ${mark.name}, band ${band}, from level ${q.requiresLevel}`);
+  }
+
+  // And every stone must be somewhere somebody is sent, or it is scenery with a
+  // name and a nameplate that nothing in the game ever refers to.
+  const targeted = new Set(
+    QUESTS.filter((q) => q.objective.kind === "reach").map((q) => q.objective.landmark),
+  );
+  for (const l of LANDMARKS) {
+    if (!targeted.has(l.id)) fail(`nothing ever sends anybody to "${l.name}"`);
+  }
+}
 
 console.log(failures === 0 ? "\nOK — the work checks out." : `\n${failures} failure(s).`);
 process.exit(failures === 0 ? 0 : 1);

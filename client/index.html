@@ -1739,7 +1739,13 @@
          the player is not doing. */
       #quest-tracker {
         position: absolute;
-        right: 14px;
+        /* THE MINIMAP'S OWN RIGHT EDGE, not the window's. It was 14px, which put
+           the panel underneath the dock rail — invisible for three phases
+           because nothing had ever been long enough to reach that far, and
+           obvious the moment a row read "The Sunken Stone — 1700 away". The map
+           above it already clears the buttons at 82px; the tracker hangs off
+           the map, so it takes the same edge. */
+        right: 82px;
         /* Under the minimap, wherever the minimap currently ends. It publishes
            its own height as --minimap-bottom for exactly this — the map is
            resizable and a hardcoded offset would collide with it at two of

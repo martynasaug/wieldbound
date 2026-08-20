@@ -268,6 +268,9 @@ export const ICON_MAP = {
   refine: "delapouite/melting-metal",
   // A rune, both as a thing you hold and as the verb that cuts it in.
   etch: "lorc/rune-stone",
+  // The waystones out in the field, and the objective marker that points at
+  // them. A menhir, because that is what they are.
+  waystone: "delapouite/menhir",
   reforge: "lorc/fire-shield",
   salvage: "delapouite/hammer-break",
 };

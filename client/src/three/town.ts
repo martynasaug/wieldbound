@@ -90,9 +90,31 @@ const PALETTE = {
   linen: 0xcfc3a6,
   /** Fresh-cut timber, for the cart and the boards. Lighter than `timberLight`. */
   plank: 0x8a6b45,
+  /**
+   * Rough rock, for the waystones out in the field.
+   *
+   * Not `stone`, and the difference is coursed masonry. Every grey surface in
+   * this file is a thing somebody BUILT — a wall, a plinth, a well head — so
+   * `stone` carries a bonded-block texture and is right for all of them. A
+   * standing stone is a rock that was dragged upright, and the first version
+   * borrowed `stone` and came out looking like a brick chimney in a field.
+   *
+   * Warmer and a shade lighter than `stone`, so a waystone reads as something
+   * that came out of the same ground it stands on rather than as a piece of the
+   * town that walked off.
+   */
+  rock: 0x968f81,
+  rockDark: 0x736c60,
+  /**
+   * Turned earth. The same brown the back lane is painted in, and deliberately
+   * the same NUMBER rather than a shade near it: a path behind the inn and the
+   * spoil round a leaning waystone are the same substance, and two browns half
+   * a step apart is how a world stops looking like one place.
+   */
+  dirt: 0x6f6047,
 } as const;
 
-type MatKey = keyof typeof PALETTE;
+export type MatKey = keyof typeof PALETTE;
 
 // --- Surfaces ---------------------------------------------------------------
 // Flat colour was the first pass and it was the right first pass — it settled
@@ -134,6 +156,12 @@ const TEX_SCALE: Partial<Record<MatKey, number>> = {
   bloomAlt: 1.6,
   linen: 0.8,
   plank: 1.0,
+  // Coarse, and much larger than masonry: the mottling on a five-metre monolith
+  // should be a handful of patches, not a hundred. At the masonry's 0.6 the
+  // same drawing reads as gravel glued to a slab.
+  rock: 1.9,
+  rockDark: 1.9,
+  dirt: 1.3,
 };
 
 function canvas2d(size: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
@@ -272,6 +300,57 @@ function masonryTexture(): HTMLCanvasElement {
     }
   }
   speckle(ctx, size, rand, 4200, 0.14);
+  return canvas;
+}
+
+/**
+ * Weathered rock: broad blotches, a few cracks, and grit over the top.
+ *
+ * Near-white and multiplying the palette like every other texture here — it is
+ * a pattern of light and shade, and one place decides what colour rock is.
+ * Deliberately has no repeating structure at all: masonry needs courses to read
+ * as built, and this needs the opposite, because the moment a monolith shows a
+ * grid it stops being a rock.
+ */
+function rockTexture(): HTMLCanvasElement {
+  const size = 256;
+  const { canvas, ctx } = canvas2d(size);
+  const rand = seeded(7717);
+  ctx.fillStyle = "#dcdcdc";
+  ctx.fillRect(0, 0, size, size);
+  // Blotches, wrapped so the tile has no findable edge.
+  for (let i = 0; i < 46; i++) {
+    const r = 14 + rand() * 46;
+    const shade = 196 + Math.floor(rand() * 54);
+    ctx.fillStyle = `rgba(${shade},${shade},${shade},${0.3 + rand() * 0.4})`;
+    const x = rand() * size;
+    const y = rand() * size;
+    wrapped(ctx, size, () => {
+      ctx.beginPath();
+      ctx.ellipse(x, y, r, r * (0.6 + rand() * 0.7), rand() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  // Cracks. Short, angular and few — a crack per face at this scale, not a web.
+  for (let i = 0; i < 14; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    ctx.strokeStyle = `rgba(120,120,120,${0.25 + rand() * 0.35})`;
+    ctx.lineWidth = 0.7 + rand() * 1.4;
+    wrapped(ctx, size, () => {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      let cx = x;
+      let cy = y;
+      for (let s = 0; s < 3; s++) {
+        cx += (rand() - 0.5) * 46;
+        cy += (rand() - 0.5) * 46;
+        ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+    });
+  }
+  speckle(ctx, size, rand, 6200, 0.2);
   return canvas;
 }
 
@@ -440,6 +519,11 @@ const TEXTURE_SOURCES: Partial<Record<MatKey, () => HTMLCanvasElement>> = {
   bloom: foliageTexture,
   bloomAlt: foliageTexture,
   plank: woodTexture,
+  rock: rockTexture,
+  rockDark: rockTexture,
+  // Earth borrows the rock's mottling: it is broad blotches and grit either
+  // way, and what makes one soil and the other stone is the colour over it.
+  dirt: rockTexture,
 };
 
 /** Built once each; several palette entries deliberately share a drawing. */
@@ -544,7 +628,7 @@ const materials = new Map<MatKey, THREE.MeshStandardMaterial>();
  */
 const litGlass: THREE.MeshStandardMaterial[] = [];
 
-function materialFor(key: MatKey): THREE.MeshStandardMaterial {
+export function materialFor(key: MatKey): THREE.MeshStandardMaterial {
   const existing = materials.get(key);
   if (existing) return existing;
   const mat = new THREE.MeshStandardMaterial({
@@ -625,7 +709,18 @@ function gableGeometry(width: number, height: number, depth: number): THREE.Buff
  * no scene graph at all — which is the point: a building becomes a handful of
  * static meshes with nothing to update.
  */
-class Builder {
+/**
+ * Merges a pile of primitives into one mesh per material.
+ *
+ * EXPORTED, and it is the one thing in this file that is not about Emberhold.
+ * The waystones out in the field are built with it: they are boxes and prisms
+ * in the same palette, surfaced with the same procedural masonry, and the
+ * alternative was a second copy of nine canvas textures so that a standing
+ * stone could be the same grey as the town wall. A landmark that does not match
+ * the place it was cut for is the same mistake a downloaded building pack would
+ * have been.
+ */
+export class Builder {
   private readonly parts = new Map<MatKey, THREE.BufferGeometry[]>();
   private readonly matrix = new THREE.Matrix4();
   private readonly euler = new THREE.Euler();
@@ -2015,7 +2110,7 @@ function cobbleTexture(): THREE.Texture {
   return tex;
 }
 
-function roadTexture(): THREE.Texture {
+export function roadTexture(): THREE.Texture {
   const w = 128;
   const h = 64;
   const canvas = document.createElement("canvas");
@@ -2517,7 +2612,7 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
  * the fade only needs geometry where it happens, and a uniformly subdivided disc
  * spends most of its vertices in the middle where the alpha is a constant 1.
  */
-function ringedDisc(radius: number, segments: number, bands: number[]): THREE.BufferGeometry {
+export function ringedDisc(radius: number, segments: number, bands: number[]): THREE.BufferGeometry {
   const positions: number[] = [];
   const uvs: number[] = [];
   const colors: number[] = [];

@@ -1,7 +1,7 @@
 Interface icons
 ===============
 
-199 icons from game-icons.net, baked into client/src/ui/icons.ts by
+200 icons from game-icons.net, baked into client/src/ui/icons.ts by
 tools/art/icons.mjs. Licensed CC BY 3.0 (some contributors release CC0); see
 https://github.com/game-icons/icons/blob/master/license.txt for the per-author
 terms.
@@ -217,5 +217,6 @@ Icon key -> source file:
   forge                  lorc/anvil-impact.svg
   refine                 delapouite/melting-metal.svg
   etch                   lorc/rune-stone.svg
+  waystone               delapouite/menhir.svg
   reforge                lorc/fire-shield.svg
   salvage                delapouite/hammer-break.svg

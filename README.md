@@ -114,12 +114,25 @@ unavailable.
   be in different places. Talking to somebody is measured to where they are
   standing; staying in the conversation is measured to their post, so nobody
   walks out of their own shop.
-- **Six quests, counted off things the server already resolves** — a kill it
-  credited through the threat table, a gather it worked out, a forge it charged
-  you for. Kill credit follows the experience rule (everyone who damaged it)
-  rather than the loot rule (whoever did most), so questing together is not
+- **Eleven quests in five verbs, counted off things the server already
+  resolves** — a kill it credited through the threat table, a gather it worked
+  out, a forge it charged you for, a salvage it just performed, and **a place
+  you walked to**. Kill credit follows the experience rule (everyone who damaged
+  it) rather than the loot rule (whoever did most), so questing together is not
   worse than questing alone. A tracker sits under the minimap and hides itself
-  entirely when you have taken nothing.
+  entirely when you have taken nothing — and a quest that names a place counts
+  down the distance instead of showing a counter that can only ever say two
+  things.
+- **Four waystones, and a reason to walk to them** — the first built things
+  outside the palisade, one for each difficulty band past the first, spiralling
+  outward round the compass so no two are on the same trip. The Gate Stone with
+  a tally scratched into it, the Sunken leaning out of its own spoil, the Hollow
+  split wide enough to walk through, and the Ashen that nobody in Emberhold has
+  stood at. They exist because this world's one rule is that distance from spawn
+  IS difficulty, and until now nothing had ever said so out loud: "get to the
+  third ring" is a number, and "get to the Hollow Stone" is somewhere to go. The
+  minimap grows a rim arrow pointing at whichever one you have been sent to,
+  because the nearest is four times further out than the widest zoom can show.
 - **A world with ground in it** — a tiled PBR surface that mixes grass into
   dirt under one noise field and drifts its colour under another, so the tiling
   has no findable period, scattered with 4,800 instanced plants. None of that
@@ -298,11 +311,14 @@ shared/   protocol-types.ts — message shapes AND the game's formulas,
 monster stats, skills and gear aggregation all live there, so the client's stat
 sheet computes exactly what the server resolves combat with.
 `shared/town.ts`, `shared/shop.ts` and `shared/quests.ts` are Emberhold —
-where every building and every townsperson stands, what the Provisioner
-stocks, and what the watch and the inn want doing. All three are in server
-pixels like the rest of the protocol, and the wall collision lives with them
-rather than in the client, so the moment the server wants to know where a
-player may stand the two cannot disagree.
+where every building and every townsperson stands (and the round each of them
+walks, derived from the clock so nothing has to be sent for it), what the
+Provisioner stocks, and what the watch and the inn want doing. All three are in
+server pixels like the rest of the protocol, and the wall collision lives with
+them rather than in the client, so the moment the server wants to know where a
+player may stand the two cannot disagree. `shared/landmarks.ts` is the same idea
+pointed outward: the four waystones, in the same polar terms, so the stone the
+client draws and the stone the server credits you for standing at are one entry.
 `shared/items.ts` sits beside it and owns the *content* — every base item, the
 quality ladder, the affix tables and the smithy's costs. The dependency runs one
 way (items imports protocol-types, never the reverse), so one file is the wire

@@ -119,12 +119,16 @@ import { DialoguePanel, type DialogueAction } from "../ui/DialoguePanel";
 import { QuestTracker } from "../ui/QuestTracker";
 import { SHOP_STOCK } from "../../../shared/shop";
 import {
+  QUESTS,
   objectiveLabel,
   offerStateFor,
   questsFrom,
+  questSatisfied,
   rewardLabel,
   lockReason,
 } from "../../../shared/quests";
+import { landmarkById, landmarkPosition } from "../../../shared/landmarks";
+import { buildWaystones, WAYSTONE_PLATE_HEIGHT, type WaystoneVisual } from "./waystones";
 import {
   NPC_TALK_RANGE_PX,
   NPC_TETHER_PX,
@@ -347,6 +351,8 @@ export class Game {
    *  its own — an NPC in `players` or `monsters` would be selectable as an ally
    *  or attackable as an enemy, and both are wrong. */
   private npcs = new Map<string, NpcVisual>();
+  /** The four standing stones. Built once and never touched again. */
+  private waystones: WaystoneVisual[] = [];
 
   // --- authoritative local state (server position is in px, as in the 2D game)
   private playerId = "";
@@ -810,6 +816,13 @@ export class Game {
     // World.clearDistance — walls move the camera, trees are faded instead.
     this.world.setCameraColliders(this.town.buildings);
 
+    // The waystones, for the same reason and at the same moment: they are boxes
+    // in the town's own palette, they cost a millisecond, and one of them is
+    // the first thing a player walks toward once the watch has sent them out.
+    // Into `decor`, which is the group the camera fades — see the note in
+    // waystones.ts.
+    this.waystones = buildWaystones(this.world.decor);
+
     const decor = this.world.buildDecor();
     const body = this.localActor.load();
     const people = buildNpcs(this.world.scene).then((npcs) => {
@@ -1149,6 +1162,7 @@ export class Game {
 
     this.minimap.setSnapshot({
       drops: dropBlips,
+      guides: this.objectiveGuides(),
       player: { x: self.position.x, z: self.position.z, facing: self.bearing },
       players,
       monsters,
@@ -2441,6 +2455,33 @@ export class Game {
     if (dist > NPC_TETHER_PX) this.dialogue.close();
   }
 
+  /**
+   * Where the player has been told to go, for the map's rim arrows.
+   *
+   * Only ACTIVE reach quests, and only the ones not yet satisfied. Marking all
+   * four waystones permanently would make the map a tourist guide; marking the
+   * one you took work for makes it an instruction. It is also why the arrow can
+   * be trusted: if it is there, somebody asked you to walk that way.
+   */
+  private objectiveGuides(): { x: number; z: number; label: string; distancePx: number }[] {
+    const out: { x: number; z: number; label: string; distancePx: number }[] = [];
+    for (const entry of this.questTracker.activeQuests) {
+      const def = QUESTS.find((q) => q.id === entry.id);
+      if (!def || def.objective.kind !== "reach") continue;
+      if (questSatisfied(def, entry.count)) continue;
+      const mark = landmarkById(def.objective.landmark);
+      if (!mark) continue;
+      const at = landmarkPosition(mark);
+      out.push({
+        x: toWorldX(at.x),
+        z: toWorldZ(at.y),
+        label: mark.name,
+        distancePx: Math.hypot(this.playerX - at.x, this.playerY - at.y),
+      });
+    }
+    return out;
+  }
+
   /** Distance from the player to a monster, in server pixels. */
   private distanceTo(vis: MonsterVisual): number {
     return Math.hypot(vis.state.x - this.playerX, vis.state.y - this.playerY);
@@ -2667,6 +2708,10 @@ export class Game {
     updateNpcs(this.npcs);
     for (const n of this.npcs.values()) n.actor.update(dt);
     this.updateDialogueRange();
+    // The tracker's own no-op guard is the thing that makes this free: it keys
+    // on a distance rounded to fifty pixels, so this rebuilds the panel about
+    // twice a second while walking and never while standing still.
+    this.questTracker.setPlayerPosition(this.playerX, this.playerY);
 
     if (this.localActor) {
       this.world.follow(this.localActor.position.x, this.localActor.position.z, dt);
@@ -2955,6 +3000,16 @@ export class Game {
     const eye = this.world.camera.position;
     const rangeTo = (x: number, z: number) => Math.hypot(x - eye.x, z - eye.z);
 
+    // Which stones are currently somebody's business. Built once per frame
+    // rather than per plate, because it walks the quest list.
+    const guideTargets = new Set<string>();
+    for (const entry of this.questTracker.activeQuests) {
+      const def = QUESTS.find((q) => q.id === entry.id);
+      if (def?.objective.kind === "reach" && !questSatisfied(def, entry.count)) {
+        guideTargets.add(def.objective.landmark);
+      }
+    }
+
     for (const [id, actor] of this.players) {
       if (!actor.loaded) continue;
       const p = actor.position;
@@ -3025,6 +3080,26 @@ export class Game {
         icon: "dock-craft",
         distance: rangeTo(obj.position.x, obj.position.z),
       });
+    }
+
+    // The waystones. A `node` plate rather than a `station` banner: a standing
+    // stone is a place, not a thing you use, and the dim pill is the hierarchy's
+    // way of saying "this is here, it is not asking anything of you". It goes
+    // gold and loses the dimming only while it is what somebody has told you to
+    // walk to, which is the one moment it IS asking something.
+    for (const stone of this.waystones) {
+      const wanted = guideTargets.has(stone.def.id);
+      this.hud.plate(
+        `waystone-${stone.def.id}`,
+        this.world.project(stone.x, WAYSTONE_PLATE_HEIGHT, stone.z, 40),
+        {
+          kind: wanted ? "station" : "node",
+          name: stone.def.name,
+          icon: "waystone",
+          dim: !wanted,
+          distance: rangeTo(stone.x, stone.z),
+        },
+      );
     }
 
     // Townspeople. `engaged` is reused to mean "close enough to talk", which is

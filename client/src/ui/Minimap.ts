@@ -40,6 +40,17 @@ export interface MinimapSnapshot {
   monsters: MinimapMonster[];
   nodes: MinimapNode[];
   stations: Blip[];
+  /**
+   * Where you have been told to go.
+   *
+   * Almost always OFF the map — the nearest waystone is 1,560 server pixels
+   * from spawn and the widest zoom shows about a third of that — which is
+   * exactly why these are not blips. A dot that is only visible once you have
+   * nearly arrived is a dot that helps at the one moment you no longer need it,
+   * so a guide is clamped to the rim and drawn as an arrow pointing at the
+   * thing, with how far it still is underneath.
+   */
+  guides: { x: number; z: number; label: string; distancePx: number }[];
   /** Loot on the ground, each carrying its quality's colour. */
   drops: { x: number; z: number; color: string }[];
   /** Half-extents of the playable rectangle, for the boundary outline. */
@@ -59,6 +70,7 @@ export interface MinimapSettings {
   showPlayers: boolean;
   showStations: boolean;
   showDrops: boolean;
+  showGuides: boolean;
   showGrid: boolean;
   showCoords: boolean;
   opacity: number;
@@ -76,6 +88,7 @@ const DEFAULTS: MinimapSettings = {
   showPlayers: true,
   showStations: true,
   showDrops: true,
+  showGuides: true,
   showGrid: true,
   showCoords: true,
   opacity: 1,
@@ -100,6 +113,7 @@ const COLORS = {
   player: "#6fc4ff",
   self: "#ffd873",
   station: "#e2b04f",
+  guide: "#ffd873",
 };
 
 function loadSettings(): MinimapSettings {
@@ -200,6 +214,7 @@ export class Minimap {
       ["showPlayers", "Players"],
       ["showStations", "Workbench"],
       ["showDrops", "Loot"],
+      ["showGuides", "Objectives"],
       ["showGrid", "Grid"],
       ["showCoords", "Coordinates"],
       ["rotate", "Rotate with facing"],
@@ -305,6 +320,76 @@ export class Minimap {
     this.draw();
   }
 
+  /**
+   * An objective marker: an arrow at the rim when it is off the map, a ring
+   * when it is on it, and the remaining distance either way.
+   *
+   * Clamped rather than clipped, and the two shapes are the whole design. A
+   * marker that vanished at the edge would be useless for the case it exists
+   * for — every waystone is further away than the widest zoom reaches — and one
+   * that stayed an arrow after you arrived would be pointing at your own feet.
+   * Switching to a ring at the moment it comes on the map is the map saying
+   * "you can see it now".
+   */
+  private drawGuide(
+    ctx: CanvasRenderingContext2D,
+    at: [number, number],
+    half: number,
+    shape: "circle" | "square",
+    guide: { label: string; distancePx: number },
+  ): void {
+    let [px, py] = at;
+    const dx = px - half;
+    const dy = py - half;
+    // The rim, minus room for the arrowhead and the label under it.
+    const rim = half - 16;
+    const dist = Math.hypot(dx, dy);
+    const offMap =
+      shape === "circle" ? dist > rim : Math.abs(dx) > rim || Math.abs(dy) > rim;
+
+    if (offMap) {
+      // Scaled onto the rim along the same bearing, so the arrow points at the
+      // real thing rather than at the nearest corner.
+      const k =
+        shape === "circle"
+          ? rim / (dist || 1)
+          : rim / Math.max(Math.abs(dx), Math.abs(dy), 1);
+      px = half + dx * k;
+      py = half + dy * k;
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(Math.atan2(dy, dx) + Math.PI / 2);
+      ctx.fillStyle = COLORS.guide;
+      ctx.beginPath();
+      ctx.moveTo(0, -6.5);
+      ctx.lineTo(5, 4);
+      ctx.lineTo(-5, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = COLORS.guide;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(px, py, 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(px, py, 1.6, 0, Math.PI * 2);
+      ctx.fillStyle = COLORS.guide;
+      ctx.fill();
+    }
+
+    // Rounded to the nearest ten so it is not a slot machine while you walk.
+    const label = `${Math.round(guide.distancePx / 10) * 10}`;
+    ctx.font = "9px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillText(label, px + 1, py + 8);
+    ctx.fillStyle = COLORS.guide;
+    ctx.fillText(label, px, py + 7);
+  }
+
   /** Replaces the world state the map draws. Called once a frame. */
   setSnapshot(snapshot: MinimapSnapshot): void {
     this.snapshot = snapshot;
@@ -376,6 +461,10 @@ export class Minimap {
         const [px, py] = project(d.x, d.z);
         this.diamond(ctx, px, py, 3.2, d.color);
       }
+    }
+
+    if (s.showGuides) {
+      for (const g of snap.guides) this.drawGuide(ctx, project(g.x, g.z), half, s.shape, g);
     }
 
     if (s.showMonsters) {
