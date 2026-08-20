@@ -3703,6 +3703,86 @@ The middle band of paving between the island and the benches is deliberately
 plain — that is where players stand. The chapel's back yard is the emptiest of
 the six and could take something of its own.
 
+### M51.2 — the monument, and the flags
+Two questions from the user, both about things the tests cannot see: *is the
+statue big enough (2.5 units against a 1.8 player)*, and *is the bunting too
+sparse now the flags are small*. Both were fair, and looking at the answer to
+the first found a third thing nobody had asked about.
+
+**The statue was 1.4 times life size, and that is the wrong number.** Not
+because 2.5 is small in the abstract — it is a head and shoulders over any
+player who walks up to it — but because it stands on a pedestal 2.17 units
+tall. A figure 1.4 times life on a plinth taller than a person reads as
+somebody standing on a box, and the base was out-massing the thing it exists to
+hold up. Civic sculpture sits at about twice life and always has.
+
+Fixed by the figure rather than by the plinth. Cutting the base down would have
+brought the whole monument in under the well's roof and made the middle of the
+square lower than the furniture round it; `STATUE_HEIGHT` is 3.4 now, which is
+1.9 times a player and puts the crown at about 5.5. The ceiling on that is the
+ROOFLINE: the inn's eaves are 4.8, so the monument is the tallest free-standing
+thing in Emberhold and still stands below the ridges around it, which is what a
+village square looks like and what a cathedral square does not.
+
+**The bunting was a wire with something caught on it.** The flags hung 0.15
+wide at 1.5 per unit — one every 67 centimetres, each a fifth as wide as the gap
+beside it. That is not sparse bunting, it is not bunting; from across the
+square it read as a cable with litter on it.
+
+It is also a regression with a date on it. Phase 51 shipped the flags at half a
+metre as three-sided cones, the user caught them hanging over the square like
+arrowheads, and the fix cut them to a flat triangle a fifth the size — and
+nothing put the SPACING back to match. A density and a width are one decision,
+so `BUNTING_FLAG_WIDTH` and `BUNTING_FLAGS_PER_UNIT` now sit next to each other
+with the ratio written between them: real bunting hangs flags about one and a
+half times their own width apart, so the line reads as a band of colour with
+light through it rather than as a row of separate objects. 0.28 wide at 2.4 per
+unit is 42cm centres — the same ratio, at a size legible from the far side of
+the plaza. Same argument the flower heads were sized by.
+
+### The blue ghost on the monument
+Found while framing the statue for a screenshot: there was a mage-shaped
+silhouette painted down it, in the open, at noon — which is exactly what the
+skeleton looked like one milestone ago, and this time the silhouette was
+innocent.
+
+**The Herald was standing behind the statue.** Elsbet Vane had held (215, 272)
+since Phase 49, when the middle of the square was empty and just north of the
+centre was the natural spot for a greeter. The statue moved in underneath her
+and nothing reconsidered it. She is 8 pixels off the monument's own axis, so
+every actor's through-walls outline — M49.2's feature, working perfectly —
+traced a person straight down the one piece of scenery in town that a player is
+meant to look at.
+
+The general rule is worth stating because it is not about statues: **this game
+has one camera bearing.** It looks along -z and the only thing a player may
+change is how far away it is, so how far apart two things appear ACROSS the
+screen is their difference in world x and nothing else. "Behind the statue" is
+therefore not a position somebody can walk out of — it is a permanent property
+of a bearing, and a townsperson who stands there stands there for the life of
+the world. A player passing behind it for a second is the feature; a resident is
+a defect.
+
+So `STATUE_SIGHT_HALF_PX` is 70 — the monument's half-width plus a body's, plus
+room to read the gap — and `tools/test/town.mjs` fails any NPC up-screen of the
+statue and closer than that to its axis. Confirmed by putting Elsbet back where
+she was, which fails with her name and the 8px in it. She stands at (255, 243)
+now, off to one side and still facing the middle.
+
+### Verified
+All nine offline suites, `smoke.mjs` against a real socket, both workspaces
+typechecking clean, and a headless pass over the square at noon, dusk and
+midnight with zero console errors — the monument reads as carved, the flags read
+as flags in lantern light as well as daylight, and the Herald is clear of the
+stone.
+
+One method note for the harness rather than the game: the game's camera is held
+in front of walls, so an attempt to stand far enough back to fit the whole
+monument in one frame gets the camera dragged to four units and fills the screen
+with the back of the player's head. Three framings were lost to that before the
+obvious answer — `setCameraColliders([])` from the console, for the diagnostic
+shot only.
+
 ---
 
 ## Phase 48+ — Revisit and pick from here
@@ -5631,6 +5711,26 @@ rarities), multiple crafting stations. Not committing to order yet.
   artifact, bisection beats theory, and naming the ground meshes (`town-paving`,
   `town-road`, `town-island`) is what made bisection possible from a console.
 
+- **This game has ONE camera bearing, so "behind" is permanent.** (Phase 51)
+  The camera looks along -z and only its distance moves, which means how far
+  apart two things appear across the screen is their difference in world x and
+  nothing else. A townsperson standing up-screen of the monument is not
+  occasionally hidden by it, they are hidden by it forever — and since every
+  actor carries a through-walls silhouette, the Herald was painted down the
+  statue in outline blue at all hours. Placement rules that would be fussy in a
+  game with a free camera are load-bearing in one with a fixed camera, so
+  `STATUE_SIGHT_HALF_PX` is a shared constant and the town test enforces it.
+- **A density and a size are one decision.** (Phase 51) The bunting's flags were
+  shrunk to a fifth of their width to fix the arrowheads, and the spacing stayed
+  where it had been set for the big ones — so the fix for one visual bug quietly
+  created another, and the two constants were far enough apart in the file that
+  nothing connected them. They sit together now with the ratio between them
+  written down, which is the only thing that stops it happening a third time.
+- **Size a monument against the ROOFLINE, not against the player.** (Phase 51)
+  "Taller than a person" is the wrong test; every prop in the square is taller
+  than a person. What makes a figure read as sculpture is beating its own
+  pedestal, and what stops it reading as a cathedral is staying under the eaves
+  of the houses round it. Those two brackets pick the number between them.
 - **You may put a weapon down.** (Phase 50) It reads as a convenience and it is
   not. `classForWeapon` makes bare hands an archetype with its own ten-node
   tree, and with no unequip in the protocol that archetype was reachable exactly
@@ -5682,6 +5782,19 @@ then caught seven props that had been standing in the shop and the cottages
 since the square was widened, none of them visible from anywhere anyone walks.
 The ring bearings are derived from the real footprints now, and there is room
 for seven, not eight.
+
+**M51.2 — the monument, and the flags.** Two things the user asked about and one
+they did not. The statue was 1.4 times life size on a pedestal taller than a
+person, which reads as somebody standing on a box; it is 1.9 times now, bounded
+at the top by the inn's eaves rather than by anything about the player. The
+bunting's flags had been cut to a fifth of their width to fix the arrowheads and
+the SPACING never followed, so the line read as a cable with litter on it — width
+and density are one constant pair now, at the ratio real bunting hangs at. And
+framing the statue for a screenshot found the Herald standing 8 pixels off its
+axis, up-screen: this game has one camera bearing, so "behind the monument" is a
+permanent property of a bearing rather than a place somebody walks through, and
+every actor's through-walls silhouette had been tracing a mage down the stone all
+day. She has moved, and the town test fails anybody who stands there again.
 
 Before that, Phase 50.
 

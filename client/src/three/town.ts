@@ -1115,6 +1115,31 @@ function lantern(
 const BUNTING_CLOTH: MatKey[] = ["buntingRed", "buntingGold", "buntingTeal", "buntingCream"];
 
 /**
+ * How wide one pennant is, and how many hang per unit of string.
+ *
+ * These two are one decision and have to move together, which is why they sit
+ * next to each other rather than at their use sites. The first pass hung flags
+ * 0.15 wide at 1.5 per unit — a flag every 67cm, each one a fifth as wide as
+ * the gap beside it — and from across the square that is not bunting, it is a
+ * wire with something caught on it. The arrowhead fix shrank the cloth (a
+ * tetrahedron half a metre across had to come down) and nothing put the spacing
+ * back to match.
+ *
+ * Real bunting hangs flags at about one and a half times their own width apart,
+ * so the line reads as a band of colour with light through it rather than as a
+ * row of separate objects. 0.28 wide at 2.4 per unit is 42cm centres — the same
+ * ratio, at a size legible from the far side of the plaza. It is the same
+ * argument the flower heads were sized by: at this camera a botanically honest
+ * one is noise on the texture.
+ *
+ * The cord is subdivided per flag, so raising the density also smooths the
+ * catenary. Everything here merges into the town's one static mesh, so the cost
+ * is geometry at load and nothing at all per frame.
+ */
+const BUNTING_FLAG_WIDTH = 0.28;
+const BUNTING_FLAGS_PER_UNIT = 2.4;
+
+/**
  * A line of pennants slung between two points.
  *
  * The catenary is the whole trick: a straight line of flags reads as a
@@ -1135,7 +1160,7 @@ function bunting(
 ): void {
   const rand = seeded(seed);
   const span = Math.hypot(bx - ax, bz - az);
-  const flags = Math.max(4, Math.round(span * 1.5));
+  const flags = Math.max(4, Math.round(span * BUNTING_FLAGS_PER_UNIT));
   const heading = Math.atan2(bz - az, bx - ax);
 
   const pointAt = (t: number) => ({
@@ -1172,7 +1197,7 @@ function bunting(
   for (let i = 1; i < flags; i++) {
     const p = pointAt(i / flags);
     const cloth = BUNTING_CLOTH[i % BUNTING_CLOTH.length];
-    const w = 0.15 + rand() * 0.03;
+    const w = BUNTING_FLAG_WIDTH + rand() * 0.05;
     // Hung in the PLANE of the string, so it is broadside from where the line
     // is being looked along — which is how bunting is actually seen.
     b.add(cloth, pennantGeometry(w, w * 1.5), p.x, p.y, p.z, heading);
@@ -2547,9 +2572,23 @@ function ringedDisc(radius: number, segments: number, bands: number[]): THREE.Bu
 
 /** The town watch, in stone. The same rig every warrior in the world uses. */
 const STATUE_MODEL = "Warrior";
-/** Taller than a player (1.8), so it reads as a monument rather than a person
- *  who has stopped. */
-const STATUE_HEIGHT = 2.5;
+/**
+ * How tall the carved figure is, feet to crown.
+ *
+ * 3.4 — a shade under twice a player's 1.8, which is where civic sculpture
+ * actually sits. The first pass used 2.5 and it was wrong in a way that only
+ * shows up beside the pedestal: 2.5 is 1.4 times life size, and a figure 1.4
+ * times life on a pedestal 2.2 metres tall reads as a person standing on a box
+ * rather than as something somebody carved. The pedestal was out-massing the
+ * sculpture, and the fix is the sculpture rather than a smaller pedestal —
+ * shrinking the base would have made the monument shorter than the well.
+ *
+ * Bounded at the top by the roofline. The inn's eaves are 4.8 and the figure's
+ * crown now lands at about 5.5, so the monument is the tallest FREE-STANDING
+ * thing in Emberhold and still stands below the ridges around it, which is what
+ * a village square looks like and what a cathedral square does not.
+ */
+const STATUE_HEIGHT = 3.4;
 /**
  * Which clip to hold a frame of, best first.
  *

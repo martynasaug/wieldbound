@@ -40,6 +40,7 @@ import {
   insideAnyBuilding,
   pushOutOfBuildings,
   inTown,
+  STATUE_SIGHT_HALF_PX,
 } from "../../shared/town.ts";
 
 let failures = 0;
@@ -178,6 +179,37 @@ for (let i = 0; i < TOWN_NPCS.length; i++) {
   }
 }
 console.log(`  ${TOWN_NPCS.length} people, all outdoors and none crowding another`);
+
+// NOBODY STANDS BEHIND THE MONUMENT.
+//
+// The camera has one bearing and only its distance moves, so "behind the
+// statue" is not a position a player can walk out of — it is a permanent
+// property of a bearing. The Herald had it: she stood 8px off the statue's own
+// axis, up-screen of it, and since every actor in this game carries a
+// through-walls silhouette, the middle of the square had a blue mage-shaped
+// ghost painted down the monument at all hours.
+//
+// The silhouette was doing precisely its job. The placement was the bug, and it
+// is the kind that is invisible in the data and unmissable in a screenshot,
+// which is what a test is for.
+{
+  const statue = propById("statue");
+  if (!statue) fail("no statue in the prop table");
+  else {
+    const at = propPosition(statue);
+    for (const npc of TOWN_NPCS) {
+      const behind = npc.y < at.y; // -z is away from the camera
+      const across = Math.abs(npc.x - at.x);
+      if (behind && across < STATUE_SIGHT_HALF_PX) {
+        fail(
+          `${npc.name} stands behind the statue, ${across.toFixed(0)}px off its axis — ` +
+            `their silhouette will be painted down it`,
+        );
+      }
+    }
+    console.log("  nobody is standing behind the monument");
+  }
+}
 
 const roles = new Set(TOWN_NPCS.map((n) => n.role));
 for (const required of ["vendor", "quest", "guide"]) {

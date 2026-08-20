@@ -302,6 +302,27 @@ export interface TownProp {
 export const SMITHY_RADIUS_PX = 330;
 export const SMITHY_ANGLE_DEG = 140;
 
+/**
+ * How far to either side of the monument's axis counts as "standing behind it".
+ *
+ * The camera in this game has exactly one bearing — it looks along -z and its
+ * distance is the only thing a player may change — so how far apart two things
+ * appear ACROSS the screen is their difference in world x and nothing else.
+ * Anything up-screen of the statue with a small enough x offset is therefore
+ * permanently hidden by it, from every position a player can stand in.
+ *
+ * Which is not a rendering problem, it is a placement one: the Herald stood at
+ * bearing 272, four fifths of a metre off the axis, and every actor in the game
+ * carries a through-walls silhouette. So the monument the whole square is built
+ * around had a blue ghost of a mage painted down it, all day, at every zoom.
+ *
+ * 70px is the statue's own half-width plus a body's, plus room to read the gap.
+ * Only NPCs are checked against it — a player walking behind the statue for a
+ * second is the feature working, and a townsperson standing there for the life
+ * of the world is not.
+ */
+export const STATUE_SIGHT_HALF_PX = 70;
+
 /** A planter either side of every bench. Colour at eye level, and solid. */
 export const PLANTER_OFFSET_DEG = 4.5;
 export const BENCH_RING_PX = 540;
@@ -606,8 +627,16 @@ export const TOWN_NPCS: TownNpc[] = [
     role: "guide",
     body: "mage",
     icon: "class-mage",
-    ...at(215, 272),
-    facingDeg: 92,
+    // OFF THE MONUMENT'S SIGHT LINE, and that is the whole reason for this
+    // bearing. She stood at 272 — 0.2 units off the centre's own axis, which
+    // put her directly behind the statue from the one camera angle this game
+    // has. The result was a herald permanently painted across the monument in
+    // silhouette blue: M49.2's through-walls outline doing exactly what it is
+    // for, on the one piece of scenery in town nobody wants to see through.
+    // See `STATUE_SIGHT_HALF_PX` for the rule, and `tools/test/town.mjs` for
+    // the check that stops it happening again.
+    ...at(255, 243),
+    facingDeg: 63,
     greeting:
       "New in Emberhold? Then let me save you a few deaths. This place has one rule, " +
       "and almost everything else follows from it.",
