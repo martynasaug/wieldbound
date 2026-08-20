@@ -37,12 +37,14 @@ import {
   GARDEN_RING_PX,
   LANTERN_ANGLES,
   LANTERN_RING_PX,
+  ROAD_HALF_WIDTH_PX,
   propById,
+  propPosition,
   inGateway as bearingInGateway,
   type BuildingKind,
   type TownBuilding,
 } from "../../../shared/town";
-import { instantiate } from "./assets";
+import { clipName, instantiate } from "./assets";
 import { PX_PER_UNIT, toWorldX, toWorldZ } from "./World";
 
 // --- Palette ----------------------------------------------------------------
@@ -1456,6 +1458,54 @@ function roadTexture(): THREE.Texture {
   return tex;
 }
 
+/**
+ * The apron of flagstones the statue stands on.
+ *
+ * A ring of dressed slabs round the island, so the road visibly parts round
+ * something rather than running through a box that happens to be in the way.
+ * Laid radially — the courses point at the plinth, which is what a paved circus
+ * round a monument actually looks like and what stops it reading as the same
+ * cobble tile with a different tint.
+ */
+function islandTexture(): THREE.Texture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const rand = seeded(60607);
+  const c = size / 2;
+
+  ctx.fillStyle = "#6a6154";
+  ctx.fillRect(0, 0, size, size);
+
+  // Four courses of radial slabs, each ring offset so the joints break.
+  const rings = [0.3, 0.52, 0.74, 0.98];
+  for (let r = 0; r < rings.length; r++) {
+    const inner = (r === 0 ? 0.1 : rings[r - 1]) * c;
+    const outer = rings[r] * c;
+    const count = 10 + r * 6;
+    const offset = (r % 2) * (Math.PI / count);
+    for (let i = 0; i < count; i++) {
+      const a0 = (i / count) * Math.PI * 2 + offset + 0.012;
+      const a1 = ((i + 1) / count) * Math.PI * 2 + offset - 0.012;
+      const shade = 132 + Math.floor(rand() * 46);
+      ctx.fillStyle = `rgb(${shade},${shade - 4},${shade - 14})`;
+      ctx.beginPath();
+      ctx.arc(c, c, outer - 1.6, a0, a1);
+      ctx.arc(c, c, inner + 1.6, a1, a0, true);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  speckle(ctx, size, rand, 2600, 0.1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
 /** The palisade: posts around the boundary, opening at each gate. */
 function palisade(b: Builder, group: THREE.Group, lanterns: Lantern[]): void {
   const radius = TOWN_RADIUS_PX / PX_PER_UNIT;
@@ -1532,18 +1582,7 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
     return { x: cx + (Math.cos(a) * radiusPx) / PX_PER_UNIT, z: cz + (Math.sin(a) * radiusPx) / PX_PER_UNIT };
   };
 
-  // --- The monument ---------------------------------------------------------
-  // What the square is FOR. Stepped base, plinth, obelisk, and a bronze band
-  // round the top so the eye has somewhere to land.
-  //
-  // Off the exact centre, and so is the smithy now — the middle of the square
-  // is where every player in the game materialises, and anything standing on it
-  // is something they spawn inside. The forge used to be exactly there, which
-  // made the town's focal point a workbench and left arriving players looking
-  // at an anvil from the inside. The four features are spaced round the centre
-  // instead, on opposed bearings, so the square reads as arranged rather than
-  // as a pile.
-  // Positions come from `shared/town.ts` now, not from numbers typed here.
+  // Positions come from `shared/town.ts`, not from numbers typed here.
   // Collision keeps a body out of these same entries, and two copies of a
   // placement is two copies to move next time the square is rearranged — with
   // the failure being an invisible wall in the middle of open paving.
@@ -1552,21 +1591,38 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
     return polar(p.radiusPx, p.angleDeg);
   };
 
-  const monument = prop("monument");
+  // --- The statue's plinth --------------------------------------------------
+  // What the square is FOR, and it stands dead centre.
+  //
+  // The obelisk this replaces was a stack of four grey boxes and a cone, pushed
+  // off to one side because the middle of the square was where every player
+  // materialised. Both halves of that were wrong. A monument that is not on the
+  // centre is not the centre of anything, and the arrival problem was never a
+  // reason to leave the best spot in town empty — it was a reason to move
+  // ARRIVAL, which is what `PLAYER_ARRIVAL` now does.
+  //
+  // Only the base is built here. The figure on top is a real character rig cast
+  // in stone — see `Town.raiseStatue`, and the note there for why that is the
+  // right way to get a good statue out of a project with no sculptor.
+  const statue = prop("statue");
+  // Three shallow steps, square to the road rather than turned 45 degrees: the
+  // road runs east-west past either side of this, and a diamond plan puts a
+  // corner into the carriageway.
   for (let step = 0; step < 3; step++) {
-    const half = 2.5 - step * 0.42;
-    b.box(step === 1 ? "stoneDark" : "stone", half * 2, 0.22, half * 2, monument.x, step * 0.22, monument.z, Math.PI / 4);
+    const half = 2.15 - step * 0.36;
+    b.box(step === 1 ? "stoneDark" : "stone", half * 2, 0.2, half * 2, statue.x, step * 0.2, statue.z);
   }
-  b.box("stone", 1.5, 0.55, 1.5, monument.x, 0.66, monument.z, Math.PI / 4);
-  b.box("stoneDark", 1.24, 0.16, 1.24, monument.x, 1.21, monument.z, Math.PI / 4);
-  b.box("stone", 0.86, 3.1, 0.86, monument.x, 1.37, monument.z, Math.PI / 4);
-  b.box("iron", 0.95, 0.2, 0.95, monument.x, 3.6, monument.z, Math.PI / 4);
-  b.add("iron", new THREE.ConeGeometry(0.62, 1.0, 4), monument.x, 5.05, monument.z, Math.PI / 4);
-  // Four small lamps at the corners of the base, which is what makes it the
-  // brightest thing in the square after dark.
+  // The pedestal: a base moulding, the die, and a cornice under the figure.
+  b.box("stone", 1.62, 0.22, 1.62, statue.x, 0.6, statue.z);
+  b.box("stoneDark", 1.34, 1.15, 1.34, statue.x, 0.82, statue.z);
+  b.box("stone", 1.58, 0.2, 1.58, statue.x, 1.97, statue.z);
+  // A bronze plate on the face that looks back down the road toward the gate.
+  b.box("iron", 0.76, 0.46, 0.05, statue.x, 1.28, statue.z + 0.69);
+  // Four lamps at the corners of the base, which is what makes it the brightest
+  // thing in the square after dark.
   for (const deg of [45, 135, 225, 315]) {
     const a = (deg * Math.PI) / 180;
-    lantern(b, group, monument.x + Math.cos(a) * 2.1, monument.z + Math.sin(a) * 2.1, 1.5, lanterns, 0.4);
+    lantern(b, group, statue.x + Math.cos(a) * 1.95, statue.z + Math.sin(a) * 1.95, 1.5, lanterns, 0.45);
   }
 
   // --- The well -------------------------------------------------------------
@@ -1760,6 +1816,38 @@ function ringedDisc(radius: number, segments: number, bands: number[]): THREE.Bu
   return geo;
 }
 
+// --- The statue -------------------------------------------------------------
+// The one object in Emberhold that is loaded rather than generated, and the
+// exception is the point: everything else here is boxes because a downloaded
+// building would arrive in a different stylisation from the trees behind it.
+// A person is the opposite case — the game already HAS people, in exactly this
+// stylisation, and no arrangement of boxes is going to beat one.
+
+/** The town watch, in stone. The same rig every warrior in the world uses. */
+const STATUE_MODEL = "Warrior";
+/** Taller than a player (1.8), so it reads as a monument rather than a person
+ *  who has stopped. */
+const STATUE_HEIGHT = 2.5;
+/**
+ * Which clip to hold a frame of, best first.
+ *
+ * NAMES RATHER THAN A PATTERN, and that is a scar. The first version matched
+ * `/attack|slash|swing/i` and the rig's clip list happens to contain
+ * `RecieveHit_Attacking` — a recoil — several entries before `Sword_Attack`.
+ * The statue was a stone man flinching, which looked like a bad model and was a
+ * bad regex.
+ *
+ * `Idle_Weapon` wins on purpose. A swing frozen mid-air reads as a person who
+ * has been paused; a figure standing squarely with the sword down reads as
+ * something somebody carved. It also has no root motion in it, so the feet stay
+ * over the middle of the plinth.
+ */
+const STATUE_POSE_ORDER = ["Idle_Weapon", "Sword_Attack", "Idle"];
+/** How far into that clip to stop, as a fraction. */
+const STATUE_POSE_AT = 0.0;
+/** Top of the plinth built in `squareDressing`, in world units. */
+const STATUE_PLINTH_TOP = 2.07;
+
 // --- The town ---------------------------------------------------------------
 
 export class Town {
@@ -1803,6 +1891,89 @@ export class Town {
 
     scene.add(this.group);
     void this.dressWithProps();
+    void this.raiseStatue();
+  }
+
+  /**
+   * The figure on the plinth: a character rig, frozen mid-swing and cast in
+   * stone.
+   *
+   * THE MODEL IS THE GAME'S OWN WARRIOR, and that is the whole idea. This
+   * project has no sculptor and every attempt to build a human out of the box
+   * kit lands somewhere between a snowman and a scarecrow — the obelisk that
+   * stood here was four grey boxes and a cone precisely because a figure was
+   * out of reach. But the game already ships a warrior with a sword, in exactly
+   * the stylisation of everything standing round the square, and a statue is
+   * only a person who has stopped moving and turned the colour of rock.
+   *
+   * So: instantiate the rig, hold one frame of its own animation, and repaint
+   * every surface in the town's stone. It costs one model that is already in
+   * the cache — the same file every warrior in the world is drawn from — and it
+   * is the one thing in Emberhold that could not have been generated.
+   *
+   * Frozen by SAMPLING A CLIP rather than by leaving it in bind pose. An
+   * unposed FBX stands in a T, arms straight out, which reads as a scarecrow
+   * and not as a monument. Playing a clip and stopping the mixer on a chosen
+   * frame gives a pose an animator made, for free.
+   */
+  private async raiseStatue(): Promise<void> {
+    const inst = await instantiate(STATUE_MODEL, STATUE_HEIGHT).catch((err) => {
+      // A missing statue is a bare plinth, not a broken town — the same rule
+      // the props load under. Warned rather than swallowed, because "the middle
+      // of the square is empty" is exactly the kind of thing that goes
+      // unnoticed until somebody screenshots it.
+      console.warn("[town] the statue did not load:", err);
+      return null;
+    });
+    if (!inst) return;
+
+    // One frame of a real animation, held. `mixer.update` once with the clip
+    // playing puts every bone where the animator put it at that instant; the
+    // mixer is then dropped, so nothing ticks for the rest of the session.
+    const named = (want: string) =>
+      inst.animations.find((c) => clipName(c.name).toLowerCase() === want.toLowerCase());
+    let clip: THREE.AnimationClip | undefined;
+    for (const want of STATUE_POSE_ORDER) {
+      clip = named(want);
+      if (clip) break;
+    }
+    clip ??= inst.animations[0];
+    if (clip) {
+      const mixer = new THREE.AnimationMixer(inst.object);
+      const action = mixer.clipAction(clip);
+      action.play();
+      mixer.setTime(clip.duration * STATUE_POSE_AT);
+      inst.object.updateMatrixWorld(true);
+    }
+
+    // Stone, over every surface it has. One shared material: a statue has no
+    // rarity tint, no emissive flash and nothing to fade, so unlike an actor it
+    // has no reason to own a copy per mesh.
+    const stone = materialFor("stone").clone();
+    stone.color.setHex(PALETTE.stone);
+    // Rougher and a shade paler than the plinth, so the figure reads as carved
+    // rather than as an extension of the box it stands on.
+    stone.roughness = 1;
+    stone.metalness = 0;
+    inst.object.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.material = stone;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      // A skinned mesh posed once and never again still gets skinned every
+      // frame unless it is told the bounds are final; without this it is also
+      // culled against a bind-pose box and pops out of view at the screen edge.
+      mesh.frustumCulled = false;
+    });
+
+    const statue = propById("statue")!;
+    const at = propPosition(statue);
+    inst.object.position.set(toWorldX(at.x), STATUE_PLINTH_TOP, toWorldZ(at.y));
+    // Facing back down the road toward the east gate, so anybody walking in
+    // through it is looked at rather than looked past.
+    inst.object.rotation.y = Math.PI / 2;
+    this.group.add(inst.object);
   }
 
   /**
@@ -1875,13 +2046,62 @@ export class Town {
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
     });
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2.9, 4.2), roadMat);
-    road.name = "town-road";
-    road.rotation.x = -Math.PI / 2;
-    road.position.set(cx, 0.02, cz);
-    road.receiveShadow = true;
-    road.renderOrder = 1;
-    this.group.add(road);
+    // Wide enough to pass either side of the statue's island, and the width
+    // comes from the shared constant the layout test walks — so "the road looks
+    // wide enough" and "the road IS wide enough" cannot come apart.
+    const roadWidth = (ROAD_HALF_WIDTH_PX * 2) / PX_PER_UNIT;
+
+    // TWO SEGMENTS, STOPPING AT THE PAVING — not one strip through the middle.
+    //
+    // The comment that used to sit here said the road runs gate to gate and is
+    // paved where it crosses the square, and drew it as a single 58-unit plank
+    // under the plaza on the strength of the paving covering it. It did not.
+    // What the player saw was a dark dirt band lying across the whole lower half
+    // of the square with a hard edge along its far side — and because the ground
+    // is so foreshortened at this camera, that edge read as a dead straight seam
+    // right across the town, in daylight and after dark.
+    //
+    // It survived a shadows-off test, a lights-off test and a terrain test, and
+    // it looked like a renderer bug in all three. It was a plane. Cutting the
+    // road at the paving makes the original sentence literally true: the road
+    // runs gate to gate, and where it crosses the square, it is paving.
+    const roadInner = paveRadius * 0.94;
+    const roadOuter = radius * 1.45;
+    for (const side of [-1, 1]) {
+      const length = roadOuter - roadInner;
+      const segment = new THREE.Mesh(new THREE.PlaneGeometry(length, roadWidth), roadMat);
+      segment.name = "town-road";
+      segment.rotation.x = -Math.PI / 2;
+      segment.position.set(cx + side * (roadInner + length / 2), 0.02, cz);
+      segment.receiveShadow = true;
+      segment.renderOrder = 1;
+      this.group.add(segment);
+    }
+
+    // The island the statue stands on, laid over both. Radial flagstones, so
+    // the middle of the square reads as a place the paving was arranged AROUND
+    // rather than as a plinth dropped onto a car park.
+    const statue = propById("statue")!;
+    const at = propPosition(statue);
+    const island = new THREE.Mesh(
+      new THREE.CircleGeometry((statue.blockRadiusPx * 1.85) / PX_PER_UNIT, 48),
+      new THREE.MeshStandardMaterial({
+        map: islandTexture(),
+        color: 0xa79c8c,
+        transparent: true,
+        roughness: 1,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4,
+      }),
+    );
+    island.name = "town-island";
+    island.rotation.x = -Math.PI / 2;
+    island.position.set(toWorldX(at.x), 0.04, toWorldZ(at.y));
+    island.receiveShadow = true;
+    island.renderOrder = 3;
+    this.group.add(island);
   }
 
   /**

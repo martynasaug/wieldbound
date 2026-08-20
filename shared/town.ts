@@ -298,8 +298,20 @@ export const LANTERN_RING_PX = 620;
 export const GARDEN_RING_PX = 735;
 
 export const TOWN_PROPS: TownProp[] = [
-  // The four square features, on opposed bearings around a clear centre.
-  { id: "monument", radiusPx: 330, angleDeg: 320, blockRadiusPx: 88 },
+  // THE STATUE, and it stands in the middle.
+  //
+  // M49.1 cleared the centre on the grounds that it is where every player
+  // materialises and anything standing there is something they arrive inside.
+  // That was the right diagnosis and the wrong cure: it left the one spot every
+  // eye lands on empty, and a square with a hole in the middle is a car park.
+  // The centre is occupied now and ARRIVAL moved instead — see `PLAYER_ARRIVAL`
+  // below, which is the thing that actually needed fixing.
+  //
+  // Its keep-out is small for its size on purpose. The road runs gate to gate
+  // straight through here, so the island has to be narrow enough that the
+  // corridor either side of it is comfortably walkable; `tools/test/town.mjs`
+  // checks exactly that rather than trusting it.
+  { id: "statue", radiusPx: 0, angleDeg: 0, blockRadiusPx: 66 },
   { id: "well", radiusPx: 400, angleDeg: 25, blockRadiusPx: 54 },
   { id: "stall", radiusPx: 400, angleDeg: 205, blockRadiusPx: 68 },
   // The smithy blocks NOTHING, and that is deliberate rather than an omission.
@@ -665,3 +677,37 @@ export function npcById(id: string): TownNpc | null {
 export function inTown(x: number, y: number): boolean {
   return Math.hypot(x - TOWN_CENTER.x, y - TOWN_CENTER.y) <= TOWN_RADIUS_PX;
 }
+
+// --- Where you actually arrive ----------------------------------------------
+
+/**
+ * Where a player materialises — on login, and again every time they die.
+ *
+ * NOT the same point as `PLAYER_SPAWN`, and the difference is the whole reason
+ * this exists. `PLAYER_SPAWN` is the ORIGIN: every difficulty band, every
+ * monster camp, every resource ring and the town itself are measured from it,
+ * so it cannot move without moving the entire world. Arrival is a PLACE, and a
+ * place can be a few strides off the origin.
+ *
+ * Conflating the two is what kept the middle of the square empty for two
+ * milestones: anything put on the centre was something players spawned inside,
+ * so the centre stayed bare and the statue that belongs there could not be
+ * built. Splitting them costs one constant and gives the square its focal point
+ * back.
+ *
+ * A hundred and fifty pixels out on bearing 60 — clear of the statue's island
+ * with room to spare, on open paving, and facing back across the square so the
+ * first thing a new character sees is the monument and the town behind it.
+ */
+export const PLAYER_ARRIVAL: { x: number; y: number } = at(150, 60);
+
+/**
+ * How wide the road's walkable corridor is, either side of the gate bearing.
+ *
+ * The road used to be a line through the exact centre and the test walked that
+ * line. With a statue on the centre it is a corridor that passes either side of
+ * the island instead, which is what a square with a monument in it has always
+ * looked like. The number is the DRAWN road's half-width, so the thing the test
+ * checks and the thing the player can see are one fact.
+ */
+export const ROAD_HALF_WIDTH_PX = 150;

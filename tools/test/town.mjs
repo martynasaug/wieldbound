@@ -30,6 +30,8 @@ import {
   TOWN_GATE_ANGLES,
   TOWN_GATE_HALF_DEG,
   TOWN_PROPS,
+  PLAYER_ARRIVAL,
+  ROAD_HALF_WIDTH_PX,
   propById,
   propPosition,
   resolveTownCollision,
@@ -301,10 +303,17 @@ section("solid things");
     `  ${solidProps.length} solid props, plus ${TOWN_BUILDINGS.length} buildings and the palisade`,
   );
 
-  // Nothing may block spawn, or a new character arrives wedged.
-  const atSpawn = resolveTownCollision(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_BODY_RADIUS_PX);
-  if (atSpawn.x !== PLAYER_SPAWN.x || atSpawn.y !== PLAYER_SPAWN.y) {
-    fail("something solid is standing on spawn");
+  // Nothing may block ARRIVAL, or a new character materialises wedged.
+  //
+  // This used to test `PLAYER_SPAWN`, and testing that is what kept the middle
+  // of the square empty for two milestones: the origin of every band in the
+  // world was also the doormat, so the best spot in town was reserved for
+  // nobody to stand on. The two are separate now — the statue holds the origin
+  // and players land beside it — so the rule follows the one that is actually
+  // about a person. Asserted in full beside the road corridor below.
+  const atArrival = resolveTownCollision(PLAYER_ARRIVAL.x, PLAYER_ARRIVAL.y, PLAYER_BODY_RADIUS_PX);
+  if (atArrival.x !== PLAYER_ARRIVAL.x || atArrival.y !== PLAYER_ARRIVAL.y) {
+    fail("something solid is standing where players arrive");
   }
 
   // The forge has to stay reachable. This is the one that nearly shipped: the
@@ -362,19 +371,70 @@ section("solid things");
   }
 
   // The road has to be walkable end to end, or a gate opens onto an obstacle.
+  //
+  // A CORRIDOR rather than a line, because the statue stands on the centre and
+  // the road passes either side of it — which is what a square with a monument
+  // in it has always looked like. The old rule walked the gate bearing exactly
+  // and would have called that a blocked road; the honest question is whether
+  // somebody can get from one gate to the other, not whether they can do it
+  // without ever stepping off the centreline.
+  //
+  // The half-width is the DRAWN road's, shared with the client, so a corridor
+  // that passes here is one a player can see themselves walking down.
   for (const gate of TOWN_GATE_ANGLES) {
     const a = (gate * Math.PI) / 180;
+    // Across the road, at right angles to it.
+    const nx = -Math.sin(a);
+    const ny = Math.cos(a);
     for (let r = 0; r <= TOWN_RADIUS_PX + 120; r += 15) {
-      const x = TOWN_CENTER.x + Math.cos(a) * r;
-      const y = TOWN_CENTER.y + Math.sin(a) * r;
-      const solved = resolveTownCollision(x, y, PLAYER_BODY_RADIUS_PX);
-      if (Math.hypot(solved.x - x, solved.y - y) > 1) {
-        fail(`the ${gate}deg road is blocked at ${r}px`);
+      let open = false;
+      for (let lateral = -ROAD_HALF_WIDTH_PX; lateral <= ROAD_HALF_WIDTH_PX; lateral += 10) {
+        const x = TOWN_CENTER.x + Math.cos(a) * r + nx * lateral;
+        const y = TOWN_CENTER.y + Math.sin(a) * r + ny * lateral;
+        const solved = resolveTownCollision(x, y, PLAYER_BODY_RADIUS_PX);
+        if (Math.hypot(solved.x - x, solved.y - y) <= 1) {
+          open = true;
+          break;
+        }
+      }
+      if (!open) {
+        fail(`the ${gate}deg road is blocked right across at ${r}px`);
         break;
       }
     }
   }
-  console.log("  both roads run gate to gate unobstructed");
+  console.log(`  both roads run gate to gate, ${ROAD_HALF_WIDTH_PX * 2}px wide`);
+
+  // And the island really is an island: the centre is solid, so the road has to
+  // be going round it rather than through it. Without this the corridor rule
+  // above would happily pass a town whose statue had quietly stopped colliding.
+  {
+    const solved = resolveTownCollision(TOWN_CENTER.x, TOWN_CENTER.y, PLAYER_BODY_RADIUS_PX);
+    if (Math.hypot(solved.x - TOWN_CENTER.x, solved.y - TOWN_CENTER.y) < 1) {
+      fail("the middle of the square is walk-through — the statue is not solid");
+    } else {
+      console.log("  the statue holds the centre");
+    }
+  }
+
+  // Arrival is not the origin, and it must not be inside anything. This is the
+  // rule the whole statue depends on: put something on the centre without
+  // moving arrival and every player in the game materialises inside it.
+  {
+    const solved = resolveTownCollision(PLAYER_ARRIVAL.x, PLAYER_ARRIVAL.y, PLAYER_BODY_RADIUS_PX);
+    const shifted = Math.hypot(solved.x - PLAYER_ARRIVAL.x, solved.y - PLAYER_ARRIVAL.y);
+    if (shifted > 1) {
+      fail(`players arrive inside something and are shoved ${shifted.toFixed(0)}px`);
+    }
+    const fromCentre = Math.hypot(
+      PLAYER_ARRIVAL.x - TOWN_CENTER.x,
+      PLAYER_ARRIVAL.y - TOWN_CENTER.y,
+    );
+    if (fromCentre > TOWN_RADIUS_PX * 0.5) {
+      fail(`arrival is ${fromCentre.toFixed(0)}px out — that is not "the middle of town"`);
+    }
+    console.log(`  players arrive ${fromCentre.toFixed(0)}px from the centre, in the clear`);
+  }
 
   // And the palisade genuinely stops you everywhere it is not a gateway.
   let stopped = 0;

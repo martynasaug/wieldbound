@@ -216,6 +216,7 @@ import {
 } from "./db.ts";
 import {
   NPC_TALK_RANGE_PX,
+  PLAYER_ARRIVAL,
   npcById,
   propById,
   propPosition,
@@ -954,12 +955,12 @@ function applyDotTick(
   hpBalances.set(entityId, result.hp);
   const socket = sockets.get(entityId);
   if (result.defeated) {
-    player.x = PLAYER_SPAWN.x;
-    player.y = PLAYER_SPAWN.y;
+    player.x = PLAYER_ARRIVAL.x;
+    player.y = PLAYER_ARRIVAL.y;
     handlePlayerDeath(entityId, socket, now);
   }
   if (socket) {
-    sendHpUpdate(socket, result.hp, maxHp, result.defeated, result.defeated ? PLAYER_SPAWN : undefined);
+    sendHpUpdate(socket, result.hp, maxHp, result.defeated, result.defeated ? PLAYER_ARRIVAL : undefined);
     sendStatusTick(socket, { entityId, statusId: active.id, damage, school: dot.school, monster: false });
   }
 }
@@ -1089,12 +1090,12 @@ function resolveDeathBurst(monster: MonsterState, now: number): void {
     const result = applyDamage(playerId, mitigated, maxHp);
     hpBalances.set(playerId, result.hp);
     if (result.defeated) {
-      player.x = PLAYER_SPAWN.x;
-      player.y = PLAYER_SPAWN.y;
+      player.x = PLAYER_ARRIVAL.x;
+      player.y = PLAYER_ARRIVAL.y;
       handlePlayerDeath(playerId, socket, now);
     }
     if (socket) {
-      sendHpUpdate(socket, result.hp, maxHp, result.defeated, result.defeated ? PLAYER_SPAWN : undefined);
+      sendHpUpdate(socket, result.hp, maxHp, result.defeated, result.defeated ? PLAYER_ARRIVAL : undefined);
       sendMonsterAttack(socket, { monsterId: monster.id, hit: true, crit: false, damage: mitigated });
     }
   }
@@ -1668,12 +1669,12 @@ function resolveSlam(monster: MonsterState, radiusPx: number, damageMultiplier: 
       const result = applyDamage(playerId, hit.damage, maxHp);
       hpBalances.set(playerId, result.hp);
       if (result.defeated) {
-        player.x = PLAYER_SPAWN.x;
-        player.y = PLAYER_SPAWN.y;
+        player.x = PLAYER_ARRIVAL.x;
+        player.y = PLAYER_ARRIVAL.y;
         handlePlayerDeath(playerId, socket, now);
       }
       if (socket) {
-        sendHpUpdate(socket, result.hp, maxHp, result.defeated, result.defeated ? PLAYER_SPAWN : undefined);
+        sendHpUpdate(socket, result.hp, maxHp, result.defeated, result.defeated ? PLAYER_ARRIVAL : undefined);
       }
     }
     if (socket) {
@@ -3514,13 +3515,13 @@ setInterval(() => {
       if (result.defeated) {
         const p = players.get(victimId);
         if (p) {
-          p.x = PLAYER_SPAWN.x;
-          p.y = PLAYER_SPAWN.y;
+          p.x = PLAYER_ARRIVAL.x;
+          p.y = PLAYER_ARRIVAL.y;
         }
         handlePlayerDeath(victimId, socket, now);
       }
       if (socket) {
-        sendHpUpdate(socket, result.hp, maxHp, result.defeated, result.defeated ? PLAYER_SPAWN : undefined);
+        sendHpUpdate(socket, result.hp, maxHp, result.defeated, result.defeated ? PLAYER_ARRIVAL : undefined);
       }
     }
 

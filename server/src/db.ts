@@ -11,7 +11,6 @@ import {
   TONIC_CRAFT_COST,
   LOOT_DROP_CHANCE,
   INVENTORY_CAP,
-  PLAYER_SPAWN,
   STAT_POINTS_PER_LEVEL,
   DAILY_BONUS_COOLDOWN_MS,
   DAILY_BONUS_REWARD,
@@ -35,6 +34,10 @@ import {
   type Material,
   type MaterialCost,
 } from "../../shared/items.ts";
+// Arrival is a PLACE, not the origin — see the note on `PLAYER_ARRIVAL`. A new
+// character and a respawning one both land in front of the statue rather than
+// inside it.
+import { PLAYER_ARRIVAL } from "../../shared/town.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "..", "data");
@@ -386,8 +389,8 @@ export function loadOrCreateCharacter(name: string): CharacterRow {
   const row: CharacterRow = {
     id: randomUUID(),
     name,
-    x: PLAYER_SPAWN.x,
-    y: PLAYER_SPAWN.y,
+    x: PLAYER_ARRIVAL.x,
+    y: PLAYER_ARRIVAL.y,
     wood: 0,
     ore: 0,
     gatherLevel: 0,
@@ -456,7 +459,7 @@ export function applyDamage(
 
   if (hp <= 0) {
     const respawnHp = Math.floor(maxHp / 2);
-    setHpAndPositionStmt.run(respawnHp, PLAYER_SPAWN.x, PLAYER_SPAWN.y, id);
+    setHpAndPositionStmt.run(respawnHp, PLAYER_ARRIVAL.x, PLAYER_ARRIVAL.y, id);
     return { hp: respawnHp, defeated: true };
   }
 
