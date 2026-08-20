@@ -6,6 +6,13 @@
     "lib": ["ES2022"],
     "outDir": "dist",
     "strict": true,
+    // shared/ is imported with explicit .ts extensions, which is what lets tsx,
+    // node --experimental-strip-types and Vite all resolve the same source with
+    // no build step between them. Without these two, `tsc -b` reports every one
+    // of those imports as an error and the typecheck is unreadable — which is
+    // exactly how it sat for a while.
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "skipLibCheck": true,
     "esModuleInterop": true
   },

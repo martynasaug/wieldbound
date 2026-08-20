@@ -135,9 +135,13 @@ import {
   CONSUMABLES,
   ITEM_BASES,
   MATERIALS,
+  PALETTES,
+  PALETTE_SCHOOL,
   PALETTE_SETS,
   type Material,
   activeSets,
+  baseSchool,
+  describeDropSources,
   canForge,
   describeCost,
   eligibleAffixes,
@@ -746,8 +750,18 @@ export class Game {
       ITEM_BASES,
       RARITIES,
       CONSUMABLES,
+      // The three axes an item has, and what each of them MEANS: the palette
+      // table itself, which element a material reads as, and which matched kit
+      // it belongs to. "Why is this weapon dealing frost" is answered by two of
+      // these together and by neither of them alone.
+      PALETTES,
+      PALETTE_SCHOOL,
       PALETTE_SETS,
+      STATUSES,
       activeSets,
+      baseSchool,
+      weaponSchool,
+      describeDropSources,
       canForge,
       eligibleAffixes,
       gearPassives,

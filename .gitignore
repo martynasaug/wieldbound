@@ -19,3 +19,6 @@ Thumbs.db
 # (client/src/ui/icons.ts) is what the game uses and IS committed; this is just
 # a cache so re-running the generator does not re-download 120 files.
 tools/art/.icon-cache/
+
+# tsc -b writes these beside the config; they are a build cache.
+*.tsbuildinfo

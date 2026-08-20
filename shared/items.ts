@@ -117,7 +117,8 @@ const SLOT_WEIGHT: Record<ItemSlot, number> = {
 // staining the whole object one colour.
 export type PaletteId =
   | "iron" | "steel" | "bronze" | "silver" | "gold"
-  | "obsidian" | "bone" | "verdant" | "crimson" | "frost" | "arcane" | "wood";
+  | "obsidian" | "bone" | "verdant" | "crimson" | "frost" | "arcane" | "wood"
+  | "storm";
 
 export interface PaletteDef {
   id: PaletteId;
@@ -143,6 +144,16 @@ export const PALETTES: Record<PaletteId, PaletteDef> = {
   frost:    { id: "frost",    name: "Frost",    metal: 0x9fd0e6, wood: 0x4d5f6b, accent: 0xdff4ff },
   arcane:   { id: "arcane",   name: "Arcane",   metal: 0x7d6bd6, wood: 0x3b3350, accent: 0xc0a6ff },
   wood:     { id: "wood",     name: "Wood",     metal: 0x8a6c46, wood: 0x6b4a28, accent: 0xc8a878 },
+  // The thirteenth, and the only one added for a reason that came from a TEST
+  // rather than from a picture: `tools/test/schools.mjs` printed "lightning 0
+  // weapons" on every run since the schools landed, because no material in the
+  // catalogue read as storm and the school's only existence was two spells.
+  //
+  // Dark blue-grey metal, near-black timber and a hot pale accent — a
+  // thundercloud with the flash in it. Deliberately far from `frost` (which is
+  // pale and cold) and from `silver` (which is bright and neutral), because the
+  // palette axis is something a player is meant to recognise across a field.
+  storm:    { id: "storm",    name: "Storm",    metal: 0x6e7ea8, wood: 0x2b2e3a, accent: 0xffe95c },
 };
 
 // --- What a base item is ----------------------------------------------------
@@ -326,6 +337,13 @@ const WEAPON_BASES: ItemBase[] = [
     { model: "weapons/Claymore", palette: "crimson" },
     "It has a name because it earned one.",
     { mods: { range: 1.25, speed: 1.45, damage: 1.6 }, twoHanded: true }),
+  // The first lightning weapon in the game. Band 4 rather than 5 on purpose:
+  // the golem is the one creature with a seam of it, and a player who can only
+  // buy the answer at the same ring as the question has no answer at all.
+  w("levinbrand", "Levinbrand", 4, "sword",
+    { model: "weapons/Sword_2", palette: "storm", scale: 1.08 },
+    "The fuller is scorched in a line nobody cut.",
+    { mods: { speed: 0.92, damage: 1.05 } }),
 
   // ------------------------------------------------------------------- axes
   w("handaxe", "Hand Axe", 1, "axe",
@@ -363,6 +381,10 @@ const WEAPON_BASES: ItemBase[] = [
     { model: "weapons/Hammer_Double", palette: "gold" },
     "Struck at the right angle it rings for a long time.",
     { mods: { speed: 1.25, damage: 1.5 }, twoHanded: true }),
+  w("thunderhead", "Thunderhead", 5, "mace",
+    { model: "weapons/Hammer_Small", palette: "storm", scale: 1.2 },
+    "The air goes tight just before it lands. Everyone notices; nobody moves.",
+    { mods: { speed: 1.15, damage: 1.35 } }),
 
   // ------------------------------------------------------------------- bows
   // All two-handed, which is a rule about hands rather than about balance.
@@ -425,6 +447,14 @@ const WEAPON_BASES: ItemBase[] = [
     { build: "crystalstave", palette: "arcane", scale: 0.55 },
     "The crystal is not attached. It simply stays.",
     { mods: { speed: 0.85, damage: 1.1 } }),
+  // The wand family had no band-5 entry at all, which made it the one family
+  // whose top end was somebody else's weapon. It is a lightning one because
+  // that is the gap being filled, and because the fastest weapon in the game is
+  // the right shape for the school that hits and is gone.
+  w("stormrod", "Stormrod", 5, "wand",
+    { build: "crystalstave", palette: "storm", scale: 0.58 },
+    "It hums between castings, which the apprentices are told is normal.",
+    { mods: { speed: 0.8, damage: 1.15 } }),
 ];
 
 // --- Off-hand ---------------------------------------------------------------
@@ -665,6 +695,25 @@ const KIT_BASES: ItemBase[] = [
     "Plated at the toe, which is where things land."),
   g("bronzering", "Bronze Torc", "ring", 2, null, "ring-band", "bronze",
     "Not really a ring. It is worn on the arm and nobody has objected."),
+
+  // ----------------------------------------------------------------- storm
+  // Five slots on top of the three weapons, which is the rule this whole
+  // section exists for: a five-piece set bonus is not a bonus if the material
+  // only exists in two slots. Band 4 and 5, because storm is a far-corner
+  // material and its whole job is answering the thing in the far corner.
+  g("stormhelm", "Galecrown", "helm", 4, "circlet", "helm-circlet", "storm",
+    "Open at the top. The smith who made it said covering it would be rude.",
+    { power: 0.6, guard: 1.8 }),
+  g("stormmail", "Skyclad Hauberk", "armor", 5, "scale", "armor-scale", "storm",
+    "The scales stand up on their own in dry weather.",
+    { power: 1.15, guard: 0.9 }),
+  g("stormboots", "Thunderstep", "boots", 4, "tall", "boots-tall", "storm",
+    "You arrive slightly before the sound of arriving.",
+    { power: 0.9, guard: 1.5 }),
+  g("stormcloak", "Squallcloak", "cape", 5, "cloak", "cape-cloak", "storm",
+    "It moves when there is no wind, and is still when there is."),
+  g("stormring", "Fulgurite Band", "ring", 4, null, "ring-rune", "storm",
+    "Glass, from sand a strike went through. Nobody made it."),
 
   // ------------------------------------------------------------------ wood
   g("woodcap", "Woodsman's Cap", "helm", 2, "hood", "helm-hood", "wood",
@@ -958,7 +1007,11 @@ export const MONSTER_LOOT: Record<MonsterKind, MonsterLoot> = {
   demon: { palettes: ["crimson", "obsidian"] },
 
   // band 5 — the far corners, and the three things worth going for
-  golem: { palettes: ["iron", "steel"], signature: "deepsledge" },
+  // Storm off the golem is not irony, it is where the material comes from: the
+  // one creature in the world with lightning as a seam is the one thing you can
+  // take lightning off. It also makes the counter to a golem a thing you get by
+  // killing golems the slow way first, which is the oldest good loop there is.
+  golem: { palettes: ["steel", "storm"], signature: "deepsledge" },
   dragon: { palettes: ["crimson", "gold"], signature: "dragonscale" },
 };
 
@@ -1566,9 +1619,9 @@ export function feelNotes(item: ItemInstance | null | undefined): string[] {
 //   blow. A mage's plain attack being arcane is what makes a mage a mage
 //   against a golem.
 //
-//   THE MATERIAL overrides it. Only four palettes are elemental — frost,
-//   crimson, arcane and verdant — and the other eight are what a weapon is
-//   ordinarily made of. That ratio is deliberate: if every material were an
+//   THE MATERIAL overrides it. Only five palettes are elemental — frost,
+//   crimson, arcane, verdant and storm — and the other eight are what a weapon
+//   is ordinarily made of. That ratio is deliberate: if every material were an
 //   element then "elemental" would be the default and mean nothing, and the
 //   eight ordinary ones are exactly the ones a player picks up first.
 //
@@ -1585,12 +1638,20 @@ export function feelNotes(item: ItemInstance | null | undefined): string[] {
  * only. Bone and obsidian are deliberately absent — they are colours of ordinary
  * things here, and inventing a shadow school to give them a job would be adding
  * an element to fit a palette rather than the other way round.
+ *
+ * `storm` is the reverse of that, and is the one entry here added the right way
+ * round: the ELEMENT existed first and had nothing made of it. Lightning had two
+ * spells, a status, a golem with a seam in it and — for the whole life of the
+ * catalogue — not one weapon, because the material a lightning weapon would be
+ * made of did not exist. The palette was added to fill that hole, not to give a
+ * colour something to do.
  */
 export const PALETTE_SCHOOL: Partial<Record<PaletteId, DamageSchool>> = {
   frost: "frost",
   crimson: "fire",
   arcane: "arcane",
   verdant: "nature",
+  storm: "lightning",
 };
 
 /** The floor, before any material has an opinion. */
@@ -1784,6 +1845,21 @@ export const PALETTE_SETS: Partial<Record<PaletteId, PaletteSet>> = {
     tiers: [
       { need: 3, bonus: { maxManaBonus: 16, manaCostPercent: 8 } },
       { need: 5, bonus: { maxManaBonus: 28, manaCostPercent: 14, skillPowerPercent: 8, resistArcane: 20 } },
+    ],
+  },
+  // The fifth elemental kit, and the only one whose resistance is worn against
+  // a creature that does not deal the element — nothing in the world throws
+  // lightning at the player. It carries `resistLightning` anyway, for the same
+  // reason the other four carry theirs: the rule is "a player who guesses from
+  // the name should be right", and a Stormbound kit that warded against
+  // anything else would be a riddle. The day something in the world crackles,
+  // the answer is already in the game.
+  storm: {
+    name: "Stormbound",
+    blurb: "Quick, loud, and gone before the thunder. It does not wait about.",
+    tiers: [
+      { need: 3, bonus: { attackSpeedPercent: 5, critChance: 3 } },
+      { need: 5, bonus: { attackSpeedPercent: 9, critChance: 5, moveSpeedBonus: 12, resistLightning: 20 } },
     ],
   },
   wood: {

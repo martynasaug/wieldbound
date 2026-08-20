@@ -6,6 +6,7 @@
     "lib": ["ES2022", "DOM"],
     "moduleResolution": "Bundler",
     "strict": true,
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,

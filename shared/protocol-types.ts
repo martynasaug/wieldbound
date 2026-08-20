@@ -1294,6 +1294,19 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // Lightning is the seam, and it is the only creature in the world that
     // gives Chain Lightning a reason to exist.
     resist: { physical: 30, fire: 30, lightning: -45 },
+    // AND THE SEAM WORKS BOTH WAYS. Every other creature that has an element
+    // resists what it deals — a demon is made of the fire it throws. This one
+    // is the exception on purpose: the seam is where the charge comes out AND
+    // where the stone gives, so the thing you bring lightning to is the thing
+    // that throws it back at you. It is what makes `resistLightning` a stat
+    // worth wearing rather than a line in a set bonus with nothing to answer,
+    // and it means a Stormbound kit is exactly the kit for the golem fight in
+    // both directions at once.
+    attackSchool: "lightning",
+    // A discharge that big leaves you unable to aim for a few seconds — which
+    // is the worst thing to happen against the one creature with 14 armour,
+    // where every missed swing is a swing that would barely have counted.
+    inflicts: { status: "shocked", chance: 0.25 },
   },
   // The apex: it telegraphs AND closes the gap, so neither standing still nor
   // running is a whole answer on its own.

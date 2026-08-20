@@ -137,6 +137,14 @@ for (const school of DAMAGE_SCHOOLS) {
   const weak = kinds.filter((k) => resistOf(MONSTER_STATS[k].resist, school) < 0);
 
   check(`something deals ${school}`, skills.length + weapons.length > 0);
+  // A SPELL IS NOT ENOUGH. This is the check the old "skills + weapons > 0"
+  // quietly let through for the whole life of the project: lightning had two
+  // spells and no weapon, so the school existed for exactly two talent nodes in
+  // two trees and was unreachable for the other six. The premise of the game is
+  // that the thing in your hand decides what you are good against, and a school
+  // nothing can be MADE OF is a school outside that premise.
+  check(`something is MADE of ${school}`, weapons.length > 0,
+    "an element with only spells behind it is an element six weapon trees cannot reach");
   check(`something resists ${school}`, resistant.length > 0);
   check(`something is weak to ${school}`, weak.length > 0,
     "an element nothing folds to is an element nobody has a reason to bring");
@@ -156,6 +164,35 @@ for (const school of ELEMENTAL_SCHOOLS) {
   );
   check(`${school} can be resisted by something a player can wear`, fromAffix || fromSet,
     `affix ${fromAffix}, set ${fromSet}`);
+}
+
+// Every elemental MATERIAL gets a matched set, and it is the set that carries
+// that element's resistance at its top tier. Adding a thirteenth palette
+// without one would leave the newest material as the one a player can see and
+// has no reason to collect — which is the exact defect matched gear was added
+// to fix in the first place.
+for (const [palette, school] of Object.entries(PALETTE_SCHOOL)) {
+  const set = PALETTE_SETS[palette];
+  check(`${palette} has a matched set`, !!set);
+  if (!set) continue;
+  const key = RESIST_KEY[school];
+  check(`the ${set.name} kit wards against its own element`,
+    set.tiers.some((t) => (t.bonus[key] ?? 0) > 0),
+    `${school} / ${key}`);
+}
+
+// Anything a creature THROWS has to be something the player can dress against,
+// or a monster with an element is a stat check rather than a decision. This is
+// what the golem's seam bought: it deals lightning, so Stormbound and "of
+// Earthing" are now worn for a fight rather than for a tooltip.
+for (const kind of kinds) {
+  const school = MONSTER_STATS[kind].attackSchool;
+  if (!school || school === "physical") continue;
+  const key = RESIST_KEY[school];
+  const wearable =
+    AFFIXES.some((a) => (a.per[key] ?? 0) > 0) ||
+    Object.values(PALETTE_SETS).some((s) => s.tiers.some((t) => (t.bonus[key] ?? 0) > 0));
+  check(`what the ${kind} throws can be dressed against`, wearable, school);
 }
 
 // --- 4. what a weapon is made of --------------------------------------------

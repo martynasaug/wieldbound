@@ -3268,6 +3268,98 @@ prop table now carries explicitly as `blockRadiusPx: 0`.
 
 ---
 
+## Phase 50 — Storm, and skills that read a status
+The two things Phase 48+ parked on purpose, taken off the shelf in the order
+they unblock each other: the material first, then the sequencing.
+
+### M50.1 — the thirteenth palette
+`tools/test/schools.mjs` has printed `lightning 0 weapons, 2 skills` on every
+run since damage got a school. It was the only element in the game that no
+player could ever be HOLDING — two spells in two of the eight weapon trees, and
+nothing else. That is a direct contradiction of the game's one rule: if what
+you are holding decides what you are good against, then a school you cannot
+hold is a school outside the premise.
+
+**A palette, not a field.** The fix was never `school: "lightning"` on a weapon
+row — that is the design the catalogue already rejected once, because a
+hand-typed school is thirty-six chances for Frostbrand to be steel-coloured
+frost damage. A weapon's school comes from its MATERIAL, so a lightning weapon
+needs a lightning material, and there wasn't one. `storm` is the thirteenth
+palette: dark blue-grey metal, near-black timber, a hot pale accent. It is also
+the only palette in the file added the right way round — the element existed
+first and had nothing made of it, rather than a colour being handed a job.
+
+**Three weapons and five slots**, because a palette with a matched set is the
+only kind that means anything (M1.3), and a five-piece bonus is not a bonus if
+the material exists in two slots. Levinbrand (sword, band 4), Thunderhead
+(mace, band 5) and Stormrod (wand, band 5) — one warrior family and one caster,
+so the school is not a mage's private toy. Stormrod also fills a gap that had
+nothing to do with lightning: the wand family had no band-5 entry at all, which
+made it the one family whose top end was somebody else's weapon.
+
+**Band 4 for the sword, deliberately.** The golem is the one creature with a
+seam of lightning and it stands in band 5. An answer sold only at the same ring
+as the question is not an answer.
+
+**Where it comes from is the loop.** Storm is the golem's own material — the
+creature with lightning for a seam is the thing you take lightning off. So the
+counter to a golem is a thing you get by killing golems the slow way first,
+which is the oldest good loop in the genre and it fell out of the affinity table
+rather than being written into it.
+
+**And the seam works both ways.** Every other creature with an element resists
+what it deals: a demon is made of the fire it throws. The golem is now the
+exception, on purpose — it throws lightning and folds to lightning, because the
+seam is where the charge comes out AND where the stone gives. That is what makes
+`resistLightning` a stat rather than a line in a set bonus with nothing to
+answer: before this, five elements could be worn against and only four could
+ever be thrown at you. Its slam also leaves you Shocked a quarter of the time,
+which is the worst thing that can happen against the one creature with 14 armour.
+
+**Stormbound** is the kit: attack speed and crit at three pieces, plus movement
+and `resistLightning` at five. Quick, loud, gone before the thunder.
+
+### What the tests refused, and what they now pin
+Nothing failed on the first run, which is itself the finding: the catalogue,
+the loot roller, the forge, the salvage ladder, the affix pool and the gear
+renderer all absorbed a thirteenth material and eight new bases without a line
+of code changing anywhere. That is what `PALETTES` being a table rather than a
+switch statement bought, four phases ago.
+
+Three rules were added to `schools.mjs` so the hole cannot reopen:
+
+- **`something is MADE of <school>`** — the check the old
+  `skills + weapons > 0` quietly let through for the life of the project. A
+  spell is not enough: an element with only spells behind it is an element six
+  weapon trees cannot reach.
+- **every elemental material has a matched set, and that set wards against its
+  own element** — otherwise the newest material is the one a player can see and
+  has no reason to collect, which is the exact defect matched gear exists to fix.
+- **anything a creature throws can be dressed against** — a monster with an
+  element and no wearable answer is a stat check rather than a decision.
+
+### One thing fixed on the way past
+The typecheck did not work. `tsc -b` reported every `shared/*.ts` import in both
+workspaces as TS5097, because `allowImportingTsExtensions` was never set — so
+the one command that would catch a type regression printed ten errors on a clean
+tree and was unreadable. Explicit `.ts` extensions are what let tsx, Vite and
+`node --experimental-strip-types` all resolve the same source with no build step
+between them, so the extensions stay and the flag was the missing half. The
+server additionally needs `rewriteRelativeImportExtensions`, since it actually
+emits. Both workspaces are clean now, which they had not been for some time.
+
+### Verified
+All nine offline suites, both workspaces typechecking clean, and headless
+Playwright against the real client: the palette, the school mapping, the eight
+storm bases across six slots, the Stormbound tiers, the golem's attack school
+and its Shocked rider all read correctly out of the live bundle, and
+`describeDropSources` says "often carried by golems" for both a band-4 and a
+band-5 storm piece. The three weapons were rendered in the contact sheet and
+read as their own material against steel, obsidian and frost. Zero console
+errors.
+
+---
+
 ## Phase 48+ — Revisit and pick from here
 Candidates, in no fixed order: guilds, real auth (password), going live
 (VPS + hosted DB), directional (4-way) character art so facing reads on the
@@ -3285,13 +3377,8 @@ rarities), multiple crafting stations. Not committing to order yet.
   site. The reason to wait is balance rather than effort: a conditional
   bonus is only interesting once the condition is common, and the debuffs
   shipped one day ago.
-- **A lightning weapon, and the palette to hang it on.** `tools/test/
-  schools.mjs` prints the count every run and it still reads `lightning 0
-  weapons, 2 skills` — the only school with no weapon at all, because no
-  material in the catalogue reads as storm. It is not a one-line fix: a
-  thirteenth palette wants a matched set to be worth having, which wants
-  five slots of items made of it, which is the same shape as the M1.3 work
-  that added twenty-nine bases to make the sets assemblable.
+- ~~**A lightning weapon, and the palette to hang it on.**~~ Done in Phase 50
+  M50.1. It read `lightning 3 weapons, 2 skills` afterwards.
 
 ---
 
@@ -5131,11 +5218,43 @@ rarities), multiple crafting stations. Not committing to order yet.
   reusing this approach for future in-browser confirmations on this machine
   rather than re-deriving a driver each time.
 
+- **A school's home is a MATERIAL, never a field on the item.** (Phase 50)
+  Lightning needed a weapon and the one-line answer was `school: "lightning"`
+  on a row in the catalogue. That is the design M4 explicitly rejected, and it
+  was right to: a hand-typed school is a chance for a frost-coloured sword to
+  deal fire, silently, in a table two files from the one being read. So the
+  cost of a new school is a new PALETTE, with everything a palette owes —
+  three colours, a matched set, and enough items across enough slots for that
+  set to be assemblable. Expensive on purpose. It is the rule that keeps a
+  weapon's appearance and its damage from ever disagreeing.
+
+- **A creature may fold to what it throws.** (Phase 50) Every element-bearing
+  monster before the golem resisted its own school — a demon is made of the
+  fire it throws — and the symmetry was starting to look like a rule. It is
+  not. The golem deals lightning and takes 45% extra from it, because the seam
+  is one thing seen from two sides, and because five elements could be worn
+  against while only four could ever be thrown at you: `resistLightning` was a
+  stat with nothing to answer. Where the fiction supports it, a shared
+  weakness-and-weapon is more interesting than a matched resist.
+
 ## Current status
-Phase 0 through 49 complete (2026-08-21). **The item system rebuilt and
+Phase 0 through 50 M50.1 complete (2026-08-21). **The item system rebuilt and
 followed through, damage that knows what it is made of, every timed effect in
-one table with a row on screen, a front door worth walking through — and now a
-town to walk through it into.**
+one table with a row on screen, a front door worth walking through, a town to
+walk through it into — and now a material for the one element nobody could
+ever be holding.**
+
+**Phase 50 M50.1 — Storm.** The thirteenth palette, and the first thing in the
+game added because a test kept printing a number: `lightning 0 weapons`, on
+every run since damage got a school. Three weapons across a warrior family and
+a caster one, five slots of kit, and a Stormbound set that wards against the
+element it is made of. It comes off the golem, which is the creature with
+lightning for a seam — so the counter to a golem is a thing you get by killing
+golems the slow way first. And the golem now THROWS lightning as well as folding
+to it, because before that, five elements could be worn against and only four
+could ever be thrown at you.
+
+Before that, Phase 49.
 
 **Phase 49 — Emberhold.** The world's one built thing was a smithy that also
 happened to be spawn. It is a town now: six generated buildings on a ring
