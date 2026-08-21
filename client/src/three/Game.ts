@@ -106,6 +106,7 @@ import {
   WORLD_UNITS_W,
   World,
   terrainHeight,
+  surfaceHeight,
   toServerX,
   toServerY,
   toWorldX,
@@ -122,7 +123,12 @@ import { instantiate, whenLoadsSettle } from "./assets";
  * that had to change to put actors on hills.
  */
 function onGround(x: number, z: number): [number, number, number] {
-  return [x, terrainHeight(x, z), z];
+  // SURFACE, not terrain. The two are the same everywhere except over the
+  // Coldwater, where the terrain is the riverbed and the surface is the bridge
+  // deck two units above it — and taking the terrain there is what had the
+  // player walking under their own bridge, through the channel, while the road
+  // they were following went over the top.
+  return [x, surfaceHeight(x, z), z];
 }
 import { nightAmount } from "./daynight";
 import { Town } from "./town";
@@ -966,7 +972,7 @@ export class Game {
     this.dropStates = p.drops ?? [];
     this.drops.sync(this.dropStates, (x, y) => ({
       x: toWorldX(x),
-      y: terrainHeight(toWorldX(x), toWorldZ(y)),
+      y: surfaceHeight(toWorldX(x), toWorldZ(y)),
       z: toWorldZ(y),
     }));
   }

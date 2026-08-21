@@ -17,15 +17,19 @@ import {
   WORLD_HEIGHT,
   PLAYER_BODY_RADIUS_PX,
 } from "../../shared/protocol-types.ts";
-import { TOWN_RADIUS_PX, inTown } from "../../shared/town.ts";
+import { TOWN_RADIUS_PX, inTown, insideAnyBuilding } from "../../shared/town.ts";
 import { LANDMARKS, landmarkPosition, LANDMARK_REACH_PX } from "../../shared/landmarks.ts";
-import { ROAD_HALF_WIDTH_PX, roadPath } from "../../shared/road.ts";
+import { ROAD_HALF_WIDTH_PX, roadPath, distanceToRoad } from "../../shared/road.ts";
 import {
   RIVER_WAYPOINTS,
   RIVER_HALF_WIDTH_PX,
   RIVER_CLEARANCE_PX,
   BRIDGE_HALF_SPAN_PX,
   BRIDGE_HALF_WIDTH_PX,
+  BRIDGE_WALK_HALF_PX,
+  BRIDGE_RAMP_PX,
+  bridgeFrame,
+  bridgePoint,
   riverPath,
   riverAt,
   distanceToRiver,
@@ -196,12 +200,18 @@ section("the bridge");
   if (offRoad > 30) fail(`the bridge stands ${offRoad.toFixed(0)}px off the road`);
   else console.log(`  it stands on the road, at (${b.x.toFixed(0)}, ${b.y.toFixed(0)})`);
 
-  // The deck must cover the water AND the banks, or it ends over a slope.
-  const need = RIVER_HALF_WIDTH_PX + 220;
+  // The deck must clear the WATER with room to land on the bank either side.
+  // It used to have to clear the whole cut, banks included, because there was
+  // nothing to get you up the slope; the approach ramp lives in the height
+  // field now, so the deck only has to be a bridge.
+  const need = RIVER_HALF_WIDTH_PX + 120;
   if (BRIDGE_HALF_SPAN_PX < need) {
-    fail(`the deck spans ${BRIDGE_HALF_SPAN_PX}px either side but the channel and its banks need ${need}`);
+    fail(`the deck spans ${BRIDGE_HALF_SPAN_PX}px either side but the water and a landing need ${need}`);
   } else {
-    console.log(`  the deck reaches ${BRIDGE_HALF_SPAN_PX}px either side, past the banks`);
+    console.log(
+      `  the deck reaches ${BRIDGE_HALF_SPAN_PX}px either side — ` +
+        `${BRIDGE_HALF_SPAN_PX - RIVER_HALF_WIDTH_PX}px of landing past the water`,
+    );
   }
   if (BRIDGE_HALF_WIDTH_PX <= ROAD_HALF_WIDTH_PX) {
     fail("the deck is no wider than the road, so the parapets would stand in the ruts");
@@ -314,6 +324,104 @@ section("wading in");
   const kept = resolveRiverCollision(b.x, b.y, PLAYER_BODY_RADIUS_PX);
   if (Math.hypot(kept.x - b.x, kept.y - b.y) > 0.01) fail("the collision shoves you off the bridge");
   else console.log("  and standing on the bridge leaves you where you are");
+}
+
+// --- The parapets ---------------------------------------------------------------
+
+section("you cannot walk off the bridge");
+{
+  // THE BUG THIS SECTION EXISTS FOR. The deck used to be a rectangle where the
+  // river's collision simply did not apply, which is most of a bridge and not
+  // the important part: the sides were open, and the only thing between a
+  // traveller and the water was the fact that the deck happened to be drawn
+  // there. Walking off the edge put you in the channel with a bridge overhead.
+  const b = bridgeAt();
+  let leaked = 0;
+  let clamped = 0;
+  for (let s = -0.95; s <= 0.95; s += 0.05) {
+    const along = s * BRIDGE_HALF_SPAN_PX;
+    for (const side of [-1, 1]) {
+      // Well outside the rail, but still over the deck.
+      const p = bridgePoint(along, side * (BRIDGE_WALK_HALF_PX + 14));
+      const out = resolveRiverCollision(p.x, p.y, PLAYER_BODY_RADIUS_PX);
+      const f = bridgeFrame(out.x, out.y);
+      if (Math.abs(f.across) > BRIDGE_WALK_HALF_PX - PLAYER_BODY_RADIUS_PX + 0.01) leaked++;
+      else clamped++;
+      // And it must not have thrown them to the other side of the deck.
+      if (Math.sign(f.across) !== side && Math.abs(f.across) > 1) leaked++;
+    }
+  }
+  if (leaked > 0) fail(`${leaked} probes got past the parapet`);
+  else console.log(`  all ${clamped} probes were held between the rails, on their own side`);
+
+  // Walking straight down the middle must never be touched, or the bridge
+  // would feel like a corridor that shoves you.
+  let nudged = 0;
+  for (let s = -1; s <= 1; s += 0.02) {
+    const p = bridgePoint(s * BRIDGE_HALF_SPAN_PX, 0);
+    const out = resolveRiverCollision(p.x, p.y, PLAYER_BODY_RADIUS_PX);
+    if (Math.hypot(out.x - p.x, out.y - p.y) > 0.01) nudged++;
+  }
+  if (nudged > 0) fail(`the middle of the deck pushes a body at ${nudged} points`);
+  else console.log("  and the middle of the deck never touches you");
+
+  // THE CLEAR SPAN HAS TO FIT THE ROAD, and the road is not straight. The
+  // bridge's frame is the road's tangent at the one point where the two curves
+  // cross; over eight hundred pixels of span the road goes on bending away from
+  // it, so the widest its verge reaches is NOT its own half width. Measured off
+  // the real curve rather than assumed, because the alternative is a wheel rut
+  // through the parapet that nobody sees until they walk it.
+  let widest = 0;
+  const road = roadPath();
+  for (let i = 1; i < road.length; i++) {
+    const dx = road[i].x - road[i - 1].x;
+    const dy = road[i].y - road[i - 1].y;
+    const len = Math.hypot(dx, dy) || 1;
+    for (const off of [-ROAD_HALF_WIDTH_PX, 0, ROAD_HALF_WIDTH_PX]) {
+      const x = road[i].x + (-dy / len) * off;
+      const y = road[i].y + (dx / len) * off;
+      const f = bridgeFrame(x, y);
+      if (Math.abs(f.along) > BRIDGE_HALF_SPAN_PX) continue;
+      widest = Math.max(widest, Math.abs(f.across));
+    }
+  }
+  if (BRIDGE_WALK_HALF_PX < widest) {
+    fail(
+      `the road reaches ${widest.toFixed(0)}px across the bridge's frame but the clear span is ` +
+        `only ${BRIDGE_WALK_HALF_PX}px — the outside rut goes through the parapet`,
+    );
+  } else {
+    console.log(
+      `  the clear span is ${BRIDGE_WALK_HALF_PX}px and the road reaches ${widest.toFixed(0)}px across it`,
+    );
+  }
+  if (BRIDGE_WALK_HALF_PX >= BRIDGE_HALF_WIDTH_PX) {
+    fail("there is no room outside the walkable strip for the parapets to stand in");
+  }
+}
+
+section("the approach");
+{
+  // The ramp has to be long enough to be a slope rather than a step. The deck
+  // sits about two units above the water, so a 220px approach is a grade near
+  // one in three — steep for a road and right for a timber bridge somebody
+  // built out of what was to hand.
+  if (BRIDGE_RAMP_PX < 120) fail(`a ${BRIDGE_RAMP_PX}px approach is a step, not a ramp`);
+  else console.log(`  ${BRIDGE_RAMP_PX}px of earth approach at each end`);
+
+  // And the road has to still BE the road through it — no camp or building may
+  // sit where the causeway goes.
+  const b = bridgeAt();
+  let blocked = 0;
+  for (const dir of [-1, 1]) {
+    for (let t = 0; t <= 1; t += 0.05) {
+      const p = bridgePoint(dir * (BRIDGE_HALF_SPAN_PX + t * BRIDGE_RAMP_PX), 0);
+      if (insideAnyBuilding(p.x, p.y, 14)) blocked++;
+      if (distanceToRoad(p.x, p.y) > ROAD_HALF_WIDTH_PX) blocked++;
+    }
+  }
+  if (blocked > 0) fail(`the approach leaves the road or hits a building at ${blocked} samples`);
+  else console.log("  and both approaches stay on the road");
 }
 
 console.log(failures === 0 ? "\nOK — the Coldwater checks out." : `\n${failures} failure(s).`);

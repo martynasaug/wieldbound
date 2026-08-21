@@ -27,12 +27,16 @@ import {
   riverAt,
   riverPath,
 } from "../../../shared/river";
-import { ROAD_HALF_WIDTH_PX } from "../../../shared/road";
 import { Builder } from "./town";
-import { PX_PER_UNIT, riverSurfaceHeight, terrainHeight, toWorldX, toWorldZ } from "./World";
-
-/** How high the deck sits above the water it spans. */
-const BRIDGE_CLEARANCE = 1.9;
+import { PARAPET_HEIGHT, PARAPET_INSET_PX } from "./road";
+import {
+  PX_PER_UNIT,
+  bridgeDeckHeight,
+  riverSurfaceHeight,
+  terrainHeight,
+  toWorldX,
+  toWorldZ,
+} from "./World";
 
 /**
  * How far past the waterline the drawn surface reaches.
@@ -260,7 +264,7 @@ export class River {
 
     const span = BRIDGE_HALF_SPAN_PX / PX_PER_UNIT;
     const halfW = BRIDGE_HALF_WIDTH_PX / PX_PER_UNIT;
-    const deckY = riverSurfaceHeight(riverAt(at.x, at.y).along) + BRIDGE_CLEARANCE;
+    const deckY = bridgeDeckHeight();
     const at2 = (along: number, across: number) => ({
       x: cx + ax * along + sx * across,
       z: cz + az * along + sz * across,
@@ -296,56 +300,64 @@ export class River {
 
     // Parapets: a post every so often with two rails run between them. Waist
     // high, so the deck reads as somewhere you are held on rather than as a
-    // raft.
+    // raft — and SOLID, which it was not: `resolveRiverCollision` clamps a body
+    // to the walkable strip between them now, so walking off the side of a
+    // bridge is no longer a way into the river.
+    //
+    // The inset is shared with the road, because the torches on the crossing
+    // are bracketed to this rail and a torch floating beside its own parapet is
+    // exactly the kind of disagreement two hardcoded numbers produce.
+    // HEAVIER THAN THEY LOOK THEY SHOULD BE. The first pass used a hundred-mil
+    // post and a ninety-mil rail, which is about right for real joinery and
+    // vanished completely at this camera — the only place the parapet could be
+    // seen was in its own shadow on the water. Everything else in this world is
+    // built a size up for the same reason, and a frontier bridge is baulks of
+    // timber rather than a garden fence anyway.
+    const inset = PARAPET_INSET_PX / PX_PER_UNIT;
     const posts = 11;
     for (let i = 0; i < posts; i++) {
       const along = -span + (i / (posts - 1)) * span * 2;
       for (const side of [-1, 1]) {
-        const p = at2(along, side * (halfW - 0.18));
-        b.cyl("timber", 0.11, 1.05, p.x, deckY + 0.07, p.z, 6);
+        const p = at2(along, side * (halfW - inset));
+        b.cyl("timber", 0.15, PARAPET_HEIGHT, p.x, deckY + 0.07, p.z, 6);
       }
     }
     for (const side of [-1, 1]) {
-      for (const railY of [0.5, 0.95]) {
-        const p = at2(0, side * (halfW - 0.18));
-        b.box("plank", span * 2, 0.11, 0.09, p.x, deckY + railY, p.z, yaw);
+      for (const railY of [0.46, PARAPET_HEIGHT - 0.08]) {
+        const p = at2(0, side * (halfW - inset));
+        b.box("plank", span * 2, 0.17, 0.14, p.x, deckY + railY, p.z, yaw);
       }
     }
+    // A kerb along each edge of the deck, outside the posts. It is what stops
+    // the planks ending in a paper edge, and it is the piece that reads as
+    // "solid" from a long way off.
+    for (const side of [-1, 1]) {
+      const p = at2(0, side * (halfW - 0.08));
+      b.box("timber", span * 2, 0.2, 0.18, p.x, deckY - 0.06, p.z, yaw);
+    }
 
-    // The approaches. Earth ramped up to the deck at either end, so you walk
-    // onto the bridge instead of stepping up onto it — the road ribbon does the
-    // same climb in `roadDeckHeight`, and these are the shoulders it sits on.
-    const rampLen = 5.0;
-    const rampSteps = 9;
+    // THE APPROACHES ARE NOT BUILT HERE ANY MORE, and that is the fix for the
+    // seam. They were nine boxes of earth stepped up to the deck, laid on top
+    // of a height field that knew nothing about them — so every one of them met
+    // the ground at a different place, the road ribbon sampled the terrain
+    // underneath rather than the boxes, and the join read as a stack of planks
+    // half-buried in a hill. The ramp lives in `terrainHeight` now (see
+    // `rampToBridge` in World), which means the ground, the ribbon, the torch
+    // posts and the player's feet cannot disagree about where the road is.
+    //
+    // What is still built here is the abutment: a low stone shoulder either
+    // side of each end, which is what a timber bridge lands on and what stops
+    // the deck ending in a lip of bare earth.
     for (const dir of [-1, 1]) {
-      for (let i = 0; i < rampSteps; i++) {
-        const t = (i + 0.5) / rampSteps;
-        const along = dir * (span + t * rampLen);
-        const p = at2(along, 0);
-        const ground = terrainHeight(p.x, p.z);
-        const top = deckY + (ground - deckY) * (t * t * (3 - 2 * t));
-        const h = Math.max(0.12, top - ground + 0.5);
-        b.box(
-          "dirt",
-          (rampLen / rampSteps) * 1.35,
-          h,
-          (ROAD_HALF_WIDTH_PX / PX_PER_UNIT) * 2.05,
-          p.x,
-          top - h,
-          p.z,
-          yaw,
-        );
+      for (const side of [-1, 1]) {
+        const p = at2(dir * (span - 0.3), side * (halfW - 0.55));
+        const foot = terrainHeight(p.x, p.z);
+        b.box("stoneDark", 1.5, Math.max(0.35, deckY - 0.45 - foot), 1.1, p.x, foot, p.z, yaw);
       }
     }
 
     b.finish(g);
     this.group.add(g);
-  }
-
-  /** Where the bridge deck is, in world units. Read by the road ribbon. */
-  static deckHeight(): number {
-    const at = bridgeAt();
-    return riverSurfaceHeight(riverAt(at.x, at.y).along) + BRIDGE_CLEARANCE;
   }
 
   /**

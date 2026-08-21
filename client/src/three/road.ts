@@ -33,46 +33,22 @@ import {
   roadPath,
   roadTorches,
 } from "../../../shared/road";
-import { BRIDGE_HALF_SPAN_PX, BRIDGE_HALF_WIDTH_PX, bridgeAt } from "../../../shared/river";
+import {
+  BRIDGE_HALF_SPAN_PX,
+  BRIDGE_HALF_WIDTH_PX,
+  bridgeFrame,
+  bridgePoint,
+} from "../../../shared/river";
 import { Builder, roadTexture } from "./town";
-import { River } from "./river";
-import { PX_PER_UNIT, terrainHeight, toServerX, toServerY, toWorldX, toWorldZ } from "./World";
-
-/** How long the earth ramp onto the bridge is, in server pixels. Matches the
- *  ramp the bridge itself builds, because they are the same slope. */
-const BRIDGE_RAMP_PX = 200;
-
-/**
- * How high the road surface is at a point — the ground, except over the water.
- *
- * The ribbon samples the height field per vertex so the track sits on whatever
- * is there, which is the right answer everywhere except the one place the road
- * is not on the ground. Over the Coldwater it is on a deck, and a deck is flat
- * and about two units above the water; a ribbon that kept sampling the terrain
- * would dive into the channel, come out the far side, and leave the bridge
- * standing over a road that goes under it.
- *
- * The ramp is eased rather than linear, so the road rises onto the deck instead
- * of hitting it at a corner — and it is the same easing and the same length the
- * bridge banks its own approaches with, because the two have to be one slope.
- */
-export function roadSurfaceHeight(x: number, z: number): number {
-  const at = bridgeAt();
-  const a = (at.angleDeg * Math.PI) / 180;
-  const dx = toServerX(x) - at.x;
-  const dy = toServerY(z) - at.y;
-  const along = Math.abs(dx * Math.cos(a) + dy * Math.sin(a));
-  const across = Math.abs(-dx * Math.sin(a) + dy * Math.cos(a));
-  const ground = terrainHeight(x, z);
-  if (across > BRIDGE_HALF_WIDTH_PX * 2 || along > BRIDGE_HALF_SPAN_PX + BRIDGE_RAMP_PX) {
-    return ground;
-  }
-  const deck = River.deckHeight();
-  if (along <= BRIDGE_HALF_SPAN_PX) return deck;
-  const t = (along - BRIDGE_HALF_SPAN_PX) / BRIDGE_RAMP_PX;
-  const ease = t * t * (3 - 2 * t);
-  return deck + (ground - deck) * ease;
-}
+import {
+  PX_PER_UNIT,
+  bridgeDeckHeight,
+  surfaceHeight,
+  toServerX,
+  toServerY,
+  toWorldX,
+  toWorldZ,
+} from "./World";
 
 /** How many torches get a real light at once. */
 const LIT_TORCHES = 5;
@@ -84,6 +60,12 @@ const TORCH_HEIGHT = 2.6;
 /** The flame's own colour. Warmer and redder than the town's glass lanterns —
  *  a pitch torch is not a lamp. */
 const FLAME_COLOR = 0xff9a3c;
+
+/** How far in from the deck's edge the parapet stands, in server pixels. Shared
+ *  with the bridge itself so a torch bracketed to the rail is on the rail. */
+export const PARAPET_INSET_PX = 7;
+/** And how high the rail's top is above the deck, in world units. */
+export const PARAPET_HEIGHT = 1.05;
 
 interface Torch {
   /** World position of the flame. */
@@ -144,6 +126,21 @@ export class NorthRoad {
       return Math.min(fadeIn, fadeOut);
     };
 
+    /**
+     * And the dirt STOPS AT THE BRIDGE.
+     *
+     * The ribbon used to be drawn across the span at deck height, which is a
+     * dirt track painted over a timber deck — two surfaces claiming the same
+     * millimetre, one of them wrong. The planks are the road over the water;
+     * the track fades out through the last eighty pixels of the approach, which
+     * is also where the wheel ruts would actually stop in a place somebody had
+     * bothered to build a bridge.
+     */
+    const deckFade = (sx: number, sy: number) => {
+      const along = Math.abs(bridgeFrame(sx, sy).along);
+      return Math.min(1, Math.max(0, (along - BRIDGE_HALF_SPAN_PX) / 80));
+    };
+
     let along = 0;
     const rows: { x: number; z: number; nx: number; nz: number; u: number; a: number }[] = [];
     for (let i = 0; i < path.length; i++) {
@@ -160,7 +157,7 @@ export class NorthRoad {
         nx: -dy / len,
         nz: dx / len,
         u: (along / PX_PER_UNIT) * 0.34,
-        a: alphaAlong(i),
+        a: alphaAlong(i) * deckFade(path[i].x, path[i].y),
       });
     }
 
@@ -179,7 +176,7 @@ export class NorthRoad {
       const t = (j / across) * 2 - 1;
       const x = r.x + r.nx * t * halfW;
       const z = r.z + r.nz * t * halfW;
-      positions.push(x, roadSurfaceHeight(x, z), z);
+      positions.push(x, surfaceHeight(x, z), z);
       uvs.push(r.u, (t + 1) / 2);
       colors.push(1, 1, 1, r.a * alphaAcross(t));
     };
@@ -243,40 +240,65 @@ export class NorthRoad {
     const posts = new THREE.Group();
 
     for (const t of roadTorches()) {
-      const x = toWorldX(t.x);
-      const z = toWorldZ(t.y);
-      // Each post stands on its own patch of ground — or on the bridge deck,
-      // for the pair that ends up over the water. Following the road's own
-      // surface rather than the terrain is what puts a light on the crossing,
-      // which is where a traveller at night most wants one.
-      const g = roadSurfaceHeight(x, z);
+      // ON THE RAIL, NOT ON THE ROAD. A torch that lands within the span used
+      // to be planted on the deck at the road's own offset, which put a post in
+      // the middle of the crossing — the one stretch of the whole route where
+      // there is no verge to stand it on. Moved out to the parapet and mounted
+      // to it: shorter, because it starts a rail's height up, and with no ring
+      // of stones at the foot, because it is bracketed to timber rather than
+      // pushed into the ground.
+      const frame = bridgeFrame(t.x, t.y);
+      const onDeck = Math.abs(frame.along) <= BRIDGE_HALF_SPAN_PX;
+
+      let sx = t.x;
+      let sy = t.y;
+      if (onDeck) {
+        const rail = (BRIDGE_HALF_WIDTH_PX - PARAPET_INSET_PX) * Math.sign(frame.across || 1);
+        const moved = bridgePoint(frame.along, rail);
+        sx = moved.x;
+        sy = moved.y;
+      }
+      const x = toWorldX(sx);
+      const z = toWorldZ(sy);
+      // Each post stands on its own patch of ground — or on the parapet, for
+      // the pair that ends up over the water. Reading the road's own surface
+      // rather than the terrain is what puts a light on the crossing, which is
+      // where a traveller at night most wants one.
+      const g = onDeck ? bridgeDeckHeight() + PARAPET_HEIGHT : surfaceHeight(x, z);
+      const height = onDeck ? TORCH_HEIGHT * 0.55 : TORCH_HEIGHT;
       // A post, a cross-brace and a burnt head. Timber rather than iron: this
       // is a road somebody maintains with what is to hand, not a town's
       // ironmongery, and the difference is most of why it reads as a frontier.
-      b.cyl("timber", 0.09, TORCH_HEIGHT, x, g, z, 6);
-      b.box("timber", 0.42, 0.07, 0.07, x, g + TORCH_HEIGHT * 0.62, z, t.alongPx * 0.01);
-      b.add("iron", new THREE.ConeGeometry(0.2, 0.34, 6), x, g + TORCH_HEIGHT + 0.1, z);
-      // A ring of stones at the foot, which is what stops a torch post from
-      // looking like a stick pushed into the ground.
-      for (let k = 0; k < 4; k++) {
-        const a = (k / 4) * Math.PI * 2 + t.alongPx;
-        b.add(
-          "rockDark",
-          new THREE.IcosahedronGeometry(0.16, 0),
-          x + Math.cos(a) * 0.28,
-          g + 0.06,
-          z + Math.sin(a) * 0.28,
-          a,
-        );
+      b.cyl("timber", 0.09, height, x, g, z, 6);
+      b.box("timber", 0.42, 0.07, 0.07, x, g + height * 0.62, z, t.alongPx * 0.01);
+      b.add("iron", new THREE.ConeGeometry(0.2, 0.34, 6), x, g + height + 0.1, z);
+      if (onDeck) {
+        // An iron collar where it meets the rail, so it reads as fixed to the
+        // parapet rather than balanced on it.
+        b.cyl("iron", 0.13, 0.18, x, g - 0.09, z, 6);
+      } else {
+        // A ring of stones at the foot, which is what stops a torch post from
+        // looking like a stick pushed into the ground.
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI * 2 + t.alongPx;
+          b.add(
+            "rockDark",
+            new THREE.IcosahedronGeometry(0.16, 0),
+            x + Math.cos(a) * 0.28,
+            g + 0.06,
+            z + Math.sin(a) * 0.28,
+            a,
+          );
+        }
       }
 
       const flame = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), flameMaterial);
-      flame.position.set(x, g + TORCH_HEIGHT + 0.3, z);
+      flame.position.set(x, g + height + 0.3, z);
       posts.add(flame);
 
       this.torches.push({
         x,
-        y: g + TORCH_HEIGHT + 0.3,
+        y: g + height + 0.3,
         z,
         // Distance along the road, so no two neighbours flicker together and
         // every client agrees about which is which.
@@ -316,7 +338,7 @@ export class NorthRoad {
     const near = path[3];
     const sx = toWorldX(near.x) + 2.4;
     const sz = toWorldZ(near.y);
-    const sy = terrainHeight(sx, sz);
+    const sy = surfaceHeight(sx, sz);
     b.cyl("timber", 0.1, 2.5, sx, sy, sz, 6);
     b.box("plank", 1.7, 0.34, 0.07, sx + 0.6, sy + 2.0, sz, -0.35);
     // The arm points the way the road goes, so it is information rather than
@@ -335,7 +357,7 @@ export class NorthRoad {
     // The far end: a cairn, and the biggest stone in it faces back down the road.
     const cx = toWorldX(NORTH_TOWN_SITE.x);
     const cz = toWorldZ(NORTH_TOWN_SITE.y);
-    const cy = terrainHeight(cx, cz);
+    const cy = surfaceHeight(cx, cz);
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2;
       const r = 0.9 - i * 0.06;

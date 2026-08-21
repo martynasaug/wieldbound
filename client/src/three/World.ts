@@ -11,7 +11,16 @@ import { windyGeometry } from "./wind";
 import { seededRandom } from "../../../shared/rng";
 import { DayNight } from "./daynight";
 import { ROAD_HALF_WIDTH_PX, distanceToRoad } from "../../../shared/road";
-import { RIVER_HALF_WIDTH_PX, riverAt, riverPath } from "../../../shared/river";
+import {
+  BRIDGE_HALF_SPAN_PX,
+  BRIDGE_RAMP_PX,
+  BRIDGE_WALK_HALF_PX,
+  RIVER_HALF_WIDTH_PX,
+  bridgeAt,
+  bridgeFrame,
+  riverAt,
+  riverPath,
+} from "../../../shared/river";
 import { FORESTS, forestStrengthAt } from "../../../shared/forests";
 import {
   TOWN_BUILDINGS,
@@ -319,8 +328,92 @@ function carveRiver(x: number, z: number, h: number): number {
   return shaped + (h - shaped) * ease;
 }
 
+// --- The crossing ------------------------------------------------------------
+//
+// THE DECK IS PART OF THE GROUND, and that is the correction. It used to be
+// three separate opinions about the same place: the terrain said riverbed, the
+// road ribbon said deck, and the player's feet said terrain — so you crossed
+// the Coldwater by walking through the bridge, under the planks, in the
+// channel. The approaches were boxes of earth laid on top, which left a seam
+// wherever the box and the land disagreed.
+//
+// One function now. The height field ramps up to meet the deck at each
+// abutment, `surfaceHeight` returns the deck over the span, and the ground, the
+// ribbon, the torch posts and the player's feet all read one of the two.
+
+/** How high the deck sits above the water it crosses. */
+export const BRIDGE_CLEARANCE_UNITS = 2.9;
+
+/** How wide the earth causeway is, half-width in server pixels, before it fades. */
+const RAMP_HALF_PX = BRIDGE_WALK_HALF_PX + 55;
+const RAMP_FADE_PX = 55;
+
+let cachedDeck: number | null = null;
+
+/**
+ * The height of the bridge deck, in world units.
+ *
+ * Measured from the WATER, not from the ground plus a constant: a deck at
+ * ground level plus a constant puts one end of a bridge in the river on any
+ * bank that is not level with the other, which is every bank.
+ */
+export function bridgeDeckHeight(): number {
+  if (cachedDeck === null) {
+    const at = bridgeAt();
+    cachedDeck = riverSurfaceHeight(riverAt(at.x, at.y).along) + BRIDGE_CLEARANCE_UNITS;
+  }
+  return cachedDeck;
+}
+
+/**
+ * Raises the ground into an approach ramp at each end of the bridge.
+ *
+ * ONLY EVER FILLS, NEVER CUTS. An approach that dug a trench through a rise to
+ * reach the deck would be worse than one that simply stops early — and on a
+ * bank that already stands above the deck there is nothing to build.
+ */
+function rampToBridge(x: number, z: number, h: number): number {
+  const f = bridgeFrame(toServerX(x), toServerY(z));
+  const along = Math.abs(f.along);
+  const across = Math.abs(f.across);
+  if (along <= BRIDGE_HALF_SPAN_PX) return h;
+  if (along > BRIDGE_HALF_SPAN_PX + BRIDGE_RAMP_PX) return h;
+  if (across > RAMP_HALF_PX + RAMP_FADE_PX) return h;
+
+  const deck = bridgeDeckHeight();
+  const t = (along - BRIDGE_HALF_SPAN_PX) / BRIDGE_RAMP_PX;
+  const ease = t * t * (3 - 2 * t);
+  // Deck at the abutment, natural land by the far end of the ramp.
+  let raised = deck + (h - deck) * ease;
+  // Across the ramp it tapers back to the land, so the causeway has shoulders
+  // rather than being a wall with a road on top.
+  const wide = 1 - Math.min(1, Math.max(0, (across - RAMP_HALF_PX) / RAMP_FADE_PX));
+  const shoulder = wide * wide * (3 - 2 * wide);
+  raised = h + (raised - h) * shoulder;
+  return Math.max(h, raised);
+}
+
+/**
+ * What you actually stand on: the ground, except over the water.
+ *
+ * The one height the player's feet, the camera's look target and the road's
+ * ribbon all take. Over the span it is the deck; everywhere else — including
+ * both approaches, which the height field has already ramped — it is the
+ * terrain.
+ */
+export function surfaceHeight(x: number, z: number): number {
+  const f = bridgeFrame(toServerX(x), toServerY(z));
+  if (
+    Math.abs(f.along) <= BRIDGE_HALF_SPAN_PX &&
+    Math.abs(f.across) <= BRIDGE_WALK_HALF_PX + 30
+  ) {
+    return bridgeDeckHeight();
+  }
+  return terrainHeight(x, z);
+}
+
 export function terrainHeight(x: number, z: number): number {
-  let h = carveRiver(x, z, baseHeight(x, z));
+  let h = rampToBridge(x, z, carveRiver(x, z, baseHeight(x, z)));
 
   // And then it is levelled wherever something was built.
   let level = 1;
@@ -770,10 +863,12 @@ export class World {
 
   /** Keeps the camera and the shadow frustum trailing the player. */
   follow(x: number, z: number, dtSeconds: number): void {
-    // Chest height above the GROUND, not above zero. On a rise the character
-    // would otherwise drift down the frame as they climbed, which reads as the
-    // camera sagging rather than as a hill.
-    this.desiredLook.set(x, terrainHeight(x, z) + 1.0, z);
+    // Chest height above the SURFACE, not above zero and not above the terrain.
+    // On a rise the character would otherwise drift down the frame as they
+    // climbed, which reads as the camera sagging rather than as a hill — and on
+    // the bridge the look target would sit in the riverbed while the player
+    // stood two units above it on the deck.
+    this.desiredLook.set(x, surfaceHeight(x, z) + 1.0, z);
     const ease = Math.min(1, dtSeconds * 8);
     this.lookTarget.lerp(this.desiredLook, ease);
 

@@ -78,17 +78,54 @@ export const RIVER_CLEARANCE_PX = 240;
 /**
  * How far along the road, either side of the water, the bridge deck runs.
  *
- * It has to reach past the BANKS and not just past the water: the ground is cut
- * into a channel around the river, so a deck that stopped at the waterline
- * would end in mid-air over a slope. Four hundred pixels is ten world units of
- * deck, which is a bridge you walk onto rather than a plank you step over.
+ * IT NO LONGER HAS TO REACH PAST THE BANKS, and that is what let it come down
+ * from four hundred. It used to: the ground is cut into a channel around the
+ * river, so a deck that stopped at the waterline would have ended in mid-air
+ * over a slope — and a deck long enough to clear the whole cut is two and a
+ * half times the width of the water it crosses, which reads as a pier rather
+ * than a bridge. Now that the approach is part of the HEIGHT FIELD, the
+ * causeway climbs the bank and the deck only has to span the water and land on
+ * the slope either side.
  */
-export const BRIDGE_HALF_SPAN_PX = 400;
+export const BRIDGE_HALF_SPAN_PX = 320;
 
 /**
- * Half the deck's width. Wider than the road, because the parapets stand on it.
+ * Half the width you can actually WALK on — the clear span between the rails.
+ *
+ * WIDER THAN THE ROAD, and the twelve pixels are measured rather than chosen.
+ * The obvious value is the road's own half width, so that the bridge is the
+ * road continuing rather than a separate object you step onto. That is wrong,
+ * and the way it is wrong is worth keeping: the bridge's frame is a STRAIGHT
+ * line — the road's tangent at the single point where the two curves meet —
+ * while the road itself goes on bending across eight hundred pixels of span. By
+ * the far abutment its verge has wandered 104px off that axis, nine past the
+ * road's own 95, so a clear span of exactly the road's width put the outside
+ * wheel rut through the parapet.
+ *
+ * `tools/test/river.mjs` measures the real curve and fails if this is ever
+ * short of it again, which is the only way a number like this stays true when
+ * somebody moves a waypoint.
  */
-export const BRIDGE_HALF_WIDTH_PX = ROAD_HALF_WIDTH_PX + 26;
+export const BRIDGE_WALK_HALF_PX = ROAD_HALF_WIDTH_PX + 12;
+
+/**
+ * Half the deck's width. Wider than the clear span, because the parapets stand
+ * in the difference.
+ */
+export const BRIDGE_HALF_WIDTH_PX = BRIDGE_WALK_HALF_PX + 26;
+
+/**
+ * How long the earth approach is at each end, in server pixels.
+ *
+ * The deck is flat and about two units above the water; the land at the
+ * abutment is a riverbank. Something has to get you from one to the other, and
+ * it is a ramp of packed earth — so it lives in the HEIGHT FIELD rather than
+ * being boxes laid on top of it. That is the whole fix for the seam: the
+ * ground, the road ribbon, the player's feet and the torch posts all read the
+ * same function, so there is no version of the transition where two of them
+ * disagree.
+ */
+export const BRIDGE_RAMP_PX = 420;
 
 function catmull(pts: { x: number; y: number }[], stepsPerLeg: number): { x: number; y: number }[] {
   const clampIdx = (i: number) => pts[Math.max(0, Math.min(pts.length - 1, i))];
@@ -270,21 +307,51 @@ export function bridgeAt(): RiverCrossing {
 }
 
 /**
- * Is this point on the bridge deck?
+ * A point in the bridge's own frame: how far along the deck, and how far across
+ * it.
+ *
+ * Exported because four separate things need it and every one of them getting
+ * it slightly differently is how a bridge ends up with its torches in the road
+ * and its deck under the player. The client's height field ramps the ground
+ * with it, the road ribbon rides it, the torches mount to the parapet by it,
+ * and the collision below keeps you between the rails with it.
+ */
+export function bridgeFrame(x: number, y: number): { along: number; across: number } {
+  const at = bridgeAt();
+  const a = (at.angleDeg * Math.PI) / 180;
+  const dx = x - at.x;
+  const dy = y - at.y;
+  return {
+    along: dx * Math.cos(a) + dy * Math.sin(a),
+    across: -dx * Math.sin(a) + dy * Math.cos(a),
+  };
+}
+
+/** And back again. */
+export function bridgePoint(along: number, across: number): { x: number; y: number } {
+  const at = bridgeAt();
+  const a = (at.angleDeg * Math.PI) / 180;
+  return {
+    x: at.x + Math.cos(a) * along - Math.sin(a) * across,
+    y: at.y + Math.sin(a) * along + Math.cos(a) * across,
+  };
+}
+
+/**
+ * Is this point on the walkable deck?
  *
  * The deck is a rectangle in the bridge's own frame — along the road, and
  * across it. A circle would have been simpler and wrong in the way that
  * matters: the deck is four times longer than it is wide, and a circle big
  * enough to cover its length would let somebody walk onto the water beside it.
+ *
+ * The WALKABLE width, not the deck's full width. The strip outside it is where
+ * the parapets stand, and a body there is a body leaning over the rail — which
+ * is over the water, and the water is the thing this answer exists to exclude.
  */
 export function onBridge(x: number, y: number): boolean {
-  const at = bridgeAt();
-  const a = (at.angleDeg * Math.PI) / 180;
-  const dx = x - at.x;
-  const dy = y - at.y;
-  const along = dx * Math.cos(a) + dy * Math.sin(a);
-  const across = -dx * Math.sin(a) + dy * Math.cos(a);
-  return Math.abs(along) <= BRIDGE_HALF_SPAN_PX && Math.abs(across) <= BRIDGE_HALF_WIDTH_PX;
+  const f = bridgeFrame(x, y);
+  return Math.abs(f.along) <= BRIDGE_HALF_SPAN_PX && Math.abs(f.across) <= BRIDGE_WALK_HALF_PX;
 }
 
 /**
@@ -344,7 +411,32 @@ export function resolveRiverCollision(
   y: number,
   radiusPx = 14,
 ): { x: number; y: number } {
-  if (onBridge(x, y)) return { x, y };
+  // --- The parapets ---------------------------------------------------------
+  //
+  // THE BRIDGE IS NOT A HOLE IN THE COLLISION, IT IS A CORRIDOR. The first
+  // version treated the deck as a rectangle where the river simply did not
+  // apply, which is most of a bridge and not the important part: it left the
+  // sides open, so the only thing between a traveller and the water was the
+  // fact that the deck happened to be drawn there. Walking off the edge put you
+  // in the channel with a bridge overhead.
+  //
+  // A rail either side is also the one piece of collision out here that a
+  // player will meet by accident rather than by trying, so it is a clamp rather
+  // than a push: you slide along the parapet instead of being bounced off it,
+  // exactly as the town's walls resolve on their shallowest axis.
+  const f = bridgeFrame(x, y);
+  // The catch is the DECK's full width, not the walkable strip's. Anything
+  // within the footprint of a solid deck is on the bridge by definition — and
+  // catching only the walkable strip left a band the width of a parapet where a
+  // body fell through to the water rule and got pushed out sideways, which is a
+  // few pixels wide and therefore exactly the sort of thing somebody finds once
+  // and cannot reproduce.
+  if (Math.abs(f.along) <= BRIDGE_HALF_SPAN_PX && Math.abs(f.across) <= BRIDGE_HALF_WIDTH_PX + radiusPx) {
+    const limit = Math.max(0, BRIDGE_WALK_HALF_PX - radiusPx);
+    if (Math.abs(f.across) <= limit) return { x, y };
+    return bridgePoint(f.along, Math.sign(f.across) * limit);
+  }
+
   const keepOut = RIVER_HALF_WIDTH_PX + radiusPx + BANK_PADDING_PX;
 
   // UP TO THREE PASSES, and the reason is the bends. One push moves the body

@@ -4673,6 +4673,66 @@ and nothing else. Open meadow went from 1.6% of world pixels moving to **8.9%**
 after the generator fix — same plants, finally in different places. 273 draw
 calls, 1.77M triangles, a 5.3 second load, zero console errors.
 
+### M54.1a — the bridge, reported from play
+Three faults, all found by walking it rather than by any test, and all three the
+same underlying mistake: **the crossing was three separate opinions about where
+the road is.**
+
+**You walked THROUGH it.** The player's feet came from `onGround`, which read
+`terrainHeight` — and over the Coldwater the terrain is the riverbed. So you
+crossed by walking down into the channel, under your own bridge, and up the far
+side, while the road you were following went over the top. There is one
+`surfaceHeight` now: the deck over the span, the ground everywhere else, taken
+by the player's feet, the camera's look target, the road ribbon per vertex, the
+torch posts and anything dropped on the deck.
+
+**The join was a step.** The approaches were nine boxes of earth stepped up to
+the deck and laid on top of a height field that knew nothing about them, so the
+ground and the boxes met wherever they happened to meet and the ribbon sampled
+neither. The ramp lives in `terrainHeight` now, which is what makes the
+transition impossible to get wrong rather than merely fixed.
+
+Two numbers came out of measuring it. The ramp was 220px — five and a half world
+units, and the terrain mesh is 1.63 units a quad, so a THREE-QUAD ramp was being
+asked to describe a smooth climb. And the deck was 1.9 units above the water
+while the bank crest is 2.4, so the road had to dip into a hollow to get onto
+the bridge. Deck to 2.9 and ramp to 420px puts the deck just above the bank and
+the climb at about one in five.
+
+**The dirt ran across the planks.** The ribbon was drawn at deck height over the
+span — a dirt track painted onto a timber deck, two surfaces claiming the same
+millimetre. It fades out through the last eighty pixels of the approach now,
+which is where wheel ruts would stop anyway.
+
+**And the torches stood in the road.** A torch landing inside the span was
+planted on the deck at the road's own offset, in the middle of the one stretch
+of the route with no verge to stand it on. They are bracketed to the parapet
+now — moved out to the rail line, shortened, with an iron collar instead of a
+ring of stones, because a post pushed into the ground and a post fixed to a rail
+are not the same object.
+
+### Two things that fell out of fixing those
+**The parapets were not solid.** The deck was a rectangle where the river's
+collision did not apply, which is most of a bridge and not the important part —
+the sides were open, and the only thing between a traveller and the water was
+that the deck happened to be drawn there. A body is clamped to the walkable
+strip now, sliding along the rail rather than being bounced off it.
+
+**And the clear span had to be wider than the road.** The obvious value is the
+road's own width, so the bridge is the road continuing. That is wrong, and the
+way it is wrong is worth keeping: the bridge's frame is a STRAIGHT line — the
+road's tangent at the single point where the two curves meet — while the road
+goes on bending across the span. By the far abutment its verge had wandered nine
+pixels past its own half width, so a clear span of exactly the road's width put
+the outside wheel rut through the parapet. The test measures the real curve and
+fails if the number is ever short of it again.
+
+The deck also came down from 400px to 320px either side. It used to have to
+clear the whole cut, banks included, because there was nothing to get you up the
+slope — and a deck long enough for that is two and a half times the width of the
+water, which reads as a pier. With the approach in the height field it only has
+to be a bridge.
+
 ### One more note for the harness
 Two rounds of "the source is right and the runtime disagrees" were a Vite dev
 server that had been running across many edits and was serving stale modules for
@@ -4729,6 +4789,28 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- ONE surface height, taken by everything that stands on the ground. The
+  crossing was three opinions about where the road is — the terrain said
+  riverbed, the ribbon said deck, the player’s feet said terrain — and the
+  result was walking through your own bridge. Anything that can disagree about
+  where the ground is eventually will.
+- A ramp belongs in the HEIGHT FIELD, not in boxes laid on top of it. Boxes meet
+  the land wherever they happen to, and nothing else sampling the ground knows
+  they exist. Putting the approach in the height function makes the join impossible
+  to get wrong rather than merely fixed.
+- Anything shaped by the terrain mesh has to be several QUADS long to read. The
+  mesh is 1.63 units a quad, so the first 5.5-unit ramp was described by three
+  vertices and came out as a step. Same family as the amplitudes that were too
+  timid for a 41-degree camera: a feature smaller than its own sampling is not a
+  subtle feature, it is an absent one.
+- A bridge deck sits ABOVE the bank crest, never below it. At 1.9 units over the
+  water and a crest at 2.4, the road had to dip into a hollow to get onto the
+  bridge.
+- The clear span between the rails is WIDER than the road, because the bridge
+  frame is a straight line and the road is not. Over eight hundred pixels of
+  span the road bends nine pixels past its own half width, which put the outside
+  rut through the parapet. Measured off the real curve by the test rather than
+  assumed.
 - The wind is DERIVED from wall-clock time, like the hour, and for the same
   reasons: it drives motion and nothing the server resolves, so a message
   carrying it could arrive late or drift between two people in the same field.
