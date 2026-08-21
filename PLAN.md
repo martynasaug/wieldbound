@@ -5368,6 +5368,143 @@ Fourteen suites, smoke, both workspaces, zero console errors.
 
 ---
 
+## Phase 57 — A world you can hear
+Sound has existed in this project since Phase 39 and has never been a PLACE.
+Twelve baked cues fire when something happens — a swing, a hit, a level-up — and
+between them the world is silent. That is the loudest remaining thing saying
+*this is a screen* rather than *this is outdoors*, which is the same sentence
+M54.1 wrote about grass that had never moved, one sense across.
+
+### M57.1 — the soundscape
+Six beds, and every one of them a pure function of WHERE you are, WHEN it is,
+and how hard it is blowing.
+
+**Derived, not sent**, for the third time and for the same reason the hour and
+the wind are: sound drives nothing the server resolves, so a message carrying it
+could arrive late or drift between two people standing in the same field. All
+three inputs are already agreed on by every client without a byte crossing the
+wire, so the soundscape is too.
+
+**It reads the same tables the fauna does.** `forestStrengthAt`, `riverAt`,
+`nightAmount` — the questions the butterflies and fireflies already answer. A
+wood at dusk has been a visibly different place to stand in since Phase 54;
+asking the same questions here is what stops it being audibly somewhere else.
+
+**And it is synthesised**, like every cue, every town texture and every
+building. The argument is Phase 49's about a downloaded building standing in
+front of Quaternius pines: a field recording of English woodland would arrive in
+a different stylisation from the chiptune blip a sword makes, and would be
+megabytes for a bed that is four filters over one buffer of noise.
+
+### What the six are, and what each one had to get right
+- **Wind.** Pink noise through a lowpass whose CORNER OPENS with the gust as
+  well as its level rising. Level alone reads as somebody turning it up;
+  measured, the band above 1.6kHz goes from −127dB in a calm to −92 in a blow,
+  which is the part that makes it weather.
+- **Gust.** A narrow band over the top, cubed against strength so it genuinely
+  only exists in the top of the range. Linear, it is present at every strength
+  and therefore says nothing.
+- **Leaves.** The same air two octaves up, and it is a PAIR with the wind rather
+  than an addition: the open wind drops as the canopy closes and comes back as
+  leaves, so walking into Blackstand is a change. Measured at 8dB brighter than
+  open ground in the same wind. Same shape as the butterflies handing over to
+  the fireflies at dusk.
+- **Water.** A band rather than a hiss — everything under 300Hz is a rumble the
+  Coldwater does not have and everything over 2k is rain. 28dB over an open
+  field standing on the bank.
+- **Fire.** A low roar, read off the SAME tables the flames are placed from —
+  the braziers and the smithy out of `shared/town.ts`, the torches out of
+  `shared/road.ts`. A registry populated by whatever draws them would be a
+  second list that agrees on the day it is written. Braziers and torches are
+  weighted by NIGHT, a fade rather than a threshold, so nobody keeps a second
+  opinion about the hour the lamps come on; the forge burns at every hour,
+  because there is a smith standing at it at every hour.
+- **Crickets.** Three gated tones, and the GATE is the whole thing — a cricket is
+  not a pitch, it is a rate, which is why a square wave driving a gain sounds
+  like one and a tremolo does not. Three voices at rates that are not multiples
+  of each other, so the chorus drifts in and out of phase with itself for ever.
+  31dB at 4kHz, in a band nothing else in the game occupies.
+
+And **birdsong is not a bed**, because a bird is a thing that happens with
+silence either side of it, and the silence is most of what makes it read as one
+bird somewhere rather than as an atmosphere track. Poisson gaps rather than a
+jittered interval, because a jittered interval still has a beat in it. Two
+calls: a fast rising trill in the open and a slow two-note in a wood, which is
+the same distinction the fauna table draws.
+
+### The cues moved onto the same graph, and that was the point
+`sfx.ts` was twelve `HTMLAudioElement`s with a round-robin pool of four per cue,
+because one element can only play once at a time. Decoded into buffers on the
+shared context, the whole pooling mechanism goes away — a buffer source is
+created per play, so there is no such thing as interrupting one.
+
+The reason for moving is not tidiness. **`M` has to silence the world as well as
+the cues**, and two subsystems with two independent volumes is a mixer with a
+bug in it: one of them would keep playing. One master gain rules both, with a
+cue bus and an ambient bus under it, mixed against different things — a cue is
+an event the player caused and has to land, and the world is a floor that must
+never be the reason a hit is not heard.
+
+### Three numbers that are load-bearing
+- **The follow time is 0.75s**, and it is the most important constant in the
+  file. A bed that tracked position tightly is a volume knob turning as you
+  walk, which the ear hears as a mechanism; at three quarters of a second the
+  river simply gets closer.
+- **Every ramp is guarded against not moving.** `update` runs from the render
+  loop, so an unguarded version schedules six automation events a frame for
+  ever — and an AudioParam's event list is a list. Standing still is the common
+  case and it costs nothing now.
+- **The noise buffer's loop seam is crossfaded.** Four seconds of pink noise
+  looped end to end clicks, and a click every four seconds is a metronome nobody
+  can find.
+
+### Verified by measuring the bus, because there is nothing to look at
+An audio graph is the one part of this project with nothing on screen, so
+`__wieldboundAudio` exposes the busses and the probe taps an `AnalyserNode` onto
+them. The beds are driven with synthetic `Listening` values rather than by
+walking the character around — which is exactly what that argument being pure
+buys. Level and four bands, per place and per hour:
+
+    meadow, calm, noon        rms 0.0044   low -77  mid -98  high -127  4k -131
+    meadow, blowing, noon     rms 0.0212   low -64  mid -70  high  -92  4k  -97
+    wood, blowing, noon       rms 0.0167   low -67  mid -72  high  -85  4k  -87
+    the Coldwater, calm       rms 0.0180   low -68  mid -69  high  -84  4k  -88
+    meadow, calm, midnight    rms 0.0083   low -77  mid -94  high  -94  4k  -81
+    brazier, calm, noon       rms 0.0050   low -76  mid -92  high -116  4k -111
+    brazier, calm, midnight   rms 0.0211   low -67  mid -76  high  -92  4k  -81
+
+Plus: the ambient bus at zero measures exactly zero; `M`, pressed through the
+real key handler, takes the master to 0.00009; and `playSfx("hit")` peaks at
+0.33 on a cue bus that is silent otherwise, which is the check the migration
+actually needed. The Play button unlocks the context with no autoplay flag, so
+what the probe measures is the path a player takes.
+
+### And a fifteenth suite, for the failures that are silent by construction
+`tools/test/soundscape.mjs` checks the WORLD the beds read rather than the sound
+they make, because that is the half a browser cannot check and every failure of
+it is an absence rather than a fault:
+
+- every named wood's canopy clears the threshold the wood's own birdcall
+  branches on, over at least a quarter of its disc and not merely at its exact
+  centre — otherwise one of the two calls plays nowhere and nothing says so;
+- Emberhold can hear a fire from every point inside the palisade at every hour
+  (the forge is 330px from the square, worst case 1049 of 1200);
+- the road never runs further than 287px from a torch, so the chain of fires
+  going north is audible as well as visible;
+- and the Coldwater is NOT audible from the town square (3,233px away against an
+  audible radius of 1,850) while it IS audible standing on the bank — the second
+  half being the one that would fail if the range were ever tuned down to fix
+  the first.
+
+The thresholds are parsed out of `soundscape.ts` rather than restated, the same
+way the waystone test parses the server's own camp table: a copy agrees on the
+day it is written and stops agreeing the first time somebody retunes a range,
+which is exactly the moment this test has to fail.
+
+Fifteen suites, smoke, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -5451,6 +5588,74 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- The soundscape is DERIVED from where you are, when it is and how hard it is
+  blowing, and none of it is sent. Third time this argument has been made — the
+  hour, the wind, now the sound — and it is the same argument: it drives nothing
+  the server resolves, so a message carrying it could arrive late or drift
+  between two people standing in the same field, in exchange for authority
+  nobody needs.
+- The beds read the SAME tables the fauna does. A wood has been a visibly
+  different place to stand in since Phase 54; `forestStrengthAt`, `riverAt` and
+  `nightAmount` answering for both is what stops what you hear and what you can
+  see being two different places.
+- Sound is SYNTHESISED, like every cue, every town texture and every building.
+  A field recording of English woodland would arrive in a different stylisation
+  from the chiptune blip a sword makes — Phase 49's argument about a downloaded
+  building in front of Quaternius pines, one sense across — and would be
+  megabytes for a bed that is four filters over one buffer of noise.
+- A gust opens a FILTER, not just a fader. Level alone reads as somebody turning
+  it up; the corner moving from 420Hz to 1.5kHz is what makes it weather.
+  Measured, the band above 1.6kHz moves 35dB between a calm and a blow, which is
+  most of what the ear is actually hearing.
+- The wind and the leaves are a PAIR, not two beds. A wood is sheltered, so the
+  open wind drops away as the canopy closes and comes back two octaves up —
+  which makes walking into Blackstand a change rather than an addition. Same
+  shape as the butterflies handing over to the fireflies at dusk.
+- A cricket is a RATE, not a pitch. A square wave gating a gain at twenty-odd
+  hertz sounds like one and a tremolo does not, and three voices at rates that
+  are not multiples of each other drift in and out of phase for ever instead of
+  pulsing together.
+- Birdsong is EVENTS, not a bed, and the silence between them is the feature.
+  Continuous, it is an atmosphere track; intermittent, it is one bird somewhere.
+  The gaps are exponential rather than a jittered interval, because a jittered
+  interval still has a beat in it.
+- Where the fires are is read off the tables they are PLACED from, not from a
+  registry the things that draw them fill in. A registry agrees on the day it is
+  written, and this also works before the models have loaded. Braziers and
+  torches are weighted by night as a FADE, so nobody keeps a second opinion
+  about the hour the lamps come on; the forge burns at every hour because there
+  is a smith standing at it at every hour.
+- One master gain over both busses, which is why the cues moved onto the graph.
+  Two subsystems with two independent volumes is a mixer with a bug in it: `M`
+  would have silenced one of them. The cue bus and the ambient bus are separate
+  underneath it because they are mixed against different things — a cue is an
+  event the player caused and has to land, the world is a floor that must never
+  be the reason a hit is not heard.
+- The follow time is 0.75 seconds and it is the most important number in the
+  file. A bed that tracked position tightly is a volume knob turning as you
+  walk, which the ear hears as a mechanism. At three quarters of a second the
+  river simply gets closer.
+- Guard every ramp against not having moved. `update` runs from the render loop,
+  and an AudioParam's automation list is a LIST — six events a frame for ever is
+  a leak with a slow fuse. Standing still is the common case and must cost
+  nothing.
+- Crossfade the loop seam of a noise buffer. Four seconds looped end to end
+  clicks, and a click every four seconds is a metronome nobody can find.
+- Audio is verified by TAPPING THE BUS, never by listening and never by asserting
+  that a node exists. Level and four bands, per place and per hour, with the beds
+  driven by synthetic values rather than by walking a character around — which is
+  precisely what writing the update as a pure function of a place and an hour
+  buys. `__wieldboundAudio` exists for the same reason `__wieldboundLoad` does,
+  and with a stronger case: an audio graph is the one part of this project with
+  nothing on screen at all.
+- Test the WORLD a soundscape reads, not the sound it makes, in the offline
+  suite. Every failure of that half is an absence rather than a fault: a wood
+  whose canopy never crosses the threshold its own birdcall branches on is a
+  call that plays nowhere and throws nothing, and a river audible from the town
+  square is something nobody would ever question. The thresholds are parsed out
+  of the client rather than restated, because a copy stops agreeing at exactly
+  the moment the test would have to fail.
 
 - The ground lift is PER STATE and per CLIP — never one constant, and never per
   frame. One constant is the worst clip's, paid in every other clip: `Walk`'s
@@ -7796,7 +8001,27 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 56 complete (2026-08-21).
+Phase 0 through 57 complete (2026-08-21).
+
+**Phase 57 M57.1 — a world you can hear.** Sound has existed since Phase 39 and
+has never been a PLACE: twelve baked cues fire when something happens and
+between them the world is silent. There are six beds now, every one of them a
+pure function of where you are, when it is and how hard it is blowing — derived
+and not sent, for the same reason the hour and the wind are. Wind whose filter
+opens as the gust rises rather than only getting louder; leaves that TAKE OVER
+from it under a canopy, because a wood is sheltered and its sound is two octaves
+up; the Coldwater; fire read off the same tables the flames are placed from, at
+the forge by day and every brazier and torch after dark; birdsong as events
+rather than a bed, in two calls; and a cricket chorus built out of a gate rather
+than a tremolo, because a cricket is a rate and not a pitch. All synthesised,
+for the reason every building in Emberhold is generated. The twelve cues moved
+onto the same graph, which was the point rather than the tidying: `M` has to
+silence the world as well as the cues, and two subsystems with two volumes is a
+mixer with a bug in it. Verified by tapping an AnalyserNode onto the busses —
+level and four bands, per place and per hour — because an audio graph is the one
+part of this project with nothing on screen, and by a fifteenth offline suite
+that checks the world the beds READ, since every failure of that half is an
+absence rather than a fault.
 
 **Phase 56 M56.1 — the ground under your feet.** Two follow-ups written down at
 the end of Phase 55, and they turned out to be one complaint: the feet are

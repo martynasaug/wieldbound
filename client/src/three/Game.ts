@@ -102,6 +102,8 @@ import { Effects, isEffectName, type EffectName } from "./effects";
 import { Indicators } from "./indicators";
 import { ATTACK_STYLES, Projectiles, attackStyle, impactDelayMs } from "./attacks";
 import { playSfx, preloadSfx, toggleMuted } from "./sfx";
+import { unlockAudio } from "./audio";
+import { Soundscape } from "./soundscape";
 import {
   FOG_FAR,
   FOG_NEAR,
@@ -157,7 +159,7 @@ import { Ambience } from "./ambience";
 import { Mist } from "./mist";
 import { Presence, type Mark } from "./presence";
 import { ContactShadows, type Contact } from "./contact";
-import { updateWind } from "./wind";
+import { currentWind, updateWind } from "./wind";
 import { NORTH_TOWN_NAME, NORTH_TOWN_SITE } from "../../../shared/road";
 import { resolveRiverCollision } from "../../../shared/river";
 import { placeNameAt } from "../../../shared/places";
@@ -417,6 +419,8 @@ export class Game {
   /** And the shade under every body that stands on the ground. See contact.ts. */
   private readonly contacts = new ContactShadows(FOG_NEAR, FOG_FAR);
   private readonly contactList: Contact[] = [];
+  /** The world, out loud. Derived like the hour and the wind — see soundscape.ts. */
+  private readonly soundscape = new Soundscape();
   /** Scratch for the above, so a frame with five players allocates nothing. */
   private readonly marks: Mark[] = [];
 
@@ -881,6 +885,10 @@ export class Game {
     // already populated the moment there is something to draw it into, instead
     // of appearing a beat after the ground does.
     this.bindInput();
+    // `start` is reached from the Play button, which is the one gesture a
+    // browser will let audio begin on. Everything downstream is written to be
+    // safe before this, but nothing will make a sound until it has happened.
+    unlockAudio();
     preloadSfx();
     this.socket.connect();
 
@@ -2911,6 +2919,14 @@ export class Game {
     );
     this.updatePresence(nightAmount(hour.clock));
     this.updateContacts();
+    // In SERVER pixels, because every table the beds read — the woods, the
+    // river, the braziers, the road's torches — is written in them.
+    this.soundscape.update({
+      sx: this.playerX,
+      sy: this.playerY,
+      night: nightAmount(hour.clock),
+      windStrength: currentWind().strength,
+    });
     // And the outlines, which run the OTHER way from the pool of light at the
     // feet — see `outlineWeight` in Actor.ts. A pale line needs weight to
     // register against a lit field and almost none against black.

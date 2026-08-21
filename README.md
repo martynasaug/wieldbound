@@ -179,6 +179,22 @@ unavailable.
   tilted to the slope it lies on, because a flat mark on ground that is not flat
   is mostly inside the hill. Feet also stand at the right height in every state
   now, not just the one the rig was measured in.
+- **And you can hear where you are** — the world has a soundscape now, and it is
+  DERIVED exactly as the hour and the wind are, so two people standing in the
+  same field hear the same gust without a byte crossing the wire. Wind whose
+  filter opens as it rises, so a gust is a change in colour and not just in
+  volume; leaves that take over from it under a canopy, because a wood is
+  sheltered and its sound is two octaves up; the Coldwater from a good way off;
+  a fire you can hear before you can see it, at the forge by day and at every
+  brazier and road torch after dark; birdsong in two calls, a fast trill in the
+  open and a slow two-note in a wood; and a cricket chorus at night in the same
+  band nothing else in the game occupies. All of it **synthesised** — four
+  filters over one buffer of pink noise and a handful of oscillators — for the
+  same reason every building in Emberhold is generated: a field recording would
+  arrive in a different stylisation from the chiptune blip a sword makes. It
+  reads the same tables the butterflies and fireflies do, so what you hear and
+  what you can see are never two different places, and it sits well under the
+  combat cues, because ambient audio that draws attention has failed at its job.
 - **And it moves** — wind, on every blade of grass, every plant and every tree
   in the world, gusting on a slow swell with a faster gust riding it and veering
   right round the compass over half an hour. Derived from the wall clock like
@@ -391,7 +407,8 @@ client/   Three.js + Vite + TypeScript
                terrain (the ground shader), scatter (instanced ground cover),
                daynight (the hour), skillfx (a shape per skill),
                floaters (anchored combat text),
-               effects, indicators, hud, sfx, assets (models + load progress)
+               effects, indicators, hud, assets (models + load progress),
+               audio (one graph), sfx (cues), soundscape (the world, out loud)
   preview/     dev-only contact sheet of every body, weapon, style and rarity,
                at http://localhost:5173/preview/ — not part of the game bundle
   src/ui/      DOM panels — bag, character paperdoll, workbench, talent tree,
