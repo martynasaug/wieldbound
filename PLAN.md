@@ -4771,6 +4771,43 @@ a single screenshot proves nothing.
 
 ---
 
+## Seeding a character for testing
+PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
+it was a paragraph describing what somebody had once typed into sqlite by hand.
+`tools/seed.mjs` is that, written down:
+
+    node tools/seed.mjs Sawyer [--level 40]
+
+It grants best-in-slot Enchanted band-5 gear in all seven slots, one weapon of
+every family so all eight talent trees and all six damage schools are one bag
+slot away, spare armour in the other styles for the paperdoll, materials, and
+every weapon tree at level 20. **Talent ranks are deliberately not spent** —
+points are the thing that is hard to reach; which nodes they go into is the
+decision being tested.
+
+Best-in-slot rather than a matched set, and that is a real choice: a full
+matched kit deliberately loses to a mixed set one quality step higher, so a set
+would be testing the weaker of the two.
+
+Three things it gets right that a hand-written UPDATE would not:
+
+- **It refuses to run while the server holds the file**, and the check is an
+  EXCLUSIVE LOCK rather than a look at the WAL size. The first version measured
+  the WAL and refused against a perfectly free database, because a server killed
+  rather than shut down leaves megabytes of log behind it. Asking SQLite for the
+  lock asks the question that has a right answer. It checkpoints the WAL before
+  writing, too.
+- **It unequips what is already worn** in every slot it fills. The first run did
+  not, so a character with the starter weapon still on ended up with TWO items
+  flagged equipped in the weapon slot — the server reads a slot expecting one
+  thing and takes whichever row comes back first, which is a coin flip that
+  would have looked like "the seed sometimes does not work".
+- **It is idempotent**, clearing only the base ids it hands out, so running it
+  twice does not leave forty Frostbrands in the bag and never touches anything
+  the player found or forged.
+
+---
+
 ## Coldharrow — parked deliberately, and what it is for
 The North Road ends at a cairn and a signpost, and after M53.4 it ends at a
 cairn and a signpost on the far side of a river, through a pinewood. The obvious
