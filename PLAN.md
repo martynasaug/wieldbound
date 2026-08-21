@@ -5123,6 +5123,92 @@ one character, and M55.1's eight-family swap probe re-run to confirm the
 animation work is undisturbed. Fourteen suites, smoke, both workspaces, zero
 console errors.
 
+### M55.3 — feet on the ground, and there were two reasons they were not
+Reported from play: *"Characters feet are slightly in the ground"*. Two
+independent causes, both small, both permanent, and neither visible in a still
+frame at normal magnification.
+
+### One: the seat is measured in a pose nothing ever stands in
+`instantiate` seats a model by its bounding box and drops it so the lowest point
+sits on y=0. That is the only thing it CAN do — it is handed a model and no
+animation — and it is exactly right for the pose it measures, which is the bind
+pose.
+
+No clip is the bind pose. Measured across all twenty-five, holding each at
+twenty-five points through its own duration and skinning every ninth vertex by
+hand:
+
+    Idle          0.0000     <- what the seat was tuned against
+    Idle_Weapon   0.0000
+    Run           0.0137
+    Walk          0.0381     <- and this is the state you are in most
+    Roll          0.0760
+    Death         0.1305
+
+Idle matched to a ten-thousandth, which is why the first measurement said the
+feet were fine. Walking put the sole four centimetres into the ground on a
+1.8-unit character, permanently, everywhere.
+
+The fix is a lift, and **which clips it is measured over is the whole
+decision**. Only the ones in which the character is STANDING. `Roll` and `Death`
+reach lower than any of them and must not be included: a body on the ground is
+supposed to be on the ground, and lifting the rig until a corpse's shoulder
+cleared the grass would raise the character in every other state to fix the one
+state that was already right. Cached per model, because it is a property of the
+asset — forty characters on one rig ask once.
+
+Sampling density turned out to matter and in the dangerous direction. Every
+ninth vertex at twelve points found 0.029 where a finer scan found 0.038, and
+an under-report is nine millimetres of foot still in the floor. Every third
+vertex at twenty points now, paid once.
+
+### Two: the feet stood on the field, and the eye sees the mesh
+`terrainHeight` is a smooth analytic function. The ground is that function
+sampled on a 1.63-unit grid and joined up with flat triangles — and a chord is
+not the curve it spans. Across a hollow the triangle rides ABOVE the true
+height, so a character placed at the true height is inside the ground you can
+see.
+
+Measured over forty thousand points: the drawn ground is above the field across
+**24% of the world**, by up to 0.14 units — eight per cent of a character's
+height. The median is zero, which is exactly why this reads as "sometimes the
+feet are slightly sunk" rather than as a constant offset, and why it survived
+eight phases of being looked at.
+
+`drawnHeight` reproduces the mesh's own triangulation — `PlaneGeometry` splits
+each quad (a,b,d)(b,c,d), so the diagonal runs corner to opposite corner, and
+getting that backwards is invisible on a flat quad and wrong by the full sagitta
+on a steep one — and `surfaceHeight` returns it. The span and segment count
+moved to two constants that `buildTerrain` and `drawnHeight` both read, because
+two copies of a grid resolution is a bug with a delay on it: the day somebody
+changes the segment count, the feet stop agreeing with the floor and nothing
+says why.
+
+**This is M54.1a's lesson one level down.** That fixed three opinions about
+where the ROAD is. This is two opinions about where the GROUND is, and the fix
+is the same shape: the thing you stand on and the thing you see have to be one
+answer.
+
+### Verified
+Every clip re-measured after both fixes. No upright pose sinks: `Walk` sits
+2.7mm above the ground where it was 38mm below, and `Idle` clears it by 41mm —
+which is the trade a single lift forces, and it is the right way round, because
+a foot two pixels above grass with a shadow under it reads as standing while a
+foot two pixels into grass reads as broken. `surfaceHeight` and `drawnHeight`
+now differ in exactly the thirty samples out of thirty thousand that are the
+bridge deck. Then the foot cropped at nine times magnification, mid-walk, with
+the sole visibly on the grass and the toe clear of it.
+
+### One more note for the harness
+Three crops in a row missed the character entirely, and the reason is worth
+keeping: the probes drove `world.follow(actor.position...)`, and after a
+teleport the ACTOR is still interpolating toward its new position — so the
+camera was chasing a moving point that had not arrived. Headless throttles rAF
+to about 1fps, which makes the transit last many frames rather than a few
+milliseconds. Drive the camera from the TARGET — `toWorldX(playerX)` — and snap
+the actor with `snapTo` first. Same family as the existing note that a
+screenshot forces a render but not the easing.
+
 ---
 
 ## Seeding a character for testing
@@ -5208,6 +5294,23 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- The feet stand on the ground AS DRAWN, not on the field it was sampled from.
+  A terrain mesh joins its samples with flat triangles, and a chord rides above
+  the curve it spans across a hollow — measured at up to 0.14 units over 24% of
+  the world. Same shape as M54.1a: the thing you stand on and the thing you see
+  have to be one answer.
+- A model is seated in the bind pose and stands in a clip. The lift is measured
+  over the clips where the character is UPRIGHT and no others — including Roll
+  or Death would raise the rig in every state to fix the one state that was
+  already right, because a body on the ground belongs on the ground.
+- When sampling to find a minimum, coarse sampling UNDER-reports, and under-
+  reporting a ground clearance leaves the foot in the floor. Every ninth vertex
+  found 0.029 where every third found 0.038.
+- Drive a probe camera from the TARGET position, never from the actor's current
+  one. After a teleport the actor is still interpolating, and at the ~1fps rAF
+  headless gives you it is in transit for many frames — so `follow(actor.position)`
+  chases a point that has not arrived and the crop misses the character.
 
 - Identity comes from the NAME, not from a character creator. A name is already
   unique, already persistent, and already on every client that can see you, so a

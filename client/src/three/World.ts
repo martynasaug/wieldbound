@@ -394,12 +394,68 @@ function rampToBridge(x: number, z: number, h: number): number {
 }
 
 /**
+ * The size of the ground mesh, and the one place those two numbers live.
+ *
+ * `buildTerrain` reads them and so does `drawnHeight`, which has to reproduce
+ * that mesh's triangulation exactly. Two copies of a grid resolution is a bug
+ * with a delay on it: the day somebody changes the segment count, the feet stop
+ * agreeing with the floor and nothing says why.
+ */
+const TERRAIN_SPAN = Math.max(WORLD_UNITS_W, WORLD_UNITS_H) + 90;
+const TERRAIN_SEGMENTS = 300;
+const TERRAIN_STEP = TERRAIN_SPAN / TERRAIN_SEGMENTS;
+const TERRAIN_HALF = TERRAIN_SPAN / 2;
+
+/**
+ * The height of the ground THAT IS DRAWN, as opposed to the field it was
+ * sampled from.
+ *
+ * `terrainHeight` is a smooth analytic function. The mesh is that function
+ * sampled on a 1.63-unit grid and joined up with flat triangles, and a chord is
+ * not the curve it spans: across a hollow the triangle rides ABOVE the true
+ * height. Stand a character at the true height there and its feet are inside
+ * the ground you can see.
+ *
+ * Measured over forty thousand points: the drawn ground is above the field
+ * across 24% of the world, by up to 0.14 units — eight per cent of a
+ * character's height. The median is zero, which is why it reads as "sometimes
+ * the feet are slightly sunk" rather than as a constant offset, and why it
+ * survived being looked at.
+ *
+ * This is the same lesson as M54.1a's `surfaceHeight`, one level down. That
+ * fixed three opinions about where the ROAD is; this is two opinions about
+ * where the GROUND is, and the fix is the same shape — the thing you stand on
+ * and the thing you see have to be one answer.
+ *
+ * The triangulation is `PlaneGeometry`'s own: each quad is split (a,b,d)(b,c,d),
+ * so the diagonal runs from the near-far corner to the far-near one. Getting
+ * that backwards is invisible on a flat quad and wrong by the full sagitta on a
+ * steep one.
+ */
+export function drawnHeight(x: number, z: number): number {
+  const gx = (x + TERRAIN_HALF) / TERRAIN_STEP;
+  const gz = (z + TERRAIN_HALF) / TERRAIN_STEP;
+  const ix = Math.floor(gx);
+  const iz = Math.floor(gz);
+  const fx = gx - ix;
+  const fz = gz - iz;
+  const at = (cx: number, cz: number) =>
+    terrainHeight(-TERRAIN_HALF + cx * TERRAIN_STEP, -TERRAIN_HALF + cz * TERRAIN_STEP);
+  const h00 = at(ix, iz);
+  const h10 = at(ix + 1, iz);
+  const h01 = at(ix, iz + 1);
+  if (fx + fz <= 1) return h00 + (h10 - h00) * fx + (h01 - h00) * fz;
+  const h11 = at(ix + 1, iz + 1);
+  return h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
+}
+
+/**
  * What you actually stand on: the ground, except over the water.
  *
  * The one height the player's feet, the camera's look target and the road's
  * ribbon all take. Over the span it is the deck; everywhere else — including
  * both approaches, which the height field has already ramped — it is the
- * terrain.
+ * ground AS DRAWN. See `drawnHeight`.
  */
 export function surfaceHeight(x: number, z: number): number {
   const f = bridgeFrame(toServerX(x), toServerY(z));
@@ -409,7 +465,7 @@ export function surfaceHeight(x: number, z: number): number {
   ) {
     return bridgeDeckHeight();
   }
-  return terrainHeight(x, z);
+  return drawnHeight(x, z);
 }
 
 export function terrainHeight(x: number, z: number): number {
@@ -559,7 +615,7 @@ export class World {
   }
 
   private buildTerrain(): void {
-    const span = Math.max(WORLD_UNITS_W, WORLD_UNITS_H) + 90;
+    const span = TERRAIN_SPAN;
     // 170 segments was two units a quad on the old world and nine on this one,
     // which is coarser than the hills it now has to describe: the shortest term
     // in `terrainHeight` has a thirty-three unit wavelength and would have been
@@ -567,7 +623,7 @@ export class World {
     // metre and a half a quad — 90k vertices in one static mesh, built once,
     // never touched again, and the only thing on screen that is allowed to be
     // this dense because it is the only thing that is always on screen.
-    const geo = new THREE.PlaneGeometry(span, span, 300, 300);
+    const geo = new THREE.PlaneGeometry(span, span, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
     const pos = geo.attributes.position;
     // TWO THINGS THE SHADER CANNOT WORK OUT FOR ITSELF, baked per vertex.
     //
