@@ -142,7 +142,10 @@ import {
 import { landmarkById, landmarkPosition } from "../../../shared/landmarks";
 import { buildWaystones, WAYSTONE_PLATE_HEIGHT, type WaystoneVisual } from "./waystones";
 import { NorthRoad } from "./road";
+import { River } from "./river";
 import { NORTH_TOWN_NAME, NORTH_TOWN_SITE } from "../../../shared/road";
+import { resolveRiverCollision } from "../../../shared/river";
+import { placeNameAt } from "../../../shared/places";
 import {
   NPC_TALK_RANGE_PX,
   NPC_TETHER_PX,
@@ -311,10 +314,19 @@ const NODE_PLATE_ICON: Record<ResourceNodeState["kind"], string> = {
 
 /** Model options per harvestable kind, picked by a hash of the node's id. */
 const NODE_MODELS: Record<ResourceNodeState["kind"], string[]> = {
+  // THE PINES CAME OUT, and that is the rule that makes forests possible.
+  //
+  // Until this phase nothing scattered inside the play area was allowed to be a
+  // tree at all, because the harvestable wood node IS one — so a scenery tree
+  // would be scenery the player learns to click on. Six woods with names cannot
+  // exist under that rule as written, so it is sharpened instead of broken: the
+  // woodcutter's tree is the ROUND-CROWNED BROADLEAF and nothing else, and
+  // every conifer, twisted trunk and dead stick belongs to the scenery. Giving
+  // up the two pines this list used to borrow is the whole cost, and it buys a
+  // silhouette the player can trust. See the header of shared/forests.ts.
   tree: [
     "nature/CommonTree_1.gltf", "nature/CommonTree_2.gltf", "nature/CommonTree_3.gltf",
     "nature/CommonTree_4.gltf", "nature/CommonTree_5.gltf",
-    "nature/Pine_2.gltf", "nature/Pine_4.gltf",
   ],
   rock: ["nature/Rock_Medium_1.gltf", "nature/Rock_Medium_2.gltf", "nature/Rock_Medium_3.gltf"],
   // Only the flowering variant. `Bush_Common` ships textured with the kit's
@@ -369,6 +381,7 @@ export class Game {
   private waystones: WaystoneVisual[] = [];
   /** The way out of town. Its torches are the only lights outside the walls. */
   private readonly northRoad = new NorthRoad();
+  private readonly river = new River();
 
   // --- authoritative local state (server position is in px, as in the 2D game)
   private playerId = "";
@@ -843,6 +856,10 @@ export class Game {
     // `decor`: the ribbon is flat on the ground and can never stand between the
     // camera and the player, and fading a road would be fading the thing the
     // player is standing on.
+    // The river, and it has to be built BEFORE the road: the road ribbon asks
+    // the bridge how high its deck is, and the deck is measured from the water.
+    // Both are cheap merged geometry, so this costs nothing but an order.
+    this.world.scene.add(this.river.build());
     this.world.scene.add(this.northRoad.build());
 
     const decor = this.world.buildDecor();
@@ -1193,6 +1210,7 @@ export class Game {
       nodes,
       stations,
       bounds: { halfWidth: WORLD_UNITS_W / 2, halfHeight: WORLD_UNITS_H / 2 },
+      place: placeNameAt(this.playerX, this.playerY),
     });
   }
 
@@ -2783,6 +2801,9 @@ export class Game {
       this.localActor?.position.z ?? 0,
       performance.now() / 1000,
     );
+    // Not on the clock, unlike everything else updated here: a river runs at
+    // night.
+    this.river.update(performance.now() / 1000);
     this.town.update(
       nightAmount(hour.clock),
       Math.hypot(this.playerX - TOWN_CENTER.x, this.playerY - TOWN_CENTER.y) / PX_PER_UNIT,
@@ -2993,6 +3014,16 @@ export class Game {
     const clear = resolveTownCollision(this.playerX, this.playerY, PLAYER_BODY_RADIUS_PX);
     this.playerX = clear.x;
     this.playerY = clear.y;
+
+    // And out of the Coldwater. The only solid thing outside the palisade, and
+    // the exception is argued in shared/river.ts: it is one shape, it is the
+    // reason the bridge exists, and a river you can walk across is a blue
+    // stripe painted on the grass. Applied last, because the town is four
+    // kilometres from the water and nothing either resolves can push you into
+    // the other.
+    const dry = resolveRiverCollision(this.playerX, this.playerY, PLAYER_BODY_RADIUS_PX);
+    this.playerX = dry.x;
+    this.playerY = dry.y;
   }
 
   /** Living monster bodies near enough to matter, as plain circles. Only the

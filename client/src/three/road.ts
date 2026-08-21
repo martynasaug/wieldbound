@@ -33,8 +33,46 @@ import {
   roadPath,
   roadTorches,
 } from "../../../shared/road";
+import { BRIDGE_HALF_SPAN_PX, BRIDGE_HALF_WIDTH_PX, bridgeAt } from "../../../shared/river";
 import { Builder, roadTexture } from "./town";
-import { PX_PER_UNIT, terrainHeight, toWorldX, toWorldZ } from "./World";
+import { River } from "./river";
+import { PX_PER_UNIT, terrainHeight, toServerX, toServerY, toWorldX, toWorldZ } from "./World";
+
+/** How long the earth ramp onto the bridge is, in server pixels. Matches the
+ *  ramp the bridge itself builds, because they are the same slope. */
+const BRIDGE_RAMP_PX = 200;
+
+/**
+ * How high the road surface is at a point — the ground, except over the water.
+ *
+ * The ribbon samples the height field per vertex so the track sits on whatever
+ * is there, which is the right answer everywhere except the one place the road
+ * is not on the ground. Over the Coldwater it is on a deck, and a deck is flat
+ * and about two units above the water; a ribbon that kept sampling the terrain
+ * would dive into the channel, come out the far side, and leave the bridge
+ * standing over a road that goes under it.
+ *
+ * The ramp is eased rather than linear, so the road rises onto the deck instead
+ * of hitting it at a corner — and it is the same easing and the same length the
+ * bridge banks its own approaches with, because the two have to be one slope.
+ */
+export function roadSurfaceHeight(x: number, z: number): number {
+  const at = bridgeAt();
+  const a = (at.angleDeg * Math.PI) / 180;
+  const dx = toServerX(x) - at.x;
+  const dy = toServerY(z) - at.y;
+  const along = Math.abs(dx * Math.cos(a) + dy * Math.sin(a));
+  const across = Math.abs(-dx * Math.sin(a) + dy * Math.cos(a));
+  const ground = terrainHeight(x, z);
+  if (across > BRIDGE_HALF_WIDTH_PX * 2 || along > BRIDGE_HALF_SPAN_PX + BRIDGE_RAMP_PX) {
+    return ground;
+  }
+  const deck = River.deckHeight();
+  if (along <= BRIDGE_HALF_SPAN_PX) return deck;
+  const t = (along - BRIDGE_HALF_SPAN_PX) / BRIDGE_RAMP_PX;
+  const ease = t * t * (3 - 2 * t);
+  return deck + (ground - deck) * ease;
+}
 
 /** How many torches get a real light at once. */
 const LIT_TORCHES = 5;
@@ -141,7 +179,7 @@ export class NorthRoad {
       const t = (j / across) * 2 - 1;
       const x = r.x + r.nx * t * halfW;
       const z = r.z + r.nz * t * halfW;
-      positions.push(x, terrainHeight(x, z), z);
+      positions.push(x, roadSurfaceHeight(x, z), z);
       uvs.push(r.u, (t + 1) / 2);
       colors.push(1, 1, 1, r.a * alphaAcross(t));
     };
@@ -207,10 +245,11 @@ export class NorthRoad {
     for (const t of roadTorches()) {
       const x = toWorldX(t.x);
       const z = toWorldZ(t.y);
-      // Each post stands on its own patch of ground. The Builder works in
-      // absolute coordinates, so this is added to every y it is handed rather
-      // than applied to a group.
-      const g = terrainHeight(x, z);
+      // Each post stands on its own patch of ground — or on the bridge deck,
+      // for the pair that ends up over the water. Following the road's own
+      // surface rather than the terrain is what puts a light on the crossing,
+      // which is where a traveller at night most wants one.
+      const g = roadSurfaceHeight(x, z);
       // A post, a cross-brace and a burnt head. Timber rather than iron: this
       // is a road somebody maintains with what is to hand, not a town's
       // ironmongery, and the difference is most of why it reads as a frontier.

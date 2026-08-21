@@ -1376,6 +1376,25 @@
         text-shadow: 0 1px 2px #000, 0 0 4px #000;
         pointer-events: none;
       }
+      /* Where you are, above the coordinates. Sits inside the frame rather than
+         under it so it cannot push the dock rail down, and stays empty — not
+         hidden — out in open country, so nothing on screen moves when it
+         appears. */
+      /* Where you are. UNDER the frame rather than inside it, and that is a
+         correction: inside, it was clipped by the round map's own mask, which
+         ate the last three letters of "The Coldwater Bridge" and would have
+         eaten a different number of them at each of the four map sizes. Its
+         height is fixed and always reserved, so the dock rail does not step as
+         the readout comes and goes. */
+      #minimap .mm-place {
+        height: 18px; line-height: 18px;
+        text-align: center;
+        font: 600 12px Georgia, 'Times New Roman', serif; color: #f4dfa8;
+        letter-spacing: 0.2px;
+        text-shadow: 0 1px 2px #000, 0 0 5px #000;
+        pointer-events: none;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
 
       #minimap .mm-bar {
         display: flex; align-items: center; gap: 4px;

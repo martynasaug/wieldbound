@@ -269,3 +269,48 @@ quests before them pay.
 ```powershell
 node tools/test/quests.mjs
 ```
+
+`road.mjs` — no server needed. Walks the smoothed North Road and checks the one
+thing it exists for: that following it gets you from the palisade to the
+frontier without a fight. That is a claim about distance from four monster camps
+over four kilometres of curve, which nobody can eyeball and which fails
+silently — a road clipping a wolf pack's aggro looks completely correct and is a
+journey that cannot be made. Also that it leaves by a real gateway, ends at the
+town site, never doubles back, keeps its full width clear of buildings, and that
+the torches are spaced ALONG the curve rather than by index (which would bunch
+them on the bends, exactly where a traveller needs to see where the road goes).
+
+```powershell
+node tools/test/road.mjs
+```
+
+`river.mjs` — no server needed. The Coldwater's property is a claim about the
+whole map rather than about the water: the frontier north of it is reachable at
+one point and that point is on the road. Every failure mode of that is silent. A
+course stopping at the world edge leaves a way round it that nothing on screen
+shows. A bridge derived from the wrong intersection stands in a field. A
+collision pushing to the wrong bank teleports a traveller back where they came
+from, once, on a bend. It also checks the fast bucketed distance query against a
+full polyline walk at every probe, because an optimisation that is occasionally
+wrong is worse than none — it would be wrong in a few places, on a curve nobody
+is going to check by eye.
+
+```powershell
+node tools/test/river.mjs
+```
+
+`forests.mjs` — no server needed. Mostly one rule, and it is the rule that made
+forests possible at all: the harvestable wood node is a round-crowned broadleaf
+and nothing else in the world may wear that silhouette. It reads `NODE_MODELS`,
+the forest species table and the treeline out of the real source files rather
+than restating them, and fails if the two sets ever intersect or if a forest
+tree can be as short as a node. Nothing in the engine keeps those arrays apart
+and the symptom of them meeting is a player quietly learning to click on
+scenery. Plus: every wood past the last monster camp, no camp or node or
+waystone under canopy, an outline ragged enough not to be a disc, the road
+running through at least one wood, and every name coming back out of
+`placeNameAt` while most of the map stays nameless.
+
+```powershell
+node tools/test/forests.mjs
+```

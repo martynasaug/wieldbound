@@ -55,6 +55,16 @@ export interface MinimapSnapshot {
   drops: { x: number; z: number; color: string }[];
   /** Half-extents of the playable rectangle, for the boundary outline. */
   bounds: { halfWidth: number; halfHeight: number };
+  /**
+   * What this place is called, or null out in open country.
+   *
+   * The only channel through which most of the names in this world reach the
+   * player. Six woods, a river and a road have names that until now existed in
+   * a table and in quest text; the map is where somebody looks to ask where
+   * they are, so it is where the answer goes. Null is a real answer — see
+   * shared/places.ts.
+   */
+  place: string | null;
 }
 
 export interface MinimapSettings {
@@ -136,6 +146,7 @@ export class Minimap {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly coordsEl: HTMLElement;
+  private readonly placeEl: HTMLElement;
   private readonly zoomEl: HTMLElement;
   private readonly panel: HTMLElement;
 
@@ -152,6 +163,7 @@ export class Minimap {
         <canvas class="mm-canvas"></canvas>
         <div class="mm-coords"></div>
       </div>
+      <div class="mm-place"></div>
       <div class="mm-bar">
         <button class="mm-btn mm-out" title="Zoom out">−</button>
         <span class="mm-zoom">—</span>
@@ -165,6 +177,7 @@ export class Minimap {
     this.canvas = this.root.querySelector(".mm-canvas")!;
     this.ctx = this.canvas.getContext("2d")!;
     this.coordsEl = this.root.querySelector(".mm-coords")!;
+    this.placeEl = this.root.querySelector(".mm-place")!;
     this.zoomEl = this.root.querySelector(".mm-zoom")!;
     this.panel = this.root.querySelector(".mm-panel")!;
     (this.root.querySelector(".mm-cog") as HTMLElement).innerHTML = iconSvg("settings");
@@ -315,7 +328,12 @@ export class Minimap {
     // The window rail is told how much room the map takes, so the two can never
     // overlap however large the player makes it. Setting a variable rather than
     // reaching into the rail keeps this from having to know the rail exists.
-    document.documentElement.style.setProperty("--minimap-bottom", `${s.size + 58}px`);
+    // 58 is the zoom bar and the frame's own margins; 18 is the place line,
+    // which is ALWAYS that tall even when it is empty. Reserving the row rather
+    // than collapsing it is the point: the readout goes blank every time you
+    // walk out of a wood, and a rail that stepped up and down as you crossed a
+    // treeline would be the most distracting thing on the screen.
+    document.documentElement.style.setProperty("--minimap-bottom", `${s.size + 58 + 18}px`);
 
     this.draw();
   }
@@ -500,6 +518,10 @@ export class Minimap {
     if (s.showCoords) {
       this.coordsEl.textContent = `${Math.round(snap.player.x)}, ${Math.round(snap.player.z)}`;
     }
+    // Assigned rather than compared first: setting textContent to the value it
+    // already holds does not dirty the DOM, so the guard would buy nothing and
+    // cost a branch on every frame the map redraws.
+    this.placeEl.textContent = snap.place ?? "";
   }
 
   private drawGrid(

@@ -4223,7 +4223,7 @@ broad dry band across the middle, green again beyond. Zero console errors.
 ### Still to come in this phase
 M53.3 is relief — the play area is a perfectly flat plane and no amount of
 surface work fixes that. M53.4 is forests as regions rather than a treeline, and
-a river the road has to cross.
+a river the road has to cross. *(Both done — see below.)*
 
 
 ### M53.3 — the ground stops being a plane
@@ -4310,6 +4310,248 @@ over the frontier and the road at noon and midnight: the height field measures
 torches stand on it, and there are no console errors.
 
 
+### M53.4 — six woods, and a river with one bridge over it
+The last milestone of the phase, and the two halves of it turn out to be the
+same idea from opposite directions: the frontier M53.1 opened up is four
+kilometres of ground with a road down the middle, and until something out there
+looks different from everything else out there, the journey north is a long walk
+across one field. A forest gives the frontier PLACES. A river gives it a SHAPE.
+
+#### The rule that had to be sharpened before a forest could exist
+Since Phase 47 nothing scattered inside the play area has been allowed to be a
+tree, a boulder or a bush, because those three ARE the harvestable nodes —
+scenery that can be mistaken for something interactive teaches the player to
+click on scenery. That rule is why the treeline is a perimeter standing outside
+the bounds, and under it a forest is illegal.
+
+So it is sharpened rather than broken. **The woodcutter's tree is the
+round-crowned broadleaf and nothing else in the world may wear it.** The node
+gives up the two pines it used to borrow; every conifer, twisted trunk and dead
+stick becomes scenery. Three separating channels, none of them colour: two
+disjoint model sets, a scale gap (a node is 3.4–4.6 units, a forest tree starts
+at 6), and the node's own nameplate pill. `tools/test/forests.mjs` reads both
+lists out of the real source files and fails if they ever intersect again —
+this is a rule about two arrays in two files that nothing in the engine keeps
+apart, and its failure arrives as a vague complaint rather than a bug report.
+
+The perimeter treeline gave up its broadleaves at the same time, which was not
+optional: the boundary and the woods inside it have to be made of one
+vocabulary or the edge of the map reads as a different country.
+
+#### Emberhold's district stays open ground, and that is a gameplay call
+Every wood's edge is past the furthest monster camp — 2,900px, measured from the
+last pack's near edge rather than picked as a round number. The five bands are
+where the game is PLAYED: telegraphs to step out of, camps to judge the size of
+from a distance, nodes to spot. Filling them with trunks costs all three. So the
+district is open and the land takes over past it, which also means walking out
+of Emberhold now looks like leaving somewhere.
+
+It also removed a whole class of placement problem: no wood can swallow a camp,
+stand on a node, or hide a waystone, because none of them are out there. The
+test asserts all three against the server's own tables rather than a copy.
+
+#### A forest is a region, and the edge is the entire problem
+Six woods, each with a name, a species and a blurb — Pinereach, Blackstand, the
+Mirefen, the Thornwood, Sorrowwood and the Weeping Wood. A disc with a soft
+falloff would read as a gradient of trees, which is not what the edge of a wood
+looks like from any angle: a wood has bays and spurs, it ENDS, and it ends at a
+different distance depending which way you walked in. So the radius itself is
+warped by noise at a third of the wood's own size and the falloff across the
+warped edge is short, with a second faster field punching clearings into the
+interior. The test sweeps the bearing round each wood and fails any whose
+outline varies by less than twenty per cent — "it is a disc" is a thing you can
+measure.
+
+Placement is rejection sampling against that field, over-sampled 1.9x, so
+density follows the SHAPE of the wood rather than being uniform inside a ragged
+outline. Instanced and chunked on the ground cover's own grid — 1,090 trees and
+2,420 pieces of undergrowth in 600 instanced meshes. Chunking matters far more
+here than it did for the grass, where the measurement showed very little was
+ever off screen: a wood is sixty units across and the fog closes at 165, so most
+of the world's trees are behind the camera at any moment.
+
+#### The ground under a wood, and the ground beside a river
+The terrain shader is three noise fields of world position, which is exactly
+right for wear and region — they are patterns. A forest and a river are not
+patterns: they are a table of six discs and a two-hundred-point polyline.
+So both are **baked onto the terrain mesh as vertex attributes** — two floats a
+vertex, computed once, interpolated free. `aCanopy` pushes the wear field up to
+a litter floor, pushes the dry regional grass down and darkens the tint by
+nearly forty per cent, which is most of how a canopy reads from OUTSIDE it (the
+shadow map covers thirty-odd units around the player and a wood is sixty
+across). `aWet` lays shingle along the bank, broken by its own noise, because a
+band of constant width is a hem sewn onto the river.
+
+The ground cover is thinned under a canopy rather than removed — the wood plants
+its own floor of ferns and broad-leaved plants — and thinned by a hash of the
+POSITION rather than by the scatter's own generator, because the predicate is
+called several times per placement while it retries and a draw from the sequence
+would make where a plant grows depend on how many times the loop bounced.
+
+#### The Coldwater, and the one gameplay property that pays for it
+The road's property is that it is the safe way through. Its weakness was that
+cutting the corner only cost you a fight, so a player who could take the fight
+had no reason to stay on the curve. The river answers that:
+
+> **THE ROAD IS THE SAFE WAY THROUGH. THE BRIDGE IS THE ONLY WAY ACROSS.**
+
+The whole frontier north of the water — the far half of the map, the last
+stretch of road, and Coldharrow's site — is reachable at exactly one point, and
+that point is on the road. The course starts and ends OUTSIDE the map on both
+sides, because a river that stopped at the boundary would be a canal with two
+ends in a field and, more practically, something a player could stroll round.
+
+It is authored in **absolute world pixels, not polar**, and that is the second
+step away from a coordinate system built for a world with one place in it. The
+road's waypoints are still polar because that is how the route was checked
+against the camps; a river has nothing to do with the camps at all. It is a
+feature of the land, so it has a coordinate.
+
+**It is the first solid thing outside the palisade**, and the exception is
+deliberate rather than a change of policy. Phase 52 wrote down that nothing out
+here is solid, because a second collision system for four props in a field is a
+mechanism to keep honest forever in exchange for nothing. A river is the
+opposite trade: one shape, the reason the bridge exists, and a river you can
+stroll across is a blue stripe painted on the grass. One call added beside
+`resolveTownCollision`, which is where movement is already resolved.
+
+**The bridge is DERIVED, not typed** — the intersection of the two curves, so
+moving a waypoint in either file keeps it on the crossing. The test pins that
+the two meet exactly once: a road that forded the same river twice would need
+two bridges and would have one.
+
+#### A river has to run downhill, and the ground has to hold it
+A river drawn ON a height field is a blue ribbon lying across a hillside and
+reads as exactly that from the first frame, because water is the one surface
+everybody has an intuition about and the intuition says it finds the bottom.
+Cutting the land for it is nearly all of what makes it convincing; the water
+plane does very little.
+
+Two properties the cut must have, and they are why it is thirty lines rather
+than a subtraction:
+
+- **The surface must not run uphill.** The natural field wanders ±10 units, so a
+  river at constant height is a canal on stilts at one end and underground at
+  the other, and a river that simply followed the land flows both ways at once.
+  So the land is read ALONG the course, low-passed over a thirty-three point
+  window, and then forced monotone from the source down — which is what a river
+  does to a landscape given ten thousand years. It drops 3.5 units end to end.
+- **The banks must contain it.** Levelling to a target is not enough: where the
+  land sits below the water the ground has to be RAISED to a crest, or the river
+  floods sideways and the water plane ends halfway up a hill with grass showing
+  through it. The profile is absolute near the water — bed, bank, crest — and
+  only blends back to the natural field 26 units out.
+
+The bridge and the road ramp are measured from the WATER, not from the ground.
+A deck at ground level plus a constant puts one end of a bridge in the river on
+any bank not level with the other, which is every bank. The road ribbon asks
+`roadSurfaceHeight` per vertex, which is the terrain everywhere except over the
+channel, where it is the deck with an eased ramp of the same length and easing
+the bridge banks its own approaches with. Two of the fourteen torches end up
+standing on the deck, which is where a traveller at night most wants one.
+
+#### And the names finally reach the player
+This world has had names in it since Phase 49 and had never said one out loud
+outside a quest brief. `shared/places.ts` answers "where am I" as a pure
+function over tables that already existed, and one line under the minimap shows
+it. The ORDER is the design — built things, then water, then road, then land —
+because several of these overlap and what you want to be told is the most
+specific thing that is true. **Null is a real answer**: most of the map is field,
+and inventing "the Eastern Reaches" for every square of it would make the
+fourteen that are genuinely places worth nothing. The test fails if more than
+forty-five per cent of the world has a name.
+
+It sits UNDER the map frame rather than inside it, which is a correction: inside,
+the round map's own mask ate the last three letters of "The Coldwater Bridge" —
+and would have eaten a different number of them at each of the four map sizes.
+The row's height is always reserved, so the dock rail does not step up and down
+as you cross a treeline.
+
+### Four things the screenshots caught
+**The bank was a one-unit lip.** A cross-section of the finished ground read
+-5.3 in the bed and -1.9 on the bank: a channel three and a half units deep, of
+which two and a half were under water. What SHOWED was a one-unit rise over
+seven units of bank — a four-degree grade, which is the same invisible number
+the first pass at the hills was rejected for. The crest went to 2.4.
+
+**And it still would not read at noon**, which was the second lesson rather than
+a second bug: relief only reaches the eye through the LIGHT, and at noon the sun
+is overhead and a slope catches within five per cent of what flat ground does.
+Three rounds of screenshots at 12:00 said the carve had not worked. One at 15:07
+showed it plainly. Verification hours are now noon AND a low sun, because half
+the work in this phase is invisible at the hour that is easiest to shoot.
+
+**The water was a diffraction grating.** Three straight sines across a river
+read as corduroy laid on it — regular enough that the eye finds the period in
+about a second. Water never has a straight wavefront, because the wave in front
+of it is in the way. Every phase is bent by a much slower field now, which is
+the ground's own three-fields argument one dimension down.
+
+**And it vanished at dusk.** A smooth, dark, non-metallic surface with no
+reflection to catch is very nearly black the moment the sun is low, and the
+river disappeared into its own bank — wrong in the one way that matters, since
+the river is the thing you must not walk into. Real water is legible at night
+because it reflects the sky and this renderer has no probe to give it one, so it
+gets a constant dim blue standing in for the sky it cannot see.
+
+### One measurement that was the tooling, not the game
+For two runs the character was missing from half the screenshots and the camera
+sat eighty units behind them. It was headless Chromium throttling
+`requestAnimationFrame` to about one frame a second, so the camera's easing
+never caught up between a teleport and a shot — the screenshot forces a render,
+the easing does not. The probe drives `world.follow` directly with a whole
+second of dt now, which saturates every ease term. Worth recording beside the
+six textures Vite never served: **when a browser pass looks wrong, suspect the
+harness before the renderer.**
+
+### Verified
+All twelve offline suites — `river.mjs` and `forests.mjs` are new — plus
+`smoke.mjs` and both workspaces typechecking clean.
+
+`river.mjs` checks that the course leaves the map at both ends and never doubles
+back (the fast bucketed distance query assumes x-monotone, and a course that
+turned would answer some queries with the wrong segment); that the bucketed
+query agrees with a full polyline walk at all 3,627 probes; that no camp, node
+or waystone reach-ring is in the water; that the road and river cross exactly
+once and the deck spans past the banks; that following the road end to end — at
+its full width — never gets your feet wet; that the water is solid for its whole
+length except at the bridge; and that wading in pushes you out in one step, onto
+the bank you went in from, idempotently, without shoving anyone off the deck.
+
+`forests.mjs` reads `NODE_MODELS`, the forest species table and the treeline out
+of the real source files and fails if the harvestable tree and the scenery ever
+share a silhouette or a height; checks the frontier rule against the canopy
+FIELD rather than the discs; checks no camp, node or waystone is under canopy;
+checks the road runs through a wood and the river past three; and checks every
+name comes back out of `placeNameAt` while most of the map stays nameless.
+
+Browser passes at noon, mid-afternoon, dusk and midnight: 53,510 plants and
+1,090 trees with 2,420 pieces of undergrowth across six woods, 670 draw calls at
+maximum zoom inside a wood, a 7.3 second load, and zero console errors. The
+bridge reads at midnight as a lit crossing with torches on the deck, the road
+ramps onto it and off again, and the place readout names the wood you are
+standing in.
+
+### The camera pitch question, answered
+Raised at the end of M53.3: the hills read in shading but never SILHOUETTE,
+because the fixed 41° pitch means you almost never see a horizon — and making
+them read as shapes would be a pitch change the decisions log deliberately
+forbade.
+
+**The pitch stays, and this milestone is most of the answer.** The log's reason
+is about gameplay legibility — a flatter camera changes what a telegraph circle
+and a body's footprint look like, and those are things the player reads
+positionally to decide where to stand — which is a stronger claim than "hills
+would look better". But the want underneath it is real, and it does not actually
+require a horizon: **a silhouette comes from what stands ON the ridge, not from
+the ridge.** A treeline running over a rise reads as a rise; a wood that
+disappears behind one reads as ground going away from you. That is now true in
+six places, and the fog opening to 165 in M53.3 is what lets you see it happen.
+If it still is not enough, the next lever is more relief and more trees OUTSIDE
+the play bounds, where nothing is ever fought and the amplitude is free — not
+the camera.
+
+
 ---
 
 ## Phase 48+ — Revisit and pick from here
@@ -4329,6 +4571,73 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- The woodcutter's tree is the ROUND-CROWNED BROADLEAF and nothing else in the
+  world may wear it. "Nothing scattered may resemble a resource node" kept every
+  tree outside the play bounds for six phases and made a forest illegal; rather
+  than break it, the vocabulary was split. Two disjoint model sets, a scale gap
+  (node 3.4–4.6 units, forest tree from 6), and the node's nameplate pill —
+  three separating channels, none of them colour. Asserted against both real
+  source files, because it is a rule about two arrays that nothing in the engine
+  keeps apart and whose failure is a player quietly learning to click scenery.
+- Forests live PAST the last monster camp, and that is a gameplay call rather
+  than a placement convenience. The five bands are where the game is played —
+  telegraphs to step out of, camps to size up from a distance, nodes to spot —
+  and trunks cost all three. Emberhold's district is open ground; the land takes
+  over past it. It also makes "no wood swallows a camp or stands on a node" true
+  by construction instead of by fifty measurements.
+- The river is authored in ABSOLUTE world pixels, not polar. The road is the
+  first object here that does not radiate from spawn and its waypoints are still
+  polar, because that is how the route was checked against the camps. A river
+  has nothing to do with the camps: it is a feature of the land, so it has a
+  coordinate. Polar is the language of "distance from spawn IS difficulty", and
+  the moment something is not about difficulty it should stop speaking it.
+- The river is SOLID, and it is the only solid thing outside the palisade. Phase
+  52 wrote down that nothing out here is solid — a second collision system for
+  four props in a field is a mechanism to keep honest forever in exchange for
+  nothing. The river is the opposite trade: one shape, and it is the reason the
+  bridge exists. "The road is the safe way through" gains "and the bridge is the
+  only way across", which is the first thing that makes staying ON the road
+  worth something to a player who could win the fight.
+- The bridge's position is DERIVED from the intersection of the two curves, and
+  the test pins that they cross exactly once. A typed coordinate agrees on the
+  day it is written; a road that forded the same river twice would need two
+  bridges and would have one.
+- A river's surface height is the land along its own course, low-passed and then
+  forced MONOTONE from the source down. Constant height is a canal on stilts at
+  one end; following the land makes it flow both ways at once. And the banks are
+  RAISED to a crest rather than levelled to a target, because levelling lets the
+  water flood sideways wherever the land sits below it.
+- The bridge deck and the road's ramp onto it are measured from the WATER, never
+  from the ground plus a constant. A constant puts one end of a bridge in the
+  river on any bank that is not level with the other, which is every bank.
+- Forest canopy and riverbank wetness are BAKED onto the terrain mesh as vertex
+  attributes rather than evaluated in the shader. The other ground fields are
+  noise of world position, which is cheapest where it is used; these two are a
+  table of six discs and a two-hundred-point polyline, which are not things to
+  re-derive per fragment. Two floats a vertex, computed once, interpolated free —
+  and the mesh's metre-and-a-half quads are finer than either feature's edge.
+- Relief is only visible when the LIGHT changes across it, so verification hours
+  are noon AND a low sun. Three rounds of noon screenshots said the river's
+  channel had not been cut; the geometry was right the whole time and a
+  mid-afternoon shot showed it plainly. At noon a twenty-degree slope catches
+  within five per cent of what flat ground does.
+- `placeNameAt` returns NULL over most of the map on purpose. Naming every
+  square — "the Eastern Reaches" — would make the fourteen places that are
+  genuinely places worth nothing. The readout going blank is what makes it mean
+  something when it comes back, and the test fails if more than forty-five per
+  cent of the world has a name.
+- The camera's pitch stays fixed, and the answer to "the hills never silhouette"
+  is not the camera. A silhouette comes from what stands ON a ridge, not from
+  the ridge: a treeline running over a rise reads as a rise. If more is wanted,
+  the lever is relief and trees OUTSIDE the play bounds, where nothing is fought
+  and amplitude is free. Flattening toward top-down would change what a telegraph
+  circle and a body's footprint look like, which the player reads positionally.
+- When a browser pass looks wrong, suspect the harness before the renderer. Two
+  runs of "the character is missing and the camera is eighty units behind" were
+  headless Chromium throttling requestAnimationFrame to about a frame a second:
+  a screenshot forces a render, it does not force the easing to have run. Same
+  family as the six textures Vite served as `index.html`.
 
 - Emberhold's buildings are GENERATED rather than downloaded. The kits this
   project uses have props, plants and characters and no buildings, and a
@@ -6392,7 +6701,24 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 52 complete, Phase 53 in progress (2026-08-21). **The item system rebuilt and
+Phase 0 through 53 complete (2026-08-21).
+
+**Phase 53 M53.4 — six woods, and a river with one bridge over it.** The last
+milestone of the phase, and the two halves are the same idea from opposite
+ends: a forest gives the frontier places, and a river gives it a shape. Forests
+could not exist under the rule that kept every tree outside the play bounds, so
+the rule was sharpened — the woodcutter's tree is the round-crowned broadleaf
+and every conifer, twisted trunk and dead stick is scenery — and the woods live
+past the last monster camp, because the five bands are where the game is played
+and trunks cost telegraph readability. The Coldwater is the first solid thing
+outside the palisade, and it buys the road its second property: the bridge is
+the only way across, so the whole northern half of the map funnels through one
+point on the road. Its bed is cut into the land, its surface is the land along
+its own course low-passed and forced downhill, and the bridge is derived from
+where the two curves actually meet. Plus `placeNameAt`, which is the first time
+this world has said any of its own names out loud outside a quest brief.
+
+**The item system rebuilt and
 followed through, damage that knows what it is made of, every timed effect in
 one table with a row on screen, a front door worth walking through, a town to
 walk through it into — and now a material for the one element nobody could

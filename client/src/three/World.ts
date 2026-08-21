@@ -6,8 +6,11 @@ import { WORLD_WIDTH, WORLD_HEIGHT } from "../../../shared/protocol-types";
 import { instantiate } from "./assets";
 import { createTerrainMaterial } from "./terrain";
 import { buildGroundCover } from "./scatter";
+import { buildForests } from "./forest";
 import { DayNight } from "./daynight";
 import { ROAD_HALF_WIDTH_PX, distanceToRoad } from "../../../shared/road";
+import { RIVER_HALF_WIDTH_PX, riverAt, riverPath } from "../../../shared/river";
+import { FORESTS, forestStrengthAt } from "../../../shared/forests";
 import {
   TOWN_BUILDINGS,
   TOWN_CENTER,
@@ -135,7 +138,7 @@ const FLAT_SPOTS: FlatSpot[] = [
  * height from here, so on a steep enough face it climbs faster than its legs
  * are moving and reads as skating.
  */
-export function terrainHeight(x: number, z: number): number {
+function baseHeight(x: number, z: number): number {
   // The land itself.
   let h =
     Math.sin(x * 0.030 - 2.1) * Math.cos(z * 0.027 + 0.4) * 7.0 +
@@ -158,6 +161,164 @@ export function terrainHeight(x: number, z: number): number {
       (Math.sin(x * 0.026 + 1.7) * Math.cos(z * 0.031 - 0.6) * 7.0 +
         Math.sin(x * 0.011 - 0.3) * Math.cos(z * 0.013 + 2.2) * 9.0);
   }
+
+  return h;
+}
+
+// --- The valley the Coldwater runs in ---------------------------------------
+//
+// A river drawn ON a height field is a blue ribbon lying across a hillside, and
+// it reads as exactly that from the first frame: water is the one surface
+// everybody in the world has an intuition about, and the intuition says it
+// finds the bottom. So the land has to be cut for it, and cutting it turns out
+// to be the whole of what makes the river convincing — the water plane is a
+// translucent quad and does almost none of the work.
+//
+// TWO PROPERTIES THE CUT MUST HAVE, and they are the reason this is thirty
+// lines rather than a subtraction:
+//
+//   * The surface must not run uphill. The natural field wanders ±10 units, so
+//     a river at a constant height would be a canal on stilts at one end and
+//     underground at the other, and a river that simply followed the land would
+//     flow both ways at once. The answer is to read the land ALONG the course,
+//     low-pass it hard, and then force it monotone from the source down — which
+//     is what a river does to a landscape given ten thousand years.
+//   * The banks must contain it. Levelling to a target height is not enough:
+//     where the land sits below the water the ground has to be RAISED to a
+//     crest, or the river floods sideways into the field and the water plane
+//     ends halfway up a hill with grass showing through it.
+//
+// So the profile is absolute near the water — bed, then bank, then crest — and
+// only blends back to the natural field well outside it.
+
+/** Half the water's width, in world units. */
+const RIVER_CHANNEL_UNITS = RIVER_HALF_WIDTH_PX / PX_PER_UNIT;
+/** How far below the surface the middle of the bed sits. */
+const RIVER_DEPTH_UNITS = 2.4;
+/** How far out from the waterline the bank climbs to its crest. */
+const RIVER_BANK_UNITS = 7.0;
+/**
+ * And how high that crest stands above the water.
+ *
+ * MEASURED UP FROM 1.15, and the measurement is the point. A cross-section of
+ * the finished ground read -5.3 in the middle of the bed and -1.9 on the bank —
+ * a channel three and a half units deep, of which two and a half were under
+ * water. What showed was a one-unit lip, and at a forty-degree camera a
+ * one-unit lip over seven units of bank is a four-degree slope: the same
+ * invisible grade the first pass at the hills was rejected for. The water read
+ * as a stripe painted on a flat field, which is exactly what the carve exists
+ * to prevent.
+ */
+const RIVER_CREST_UNITS = 2.4;
+/** How far past the crest the valley eases back into whatever the land does. */
+const RIVER_BLEND_UNITS = 26;
+
+/** Past this in server pixels the river cannot affect the height at all. */
+const RIVER_REACH_PX =
+  (RIVER_CHANNEL_UNITS + RIVER_BANK_UNITS + RIVER_BLEND_UNITS) * PX_PER_UNIT;
+
+let surfaceProfile: Float64Array | null = null;
+let riverBoundsZ: { min: number; max: number } | null = null;
+
+function buildSurfaceProfile(): Float64Array {
+  const path = riverPath();
+  const n = path.length;
+  const raw = new Float64Array(n);
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const wx = toWorldX(path[i].x);
+    const wz = toWorldZ(path[i].y);
+    raw[i] = baseHeight(wx, wz);
+    if (wz < minZ) minZ = wz;
+    if (wz > maxZ) maxZ = wz;
+  }
+  riverBoundsZ = { min: minZ, max: maxZ };
+
+  // A wide box filter — wide enough that a single ridge the course happens to
+  // cross does not become a step in the water.
+  const smooth = new Float64Array(n);
+  const R = 16;
+  for (let i = 0; i < n; i++) {
+    let sum = 0;
+    let count = 0;
+    for (let k = -R; k <= R; k++) {
+      const j = Math.max(0, Math.min(n - 1, i + k));
+      sum += raw[j];
+      count++;
+    }
+    smooth[i] = sum / count;
+  }
+
+  // Downhill, west. Index 0 is the west end, so walking back from the east
+  // source and taking a running minimum is what makes every step a descent.
+  for (let i = n - 2; i >= 0; i--) {
+    if (smooth[i] > smooth[i + 1]) smooth[i] = smooth[i + 1];
+  }
+  // And the water sits a little below the land it was averaged from, so the
+  // banks have somewhere to be.
+  for (let i = 0; i < n; i++) smooth[i] -= 1.0;
+  return smooth;
+}
+
+/**
+ * How high the water is, as a fraction along the course from the west end.
+ *
+ * Exported because three separate things have to agree about it: the ground is
+ * cut to it, the water plane is drawn at it, and the bridge deck is measured
+ * from it. Two of the three getting it from a different place is how a bridge
+ * ends up with its feet in the air.
+ */
+export function riverSurfaceHeight(along: number): number {
+  if (!surfaceProfile) surfaceProfile = buildSurfaceProfile();
+  const p = surfaceProfile;
+  const t = Math.max(0, Math.min(1, along)) * (p.length - 1);
+  const i = Math.floor(t);
+  const f = t - i;
+  const a = p[i];
+  const b = p[Math.min(p.length - 1, i + 1)];
+  return a + (b - a) * f;
+}
+
+function carveRiver(x: number, z: number, h: number): number {
+  if (!surfaceProfile) surfaceProfile = buildSurfaceProfile();
+  const bounds = riverBoundsZ!;
+  // Cheap reject on z alone. The course is within a few units of one latitude
+  // for its whole length, so this rejects most of the map before the polyline
+  // query — which matters at ninety thousand terrain vertices.
+  const reachZ = RIVER_REACH_PX / PX_PER_UNIT;
+  if (z < bounds.min - reachZ || z > bounds.max + reachZ) return h;
+
+  const q = riverAt(toServerX(x), toServerY(z));
+  if (q.distancePx > RIVER_REACH_PX) return h;
+
+  const d = q.distancePx / PX_PER_UNIT;
+  const surface = riverSurfaceHeight(q.along);
+  const bed = surface - RIVER_DEPTH_UNITS;
+  const crest = surface + RIVER_CREST_UNITS;
+
+  let shaped: number;
+  if (d <= RIVER_CHANNEL_UNITS) {
+    // A dished bed rather than a flat trough, so the water is deepest in the
+    // middle and the shallows read as shallows.
+    const t = d / RIVER_CHANNEL_UNITS;
+    shaped = bed + (surface - 0.15 - bed) * t * t;
+  } else if (d <= RIVER_CHANNEL_UNITS + RIVER_BANK_UNITS) {
+    const t = (d - RIVER_CHANNEL_UNITS) / RIVER_BANK_UNITS;
+    shaped = surface - 0.15 + (crest - (surface - 0.15)) * (t * t * (3 - 2 * t));
+  } else {
+    shaped = crest;
+  }
+
+  const outer = RIVER_CHANNEL_UNITS + RIVER_BANK_UNITS;
+  if (d <= outer) return shaped;
+  const t = Math.min(1, (d - outer) / RIVER_BLEND_UNITS);
+  const ease = t * t * (3 - 2 * t);
+  return shaped + (h - shaped) * ease;
+}
+
+export function terrainHeight(x: number, z: number): number {
+  let h = carveRiver(x, z, baseHeight(x, z));
 
   // And then it is levelled wherever something was built.
   let level = 1;
@@ -221,6 +382,8 @@ export class World {
   readonly decor = new THREE.Group();
   /** Instanced ground cover inside the play area. Never faded, never interactive. */
   readonly groundCover = new THREE.Group();
+  /** The six woods. Instanced and chunked; see forest.ts. */
+  readonly forests = new THREE.Group();
 
   private readonly sun: THREE.DirectionalLight;
   private readonly fill: THREE.HemisphereLight;
@@ -311,10 +474,37 @@ export class World {
     // this dense because it is the only thing that is always on screen.
     const geo = new THREE.PlaneGeometry(span, span, 300, 300);
     const pos = geo.attributes.position;
+    // TWO THINGS THE SHADER CANNOT WORK OUT FOR ITSELF, baked per vertex.
+    //
+    // Everything the ground shader does is noise of world position, which is
+    // exactly right for wear and region — they are patterns, and a pattern is
+    // cheapest where it is evaluated. A forest and a river are not patterns:
+    // they are a table of six discs and a two-hundred-point polyline, and
+    // neither is something to re-derive per fragment. Baking them onto the mesh
+    // costs two floats a vertex, is computed once, and interpolates for free.
+    //
+    // A metre and a half a quad is finer than either feature's edge, so nothing
+    // is lost to the resolution: a wood's outline wanders over tens of metres
+    // and the riverbank is six across.
+    const canopy = new Float32Array(pos.count);
+    const wet = new Float32Array(pos.count);
     for (let i = 0; i < pos.count; i++) {
       // Authored in XY then rotated into XZ, so local y is world z.
-      pos.setZ(i, terrainHeight(pos.getX(i), -pos.getY(i)));
+      const x = pos.getX(i);
+      const z = -pos.getY(i);
+      pos.setZ(i, terrainHeight(x, z));
+      canopy[i] = forestStrengthAt(toServerX(x), toServerY(z));
+      const bank = riverAt(toServerX(x), toServerY(z)).distancePx / PX_PER_UNIT;
+      // Shingle at the waterline, fading out across the bank. Not the channel
+      // itself — the bed is under water and nobody sees it — but the strip
+      // either side, which is the part that says the river has been there
+      // longer than you have.
+      wet[i] =
+        1 -
+        Math.min(1, Math.max(0, (bank - RIVER_HALF_WIDTH_PX / PX_PER_UNIT) / RIVER_BANK_UNITS));
     }
+    geo.setAttribute("aCanopy", new THREE.BufferAttribute(canopy, 1));
+    geo.setAttribute("aWet", new THREE.BufferAttribute(wet, 1));
     geo.computeVertexNormals();
 
     const ground = new THREE.Mesh(geo, createTerrainMaterial(span));
@@ -332,9 +522,15 @@ export class World {
     // All from the same kit as the ground cover. Mixing these with the older
     // tree pack put two different stylisations of "tree" in one frame, which
     // reads as a mistake even when neither is bad on its own.
+    // NO COMMON TREE. The round-crowned broadleaf is the harvestable wood
+    // node's silhouette now and nothing else in the world wears it — see the
+    // header of shared/forests.ts. The treeline used to carry all five of them,
+    // which was defensible while it stood outside the bounds and there was
+    // nothing to confuse it with; it is not defensible now that there are woods
+    // inside the world made of the other species, because the perimeter and the
+    // forests have to be made of the same vocabulary or the boundary reads as a
+    // different country.
     const treeModels = [
-      "nature/CommonTree_1.gltf", "nature/CommonTree_2.gltf", "nature/CommonTree_3.gltf",
-      "nature/CommonTree_4.gltf", "nature/CommonTree_5.gltf",
       "nature/Pine_1.gltf", "nature/Pine_2.gltf", "nature/Pine_3.gltf",
       "nature/Pine_4.gltf", "nature/Pine_5.gltf",
       "nature/TwistedTree_1.gltf", "nature/TwistedTree_2.gltf", "nature/TwistedTree_3.gltf",
@@ -424,13 +620,48 @@ export class World {
       // a list — a hundred circles laid along the road would still leave grass
       // on every bend, and the bends are where a track most needs to read as a
       // track.
-      reject: (x, z) =>
-        distanceToRoad(toServerX(x), toServerY(z)) < ROAD_HALF_WIDTH_PX * 0.82,
+      reject: (x, z) => {
+        const sx = toServerX(x);
+        const sy = toServerY(z);
+        if (distanceToRoad(sx, sy) < ROAD_HALF_WIDTH_PX * 0.82) return true;
+        // Nor in the Coldwater, nor on its shingle. Wildflowers standing in a
+        // river is the same class of mistake as wildflowers in the wheel ruts,
+        // and rather more obvious.
+        if (riverAt(sx, sy).distancePx < RIVER_HALF_WIDTH_PX + 40) return true;
+        // THINNED UNDER A CANOPY, not removed. A wood plants its own floor —
+        // ferns and broad-leaved plants, in forest.ts — and leaving the open
+        // field's clover and wildflowers underneath it at full density would
+        // put a meadow inside a forest. Thinned by a hash of the POSITION
+        // rather than by the scatter's own generator, because this predicate is
+        // called several times per placement while it retries, and a draw from
+        // the sequence would make where a plant grows depend on how many times
+        // the loop happened to bounce.
+        const canopy = forestStrengthAt(sx, sy);
+        if (canopy > 0.04) {
+          const h = Math.sin(sx * 0.0173 + sy * 0.0291) * 43758.5453;
+          if (h - Math.floor(h) < canopy * 0.82) return true;
+        }
+        return false;
+      },
     });
     this.scene.add(this.groundCover);
     console.info(
       `[world] ground cover: ${cover.instances} plants, ${cover.drawCalls} instanced meshes ` +
         `across ${cover.chunks} chunks (only the chunks in view are drawn)`,
+    );
+
+    // And the woods. Into `groundCover` rather than `decor`, and the name is
+    // the only thing wrong with that: `decor` is the group the camera FADES
+    // when it stands between you and your character, and it fades per material
+    // — which for six instanced woods sharing one bark texture would mean
+    // walking behind a pine and watching every tree in the world go
+    // translucent. Trees are answered by the silhouette pass instead, the same
+    // way they were when they were only a perimeter.
+    const woods = await buildForests(this.forests);
+    this.scene.add(this.forests);
+    console.info(
+      `[world] forests: ${woods.trees} trees and ${woods.undergrowth} undergrowth ` +
+        `across ${FORESTS.length} woods, ${woods.drawCalls} instanced meshes`,
     );
   }
 

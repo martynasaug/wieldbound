@@ -171,14 +171,23 @@ export function createTerrainMaterial(spanUnits: number): THREE.MeshStandardMate
         "#include <common>",
         `#include <common>
         varying vec2 vTerrainWorld;
-        varying float vTerrainDist;`,
+        varying float vTerrainDist;
+        // Baked on the mesh rather than derived here. See World.buildTerrain:
+        // a wood is a table of discs and a river is a polyline, and neither is
+        // a noise function that a shader can cheaply ask about.
+        attribute float aCanopy;
+        attribute float aWet;
+        varying float vCanopy;
+        varying float vWet;`,
       )
       .replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
         vec4 terrWorld = modelMatrix * vec4(transformed, 1.0);
         vTerrainWorld = terrWorld.xz;
-        vTerrainDist = length(cameraPosition - terrWorld.xyz);`,
+        vTerrainDist = length(cameraPosition - terrWorld.xyz);
+        vCanopy = aCanopy;
+        vWet = aWet;`,
       );
 
     shader.fragmentShader = shader.fragmentShader
@@ -187,6 +196,8 @@ export function createTerrainMaterial(spanUnits: number): THREE.MeshStandardMate
         `#include <common>
         varying vec2 vTerrainWorld;
         varying float vTerrainDist;
+        varying float vCanopy;
+        varying float vWet;
         uniform sampler2D dirtMap;
         uniform sampler2D dirtArm;
         uniform sampler2D dirtNormal;
@@ -238,6 +249,30 @@ export function createTerrainMaterial(spanUnits: number): THREE.MeshStandardMate
         float region = terrainRegion(vTerrainWorld);
         float stone = terrainStone(vTerrainWorld, wear);
 
+        // --- What is standing on it, and what is running through it ---------
+        //
+        // FOREST FLOOR. Litter, not lawn — so the wear field is pushed up to a
+        // floor value under a canopy and the dry regional grass is pushed down,
+        // because the one thing a wood's floor is definitely not is the pale
+        // sunburnt grass of an open field. Broken with its own noise rather
+        // than applied flat, or the wood would have a smooth brown disc under
+        // it that reads as a stain and gives the canopy away as a circle.
+        float litter = vCanopy * mix(0.55, 1.0, terrFbm(vTerrainWorld * 0.09));
+        wear = max(wear, litter * 0.66);
+        region *= 1.0 - vCanopy * 0.85;
+
+        // RIVERBANK. Shingle, and it wins outright: gravel normally may only
+        // appear inside bare earth, and a bank is the one place in the world
+        // where stone at the waterline needs no excuse.
+        // Broken with its own noise, because a shingle band of constant width
+        // is a hem sewn onto the river. A real bank is stone where the water
+        // scours and grass where it does not, and the boundary is ragged.
+        float shingle = vWet * vWet;
+        shingle *= mix(0.45, 1.25, terrFbm(vTerrainWorld * 0.19));
+        shingle = clamp(shingle, 0.0, 1.0);
+        wear = max(wear, shingle);
+        stone = max(stone, shingle * 0.9);
+
         // Every surface is sampled at a deliberately incommensurate scale. At
         // the same one they would line up and the blend would read as a single
         // texture changing colour rather than as several surfaces.
@@ -258,6 +293,12 @@ export function createTerrainMaterial(spanUnits: number): THREE.MeshStandardMate
         vec3 tint = mix(vec3(0.86, 1.07, 0.78), vec3(1.16, 1.17, 0.95), macro);
         // A second, faster drift keeps mid-range patches from looking flat.
         tint *= mix(0.94, 1.09, terrFbm(vTerrainWorld * 0.06));
+        // A wood is darker than the field it stands in, and that is most of
+        // how a canopy reads from outside it — the shadow map cannot do this,
+        // because it covers thirty-odd units around the player and a forest is
+        // sixty across.
+        tint *= mix(1.0, 0.62, vCanopy);
+        tint *= mix(1.0, 0.74, shingle);
         sampledDiffuseColor.rgb *= tint;
 
         // NEAR-FIELD DETAIL. A metre-scale multiplier that exists only where
@@ -309,7 +350,7 @@ export function createTerrainMaterial(spanUnits: number): THREE.MeshStandardMate
   };
 
   // Two materials that compile to different programs must not be cached as one.
-  material.customProgramCacheKey = () => "wieldbound-terrain-v2";
+  material.customProgramCacheKey = () => "wieldbound-terrain-v3";
 
   return material;
 }

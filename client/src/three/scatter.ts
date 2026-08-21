@@ -87,7 +87,7 @@ export function seededRandom(seed: number): () => number {
   };
 }
 
-interface Part {
+export interface Part {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
   /** The mesh's transform inside its own model, which instancing must preserve. */
@@ -103,7 +103,7 @@ interface Part {
  * ground. Carrying `matrixWorld` into each instance matrix keeps it exact
  * without having to rewrite the geometry.
  */
-function partsOf(proto: THREE.Group, normalizeTo: number): { parts: Part[]; scale: number } {
+export function partsOf(proto: THREE.Group, normalizeTo: number): { parts: Part[]; scale: number } {
   proto.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(proto);
   const size = new THREE.Vector3();
@@ -138,7 +138,7 @@ function partsOf(proto: THREE.Group, normalizeTo: number): { parts: Part[]; scal
  * there is very little off-screen to reject. 26 sits in the middle of that
  * range. If the world ever grows, this is the number to revisit first.
  */
-const CHUNK_UNITS = 26;
+export const CHUNK_UNITS = 26;
 
 export interface ScatterArea {
   halfWidth: number;

@@ -135,9 +135,34 @@ unavailable.
   because the nearest is four times further out than the widest zoom can show.
 - **A world with ground in it** — a tiled PBR surface that mixes grass into
   dirt under one noise field and drifts its colour under another, so the tiling
-  has no findable period, scattered with 4,800 instanced plants. None of that
-  scatter is a tree, a boulder or a bush, because those three are the things you
-  can harvest and scenery must never look interactive.
+  has no findable period, scattered with 53,000 instanced plants — and the
+  ground has RELIEF now, because a perfectly flat plane is the one thing no
+  amount of surface texture fixes: light never changes across it. Height is
+  purely a rendering property, since every distance in this game is measured in
+  the XZ plane and nothing anywhere reads a Y, so it cannot desync and does not
+  have to be shared. Anything BUILT gets levelled ground under it.
+- **Six woods with names, and a river with one bridge over it** — the frontier
+  was four kilometres of open ground with a road down the middle of it.
+  Pinereach, Blackstand, the Mirefen, the Thornwood, Sorrowwood and the Weeping
+  Wood are regions rather than a treeline: a warped, ragged edge, clearings
+  punched through the middle, their own floor of ferns and litter, and a canopy
+  the ground itself darkens under. They exist because a rule was sharpened
+  rather than broken — the harvestable wood node is the round-crowned broadleaf
+  and NOTHING else in the world may wear that silhouette, so every conifer,
+  twisted trunk and dead stick is unambiguously scenery. They all stand past the
+  furthest monster camp, because the five bands are where the game is played and
+  a field of trunks costs you the telegraph you were meant to step out of.
+  **The Coldwater** runs east to west across the frontier and off the map at
+  both ends, and it is the first solid thing outside the palisade: the road was
+  the safe way through, and now the bridge is the only way ACROSS, so the whole
+  northern half of the map funnels through one point that happens to be on the
+  road. Its bed is cut into the land, its surface is the land along its own
+  course low-passed and forced downhill so it can never flow uphill, and the
+  bridge is derived from where the two curves actually meet rather than typed
+  beside them. **And the map finally says where you are** — one line under the
+  minimap naming the wood, the water, the road or the town, and going blank in
+  open country, because a world that names every square of itself has named
+  nothing.
 - **A minimap you can actually set up** — top right, showing resource nodes by
   kind, monsters with the one you are fighting ringed, other players, the
   workbench and the world boundary. Circle or square, four sizes, zoom by wheel
@@ -319,6 +344,13 @@ them rather than in the client, so the moment the server wants to know where a
 player may stand the two cannot disagree. `shared/landmarks.ts` is the same idea
 pointed outward: the four waystones, in the same polar terms, so the stone the
 client draws and the stone the server credits you for standing at are one entry.
+`shared/road.ts`, `shared/river.ts` and `shared/forests.ts` are the three things
+in this world that are NOT polar — the road crosses every ring instead of
+sitting on one, and a river and a wood have nothing to do with distance from
+spawn at all — so they are polylines and discs in plain world pixels, read by
+the client that draws them, the collision that keeps you out of the water and
+the tests that check them. `shared/places.ts` turns all of it into one answer to
+"where am I".
 `shared/items.ts` sits beside it and owns the *content* — every base item, the
 quality ladder, the affix tables and the smithy's costs. The dependency runs one
 way (items imports protocol-types, never the reverse), so one file is the wire
