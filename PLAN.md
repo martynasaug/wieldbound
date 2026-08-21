@@ -5024,6 +5024,105 @@ Plus a seeded level-40 character in full Enchanted plate with a mace and a
 shield, to confirm the procedural armour still fits a body it was never sized
 against. Fourteen suites, smoke, both workspaces, zero console errors.
 
+### M55.2 — a wardrobe out of the rigs nobody wears any more
+M55.1 pooled the five rigs' animations and left four character models in the
+project that nothing loads. They are still carrying their clothes.
+
+Every cosmetic piece in the kit is a mesh parented to a NAMED BONE — the
+Warrior's pauldrons off `UpperArmL` and `UpperArmR`, the Rogue's belt and pouch
+off `Abdomen`, the Ranger's arm guards off `LowerArmL` and `LowerArmR` — and
+those bones exist on the Monk, so those pieces fit the Monk. `wardrobe.ts`
+harvests ten of them.
+
+**It was easier than expected, and the expectation is worth recording because it
+was the whole perceived risk.** These were assumed to be SKINNED meshes, which
+would have meant remapping every vertex's `skinIndex` out of the donor's bone
+order and into the target's — the indices are positions in `skeleton.bones`, not
+names, so a mismatch renders confetti. Measured rather than assumed, and two
+things came back: bone ORDER is identical across all five rigs, 32 skinning
+bones in the same sequence, so even a real skinned rebind would need no remap;
+and almost nothing here is skinned anyway. A pauldron does not deform. It sits
+on a shoulder and turns with it, which is a rigid mesh on a bone.
+
+### Two coordinate systems, and the failure is not a coordinate failure
+Everything `gear.ts` generates is authored in the model's REST FRAME —
+`[0, chestMid, -4]`, absolute positions on a standing character — and
+`Actor.holderFor` exists precisely to hang that off a bone with the bone's own
+transform undone. Everything harvested arrives the other way round: it was
+already a child of its bone and carries the local offset that put it there.
+
+Sent through the holder it is offset twice, and what that looks like is not a
+coordinate bug — it is a pauldron floating a metre from a shoulder, which reads
+as a bad asset. So `GearAttachment` carries a `boneLocal` flag and the two
+spaces are kept apart by the piece saying which it is in.
+
+### The kit calls it a cloak and it is a hood
+`Cloak`, in `Ranger.fbx`, parented to `Head`. The parent bone is the tell — a
+cloak hangs off the shoulders — and attaching it to the Monk and looking settled
+it in one frame: a cowl over the skull with the fabric falling at the back, at
+exactly the size a hood wants, because it was authored against the same head
+bone. It is called `hood` here. Carrying the kit's name for it would have filed
+it under the cape slot and left somebody wondering, some phase from now, why the
+cape was on the character's head.
+
+That is the whole argument for the contact-sheet probe that found it: ten pieces
+attached to the body one at a time and photographed. Names in an asset pack are
+the pack's, and this project has been wrong about one before.
+
+### What is harvested and what stays generated
+Only where the kit's version is plainly better. The Warrior's shoulder plate has
+a rolled lip and a bevel that no arrangement of a dome and a shell reaches, so
+plate, scale and brigandine take it. Robes take the Wizard's little folded
+shoulder caps, which are a robe's shoulders rather than armour's — a distinction
+the heavy pair cannot make. Leather takes arm guards, a belt and a pouch, and
+between them those four small pieces do more for "this is somebody who travels"
+than any amount of chest geometry.
+
+Everything else stays generated, because for a cuirass, a tasset and a mail
+skirt it is the other way round, and a downloaded part that is worse than the
+thing it replaces is a downgrade with provenance. Every fallback is still in
+place: a donor that fails to load costs its piece and nothing else.
+
+### And a body coloured from its owner's name
+One body for everybody has one obvious cost — a crowd at a resource node is five
+copies of the same person — and gear only covers players who have some.
+
+So the body is tinted from the character's NAME, and choosing that over the
+obvious alternative is the decision worth keeping. The obvious alternative is a
+character creator: sliders, a stored identity, a column in the database, a field
+on the wire. This needs none of them. A name is already unique, already
+persistent, and already known to every client that can see you, because the
+nameplate is drawn from it — so a tint derived from it is stable across
+sessions, agreed on by every observer, and costs zero bytes and zero schema. It
+is also, unlike a random seed, something the player CHOSE.
+
+### The amplitude took three passes and each failure was informative
+The Monk's skin and its robe are one texture on one material, so there is no
+tinting one without the other and a wide hue wheel makes a green person with a
+green face.
+
+- **First pass: one HSL colour, multiplied.** Four names came out `#d7bb99`,
+  `#e8bfa3`, `#d3b29d`, `#d6bea8` — within ten values of each other on every
+  channel. An HSL colour at L=0.5 with low saturation is a mid grey with a hint,
+  and four mid greys over one texture are four of the same thing. The knob had
+  been turned and was not connected to anything.
+- **Second pass: normalise the tint to a mean of one, then scale.** Correct in
+  principle — hue and saturation change the cast at constant brightness, value
+  gets its own axis with a real range — and the range was set to 1.28, against a
+  base colour that is already 0.78 of white. Every character clipped to the same
+  near-white. The identical failure as the first pass, reached from the other
+  side: a knob with a range wider than the thing it drives has no range at all.
+- **Third: 0.48 to 1.02.** And verified over THIRTY names offline rather than
+  over the four that happened to be in the probe — those four had hashed to
+  0.60, 0.75, 0.60 and 0.66 and would have condemned a working distribution.
+  Across thirty it is 0.49 to 1.02, near-uniform across six buckets.
+
+### Verified
+The contact sheet, the four-name comparison, five armour styles photographed on
+one character, and M55.1's eight-family swap probe re-run to confirm the
+animation work is undisturbed. Fourteen suites, smoke, both workspaces, zero
+console errors.
+
 ---
 
 ## Seeding a character for testing
@@ -5109,6 +5208,27 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- Identity comes from the NAME, not from a character creator. A name is already
+  unique, already persistent, and already on every client that can see you, so a
+  tint derived from it needs no column, no wire field and no creation screen —
+  and unlike a random seed it is something the player chose.
+- A harvested part and a generated part live in DIFFERENT SPACES. Generated
+  gear is authored in the model's rest frame and needs the bone undone;
+  harvested gear was already a child of its bone and must not have it undone
+  twice. The piece says which it is in, because the symptom of getting it wrong
+  is a pauldron a metre off the shoulder, which reads as a bad asset rather than
+  as a coordinate bug.
+- Trust an asset pack's NAMES for nothing. Ranger.fbx calls a hood a `Cloak`
+  and parents it to `Head`. Attaching every harvested piece to the body one at a
+  time and photographing it is one probe and it settles all ten placements.
+- A tint knob has to be sized against what it MULTIPLIES. Too narrow and every
+  character is the same beige; too wide and every character clips to the same
+  near-white. Both were reached in this milestone, from opposite directions, and
+  they look identical from the outside.
+- Verify a distribution over THIRTY samples, not four. The four names in the
+  browser probe hashed to 0.60, 0.75, 0.60 and 0.66 and would have condemned a
+  spread that is near-uniform from 0.49 to 1.02.
 
 - ONE body, for everybody, forever. The per-class rig was never a design
   decision — it was the kit welding each character to its own animations, so the

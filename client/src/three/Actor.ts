@@ -112,6 +112,53 @@ const CLIP_PREFERENCES: Record<ActorAnim, string[]> = {
 
 const FADE_MS = 180;
 
+// --- Looking like yourself ---------------------------------------------------
+//
+// One body for everybody is the right call and it has one obvious cost: a
+// crowd at a resource node is now five copies of the same person. Gear covers
+// most of that — style picks the mesh, quality tints it, and four slots show —
+// but two players in the same kit were identical, and the starting character
+// wears nothing at all.
+//
+// SO THE BODY IS TINTED FROM THE CHARACTER'S NAME.
+//
+// That is the entire mechanism, and choosing it over the obvious alternative is
+// the decision worth recording. The obvious alternative is a character creator:
+// sliders, a stored identity, a column in the database and a field on the wire.
+// This needs none of them. A name is already unique, already persistent,
+// already known to every client that can see you — the nameplate is drawn from
+// it — so a tint derived from it is stable across sessions, agreed on by every
+// observer, and costs exactly zero bytes and zero schema.
+//
+// It is also, unlike a random seed, something a player CHOSE. Two people who
+// pick the same name get the same character, which is correct: they are the
+// same character.
+//
+// THE AMPLITUDE IS THE HARD PART. The Monk's skin and its robe are the same
+// texture on the same material, so there is no way to tint one without the
+// other — a wide hue wheel would produce a green person with a green face, and
+// this project has been here before, in Phase 49's note about a town that is
+// beautiful on a grey background and radioactive on grass. The band is a
+// plausible red-through-yellow, the saturation is modest, and the range that
+// actually separates two people at ninety pixels is VALUE. See `tintBody` for
+// how the first attempt got that exactly backwards.
+//
+// Gear is never tinted by this. Quality already owns that channel, and a Runed
+// breastplate has to be the same shade of Runed on everybody or the ladder
+// stops meaning anything.
+
+/** A stable 32-bit hash of a name. `Math.imul`, for the reason `shared/rng.ts`
+ *  exists: the textbook version loses its low bits to a double before it
+ *  wraps, and the low bits are the only ones a hash has. */
+function nameHash(name: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < name.length; i++) {
+    h ^= name.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
 // --- Seeing a character through what is in front of them ---------------------
 // Every third-person game has to answer this and there are only three real
 // answers: move the camera, fade the obstacle, or draw the character on top.
@@ -379,6 +426,15 @@ export interface ActorOptions {
    * wearing one would glow in a lit square for the life of the world.
    */
   rim?: number;
+
+  /**
+   * Who this is, for the purpose of looking like themselves.
+   *
+   * The character's name, and it is the whole of the colour customisation —
+   * see `tintBody`. Absent for monsters and for anything that should look
+   * exactly like every other copy of its model.
+   */
+  identity?: string;
 }
 
 export class Actor {
@@ -411,6 +467,8 @@ export class Actor {
    * a dragon that plays a sword swing.
    */
   private readonly usesClipLibrary: boolean;
+  /** The name this actor is tinted from. See `tintBody`. */
+  private identity: string | undefined;
   /** When this actor next glances somewhere while standing still. */
   private nextGlanceAt = 0;
   /** Facing it has chosen to idle at, so a glance eases rather than snaps. */
@@ -497,6 +555,7 @@ export class Actor {
     this.idleGlance = options.idleGlance ?? false;
     this.wantsSilhouette = options.silhouette ?? true;
     this.usesClipLibrary = options.model === PLAYER_BODY;
+    this.identity = options.identity;
     this.nextGlanceAt = performance.now() + this.glanceDelay();
     this.bodyModel = options.model;
     this.root.add(this.pivot);
@@ -662,6 +721,8 @@ export class Actor {
       this.restBoneMatrices.set(name, bone.matrixWorld.clone());
     }
 
+    this.tintBody();
+
     // The new rig has its own action map, so whatever was playing has to be
     // started again on it. Without this a body swap leaves the character
     // frozen in the bind pose — arms out sideways, weapon aimed at the
@@ -762,7 +823,14 @@ export class Actor {
     for (const [slot, layer] of layers) {
       if (!layer) continue;
       for (const piece of buildArmour(slot, layer.style, layer.rarity)) {
-        const holder = this.holderFor(piece.bone);
+        // Two spaces, and the piece says which it is in. See the note on
+        // `GearAttachment.boneLocal`: a generated part is authored on a
+        // standing character and needs the holder to undo the bone; a harvested
+        // one was already a child of that bone and must not have it undone
+        // twice.
+        const holder = piece.boneLocal
+          ? (this.bones.get(piece.bone) ?? null)
+          : this.holderFor(piece.bone);
         if (!holder) continue;
         holder.add(piece.object);
         this.worn.push(piece.object);
@@ -853,6 +921,58 @@ export class Actor {
       ghost.scale.copy(mesh.scale);
       mesh.parent?.add(ghost);
       this.silhouettes.push(ghost);
+    }
+  }
+
+  /**
+   * Colours this body from its owner's name. See the note above `nameHash`.
+   *
+   * Applied to the BODY only — the meshes the rig arrived with — and never to
+   * anything worn, which is why it runs at the end of `buildBody` rather than
+   * at the end of dressing. Gear is added afterwards and tracked separately, so
+   * the split needs no filter: whatever is on the rig at this moment is the
+   * person, and everything that arrives later is their kit.
+   */
+  private tintBody(): void {
+    if (!this.identity || !this.instance) return;
+    const h = nameHash(this.identity);
+
+    // TWO AXES, AND THEY ARE SEPARATED ON PURPOSE.
+    //
+    // The first attempt multiplied one HSL colour over the material and got
+    // four characters within ten values of each other on every channel —
+    // `#d7bb99`, `#e8bfa3`, `#d3b29d`, `#d6bea8`. Measured, and it is obvious in
+    // hindsight: an HSL colour at L=0.5 with low saturation is a mid grey with a
+    // hint, and multiplying four mid greys over one texture gives four of the
+    // same thing. The knob was turned; it was not connected to anything.
+    //
+    // So the tint is normalised to a MEAN OF ONE before it is applied. That
+    // makes hue and saturation change the CAST at constant brightness, and
+    // leaves brightness to a separate multiplier that can then have a real
+    // range without fighting it.
+    const hue = ((h & 0xff) / 255) * 0.11;
+    const sat = 0.08 + (((h >>> 8) & 0xff) / 255) * 0.34;
+    // AND VALUE DOES MOST OF THE WORK. Two people a shade apart in hue are the
+    // same person at ninety pixels; two people twice apart in value are not, and
+    // value is the one that survives being fogged, shadowed and seen at dusk.
+    // The ceiling is 1.0 and not a shade more, and the reason is that this
+    // MULTIPLIES a base colour that is already 0.78 of white. The first pass
+    // ran to 1.28 and every character came out clipped to the same near-white —
+    // `#fef3b0`, `#fffac4`, `#ffe4bf` — which is the identical failure as the
+    // pass before it (four indistinguishable people) arrived at from the other
+    // side. A knob with a range wider than the thing it drives is a knob with no
+    // range at all.
+    const value = 0.48 + (((h >>> 16) & 0xff) / 255) * 0.54;
+
+    const tint = new THREE.Color().setHSL(hue, sat, 0.5);
+    const mean = (tint.r + tint.g + tint.b) / 3;
+    if (mean > 0) tint.multiplyScalar(value / mean);
+
+    for (const { mat } of this.litMaterials) {
+      // Multiplied over whatever the material already carries, exactly as the
+      // rarity tint is — so the texture's own light and shade survive and only
+      // the cast and the depth change.
+      mat.color.multiply(tint);
     }
   }
 

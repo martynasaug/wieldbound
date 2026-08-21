@@ -91,6 +91,7 @@ import { ATTACK_SLOT, Hotbar, type BarAction } from "../ui/Hotbar";
 import { Actor } from "./Actor";
 import { PLAYER_BODY } from "./gear";
 import { loadClipLibrary } from "./clips";
+import { loadWardrobe } from "./wardrobe";
 import { Hud } from "./hud";
 import { Floaters, type FloatSpec } from "./floaters";
 import { Drops } from "./drops";
@@ -841,6 +842,8 @@ export class Game {
       interpolate: false,
       // Yours is the strongest, because yours is the one you must never lose.
       rim: 0.5,
+      // And the body is coloured from the name. See `tintBody` in Actor.ts.
+      identity: this.name,
     });
     this.localActor.setAppearance(this.appearance);
 
@@ -903,11 +906,15 @@ export class Game {
     // attack, stand still, and see it on the second blow, which reads as input
     // lag rather than as a missing file.
     const anims = loadClipLibrary();
+    // And the kit's own cosmetic pieces, harvested off the four rigs nobody
+    // wears any more. Same reason as the clips: a pauldron fetched at the moment
+    // you equip a breastplate arrives after the breastplate does.
+    const kit = loadWardrobe();
     const body = this.localActor.load();
     const people = buildNpcs(this.world.scene).then((npcs) => {
       this.npcs = npcs;
     });
-    await Promise.all([decor, anims, body, people]);
+    await Promise.all([decor, anims, kit, body, people]);
     // The models have parsed; their textures have not necessarily arrived, and
     // a first frame that repaints itself twenty megabytes at a time is exactly
     // what a loading screen exists to hide.
@@ -1026,6 +1033,7 @@ export class Game {
           model: PLAYER_BODY,
           height: PLAYER_HEIGHT,
           rim: 0.3,
+          identity: s.name,
         });
         this.players.set(s.id, actor);
         this.playerMotion.set(s.id, { x: s.x, y: s.y, moving: false });

@@ -14,7 +14,8 @@ are an Adventurer — a real, weak archetype rather than a broken state. That on
 rule is where the name comes from.
 
 What a weapon does **not** change is who you are. You are one character, with
-one body, and it stays yours across every swap.
+one body, and it stays yours across every swap — coloured from your own name, so
+two people in the same armour are still two people.
 
 Originally started as a study of [Idlekin](https://app.playidlekin.com/), but
 it has drifted a long way: the idle framing was removed outright in favour of
@@ -349,6 +350,17 @@ unavailable.
   and it says where one comes from. All of it derived from the loot table the
   server actually rolls with, so the game cannot send you after the wrong
   monster.
+- **A wardrobe made of the rigs nobody wears any more** — when the body stopped
+  changing, four character models were left in the project that nothing loads,
+  and they were still carrying their clothes. Every cosmetic piece in the kit is
+  a mesh hung on a named bone — the Warrior's pauldrons on the upper arms, the
+  Rogue's belt and pouch at the waist, the Ranger's arm guards and hood — and
+  those bones are on the one body, so those pieces fit it. They are used exactly
+  where the kit's version beats what the game generates: a forged shoulder plate
+  with a rolled lip instead of a dome and a shell, a real cowl instead of a
+  drape. A cuirass and a mail skirt stay generated, because there it is the other
+  way round, and a downloaded part that is worse than the thing it replaces is a
+  downgrade with provenance.
 - **Matched gear** — thirteen sets, one per material, so dressing in one thing is
   worth something. Deliberately modest: a full matched kit loses to a mixed set
   one quality step higher. It is a tiebreaker with a look, not a second

@@ -40,6 +40,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { loadModel } from "./assets";
+import { donorPart, type DonorPartId } from "./wardrobe";
 import { PALETTES, itemBase, type PaletteDef } from "../../../shared/items";
 
 // --- Bodies ---------------------------------------------------------------
@@ -254,12 +255,30 @@ function drape(rows: { y: number; z: number; halfWidth: number }[]): THREE.Buffe
 export interface GearAttachment {
   bone: string;
   object: THREE.Object3D;
+  /**
+   * Whether this piece is authored in the BONE's own space rather than the
+   * model's rest frame.
+   *
+   * Two coordinate systems, and mixing them up is the whole difficulty of
+   * adding harvested parts to a generated set. Everything `gear.ts` builds is
+   * authored in rest-frame coordinates — `[0, chestMid, -4]`, absolute
+   * positions on a standing character — and `Actor.holderFor` exists precisely
+   * to hang that off a bone without the bone's own transform disturbing it.
+   * Everything harvested in `wardrobe.ts` arrives the other way round: it was
+   * a CHILD of its bone in the donor file and carries the local offset that put
+   * it there. Sent through the holder it would be offset twice, and the failure
+   * is a pauldron floating a metre from the shoulder rather than anything that
+   * looks like a coordinate bug.
+   */
+  boneLocal?: boolean;
 }
 
 /** A part before it becomes a mesh: geometry plus what it is made of. */
 interface Part {
   bone: string;
   role: MaterialRole;
+  /** Set for harvested parts. See `GearAttachment.boneLocal`. */
+  local?: { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 };
   geometry: THREE.BufferGeometry;
 }
 
@@ -299,6 +318,12 @@ function helmParts(style: GearStyle, _rarity: ItemRarity): Part[] {
   }
 
   if (style === "hood") {
+    // The kit's own cowl, which is the piece this generated one was reaching
+    // for: a real hood with a lip, a fold and a fall at the back, and it lands
+    // on the Monk's skull at the size it was authored for because every rig in
+    // the pack shares the head bone it was hung from.
+    const cowl = donor("hood", "cloth");
+    if (cowl) return [cowl];
     // A cowl: swallows the whole skull and trails down the back.
     return [{ bone: "Head", role: "cloth", geometry: merge([
       dome(HEAD_HALF_WIDTH + 11, [0, mid, -8], [1, 1.4, 1.2]),
@@ -341,6 +366,11 @@ function armorParts(style: GearStyle, _rarity: ItemRarity): Part[] {
       shell(26, 31, chestH, [0, chestMid, -4], 0.92),
       shell(22, 27, 14, [0, chestTop + 4, -4], 0.92),
     ]) });
+    // The Wizard's little folded shoulder caps, which are a robe's shoulders
+    // rather than armour's — the distinction the heavy pair cannot make.
+    const softL = donor("pauldron-soft-l", "cloth");
+    const softR = donor("pauldron-soft-r", "cloth");
+    if (softL && softR) parts.push(softL, softR);
     // The skirt hangs from the waist, so it swings with the hips rather than
     // the chest — a robe pinned to the ribs slides up the legs when running.
     parts.push({ bone: "Abdomen", role: "cloth", geometry: 
@@ -349,6 +379,17 @@ function armorParts(style: GearStyle, _rarity: ItemRarity): Part[] {
   }
 
   if (style === "leather") {
+    // Bracers, which is what leather armour has instead of pauldrons — and a
+    // belt with a pouch on it, which is what leather armour has instead of a
+    // waist plate. Four small harvested pieces, and between them they do more
+    // for "this is a person who travels" than any amount of chest geometry.
+    const guardL = donor("armguard-l", "leather");
+    const guardR = donor("armguard-r", "leather");
+    if (guardL && guardR) parts.push(guardL, guardR);
+    const belt = donor("belt", "leather");
+    const pouch = donor("pouch", "leather");
+    if (belt) parts.push(belt);
+    if (pouch) parts.push(pouch);
     parts.push({ bone: "Torso", role: "leather", geometry: merge([
       shell(27, 30, chestH - 10, [0, chestMid - 4, -4], 0.9),
       // Two broad straps crossing the chest — the cheapest way to say leather.
@@ -361,6 +402,9 @@ function armorParts(style: GearStyle, _rarity: ItemRarity): Part[] {
   }
 
   if (style === "chain") {
+    // A bracer on the shield arm only, which is where a mail wearer puts one.
+    const bracer = donor("bracer", "metal");
+    if (bracer) parts.push(bracer);
     parts.push({ bone: "Torso", role: "metal", geometry:
       shell(28, 32, chestH, [0, chestMid, -4], 0.92) });
     parts.push({ bone: "Abdomen", role: "metal", geometry: merge([
@@ -371,8 +415,9 @@ function armorParts(style: GearStyle, _rarity: ItemRarity): Part[] {
     return parts;
   }
 
-  // "plate" — the heaviest look: a shaped cuirass, a gorget at the throat, and
-  // real pauldrons on the arm bones so they swing with the shoulders.
+  // "plate", "scale" and "brigandine" — the heaviest look: a shaped cuirass, a
+  // gorget at the throat, and real pauldrons on the arm bones so they swing
+  // with the shoulders.
   parts.push({ bone: "Torso", role: "metal", geometry: merge([
     shell(30, 28, chestH, [0, chestMid, -4], 0.94),
     shell(24, 30, 16, [0, chestTop + 6, -4], 0.94),
@@ -383,6 +428,25 @@ function armorParts(style: GearStyle, _rarity: ItemRarity): Part[] {
     box([26, 32, 20], [15, WAIST_Y - 20, -2]),
     box([26, 32, 20], [-15, WAIST_Y - 20, -2]),
   ]) });
+  // THE PAULDRONS ARE HARVESTED WHERE THEY EXIST.
+  //
+  // The generated pair — a squashed dome with a shell under it — was built
+  // because there was nothing else, and it is the one piece of the armour set
+  // where the kit's own version is plainly better: the Warrior's shoulder plate
+  // has a rolled lip, a bevel and a shape that reads as forged from any angle,
+  // and no arrangement of two primitives gets there. Everything ELSE in this
+  // file stays generated, because for a cuirass, a tasset and a mail skirt it
+  // is the other way round.
+  //
+  // If the donor never loaded, the pair below is still here. A wardrobe that
+  // takes a character's shoulders off when a file 404s is worse than a plain
+  // pauldron.
+  const heavyL = donor("pauldron-heavy-l", "metal");
+  const heavyR = donor("pauldron-heavy-r", "metal");
+  if (heavyL && heavyR) {
+    parts.push(heavyL, heavyR);
+    return parts;
+  }
   for (const side of [1, -1] as const) {
     parts.push({
       bone: side > 0 ? "UpperArmL" : "UpperArmR",
@@ -478,8 +542,34 @@ export function buildArmour(slot: ItemSlot, style: GearStyle, rarity: ItemRarity
     // Capes and drapes are single sheets; without this the inside face vanishes
     // the moment the camera swings behind the character.
     (mesh.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
-    return { bone: part.bone, object: mesh };
+    if (part.local) {
+      mesh.position.copy(part.local.position);
+      mesh.quaternion.copy(part.local.quaternion);
+      mesh.scale.copy(part.local.scale);
+    }
+    return { bone: part.bone, object: mesh, boneLocal: !!part.local };
   });
+}
+
+/**
+ * Turns a harvested piece into a `Part`, or nothing if its donor never arrived.
+ *
+ * The `role` is this project's, not the kit's: a harvested pauldron takes the
+ * `metal` palette and the rarity tint over it, exactly as the generated one
+ * does, so a Runed piece is the same shade whether it was modelled or built.
+ * That is the point of routing these through `Part` at all rather than
+ * attaching them directly — otherwise the wardrobe would be a second look with
+ * a second colour scheme sitting next to the first.
+ */
+function donor(id: DonorPartId, role: MaterialRole): Part | null {
+  const p = donorPart(id);
+  if (!p) return null;
+  return {
+    bone: p.bone,
+    role,
+    geometry: p.geometry,
+    local: { position: p.position, quaternion: p.quaternion, scale: p.scale },
+  };
 }
 
 // --- Held items -------------------------------------------------------------
