@@ -15,7 +15,7 @@
 import * as THREE from "three";
 import { TOWN_NPCS, npcPoseAt, type NpcBody, type TownNpc } from "../../../shared/town";
 import { Actor } from "./Actor";
-import { toWorldX, toWorldZ } from "./World";
+import { terrainHeight, toWorldX, toWorldZ } from "./World";
 
 /**
  * Which rig each archetype wears.
@@ -94,7 +94,9 @@ export async function buildNpcs(scene: THREE.Scene): Promise<Map<string, NpcVisu
       });
 
       const pose = npcPoseAt(def);
-      actor.snapTo(toWorldX(pose.x), 0, toWorldZ(pose.y));
+      const px = toWorldX(pose.x);
+      const pz = toWorldZ(pose.y);
+      actor.snapTo(px, terrainHeight(px, pz), pz);
       // Server bearings are measured in the XY plane where +y is south, and
       // south is +z here — so a bearing turns into a direction with no sign
       // flip at all. Getting this wrong leaves everyone facing out of town,
@@ -142,7 +144,12 @@ export function updateNpcs(npcs: Map<string, NpcVisual>, nowMs = Date.now()): vo
     vis.x = pose.x;
     vis.y = pose.y;
     if (!vis.actor.loaded) continue;
-    vis.actor.snapTo(toWorldX(pose.x), 0, toWorldZ(pose.y));
+    const wx = toWorldX(pose.x);
+    const wz = toWorldZ(pose.y);
+    // Emberhold is levelled, so this is 0 for all five of them today — but it
+    // is the ground's answer rather than an assumption, and it stops being 0
+    // the first time anybody's beat crosses the wall.
+    vis.actor.snapTo(wx, terrainHeight(wx, wz), wz);
     // Server bearings are XY with +y south, and south is +z here, so a bearing
     // becomes a direction with no sign flip — the same conversion the initial
     // facing uses, and the same one that leaves everybody staring out of town

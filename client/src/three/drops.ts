@@ -68,7 +68,10 @@ export class Drops {
    */
   sync(
     drops: DroppedItemState[],
-    toWorld: (x: number, y: number) => { x: number; z: number },
+    // Carries the ground height now, because loot lands on hills. The whole
+    // visual — the disc under it, the bob, the beam — is anchored off `root`,
+    // so putting the root on the ground moves all three.
+    toWorld: (x: number, y: number) => { x: number; y: number; z: number },
   ): void {
     this.seen.clear();
     for (const drop of drops) {
@@ -79,7 +82,7 @@ export class Drops {
         this.visuals.set(drop.id, vis);
       }
       const p = toWorld(drop.x, drop.y);
-      vis.root.position.set(p.x, 0, p.z);
+      vis.root.position.set(p.x, p.y, p.z);
       vis.expiresAt = drop.expiresAt;
     }
     for (const [id, vis] of this.visuals) {

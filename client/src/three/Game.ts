@@ -112,6 +112,18 @@ import {
   toWorldZ,
 } from "./World";
 import { instantiate, whenLoadsSettle } from "./assets";
+
+/**
+ * An XZ position, plus the height of the ground under it.
+ *
+ * Spread into every call that used to pass a literal 0 for Y. Height is a
+ * rendering property and nothing else — every distance in this game is measured
+ * in the XZ plane and no formula anywhere reads a Y — so this is the ONLY thing
+ * that had to change to put actors on hills.
+ */
+function onGround(x: number, z: number): [number, number, number] {
+  return [x, terrainHeight(x, z), z];
+}
 import { nightAmount } from "./daynight";
 import { Town } from "./town";
 import { buildNpcs, updateNpcs, type NpcVisual } from "./npcs";
@@ -853,7 +865,7 @@ export class Game {
     ]);
 
     this.world.scene.add(this.localActor.root);
-    this.localActor.snapTo(toWorldX(this.playerX), 0, toWorldZ(this.playerY));
+    this.localActor.snapTo(...onGround(toWorldX(this.playerX), toWorldZ(this.playerY)));
 
     this.loop();
   }
@@ -887,7 +899,7 @@ export class Game {
     this.wallet.ore = p.ore;
     this.wallet.herb = p.herb;
 
-    this.localActor?.snapTo(toWorldX(this.playerX), 0, toWorldZ(this.playerY));
+    this.localActor?.snapTo(...onGround(toWorldX(this.playerX), toWorldZ(this.playerY)));
 
     this.hud.setIdentity(this.name, this.level);
     this.hud.setHp(this.hp, this.maxHp);
@@ -927,16 +939,18 @@ export class Game {
     // The monsters just moved, so where the player may stand has changed.
     this.resolvePlayerCollision();
     this.localActor?.setTargetPosition(
-      toWorldX(this.playerX),
-      0,
-      toWorldZ(this.playerY),
+      ...onGround(toWorldX(this.playerX), toWorldZ(this.playerY)),
     );
     this.syncNodes(p.nodes);
     this.syncStations(p.stations);
     // Optional on the wire so a client can outlive a server that predates
     // ground loot; the empty list is the honest reading of "no drops".
     this.dropStates = p.drops ?? [];
-    this.drops.sync(this.dropStates, (x, y) => ({ x: toWorldX(x), z: toWorldZ(y) }));
+    this.drops.sync(this.dropStates, (x, y) => ({
+      x: toWorldX(x),
+      y: terrainHeight(toWorldX(x), toWorldZ(y)),
+      z: toWorldZ(y),
+    }));
   }
 
   private syncPlayers(states: PlayerState[]): void {
@@ -961,7 +975,7 @@ export class Game {
       const z = toWorldZ(s.y);
       const motion = this.playerMotion.get(s.id) ?? { x: s.x, y: s.y, moving: false };
       const moving = isMoving(motion.x, motion.y, s.x, s.y, motion.moving);
-      actor.setTargetPosition(x, 0, z);
+      actor.setTargetPosition(...onGround(x, z));
       if (moving) actor.faceDirection(s.x - motion.x, s.y - motion.y);
       actor.play(moving ? "run" : "idle");
       this.playerMotion.set(s.id, { x: s.x, y: s.y, moving });
@@ -1012,7 +1026,7 @@ export class Game {
       const moving = isMoving(vis.state.x, vis.state.y, s.x, s.y, vis.moving);
       vis.moving = moving;
 
-      vis.actor.setTargetPosition(x, 0, z);
+      vis.actor.setTargetPosition(...onGround(x, z));
       if (moving) vis.actor.faceDirection(s.x - vis.state.x, s.y - vis.state.y);
 
       // Chill is a gameplay signal (your Frost Nova is still working), so it
@@ -1065,7 +1079,7 @@ export class Game {
         obj = placeholder;
         void this.buildNode(s, placeholder);
       }
-      obj.position.set(toWorldX(s.x), 0, toWorldZ(s.y));
+      obj.position.set(...onGround(toWorldX(s.x), toWorldZ(s.y)));
       // Depleted nodes dim rather than vanish, so the player can see where
       // they will come back — the same reasoning as the 2D tint. Stored as a
       // base rather than applied directly, because the occlusion fade below
@@ -1199,7 +1213,7 @@ export class Game {
       if (this.stations.has(s.id)) continue;
 
       const group = new THREE.Group();
-      group.position.set(toWorldX(s.x), 0, toWorldZ(s.y));
+      group.position.set(...onGround(toWorldX(s.x), toWorldZ(s.y)));
       this.world.scene.add(group);
       this.stations.set(s.id, group);
 
@@ -1298,7 +1312,7 @@ export class Game {
       if (p.x !== undefined && p.y !== undefined) {
         this.playerX = p.x;
         this.playerY = p.y;
-        this.localActor?.snapTo(toWorldX(p.x), 0, toWorldZ(p.y));
+        this.localActor?.snapTo(...onGround(toWorldX(p.x), toWorldZ(p.y)));
         // A death pose would otherwise persist through the respawn.
         setTimeout(() => this.localActor?.revive(), 900);
       }
@@ -1780,7 +1794,7 @@ export class Game {
     const len = Math.hypot(dx, dz) || 1;
     this.playerX = clamp(this.playerX + (dx / len) * distancePx, 0, WORLD_WIDTH);
     this.playerY = clamp(this.playerY + (dz / len) * distancePx, 0, WORLD_HEIGHT);
-    this.localActor?.snapTo(toWorldX(this.playerX), 0, toWorldZ(this.playerY));
+    this.localActor?.snapTo(...onGround(toWorldX(this.playerX), toWorldZ(this.playerY)));
     this.socket.sendMove(this.playerX, this.playerY);
   }
 
@@ -2725,6 +2739,7 @@ export class Game {
 
     if (this.localActor) {
       this.world.follow(this.localActor.position.x, this.localActor.position.z, dt);
+
       // Shake is applied after the camera is placed, so it reads as a knock to
       // the view rather than fighting the follow easing.
       const shake = this.effects.shakeOffset(this.shakeScratch);
@@ -2941,7 +2956,7 @@ export class Game {
     }
 
     this.resolvePlayerCollision();
-    actor.setTargetPosition(toWorldX(this.playerX), 0, toWorldZ(this.playerY));
+    actor.setTargetPosition(...onGround(toWorldX(this.playerX), toWorldZ(this.playerY)));
     this.maybeSendPosition();
   }
 

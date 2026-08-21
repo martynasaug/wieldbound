@@ -4226,6 +4226,90 @@ surface work fixes that. M53.4 is forests as regions rather than a treeline, and
 a river the road has to cross.
 
 
+### M53.3 — the ground stops being a plane
+Four surfaces and three noise fields made the ground interesting to look AT and
+did nothing about the thing underneath them: it was a perfectly flat sheet from
+the palisade to the fog line, and no amount of albedo fixes that, because the
+LIGHT never changes across it. A slope catching the sun on one side and falling
+into shade on the other is most of what makes ground read as ground.
+
+**The play area was flat on purpose, and the purpose turned out to be wrong.**
+The comment said elevation inside the bounds would be "a lie the simulation does
+not know about". It is a lie, and it is free — every distance in this game is
+measured in the XZ plane and nothing anywhere reads a Y. Two things a metre
+apart horizontally are a metre apart whether one is on a rise or not. So height
+is purely a rendering property: it cannot desync, cannot be exploited, and does
+not have to be shared with the server. The only game it would break is one where
+you could shoot over a hill, and nothing here has ever had line of sight.
+
+What it cost was one helper and a sweep. `onGround(x, z)` returns the XZ plus
+the height under it and is spread into every call that used to pass a literal
+zero — the player, other players, monsters, townspeople, resource nodes, the
+workbench, loot, all six targeting rings, the camera's look target, the road
+ribbon (per VERTEX, or the verges sink into the hillside), fourteen torch posts,
+the signpost and the cairn.
+
+**Things that were BUILT get levelled ground under them.** A paved square, a
+monument's apron, a cairn — all of them are flat discs of geometry, and a flat
+disc on a slope is a disc with one edge in the air. `FLAT_SPOTS` levels the
+ground at Emberhold and at each of the four waystones, easing back to the land
+over a shoulder. The town's shoulder is forty units rather than twenty-two,
+because the land can now sit eleven units below its level and a short blend puts
+the town on a mesa.
+
+Those spots are DERIVED from the landmark table rather than registered as the
+waystones are built, and that is a correction: the first version had an
+`addFlatSpot` the waystones called, which is a footgun with a very quiet failure
+— the terrain MESH is generated in the World constructor and the waystones are
+built several awaits later, so every spot registered afterwards would have
+levelled the height function and not the ground. The monuments would have stood
+in flat dishes cut out of a hillside that was still drawn as a hillside.
+
+**The first amplitudes were far too timid, and the measurement is why.** ±3 units
+over a seventy-five unit wavelength is a four per cent grade, and at a
+forty-degree camera four per cent is not subtle, it is invisible: nothing tilts
+far enough to catch the light differently. Tripled, with the wavelengths
+stretched to match, which puts typical grades near one in six. The upper bound
+is about animation rather than about hills — a body slides along XZ at constant
+speed and takes its height from the field, so on a steep enough face it climbs
+faster than its legs move and reads as skating.
+
+The terrain mesh went from 170 segments to 300, because 170 was nine units a
+quad on this world and the shortest term in the field has a thirty-three unit
+wavelength. And the fog opened from 40–110 to 55–165, since the far ridge was
+being washed out before it resolved — which is the exact impression the hills
+were added to fix.
+
+### A black band, and four wrong diagnoses
+Everything beyond about forty units rendered pure black, with a clean edge.
+Shadows off: still black. Fog off: still black. Shadow camera widened from ±34
+to ±100: still black. Replacing the terrain material with flat red: the band
+vanished, so it was the shader — and then normals off, detail layer off and the
+ARM maps off all left it exactly as it was.
+
+It was not the shader. **Vite was serving `index.html` for every one of the six
+new texture files** — 90,042 bytes, byte-identical for all six, which is what a
+public-directory 404 falls back to in a dev server. The browser decoded an HTML
+document as a JPEG, got nothing, and sampled black. The dev server had been
+started before `tools/art/terrain.mjs` downloaded them.
+
+The tell was there the whole time and it was not in the picture: six different
+textures with the same content-length. The reason it looked like a distance
+effect is that the regional field has a thousand-unit wavelength, so `region`
+went from 0 to 1 across the visible ground — near ground was grass and far
+ground was 100% of a texture that did not exist.
+
+Worth writing down as a rule rather than an anecdote: **when a shader looks
+wrong, check the bytes before the maths.** Half an hour of bisecting a fragment
+shader was spent on a file that was never on the wire.
+
+### Verified
+All ten offline suites, `smoke.mjs`, both workspaces clean, and a browser pass
+over the frontier and the road at noon and midnight: the height field measures
+-10.4 to +9.0 with the town centre at exactly 0, the road follows the land, the
+torches stand on it, and there are no console errors.
+
+
 ---
 
 ## Phase 48+ — Revisit and pick from here
@@ -6154,6 +6238,26 @@ rarities), multiple crafting stations. Not committing to order yet.
   artifact, bisection beats theory, and naming the ground meshes (`town-paving`,
   `town-road`, `town-island`) is what made bisection possible from a console.
 
+- **Height is free because nothing measures it.** (Phase 53) The play area was
+  kept dead flat for four phases on the grounds that elevation would be "a lie
+  the simulation does not know about". It is a lie and it costs nothing: every
+  distance in this game is XZ and no formula anywhere reads a Y, so height
+  cannot desync, cannot be exploited and never has to reach the server. The only
+  game it would break is one with line of sight, and this has never had any.
+- **Anything BUILT gets levelled ground under it.** (Phase 53) A paved square, a
+  monument's apron, a cairn: all flat discs of geometry, and a flat disc on a
+  slope has one edge in the air. `FLAT_SPOTS` is derived from the same tables
+  the objects are, and derived rather than REGISTERED — the first version had
+  the waystones call an `addFlatSpot` as they were built, which runs several
+  awaits after the terrain mesh is generated and would have levelled the height
+  function without levelling the ground.
+- **When a shader looks wrong, check the bytes before the maths.** (Phase 53)
+  Distant ground rendered pure black. Shadows off, fog off, shadow camera
+  widened, normals off, detail off, ARM maps off — no change; flat red material
+  — fixed. All of which said "your shader", and none of it was: Vite was serving
+  `index.html` for six texture files downloaded after the dev server started,
+  and the browser was decoding an HTML document as a JPEG. The tell was six
+  different textures reporting one byte-identical content-length.
 - **Tiling and monotony are two different problems.** (Phase 53) The terrain
   shader beat tiling in Phase 47 with two surfaces and two noise fields, and
   what it left behind was a field with exactly ONE kind of boundary in it. A
@@ -6303,6 +6407,17 @@ lightning for a seam — so the counter to a golem is a thing you get by killing
 golems the slow way first. And the golem now THROWS lightning as well as folding
 to it, because before that, five elements could be worn against and only four
 could ever be thrown at you.
+
+**Phase 53 M53.3 — the ground stops being a plane.** The play area had been kept
+dead flat since the port because elevation would be a lie the server does not
+know about; it is a lie, and it is free, because every distance here is measured
+in XZ and nothing reads a Y. So height is purely a rendering property now, and
+putting it in cost one `onGround` helper spread through every call that used to
+pass a literal zero — actors, nodes, loot, targeting rings, the camera, and the
+road ribbon per vertex. Anything BUILT gets levelled ground under it. The first
+amplitudes were three times too timid to see at a forty-degree camera, and a
+black band across the far ground turned out to be Vite serving `index.html` for
+six textures downloaded after the dev server started.
 
 **Phase 53 M53.2 — the ground stops being one green.** Four Poly Haven surfaces
 rather than two, and three noise fields at scales chosen not to be multiples of

@@ -8,6 +8,7 @@
 // fight just looked like it hit unfairly hard.
 
 import * as THREE from "three";
+import { terrainHeight } from "./World";
 
 function ring(inner: number, outer: number, color: number, opacity: number): THREE.Mesh {
   const mesh = new THREE.Mesh(
@@ -71,7 +72,7 @@ export class Indicators {
   /** Gold in reach, grey out of it â€” the ring doubles as a range readout. */
   showTarget(x: number, z: number, inReach: boolean, radius: number): void {
     this.targetRing.visible = true;
-    this.targetRing.position.set(x, 0.03, z);
+    this.targetRing.position.set(x, terrainHeight(x, z) + 0.03, z);
     this.targetRing.scale.setScalar(Math.max(0.6, radius));
     const mat = this.targetRing.material as THREE.MeshBasicMaterial;
     mat.color.setHex(inReach ? 0xffd873 : 0x9a8d76);
@@ -86,7 +87,7 @@ export class Indicators {
    */
   showLock(x: number, z: number, radius: number): void {
     this.lockRing.visible = true;
-    this.lockRing.position.set(x, 0.031, z);
+    this.lockRing.position.set(x, terrainHeight(x, z) + 0.031, z);
     this.lockRing.scale.setScalar(Math.max(0.6, radius));
   }
 
@@ -96,7 +97,7 @@ export class Indicators {
 
   showHover(x: number, z: number, radius: number): void {
     this.hoverRing.visible = true;
-    this.hoverRing.position.set(x, 0.029, z);
+    this.hoverRing.position.set(x, terrainHeight(x, z) + 0.029, z);
     this.hoverRing.scale.setScalar(Math.max(0.6, radius));
   }
 
@@ -111,7 +112,7 @@ export class Indicators {
   /** The player's own melee/spell reach, shown only while actually fighting. */
   showReach(x: number, z: number, radiusUnits: number): void {
     this.reachRing.visible = true;
-    this.reachRing.position.set(x, 0.028, z);
+    this.reachRing.position.set(x, terrainHeight(x, z) + 0.028, z);
     this.reachRing.scale.setScalar(radiusUnits);
   }
 
@@ -139,10 +140,10 @@ export class Indicators {
       this.dangerZones.set(id, d);
     }
     const pulse = 0.78 + Math.sin(performance.now() / 90) * 0.22;
-    d.fill.position.set(x, 0.02, z);
+    d.fill.position.set(x, terrainHeight(x, z) + 0.02, z);
     d.fill.scale.setScalar(radiusUnits);
     (d.fill.material as THREE.MeshBasicMaterial).opacity = 0.14 + pulse * 0.16;
-    d.edge.position.set(x, 0.032, z);
+    d.edge.position.set(x, terrainHeight(x, z) + 0.032, z);
     d.edge.scale.setScalar(radiusUnits);
     (d.edge.material as THREE.MeshBasicMaterial).opacity = 0.45 + pulse * 0.45;
   }

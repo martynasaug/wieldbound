@@ -34,7 +34,7 @@ import {
   roadTorches,
 } from "../../../shared/road";
 import { Builder, roadTexture } from "./town";
-import { PX_PER_UNIT, toWorldX, toWorldZ } from "./World";
+import { PX_PER_UNIT, terrainHeight, toWorldX, toWorldZ } from "./World";
 
 /** How many torches get a real light at once. */
 const LIT_TORCHES = 5;
@@ -126,9 +126,22 @@ export class NorthRoad {
       });
     }
 
+    // THE ROAD FOLLOWS THE LAND rather than being graded flat into it.
+    //
+    // Both are defensible and this one is cheaper to be right about: a graded
+    // corridor means the height field has to know about the road, which makes
+    // it a function of the road's own smoothing, which then has to agree with
+    // the ribbon's smoothing. Sampling per VERTEX instead means the track sits
+    // on whatever is there, which is also what a cart track does — a road that
+    // has been cut and levelled is a Roman road, and this one is ruts.
+    //
+    // Per vertex and not per row, or the ribbon would be a set of level planks
+    // laid across a slope and the verges would sink into the hillside.
     const push = (r: (typeof rows)[number], j: number) => {
       const t = (j / across) * 2 - 1;
-      positions.push(r.x + r.nx * t * halfW, 0, r.z + r.nz * t * halfW);
+      const x = r.x + r.nx * t * halfW;
+      const z = r.z + r.nz * t * halfW;
+      positions.push(x, terrainHeight(x, z), z);
       uvs.push(r.u, (t + 1) / 2);
       colors.push(1, 1, 1, r.a * alphaAcross(t));
     };
@@ -180,6 +193,8 @@ export class NorthRoad {
       }),
     );
     mesh.name = "north-road";
+    // The vertices already carry the ground's own height, so this is only the
+    // hair of clearance that stops it z-fighting the terrain under it.
     mesh.position.y = 0.03;
     mesh.receiveShadow = true;
     this.group.add(mesh);
@@ -192,12 +207,16 @@ export class NorthRoad {
     for (const t of roadTorches()) {
       const x = toWorldX(t.x);
       const z = toWorldZ(t.y);
+      // Each post stands on its own patch of ground. The Builder works in
+      // absolute coordinates, so this is added to every y it is handed rather
+      // than applied to a group.
+      const g = terrainHeight(x, z);
       // A post, a cross-brace and a burnt head. Timber rather than iron: this
       // is a road somebody maintains with what is to hand, not a town's
       // ironmongery, and the difference is most of why it reads as a frontier.
-      b.cyl("timber", 0.09, TORCH_HEIGHT, x, 0, z, 6);
-      b.box("timber", 0.42, 0.07, 0.07, x, TORCH_HEIGHT * 0.62, z, t.alongPx * 0.01);
-      b.add("iron", new THREE.ConeGeometry(0.2, 0.34, 6), x, TORCH_HEIGHT + 0.1, z);
+      b.cyl("timber", 0.09, TORCH_HEIGHT, x, g, z, 6);
+      b.box("timber", 0.42, 0.07, 0.07, x, g + TORCH_HEIGHT * 0.62, z, t.alongPx * 0.01);
+      b.add("iron", new THREE.ConeGeometry(0.2, 0.34, 6), x, g + TORCH_HEIGHT + 0.1, z);
       // A ring of stones at the foot, which is what stops a torch post from
       // looking like a stick pushed into the ground.
       for (let k = 0; k < 4; k++) {
@@ -206,19 +225,19 @@ export class NorthRoad {
           "rockDark",
           new THREE.IcosahedronGeometry(0.16, 0),
           x + Math.cos(a) * 0.28,
-          0.06,
+          g + 0.06,
           z + Math.sin(a) * 0.28,
           a,
         );
       }
 
       const flame = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), flameMaterial);
-      flame.position.set(x, TORCH_HEIGHT + 0.3, z);
+      flame.position.set(x, g + TORCH_HEIGHT + 0.3, z);
       posts.add(flame);
 
       this.torches.push({
         x,
-        y: TORCH_HEIGHT + 0.3,
+        y: g + TORCH_HEIGHT + 0.3,
         z,
         // Distance along the road, so no two neighbours flicker together and
         // every client agrees about which is which.
@@ -258,15 +277,26 @@ export class NorthRoad {
     const near = path[3];
     const sx = toWorldX(near.x) + 2.4;
     const sz = toWorldZ(near.y);
-    b.cyl("timber", 0.1, 2.5, sx, 0, sz, 6);
-    b.box("plank", 1.7, 0.34, 0.07, sx + 0.6, 2.0, sz, -0.35);
+    const sy = terrainHeight(sx, sz);
+    b.cyl("timber", 0.1, 2.5, sx, sy, sz, 6);
+    b.box("plank", 1.7, 0.34, 0.07, sx + 0.6, sy + 2.0, sz, -0.35);
     // The arm points the way the road goes, so it is information rather than
     // furniture.
-    b.add("iron", new THREE.ConeGeometry(0.14, 0.3, 4), sx + 1.5, 2.17, sz, -0.35, 0, Math.PI / 2);
+    b.add(
+      "iron",
+      new THREE.ConeGeometry(0.14, 0.3, 4),
+      sx + 1.5,
+      sy + 2.17,
+      sz,
+      -0.35,
+      0,
+      Math.PI / 2,
+    );
 
     // The far end: a cairn, and the biggest stone in it faces back down the road.
     const cx = toWorldX(NORTH_TOWN_SITE.x);
     const cz = toWorldZ(NORTH_TOWN_SITE.y);
+    const cy = terrainHeight(cx, cz);
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2;
       const r = 0.9 - i * 0.06;
@@ -274,14 +304,14 @@ export class NorthRoad {
         "rock",
         new THREE.IcosahedronGeometry(0.42 - i * 0.02, 0),
         cx + Math.cos(a) * r,
-        0.1 + i * 0.16,
+        cy + 0.1 + i * 0.16,
         cz + Math.sin(a) * r,
         a,
         0.2,
       );
     }
-    b.box("plank", 1.3, 0.3, 0.08, cx, 1.9, cz + 0.5);
-    b.cyl("timber", 0.09, 2.0, cx, 0, cz + 0.5, 6);
+    b.box("plank", 1.3, 0.3, 0.08, cx, cy + 1.9, cz + 0.5);
+    b.cyl("timber", 0.09, 2.0, cx, cy, cz + 0.5, 6);
 
     b.finish(g);
     this.group.add(g);

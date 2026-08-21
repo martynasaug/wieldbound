@@ -26,7 +26,7 @@
 import * as THREE from "three";
 import { LANDMARKS, landmarkPosition, type Landmark } from "../../../shared/landmarks";
 import { Builder, ringedDisc, roadTexture } from "./town";
-import { toWorldX, toWorldZ } from "./World";
+import { terrainHeight, toWorldX, toWorldZ } from "./World";
 
 /**
  * How each stone is shaped.
@@ -200,12 +200,18 @@ export function buildWaystones(decor: THREE.Group): WaystoneVisual[] {
     const at = landmarkPosition(def);
     const x = toWorldX(at.x);
     const z = toWorldZ(at.y);
+    // The ground here is already levelled — `World.FLAT_SPOTS` reads the same
+    // landmark table this loop does, so the apron's flat disc has flat ground
+    // under it. This is only the height of that level, which is not zero: the
+    // stone stands on whatever the hillside was averaged to.
+    const y = terrainHeight(x, z);
     const group = new THREE.Group();
     const b = new Builder();
     shape(b, group, x, z);
     // Own materials, so fading the stone you are standing behind does not fade
     // the other three.
     b.finish(group, true);
+    group.position.y = y;
     decor.add(group);
     out.push({ def, group, x, z });
   }

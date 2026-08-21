@@ -14,6 +14,7 @@ import {
   TOWN_PAVED_RADIUS_PX,
   TOWN_RADIUS_PX,
 } from "../../../shared/town";
+import { LANDMARKS, landmarkPosition } from "../../../shared/landmarks";
 
 // Server positions are in pixels from the 2D game; the simulation still runs in
 // that space and every formula in shared/ is written against it. Rendering
@@ -37,24 +38,137 @@ export function toServerY(worldZ: number): number {
   return worldZ * PX_PER_UNIT + WORLD_HEIGHT / 2;
 }
 
-// The playable area is dead flat: the server's range checks, monster chase and
-// separation all run in 2D, so any elevation inside the bounds would be a lie
-// the simulation does not know about. Hills live strictly outside, where they
-// are scenery.
 const PLAY_HALF_W = WORLD_UNITS_W / 2;
 const PLAY_HALF_H = WORLD_UNITS_H / 2;
 
+/**
+ * A place the ground is levelled, in world units.
+ *
+ * `radius` is flat, and it eases back to the natural land over `blend`. This is
+ * the mechanism that lets there be hills at all: everything in this game that
+ * was BUILT — a paved square, a monument's plinth, a cairn — is a flat disc of
+ * geometry, and a flat disc on a slope is a disc with one edge in the air.
+ * Levelling the ground under it is what a builder would have done anyway.
+ */
+interface FlatSpot {
+  x: number;
+  z: number;
+  radius: number;
+  blend: number;
+}
+
+/**
+ * Where the ground is levelled. Emberhold, and each waystone.
+ *
+ * The town's number is not its wall radius but a little past it: the belt of
+ * grass, the back lane and the palisade itself all sit inside 20 units, and a
+ * palisade running up a hill would need every post cut to a different length.
+ */
+// DERIVED AND STATIC, not registered at build time — and that is a correction
+// rather than a preference. The first version had an `addFlatSpot` the
+// waystones called as they were created, which is a footgun with a very quiet
+// failure: the terrain MESH is generated in this class's constructor, and the
+// waystones are built several awaits later in `Game.start`. Every flat spot
+// registered afterwards would have levelled the height function and not the
+// ground, so the monuments would have sat in perfectly flat dishes cut out of a
+// hillside that was still drawn as a hillside.
+//
+// Reading the landmark table directly removes the ordering entirely: there is
+// no moment at which `terrainHeight` gives a different answer.
+const FLAT_SPOTS: FlatSpot[] = [
+  {
+    x: toWorldX(TOWN_CENTER.x),
+    z: toWorldZ(TOWN_CENTER.y),
+    radius: (TOWN_RADIUS_PX / PX_PER_UNIT) * 1.2,
+    // A long shoulder, not a cliff. The land can be eleven units below the
+    // town's level now, and easing that out over twenty-two units would put
+    // Emberhold on a mesa; over forty it reads as a town built on the flattest
+    // rise in the district, which is where a town would be.
+    blend: 40,
+  },
+  // A levelled apron under each waystone. Somebody who raised a five-metre
+  // monolith levelled the ground for it, and the alternative is a three-metre
+  // disc of trodden earth with one edge in the air.
+  ...LANDMARKS.map((l) => {
+    const at = landmarkPosition(l);
+    return { x: toWorldX(at.x), z: toWorldZ(at.y), radius: 4.2, blend: 7 };
+  }),
+];
+
+/**
+ * THE GROUND HAS RELIEF NOW, AND THE SIMULATION STILL DOES NOT KNOW.
+ *
+ * That sentence used to be the argument for keeping the play area dead flat:
+ * the server's range checks, monster chase and body separation all run in 2D,
+ * so elevation inside the bounds would be "a lie the simulation does not know
+ * about". It turns out the lie is free, and worth stating exactly why —
+ *
+ * every distance in this game is measured in the XZ plane and nothing anywhere
+ * reads a Y. Two things a metre apart horizontally are a metre apart whether
+ * one of them is standing on a rise or not. So height is PURELY a rendering
+ * property: it changes where a body is drawn and nothing else, which means it
+ * cannot desync, cannot be exploited, and does not have to be shared. The only
+ * thing it would break is a game where you could shoot over a hill, and nothing
+ * here has ever had line of sight.
+ *
+ * What that buys is the difference between a field and a landscape. A perfectly
+ * flat plane to the horizon is the single thing no amount of surface texture
+ * can fix, because the light never changes across it — a slope catching the sun
+ * on one side and falling into shade on the other is most of what makes ground
+ * read as ground.
+ *
+ * Four octaves, chosen for SLOPE rather than for height. The tallest term has
+ * the longest wavelength, so the biggest features are also the gentlest, and
+ * the shortest is a metre of roughness that only breaks the silhouette.
+ *
+ * THE FIRST SET OF NUMBERS WAS FAR TOO TIMID, and the measurement is why:
+ * ±3 units over a seventy-five unit wavelength is a four per cent grade, and
+ * at a forty-degree camera a four per cent grade is invisible. Not subtle —
+ * invisible. Nothing tilts far enough to catch the light differently, which is
+ * the ONLY channel through which relief reads on ground this far away. The
+ * amplitudes are roughly tripled and the wavelengths stretched with them, which
+ * puts typical grades near one in six and the worst case (all four terms
+ * aligned, which is rare) near one in two.
+ *
+ * That upper bound is the real constraint, and it is about animation rather
+ * than about hills: a body slides along XZ at a constant speed and takes its
+ * height from here, so on a steep enough face it climbs faster than its legs
+ * are moving and reads as skating.
+ */
 export function terrainHeight(x: number, z: number): number {
+  // The land itself.
+  let h =
+    Math.sin(x * 0.030 - 2.1) * Math.cos(z * 0.027 + 0.4) * 7.0 +
+    Math.sin(x * 0.062 + 0.7) * Math.cos(z * 0.057 - 1.2) * 3.2 +
+    Math.sin(x * 0.13 - 0.9) * Math.cos(z * 0.121 + 2.4) * 1.05 +
+    Math.sin((x + z * 0.6) * 0.31) * 0.3;
+
+  // Beyond the play area it swells into real hills, which is the horizon this
+  // world is framed by. Same field, more of it — so the ridge outside the
+  // boundary is the continuation of the rise inside it rather than a separate
+  // range that starts at a rectangle.
   const outX = Math.max(0, Math.abs(x) - PLAY_HALF_W);
   const outZ = Math.max(0, Math.abs(z) - PLAY_HALF_H);
   const out = Math.hypot(outX, outZ);
-  if (out <= 0) return 0;
-  const t = Math.min(1, out / 22);
-  const ease = t * t * (3 - 2 * t);
-  const h =
-    Math.sin(x * 0.09) * Math.cos(z * 0.075) * 3.0 +
-    Math.sin(x * 0.026 + 1.7) * Math.cos(z * 0.031 - 0.6) * 5.0;
-  return h * ease;
+  if (out > 0) {
+    const t = Math.min(1, out / 30);
+    const ease = t * t * (3 - 2 * t);
+    h +=
+      ease *
+      (Math.sin(x * 0.026 + 1.7) * Math.cos(z * 0.031 - 0.6) * 7.0 +
+        Math.sin(x * 0.011 - 0.3) * Math.cos(z * 0.013 + 2.2) * 9.0);
+  }
+
+  // And then it is levelled wherever something was built.
+  let level = 1;
+  for (const s of FLAT_SPOTS) {
+    const d = Math.hypot(x - s.x, z - s.z);
+    if (d >= s.radius + s.blend) continue;
+    if (d <= s.radius) return 0;
+    const t = (d - s.radius) / s.blend;
+    level = Math.min(level, t * t * (3 - 2 * t));
+  }
+  return h * level;
 }
 
 // How close and how far the camera may sit from the player.
@@ -156,7 +270,11 @@ export class World {
     this.camera.position.copy(this.cameraDir).multiplyScalar(this.distance);
 
     this.scene.background = new THREE.Color(0x9fb8cf);
-    this.scene.fog = new THREE.Fog(0x9fb8cf, 40, 110);
+    // Opened up, because there is now a landscape to see into. At 40–110 the
+    // far ridge was fogged out before it resolved, which meant the hills only
+    // existed within one screen of the player and the horizon was a flat wash —
+    // the exact impression the hills were added to fix.
+    this.scene.fog = new THREE.Fog(0x9fb8cf, 55, 165);
 
     this.fill = new THREE.HemisphereLight(0xbcd7ff, 0x4a5233, 0.8);
     this.scene.add(this.fill);
@@ -184,7 +302,14 @@ export class World {
 
   private buildTerrain(): void {
     const span = Math.max(WORLD_UNITS_W, WORLD_UNITS_H) + 90;
-    const geo = new THREE.PlaneGeometry(span, span, 170, 170);
+    // 170 segments was two units a quad on the old world and nine on this one,
+    // which is coarser than the hills it now has to describe: the shortest term
+    // in `terrainHeight` has a thirty-three unit wavelength and would have been
+    // sampled three times across a full cycle. 300 puts it back to about a
+    // metre and a half a quad — 90k vertices in one static mesh, built once,
+    // never touched again, and the only thing on screen that is allowed to be
+    // this dense because it is the only thing that is always on screen.
+    const geo = new THREE.PlaneGeometry(span, span, 300, 300);
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       // Authored in XY then rotated into XZ, so local y is world z.
@@ -396,7 +521,10 @@ export class World {
 
   /** Keeps the camera and the shadow frustum trailing the player. */
   follow(x: number, z: number, dtSeconds: number): void {
-    this.desiredLook.set(x, 1.0, z);
+    // Chest height above the GROUND, not above zero. On a rise the character
+    // would otherwise drift down the frame as they climbed, which reads as the
+    // camera sagging rather than as a hill.
+    this.desiredLook.set(x, terrainHeight(x, z) + 1.0, z);
     const ease = Math.min(1, dtSeconds * 8);
     this.lookTarget.lerp(this.desiredLook, ease);
 
