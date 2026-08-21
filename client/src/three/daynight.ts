@@ -11,6 +11,7 @@
 // editing one hex value — not tracing which cosine feeds the blue channel.
 
 import * as THREE from "three";
+import { seededRandom } from "../../../shared/rng";
 import { timeOfDay } from "../../../shared/protocol-types";
 
 /** One moment in the cycle. `at` is the same 0..1 clock `timeOfDay` returns. */
@@ -156,8 +157,7 @@ function buildStars(count = 900, radius = 260): THREE.Points {
   const sizes = new Float32Array(count);
   // Seeded, so the constellations are the same every session — a sky that
   // reshuffles on reload reads as noise, not as a sky.
-  let seed = 20260819;
-  const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const rand = seededRandom(20260819);
 
   for (let i = 0; i < count; i++) {
     // Upper hemisphere only; nothing below the horizon is ever seen.

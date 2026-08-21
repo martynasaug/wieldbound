@@ -29,6 +29,7 @@ import * as THREE from "three";
 import { loadModel } from "./assets";
 import { CHUNK_UNITS, partsOf, seededRandom } from "./scatter";
 import { PX_PER_UNIT, terrainHeight, toWorldX, toWorldZ } from "./World";
+import { windyGeometry } from "./wind";
 import {
   FORESTS,
   FOREST_LANDMARK_CLEARANCE_PX,
@@ -254,9 +255,19 @@ export async function buildForests(
     const { parts, scale } = partsOf(proto, 1);
     if (parts.length === 0) continue;
     const casts = !undergrowthModels.has(model);
+    // A TREE IS A MAST, NOT A BLADE OF GRASS. Six per cent of its height at the
+    // tip and slowly, against thirty-odd per cent and quickly for grass — the
+    // mass is what the eye is reading, and a pine that whipped like a fern
+    // would make the whole wood read as scrub. The undergrowth on the forest
+    // floor gets the softer, faster figure, because it IS scrub.
+    const soft = undergrowthModels.has(model);
+    const swayed = parts.map((p) =>
+      windyGeometry(p.geometry, p.material, soft ? 0.22 : 0.09, soft ? 1.2 : 0.6),
+    );
     for (const placements of chunks.values()) {
-      for (const part of parts) {
-        const im = new THREE.InstancedMesh(part.geometry, part.material, placements.length);
+      for (let pi = 0; pi < parts.length; pi++) {
+        const part = parts[pi];
+        const im = new THREE.InstancedMesh(part.geometry, swayed[pi], placements.length);
         im.castShadow = casts;
         im.receiveShadow = true;
         for (let i = 0; i < placements.length; i++) {

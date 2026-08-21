@@ -133,6 +133,21 @@ unavailable.
   third ring" is a number, and "get to the Hollow Stone" is somewhere to go. The
   minimap grows a rim arrow pointing at whichever one you have been sent to,
   because the nearest is four times further out than the widest zoom can show.
+- **And it moves** — wind, on every blade of grass, every plant and every tree
+  in the world, gusting on a slow swell with a faster gust riding it and veering
+  right round the compass over half an hour. Derived from the wall clock like
+  the hour is, so two players standing in the same field see the same gust
+  without a byte crossing the wire. The bend is weighted by height above each
+  plant's own root, so the foot stays planted; the phase is seeded from world
+  POSITION, so a field is a wave crossing it rather than a field being shaken;
+  and the direction is the world's rather than each plant's, because every
+  instance carries a random yaw and blowing along a local axis is confetti, not
+  weather. **Finding it also turned up the oldest bug in the project**: the
+  seeded generator every scatter in the game was built on had 11,064 distinct
+  values, because the textbook C generator overflows a double in JavaScript
+  before its mask runs — so eighty thousand plants were being placed on about
+  five thousand positions, in stacks, and the world looked empty while every
+  counter said it was full.
 - **A world with ground in it** — a tiled PBR surface that mixes grass into
   dirt under one noise field and drifts its colour under another, so the tiling
   has no findable period, scattered with 53,000 instanced plants — and the

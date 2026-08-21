@@ -29,6 +29,7 @@
  *   copies of the terrain and two shadow maps for as long as the session lasts.
  */
 import * as THREE from "three";
+import { seededRandom } from "../../../shared/rng";
 import { findClip, instantiate } from "./assets";
 import { buildGroundCover } from "./scatter";
 import { createTerrainMaterial } from "./terrain";
@@ -199,8 +200,7 @@ export class LoginBackdrop {
 
     // Fixed seed, so the treeline is the same on every visit. A title screen
     // that rearranges itself between reloads reads as noise.
-    let seed = 20260821;
-    const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const rand = seededRandom(20260821);
 
     const group = new THREE.Group();
     for (let i = 0; i < 150; i++) {

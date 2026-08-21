@@ -143,6 +143,7 @@ import { landmarkById, landmarkPosition } from "../../../shared/landmarks";
 import { buildWaystones, WAYSTONE_PLATE_HEIGHT, type WaystoneVisual } from "./waystones";
 import { NorthRoad } from "./road";
 import { River } from "./river";
+import { updateWind } from "./wind";
 import { NORTH_TOWN_NAME, NORTH_TOWN_SITE } from "../../../shared/road";
 import { resolveRiverCollision } from "../../../shared/river";
 import { placeNameAt } from "../../../shared/places";
@@ -2804,6 +2805,12 @@ export class Game {
     // Not on the clock, unlike everything else updated here: a river runs at
     // night.
     this.river.update(performance.now() / 1000);
+    // Three uniform writes, shared by reference across every patched foliage
+    // material in the scene — so this costs the same whether fifty thousand
+    // plants are swaying or none are. Fed the WALL clock rather than
+    // `performance.now`, because the field is derived and two players in the
+    // same grass have to see the same gust.
+    updateWind();
     this.town.update(
       nightAmount(hour.clock),
       Math.hypot(this.playerX - TOWN_CENTER.x, this.playerY - TOWN_CENTER.y) / PX_PER_UNIT,

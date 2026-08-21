@@ -314,3 +314,33 @@ running through at least one wood, and every name coming back out of
 ```powershell
 node tools/test/forests.mjs
 ```
+
+`wind.mjs` — no server needed. Fourteen lines of arithmetic that drive every
+blade of grass in the world, which is exactly the combination that goes wrong
+quietly. Checks that the strength never touches zero (dead calm reads as the
+animation having broken) and never jolts between frames; that the field does not
+repeat one game-day later, which is the difference between weather and an
+animation loop; that the direction veers rather than swinging; and — the section
+that exists because of a real bug — that the phase FITS IN A FLOAT32. Built
+straight from Date.now() it was 2.9 billion, where float32 spacing is 256, so
+the wind stood still for minutes and then jumped. It also reads the real sway
+tables out of the client and fails if one is authored off the step the seamless
+wrap depends on.
+
+```powershell
+node tools/test/wind.mjs
+```
+
+`rng.mjs` — no server needed, and the most important twenty lines in this
+directory. The seeded generator was the textbook C LCG copy-pasted into six
+files, and in JavaScript `s * 1103515245` overflows a double before the mask
+runs, so the sequence had **11,064 distinct values**. It passed every obvious
+check — deterministic, fast, and a histogram flat to within one per cent — while
+placing eighty-two thousand plants on about five thousand positions. So this
+test asserts the properties that FAILED rather than the ones that are easy to
+write: period, and pair coverage over a grid, because positions are drawn two at
+a time and a generator can have a long period and still walk a lattice.
+
+```powershell
+node tools/test/rng.mjs
+```

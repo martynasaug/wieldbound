@@ -24,6 +24,7 @@
 //      silently cost nothing at noon and leave five of the six dark at midnight.
 
 import * as THREE from "three";
+import { seededRandom } from "../../../shared/rng";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   TOWN_BUILDINGS,
@@ -172,10 +173,7 @@ function canvas2d(size: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderi
 }
 
 /** Seeded, so every client's plaster is the same plaster. */
-function seeded(seed: number): () => number {
-  let s = seed;
-  return () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-}
+const seeded = seededRandom;
 
 /** Fine grain over the whole tile. What stops a flat fill reading as plastic. */
 function speckle(
@@ -2284,8 +2282,7 @@ function palisade(b: Builder, group: THREE.Group, lanterns: Lantern[]): void {
   // stopping you walking through it open in the same places.
   const inGateway = bearingInGateway;
 
-  let seed = 991;
-  const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const rand = seededRandom(991);
 
   const step = 1.15; // degrees between posts
   for (let deg = 0; deg < 360; deg += step) {

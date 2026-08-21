@@ -7,6 +7,8 @@ import { instantiate } from "./assets";
 import { createTerrainMaterial } from "./terrain";
 import { buildGroundCover } from "./scatter";
 import { buildForests } from "./forest";
+import { windyGeometry } from "./wind";
+import { seededRandom } from "../../../shared/rng";
 import { DayNight } from "./daynight";
 import { ROAD_HALF_WIDTH_PX, distanceToRoad } from "../../../shared/road";
 import { RIVER_HALF_WIDTH_PX, riverAt, riverPath } from "../../../shared/river";
@@ -545,10 +547,26 @@ export class World {
     const usable = protos.filter((p): p is NonNullable<typeof p> => p !== null);
     if (usable.length === 0) return;
 
+    // The treeline moves too, and it has to — it is the horizon in every frame
+    // that looks out of the map, so a swaying field of woods in front of a
+    // perfectly rigid border would say plainly which of the two was cheap.
+    //
+    // Patched on the PROTOTYPE, once each. `Object3D.clone` shares material
+    // references, so every one of the seven hundred clones taken below inherits
+    // this without a second thought and without a second material.
+    for (const proto of usable) {
+      proto.object.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.geometry) return;
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        const swayed = mats.map((mat) => windyGeometry(mesh.geometry, mat, 0.08, 0.55));
+        mesh.material = Array.isArray(mesh.material) ? swayed : swayed[0];
+      });
+    }
+
     // Fixed seed: the treeline is identical on every reload and for every
     // player, the same reasoning as the 2D scatter it replaces.
-    let seed = 20260818;
-    const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const rand = seededRandom(20260818);
 
     // Scaled to the perimeter rather than fixed: the world grew by half in each
     // direction when Emberhold was built, and 260 trees that ringed the old map

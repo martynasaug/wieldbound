@@ -18,6 +18,7 @@
 import * as THREE from "three";
 import { loadModel } from "./assets";
 import { terrainHeight } from "./World";
+import { windyGeometry } from "./wind";
 
 export interface Species {
   /** Model file, relative to /models. */
@@ -40,26 +41,54 @@ export interface Species {
   castShadow?: boolean;
   /** Instances tilt up to this many radians off vertical, to break the grid. */
   tilt?: number;
+  /**
+   * How far the tip travels in the wind, as a fraction of the plant's height.
+   *
+   * Zero means it does not move, and that is not laziness: a pebble does not
+   * bend, and a mushroom's stalk is a stem holding a lid rather than a blade.
+   * Anything left at zero keeps the model's own shared material and costs
+   * nothing at all, which is why the default is off rather than a small number.
+   */
+  sway?: number;
+  /** How fast. Small things move quickly; the mass is doing the work. */
+  swayRate?: number;
 }
 
 /**
  * What grows here. Counts are for the whole 120x90 play area, tuned so the
  * field reads as covered without the far distance turning into soup.
+ *
+ * THE GRASS WENT UP WHEN THE WIND ARRIVED, and the two are the same decision.
+ * The counts were set in Phase 47 against a camera that sat at 14.5 units and a
+ * play area of 120x90; the camera comes out to 46 now and the world is 400x300,
+ * and at that range a third-of-a-metre tuft is a few pixels that read as part
+ * of the ground texture rather than as a plant. Open country was measurably
+ * empty — a wide shot of the frontier had about eight visible clumps in it.
+ *
+ * More of them AND bigger, because the two failures are different: more fixes
+ * "there is nothing here", bigger fixes "I cannot see what is here". And it is
+ * affordable now for a reason that was not true before, which is worth being
+ * explicit about rather than assuming: the cost of ground cover is draw calls,
+ * the chunk grid means the cost follows what is ON SCREEN rather than what
+ * exists, and the measurement after the increase is what decides whether it
+ * stays.
  */
 export const GROUND_COVER: Species[] = [
-  { model: "nature/Grass_Common_Short.gltf", count: 900, size: [0.28, 0.5], tilt: 0.09 },
-  { model: "nature/Grass_Common_Tall.gltf", count: 520, size: [0.45, 0.75], tilt: 0.1 },
-  { model: "nature/Grass_Wispy_Short.gltf", count: 620, size: [0.3, 0.52], tilt: 0.1 },
-  { model: "nature/Grass_Wispy_Tall.gltf", count: 360, size: [0.5, 0.8], tilt: 0.12 },
-  { model: "nature/Clover_1.gltf", count: 300, size: [0.16, 0.26] },
-  { model: "nature/Clover_2.gltf", count: 260, size: [0.16, 0.26] },
-  { model: "nature/Fern_1.gltf", count: 180, size: [0.5, 0.85], tilt: 0.1, castShadow: true },
-  { model: "nature/Plant_1.gltf", count: 150, size: [0.4, 0.7], castShadow: true },
-  { model: "nature/Plant_7.gltf", count: 130, size: [0.4, 0.7], castShadow: true },
-  { model: "nature/Flower_3_Single.gltf", count: 190, size: [0.22, 0.36] },
-  { model: "nature/Flower_3_Group.gltf", count: 110, size: [0.3, 0.46] },
-  { model: "nature/Flower_4_Single.gltf", count: 190, size: [0.22, 0.36] },
-  { model: "nature/Flower_4_Group.gltf", count: 70, size: [0.3, 0.46] },
+  { model: "nature/Grass_Common_Short.gltf", count: 1750, size: [0.34, 0.62], tilt: 0.09, sway: 0.3, swayRate: 1.5 },
+  { model: "nature/Grass_Common_Tall.gltf", count: 1000, size: [0.55, 0.92], tilt: 0.1, sway: 0.36, swayRate: 1.35 },
+  { model: "nature/Grass_Wispy_Short.gltf", count: 1200, size: [0.36, 0.64], tilt: 0.1, sway: 0.32, swayRate: 1.5 },
+  { model: "nature/Grass_Wispy_Tall.gltf", count: 700, size: [0.6, 0.98], tilt: 0.12, sway: 0.4, swayRate: 1.3 },
+  { model: "nature/Clover_1.gltf", count: 480, size: [0.2, 0.32], sway: 0.14, swayRate: 1.8 },
+  { model: "nature/Clover_2.gltf", count: 420, size: [0.2, 0.32], sway: 0.14, swayRate: 1.8 },
+  { model: "nature/Fern_1.gltf", count: 180, size: [0.5, 0.85], tilt: 0.1, castShadow: true, sway: 0.2, swayRate: 1.1 },
+  { model: "nature/Plant_1.gltf", count: 150, size: [0.4, 0.7], castShadow: true, sway: 0.17, swayRate: 1.15 },
+  { model: "nature/Plant_7.gltf", count: 130, size: [0.4, 0.7], castShadow: true, sway: 0.17, swayRate: 1.15 },
+  { model: "nature/Flower_3_Single.gltf", count: 190, size: [0.22, 0.36], sway: 0.26, swayRate: 1.7 },
+  { model: "nature/Flower_3_Group.gltf", count: 110, size: [0.3, 0.46], sway: 0.24, swayRate: 1.6 },
+  { model: "nature/Flower_4_Single.gltf", count: 190, size: [0.22, 0.36], sway: 0.26, swayRate: 1.7 },
+  { model: "nature/Flower_4_Group.gltf", count: 70, size: [0.3, 0.46], sway: 0.24, swayRate: 1.6 },
+  // No sway below this line. A mushroom is a stalk holding a lid and a pebble
+  // is a rock; the point of the wind is that it moves what would move.
   { model: "nature/Mushroom_Common.gltf", count: 120, size: [0.18, 0.3] },
   // 3216 triangles for a mushroom the size of a fist — by far the worst
   // triangles-per-pixel in the kit, so it stays a rare find rather than ground
@@ -78,14 +107,15 @@ export const GROUND_COVER: Species[] = [
  * player. An unseeded one would reshuffle the world each time somebody logged
  * in — the same reasoning the 2D scatter was built on, and the same one that
  * keeps the treeline fixed.
+ *
+ * RE-EXPORTED rather than implemented. It lived here for six phases and was
+ * WRONG for all of them — see shared/rng.ts, which explains at length how a
+ * generator with a perfectly flat histogram managed to place eighty-two
+ * thousand plants on about five thousand distinct spots. Six files had a copy
+ * of it; now there is one, in shared/, where the tests can hold it to account.
  */
-export function seededRandom(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return s / 0x7fffffff;
-  };
-}
+import { seededRandom } from "../../../shared/rng";
+export { seededRandom };
 
 export interface Part {
   geometry: THREE.BufferGeometry;
@@ -281,9 +311,28 @@ export async function buildGroundCover(
       instances++;
     }
 
+    // Patched ONCE PER SPECIES, not once per chunk. Every chunk of a species
+    // draws the same geometry with the same material, so cloning inside the
+    // chunk loop would have made two hundred copies of one grass material and
+    // two hundred shader programs to go with them.
+    const swayed = species.sway
+      ? parts.map((p) => windyGeometry(p.geometry, p.material, species.sway!, species.swayRate ?? 1.4))
+      : null;
+
     for (const placements of buckets.values()) {
-      for (const part of parts) {
-        const im = new THREE.InstancedMesh(part.geometry, part.material, placements.length);
+      for (let pi = 0; pi < parts.length; pi++) {
+        const part = parts[pi];
+        const im = new THREE.InstancedMesh(
+          part.geometry,
+          swayed ? swayed[pi] : part.material,
+          placements.length,
+        );
+        // Named after the species it came from. Purely for diagnosis, and it
+        // earned its place: a run of screenshots showed the field looking bare
+        // while every counter said eighty thousand plants were being drawn, and
+        // there was no way to ask WHICH of twenty species was on screen without
+        // this.
+        im.name = `cover:${species.model}`;
         im.castShadow = species.castShadow ?? false;
         im.receiveShadow = true;
         for (let i = 0; i < placements.length; i++) {

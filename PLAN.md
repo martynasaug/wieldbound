@@ -4554,6 +4554,163 @@ the camera.
 
 ---
 
+## Phase 54 — The world moves
+User brief: *"keep working on the world building / environment / textures and
+details"*, after Coldharrow was parked.
+
+### M54.1 — wind, and the bug it uncovered
+Everything in this world had been standing perfectly still since Phase 47.
+Eighty thousand plants, eleven hundred trees, a treeline round the whole map,
+and not one of them had ever moved. A day passed overhead, a river ran, torches
+flickered, and the grass under all of it was frozen — which was the loudest
+remaining thing saying *diorama* rather than *outdoors*.
+
+**The wind is DERIVED, not sent**, exactly as the hour is, and for the same
+reasons restated rather than assumed: it drives motion and nothing the server
+resolves, so a message carrying it is a message that can arrive late or drift
+between two people standing in the same field. Two sines at unrelated periods,
+neither of them a fraction of the 24-minute day — wind that gusted on a whole
+fraction of the day would arrive at the same strength at the same hour forever,
+which is the one thing that would make it read as an animation loop. The
+strength floor is 0.34 and not zero: dead calm reads as the animation having
+broken, which is worse than no animation at all.
+
+One shader hook, taken by the ground cover, the six woods and the treeline. Four
+things it has to get right, each of them a way the obvious version looks wrong:
+
+- **The base must not move.** A plant swayed as a whole slides across the
+  ground and reads as an object being dragged. The displacement is weighted by
+  height above the instance's own origin, squared.
+- **Neighbours must be out of phase**, seeded from WORLD POSITION — which turns
+  the whole scatter into one travelling wave for free, and means two plants next
+  to each other move almost together while two a hundred units apart do not.
+- **The direction is the world's, not the plant's.** Every instance carries a
+  random yaw so it does not look stamped; displacing along a local axis would
+  blow each plant a different way, which is confetti, not weather. The world
+  wind is projected onto each instance's own axes on the way in.
+- **The phase comes from the clock.** A renderer that integrates `dt` drifts: a
+  backgrounded tab comes back ten minutes behind everybody else.
+
+### The phase did not fit in a float32
+The first version put `Date.now()`-scale numbers into a shader uniform. A
+uniform is a **float32**, the phase was about 2.9 billion, and float32 spacing at
+2.9 billion is **256** — so the wind stood still for minutes and then jumped a
+hundred and sixty radians. What that looked like from outside was not "the phase
+is quantised"; it was *"the grass moves and the trees do not"*, which sent two
+rounds of investigation at the forest code.
+
+The phase wraps now, and it wraps SEAMLESSLY rather than merely small. The
+shader computes `sin(phase * rate * LEAN)` and `sin(phase * rate * FLUTTER)`, so
+if every rate is a multiple of `SWAY_RATE_STEP` and FLUTTER is a whole multiple
+of LEAN, wrapping at `2*PI / (STEP * LEAN)` advances every one of those
+arguments by a whole number of turns. The wrap is exact, not hidden. The client
+snaps every rate to the step on the way in rather than trusting the tables,
+because "all the sway rates happen to be multiples of 0.05" is exactly the kind
+of invariant that holds until somebody types 1.33 — and `tools/test/wind.mjs`
+additionally reads the real tables and fails if one is authored off the step.
+
+### And then: the world was never sparse. It was STACKED.
+The open frontier looked empty. Raising the ground cover from 53,000 plants to
+82,000 changed the picture **not at all**, which is the measurement that started
+this.
+
+Six rounds of bisection, in order, because every step ruled out the obvious:
+instance matrices all finite and non-degenerate; bounding spheres correct;
+frustum culling disabled (5,166 draw calls, 33 million triangles submitted) and
+the near ground still bare; the terrain hidden so nothing could occlude them;
+every plant repainted opaque red so nothing could be alpha-cut away — **0.68% of
+the frame**. Then: scale every instance within twelve units of the player up six
+times. Three hundred and seventy-nine instances became **five giant clumps**.
+
+They were all in the same places.
+
+**The seeded generator was broken, and had been since Phase 47.** It was the
+textbook C LCG, copy-pasted into six files:
+
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+
+In C that is exact, because the multiply wraps at 32 bits. In JavaScript there
+are no integers: `s` reaches 2^31, the product reaches 2.4e18, and the double
+loses every bit below 2^53 **before the mask ever runs**. The low bits of an
+LCG's state are the only bits it has. Measured: 200,000 draws produced **11,064
+distinct values**.
+
+Why it survived six phases is the part worth keeping. Every obvious check
+passes. It is deterministic. It is fast. Its histogram over twenty buckets is
+flat to within one per cent — it is *uniform*, there are just very few distinct
+values. So eighty-two thousand plants were placed on about five thousand
+positions, in stacks, and every counter in the game reported a full world while
+the world looked bare. Nothing about a screenshot says "your random numbers
+repeat"; it says "the frontier looks empty", which sends you off to tune
+densities that were never the problem.
+
+The fix is `Math.imul`, the one operation in the language that multiplies two
+32-bit integers and keeps the LOW 32 bits. One implementation in `shared/rng.ts`
+now, with the six copies deleted — it also drove the star dome, the login
+backdrop's treeline, the palisade's post jitter and every procedural texture in
+Emberhold, all of which were quietly repeating too.
+
+`tools/test/rng.mjs` asserts the properties that FAILED rather than the ones
+that are easy to write: period, and pair coverage over a 64x64 grid — because
+positions are taken two draws at a time and a generator can have a long period
+and still walk a lattice.
+
+### The grass went up, and it is the same decision as the wind
+The counts were set in Phase 47 against a camera at 14.5 units and a play area
+of 120x90. The camera comes out to 46 now and the world is 400x300, and at that
+range a third-of-a-metre tuft is a few pixels that read as ground texture. More
+of them AND bigger, because the two failures are different: more fixes "there is
+nothing here", bigger fixes "I cannot see what is here".
+
+### Verified
+All fourteen offline suites — `wind.mjs` and `rng.mjs` are new — plus
+`smoke.mjs` and both workspaces clean.
+
+Motion cannot be seen in one screenshot, so the browser pass measures it: three
+frames at a pinned camera and a frozen hour, differenced. The difference image
+is the strongest evidence available and it is a picture of exactly the plants
+and nothing else. Open meadow went from 1.6% of world pixels moving to **8.9%**
+after the generator fix — same plants, finally in different places. 273 draw
+calls, 1.77M triangles, a 5.3 second load, zero console errors.
+
+### One more note for the harness
+Two rounds of "the source is right and the runtime disagrees" were a Vite dev
+server that had been running across many edits and was serving stale modules for
+two of the files. Restarting it fixed it instantly. Same family as the six
+textures Vite served as `index.html` in M53.3: **before bisecting a renderer,
+confirm the bytes it is running are the bytes you wrote.** The browser pass now
+restarts the dev server first.
+
+---
+
+## Coldharrow — parked deliberately, and what it is for
+The North Road ends at a cairn and a signpost, and after M53.4 it ends at a
+cairn and a signpost on the far side of a river, through a pinewood. The obvious
+next move was to build the town. **It is not the next move.**
+
+User call, and it changes the shape of the thing entirely: *"Second town is gonna
+be huge, massive city for advanced players. Plan it for later."*
+
+That is worth writing down because it retires an assumption this phase was built
+under. The road was laid as "a journey to a second beginner-ish town"; it is
+actually the approach to an ENDGAME city, which means:
+
+- It is not a second Emberhold, and it must not be built out of Emberhold's
+  parts. Six buildings on a ring inside a palisade is a village. A city needs
+  districts, a skyline, and a reason to be laid out rather than radiated.
+- Its distance is now a feature rather than an accident. 5,000px from spawn is
+  past every band, and the Coldwater with one bridge over it is a gate on the
+  approach — which is exactly the shape an endgame area wants.
+- It is a PHASE, not a milestone, and probably several. Emberhold took Phase 49
+  and Phase 51 between them and it is a sixth the size.
+- Nothing in the frontier should be built in a way that assumes the site is
+  small. The cairn stays as the marker until the city displaces it.
+
+So the frontier keeps getting dressed and the city waits until it can be given a
+phase of its own.
+
+---
+
 ## Phase 48+ — Revisit and pick from here
 Candidates, in no fixed order: guilds, real auth (password), going live
 (VPS + hosted DB), directional (4-way) character art so facing reads on the
@@ -4571,6 +4728,43 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- The wind is DERIVED from wall-clock time, like the hour, and for the same
+  reasons: it drives motion and nothing the server resolves, so a message
+  carrying it could arrive late or drift between two people in the same field.
+  Its periods are deliberately incommensurate with the 24-minute day, or the
+  same gust would arrive at the same hour forever and it would read as a loop.
+- The wind's strength floor is 0.34, not zero. Dead calm reads as the animation
+  having broken — which is worse than no animation, because the player has just
+  watched it work. Air is never actually still outdoors.
+- Sway is weighted by height above the instance's own root, squared, and
+  phase-seeded from WORLD POSITION. The first turns a slide into a bend; the
+  second turns a field being shaken into a wave crossing it. Both are the whole
+  difference between “there is wind” and “something is wrong with the grass”.
+- A shader uniform is a float32, and anything derived from `Date.now()` will not
+  fit in one. At 2.9 billion the spacing is 256, so a phase built that way does
+  not move for minutes and then jumps. Bounded values only — and when a bounded
+  value has to wrap, make the wrap EXACT rather than small: pick the wrap so
+  every frequency downstream advances a whole number of turns.
+- One seeded generator, in `shared/`, and never a copy. The six copies of the
+  textbook C LCG were all broken in the same way — `s * 1103515245` overflows a
+  double before the mask, so the sequence had 11,064 distinct values — and the
+  symptom was not “the random numbers repeat” but “the world looks empty” while
+  every counter said it was full. `Math.imul` is the only multiply in the
+  language that keeps the low 32 bits.
+- Assert the property that FAILED, not the property that is easy to write. The
+  broken generator passed determinism, speed and uniformity; what it failed was
+  PERIOD, and — for a scatter that draws positions two at a time — pair coverage
+  over a grid. A generator can have a long period and still walk a lattice.
+- Before bisecting a renderer, confirm the bytes it is running are the bytes you
+  wrote. Two rounds of “the source is right and the runtime disagrees” were a
+  long-lived Vite dev server serving stale modules. Same family as the six
+  textures it served as `index.html` in M53.3, and the browser pass now restarts
+  it first.
+- Motion is verified by DIFFERENCING FRAMES, not by looking at one. A pinned
+  camera, a frozen hour, three screenshots and an amplified difference image is
+  a picture of exactly what moved — and it was the difference image that showed
+  the trees were not moving at all while the grass was.
 
 - The woodcutter's tree is the ROUND-CROWNED BROADLEAF and nothing else in the
   world may wear it. "Nothing scattered may resemble a resource node" kept every
@@ -6701,7 +6895,18 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 53 complete (2026-08-21).
+Phase 0 through 54 complete (2026-08-21).
+
+**Phase 54 M54.1 — the world moves, and the world was never sparse.** Wind, on
+every blade of grass and every tree, derived from the wall clock like the hour
+so two players in the same field see the same gust. And underneath it, the
+oldest bug in the project: the seeded generator every scatter in the game was
+built on had 11,064 distinct values, because the textbook C LCG overflows a
+double in JavaScript before its mask runs. Eighty-two thousand plants were being
+placed on about five thousand positions, in stacks, while every counter reported
+a full world. It took six rounds of bisection, and the one that found it was
+scaling every instance near the player up six times and watching 379 of them
+turn into five clumps.
 
 **Phase 53 M53.4 — six woods, and a river with one bridge over it.** The last
 milestone of the phase, and the two halves are the same idea from opposite
