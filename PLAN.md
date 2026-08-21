@@ -4845,6 +4845,26 @@ would be the same shape as the light and would therefore say nothing the light
 was not already saying. It takes the scene's own fog colour, so mist and sky can
 never be two different weathers in one frame.
 
+**Tuned after the fact, and the tuning found a bug.** The density was set by
+eye and read far too thin, so it went up; and the moment it did, dawn on the
+Coldwater became a pink-white blanket with the far bank gone. Nothing in the
+shader had changed. What had changed is that the POOL WAS FULL for the first
+time.
+
+A sheet that leaves the neighbourhood respawns at the RIM, so it arrives already
+faded by the distance falloff and drifts in — which is right when you are
+walking, because you walk into it. It is wrong when the whole pool leaves at
+once, which happens every time the centre jumps: every sheet lands at the rim,
+the falloff makes every one of them invisible, and the only thing that can bring
+them back is a drift of a fifth of a unit a second. Eighty seconds of empty air,
+and every density judgement made in that window was made against a disc that was
+mostly not there. Measured on a shown-versus-hidden difference: mean channel
+delta 105 before the fix and 228 after it, from the same numbers.
+
+One sheet leaving is a sheet leaving; all of them leaving is a different place.
+The count of stranded sheets is what tells the two apart, and a wholesale move
+refills the whole disc instead of the rim.
+
 ### M54.5 — you can find yourself
 Two reports, one shape, and finding out they were the same thing is the whole of
 it. *"Should we make players slightly highlighted for better visibility?"* — a
@@ -4879,6 +4899,16 @@ already written depth and the hull's back faces fail against all of them, so
 what survives is only where it overhangs the WHOLE figure. Same shape either
 way; the only difference is what it is measured against, and it is the same
 class of mistake the silhouette's own ordering note is about.
+
+**And the outline runs OPPOSITE to the pool of light**, which looks wrong
+written down and is right on screen. A single opacity cannot serve both ends,
+because the line is read against the BACKGROUND and not against the body: at
+noon it is a pale edge on a lit figure on lit earth and needs weight to register
+at all, and at midnight the same value is a bright line on black, with enough
+left over that the seams between the parts of the rig draw too and the character
+reads as a chalk sketch. So the outline is strongest by day and the pool of
+light is strongest by night, and between them the figure is legible at every
+hour without either ever being the loudest thing in the frame.
 
 Plus `presence.ts`: a soft pool of light under every PERSON, warm for you and
 cool for other players, scaled by how dark it actually is — almost nothing at
@@ -5022,6 +5052,16 @@ rarities), multiple crafting stations. Not committing to order yet.
   closes to 8% of the wingspan, so most of the beat is edge-on and the eye gets
   an intermittent flicker. A wing that never shrinks past a third is
   continuously present, and continuously present at fifteen pixels is paper.
+- Never tune a pooled system before confirming the pool is FULL. The mist's
+  density was judged against a disc most of whose sheets were stranded at an
+  invisible rim after a teleport; fixing that doubled the measured thickness
+  with no change to a single number. A pool that respawns at the edge needs a
+  wholesale-move case, because "one thing left" and "everything left" are
+  different events wearing the same test.
+- The outline and the pool of light run in OPPOSITE directions with the hour.
+  An edge is read against the background, so it needs weight in daylight and
+  almost none at midnight; a pool of light on the ground is the reverse. Two
+  mechanisms, one legible figure, neither ever the loudest thing on screen.
 - Verify a faint additive effect by DIFFERENCING the frame with the mesh shown
   and hidden, never by counting pixels above a colour threshold. Both the
   ambience and the mist were declared broken by a magenta counter that wanted

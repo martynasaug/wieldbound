@@ -2868,6 +2868,12 @@ export class Game {
       this.localActor?.position.z ?? 0,
     );
     this.updatePresence(nightAmount(hour.clock));
+    // And the outlines, which run the OTHER way from the pool of light at the
+    // feet — see `outlineWeight` in Actor.ts. A pale line needs weight to
+    // register against a lit field and almost none against black.
+    const outline = 0.95 - nightAmount(hour.clock) * 0.62;
+    this.localActor?.setOutlineWeight(outline);
+    for (const actor of this.players.values()) actor.setOutlineWeight(outline);
     // Three uniform writes, shared by reference across every patched foliage
     // material in the scene — so this costs the same whether fifty thousand
     // plants are swaying or none are. Fed the WALL clock rather than

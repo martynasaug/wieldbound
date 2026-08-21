@@ -49,8 +49,14 @@ import { currentWind } from "./wind";
 /** How far from the player the sheets live. */
 const RADIUS = 62;
 
-/** How many there are. Overlapping is the point, so this is a real number. */
-const COUNT = 130;
+/**
+ * How many there are. Overlapping is the point, so this is a real number.
+ *
+ * Depth is what separates a bank of mist from a wash of grey, and depth here is
+ * literally how many sheets the eye is looking through — one sheet at any
+ * opacity is a flat veil, and six at a sixth of it is weather.
+ */
+const COUNT = 165;
 
 const VERT = /* glsl */ `
   #ifdef USE_FOG
@@ -113,7 +119,7 @@ const FRAG = /* glsl */ `
     // the eye finds the circle instantly.
     vec2 d = vUv - 0.5;
     float r = length(d) * 2.0;
-    float mask = 1.0 - smoothstep(0.22, 1.0, r);
+    float mask = 1.0 - smoothstep(0.26, 1.0, r);
     mask *= mask;
 
     // The interior, drifting and re-forming. Two rates, unrelated, so the sheet
@@ -123,7 +129,7 @@ const FRAG = /* glsl */ `
     n = mix(n, fbm(p * 1.9 - vec2(uTime * 0.031, uTime * 0.024)), 0.45);
     // Pushed toward its extremes, so a bank has clear air torn through it
     // rather than being an even wash.
-    n = smoothstep(0.20, 0.72, n);
+    n = smoothstep(0.22, 0.74, n);
 
     // BOTH ENDS. Beyond the neighbourhood there is nothing, so a sheet does not
     // end at a visible boundary; and within a few units of the eye there is
@@ -331,18 +337,45 @@ export class Mist {
     const dx = Math.cos(wa) * drift;
     const dz = Math.sin(wa) * drift;
 
+    // HOW MANY OF THE POOL ARE STRANDED, before moving any of them.
+    //
+    // A sheet that leaves the neighbourhood is normally respawned at the RIM, so
+    // it arrives already faded by the distance falloff and drifts in — which is
+    // right when you are walking, because you walk into it. It is wrong when the
+    // WHOLE pool leaves at once, which happens whenever the centre jumps: every
+    // sheet lands at the rim, the falloff makes every one of them invisible, and
+    // the only thing that can bring them in is a drift of a fifth of a unit a
+    // second. Measured: eighty seconds of empty air.
+    //
+    // So a wholesale move refills the whole disc instead. The two cases are
+    // genuinely different — one sheet leaving is a sheet leaving, and all of
+    // them leaving is a different place — and the count is what tells them
+    // apart. It costs one loop that was already being paid for.
+    let stranded = 0;
+    for (let i = 0; i < COUNT; i++) {
+      const s = this.sheets[i];
+      if (!s.live || Math.hypot(s.x - this.cx, s.z - this.cz) > RADIUS) stranded++;
+    }
+    const wholesale = stranded > COUNT * 0.5;
+
     for (let i = 0; i < COUNT; i++) {
       const s = this.sheets[i];
       if (!s.live) this.place(i, true);
       s.x += dx;
       s.z += dz;
-      if (Math.hypot(s.x - this.cx, s.z - this.cz) > RADIUS) this.place(i, false);
+      if (Math.hypot(s.x - this.cx, s.z - this.cz) > RADIUS) this.place(i, wholesale);
 
       const local = mistAt(s.x, s.z);
       // The sheet's own opacity is where it is lying. A sheet on a dry ridge is
       // still there and still drifting; it is simply not visible, which is what
       // lets a bank thin out as it climbs out of a hollow instead of ending.
-      this.alphas.setX(i, local * 0.9);
+      // 0.38, and the number is only meaningful once the pool is FULL. It was
+      // set by eye against a half-empty disc — the respawn bug above — and the
+      // moment that was fixed the same value turned dawn on the Coldwater into a
+      // pink-white blanket with the far bank gone. Measured on a shown-vs-hidden
+      // difference: mean channel delta went from 105 to 228 without a single
+      // line of the shader changing.
+      this.alphas.setX(i, local * 0.38);
 
       if (local <= 0.004) {
         this.matrix.makeScale(0, 0, 0);

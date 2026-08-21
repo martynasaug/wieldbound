@@ -271,7 +271,7 @@ export class Ambience {
     this.addKind({
       name: "butterfly",
       geometry: wing,
-      material: flat(0xf2d05a),
+      material: flat(0xd8b856),
       // Reported from play: "way too many butterflies in some places". 150 put
       // forty on screen at once, which is not a meadow, it is a hatch. The
       // ceiling on this number is not what looks busy in a still — it is what
@@ -296,7 +296,10 @@ export class Ambience {
     this.addKind({
       name: "cabbage-white",
       geometry: wing,
-      material: flat(0xe8e4d4),
+      // Bone rather than white. A pure cream wing is the brightest thing in a
+      // dawn or a dusk frame — brighter than the sky it is under — and the eye
+      // goes to the brightest thing whether or not it is the subject.
+      material: flat(0xcdc5b2),
       count: 34,
       band: LOW_BAND,
       size: [0.18, 0.27],

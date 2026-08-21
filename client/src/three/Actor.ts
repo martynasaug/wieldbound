@@ -401,6 +401,23 @@ export class Actor {
   /** The outline copy of every mesh on the rig. See `makeOutline`. */
   private rims: THREE.Mesh[] = [];
   private outlineMaterial: THREE.MeshBasicMaterial | null = null;
+  /**
+   * How much of this actor's own rim weight is currently being spent.
+   *
+   * Driven from the hour, and driven the way round that looks wrong written
+   * down: STRONGER BY DAY. A single opacity cannot serve both ends, because the
+   * line is read against the background and not against the body — at noon it is
+   * a pale cream edge on a lit brown figure standing on lit brown earth, which
+   * needs weight to register at all; at midnight the same value is a bright line
+   * on black, and enough of it that the seams between the parts of the rig start
+   * drawing too and the character reads as a chalk sketch.
+   *
+   * Which makes this the mirror of `presence.ts`, deliberately. The pool of
+   * light at the feet is nothing by day and carries the scene at night; the
+   * outline is the other way about. Between them the figure is legible at every
+   * hour without either of them ever being the loudest thing on screen.
+   */
+  private outlineWeight = 1;
 
   constructor(private readonly options: ActorOptions) {
     this.facingOffset = options.facingOffset ?? 0;
@@ -698,6 +715,14 @@ export class Actor {
     }
   }
 
+  /** Sets how much of the rim weight to spend. See `outlineWeight`. */
+  setOutlineWeight(weight: number): void {
+    this.outlineWeight = weight;
+    if (this.outlineMaterial) {
+      this.outlineMaterial.opacity = (this.options.rim ?? 0) * weight;
+    }
+  }
+
   /**
    * The rim highlight: a soft light along this actor's outline, drawn ON TOP of
    * its own body.
@@ -725,12 +750,7 @@ export class Actor {
         // round the figure rather than a bigger copy of the figure.
         side: THREE.BackSide,
         transparent: true,
-        // Low, and it looks far too low written down. The line is read against
-        // the WORST background it will ever have — a character at midnight is a
-        // dark figure on black — and at anything above this the seams between
-        // the parts of the rig start drawing too and the whole thing reads as a
-        // chalk sketch rather than as a person with light on their edge.
-        opacity: strength * 0.42,
+        opacity: strength * this.outlineWeight,
         // Tests but never writes. Testing is what erases the seams between the
         // eleven meshes a rig is made of; writing would let one outline occlude
         // the next and put the seams straight back.
