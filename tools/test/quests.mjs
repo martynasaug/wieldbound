@@ -12,6 +12,10 @@
 import {
   MONSTER_STATS,
   MONSTER_LABELS,
+  ELEMENTAL_SCHOOLS,
+  SKILLS,
+  SCHOOLS,
+  resistOf,
   bandAt,
   PLAYER_SPAWN,
   WORLD_WIDTH,
@@ -19,7 +23,7 @@ import {
   AGGRO_RANGE_PX,
   xpToNextLevel,
 } from "../../shared/protocol-types.ts";
-import { ITEM_BASES, CONSUMABLES, MATERIALS } from "../../shared/items.ts";
+import { ITEM_BASES, CONSUMABLES, MATERIALS, baseSchool } from "../../shared/items.ts";
 import { SHOP_STOCK, SHOP_OUTPUT_RARITY } from "../../shared/shop.ts";
 import { forgeCost } from "../../shared/items.ts";
 import {
@@ -30,6 +34,7 @@ import {
   offerStateFor,
   rewardLabel,
   lockReason,
+  dominantSchoolOf,
 } from "../../shared/quests.ts";
 import { TOWN_NPCS, TOWN_RADIUS_PX } from "../../shared/town.ts";
 import {
@@ -120,7 +125,15 @@ for (const q of QUESTS) {
 
   const giver = TOWN_NPCS.find((n) => n.id === q.giver);
   if (!giver) fail(`"${q.name}" is given by "${q.giver}", who does not exist`);
-  else if (giver.role !== "quest") fail(`"${q.name}" is given by ${giver.name}, who is a ${giver.role}`);
+  // This used to demand `role === "quest"`, which stopped being the right
+  // question when the Herald was given work: `role` says what somebody IS and
+  // the quest table says what they HAVE, and the client now reads the table.
+  // What is still worth asserting is the one role that must never have work —
+  // a `flavour` NPC is scenery with dialogue, and a quest hidden behind one is
+  // a quest nobody is looking for.
+  else if (giver.role === "flavour") {
+    fail(`"${q.name}" is given by ${giver.name}, who is flavour and not somebody anybody asks for work`);
+  }
 
   if (q.after && !questDef(q.after)) fail(`"${q.name}" follows "${q.after}", which does not exist`);
   if (q.after === q.id) fail(`"${q.name}" follows itself`);
@@ -137,6 +150,17 @@ for (const q of QUESTS) {
   }
   if (o.kind === "gather" && !["wood", "ore", "herb"].includes(o.resource)) {
     fail(`"${q.name}" asks for "${o.resource}", which is not gatherable`);
+  }
+  if (o.kind === "slay") {
+    if (!MONSTER_STATS[o.monster]) {
+      fail(`"${q.name}" names the monster "${o.monster}", which does not exist`);
+    }
+    // Never physical. Physical is what a blow is when nothing has an opinion
+    // about it, so a physical slay objective would be satisfied by accident by
+    // most of the characters in the game and would teach nothing at all.
+    if (!ELEMENTAL_SCHOOLS.includes(o.school)) {
+      fail(`"${q.name}" asks for "${o.school}", which is not an element`);
+    }
   }
 
   if (q.reward.xp <= 0) fail(`"${q.name}" pays no experience`);
@@ -158,16 +182,37 @@ for (const q of QUESTS) {
 }
 console.log(`  ${QUESTS.length} quests, all well-formed`);
 
-// Both quest givers must have work, or one of them is scenery with a title.
-for (const npc of TOWN_NPCS.filter((n) => n.role === "quest")) {
-  const mine = questsFrom(npc.id);
-  if (mine.length === 0) fail(`${npc.name} is a quest giver with no quests`);
-  // The first one must be takeable at level 1 with nothing done, or a new
-  // character walks up to a list of locked rows.
-  const opener = mine.find((q) => offerStateFor(q, 1, [], []) === "offer");
-  if (!opener) fail(`${npc.name} offers nothing to a fresh character`);
-  else console.log(`  ${npc.name}: ${mine.length} quests, opening with "${opener.name}"`);
+// Anybody the table says has work must be somebody standing in the town, and
+// every one of them must have a way IN to their own line.
+//
+// The "way in" rule replaces a stricter one that said every giver's first
+// quest has to be takeable at level 1. That was right while the only two
+// givers were the watch and the inn, whose whole job is to catch a character
+// who has just arrived, and it is wrong as a law: the Herald's line is
+// deliberately not beginner work — it starts in band 2 and ends at a golem —
+// and a new character walking up to her still gets six topics explaining the
+// game, plus a locked row telling them what to come back for. What must be
+// true of EVERY giver is that their opening quest is not chained behind
+// somebody else's, which is the way a line actually gets stranded.
+const givers = [...new Set(QUESTS.map((q) => q.giver))];
+let anyOpensAtOne = false;
+for (const id of givers) {
+  const npc = TOWN_NPCS.find((n) => n.id === id);
+  const mine = questsFrom(id);
+  const unchained = mine.filter((q) => !q.after);
+  if (unchained.length === 0) {
+    fail(`${npc?.name ?? id} has ${mine.length} quests and every one of them is behind another`);
+    continue;
+  }
+  const first = unchained.sort((a, b) => a.requiresLevel - b.requiresLevel)[0];
+  if (offerStateFor(first, 1, [], []) === "offer") anyOpensAtOne = true;
+  console.log(
+    `  ${npc?.name ?? id}: ${mine.length} quests, opening with "${first.name}" (level ${first.requiresLevel})`,
+  );
 }
+// And somebody has to be talking to a brand-new character, or the town has
+// nothing at all for the person it was built for.
+if (!anyOpensAtOne) fail("nobody in Emberhold offers a level-1 character any work");
 
 // --- The chain resolves -----------------------------------------------------
 
@@ -236,6 +281,150 @@ for (const q of QUESTS) {
 }
 // Spawn is band 1, which is what makes "the first quest is next door" true.
 if (bandAt(PLAYER_SPAWN.x, PLAYER_SPAWN.y) !== 1) fail("spawn is not in band 1");
+
+// --- What it folds to -------------------------------------------------------
+// The `slay` objective is the only work in the game that names a TECHNIQUE, and
+// every way it can be wrong is a way the game tells the player something untrue
+// in its own voice — which is strictly worse than saying nothing, because the
+// whole reason these quests exist is that the school system was too quiet.
+//
+// Four failures, none of which throws and none of which is visible from play
+// until somebody spends an hour on a counter that will not move:
+//
+//   * A pair that is not a real vulnerability. "Burn the demon" is a quest that
+//     can be finished and should never have been offered, and it is exactly
+//     what a retune of one row of `MONSTER_STATS` produces silently.
+//   * A school the player has no way to deal. Nature has exactly one weapon in
+//     the whole catalogue and it is band 5, so this is a live risk rather than
+//     a hypothetical one — the answer there is Poison Arrow, and if that skill
+//     were ever moved or retyped the quest would become impossible.
+//   * A brief that never names the element. The player cannot see the rule the
+//     objective is enforcing, so "Wolves burned 0 / 4" after four dead wolves
+//     reads as a bug in the game rather than as an instruction.
+//   * An element with no work behind it. `protocol-types.ts` claims of the five
+//     that each has "a monster that resists it, a monster that folds to it, a
+//     way for a player to deal it and a way to defend against it". A sixth
+//     element added without a quest would leave that sentence true and this
+//     line's version of it false, and nothing would say so.
+
+section("what it folds to");
+{
+  const slayers = QUESTS.filter((q) => q.objective.kind === "slay");
+  if (slayers.length === 0) fail("nothing in the game points at the damage schools");
+
+  // Every way a player can deal each element, read out of the real catalogue
+  // and the real skill table rather than restated here.
+  const dealtBy = {};
+  for (const base of Object.values(ITEM_BASES)) {
+    if (!base.weaponType) continue;
+    (dealtBy[baseSchool(base)] ??= []).push(`${base.name} (band ${base.band})`);
+  }
+  for (const skill of Object.values(SKILLS)) {
+    if (!skill.school) continue;
+    (dealtBy[skill.school] ??= []).push(`${skill.name} (skill)`);
+  }
+
+  for (const q of slayers) {
+    const o = q.objective;
+    const stats = MONSTER_STATS[o.monster];
+    if (!stats) continue;
+
+    // The pair has to be a real weakness, and "real" means the number in the
+    // table is negative. Zero is not good enough: a quest that sent somebody
+    // at something with no opinion either way would be teaching that the
+    // system does nothing.
+    const resist = resistOf(stats.resist, o.school);
+    if (resist >= 0) {
+      fail(
+        `"${q.name}" asks for ${o.school} against a ${MONSTER_LABELS[o.monster]}, ` +
+          `which resists it by ${resist}% — the game would be teaching a lie`,
+      );
+    }
+
+    // And there has to be a way to deal it at all.
+    const ways = dealtBy[o.school] ?? [];
+    if (ways.length === 0) {
+      fail(`"${q.name}" asks for ${o.school}, which nothing in the game can deal`);
+    }
+
+    // The brief has to say the word. The objective label says it too, but the
+    // brief is what somebody reads before they accept.
+    //
+    // A WHOLE WORD, and the boundaries are the whole check. The first version
+    // was a bare substring and it passed a brief with the element deleted out
+    // of it, because "a staff learns a firebolt" contains "fire" — so the
+    // assertion was being satisfied by a spell name rather than by the
+    // instruction it was written to enforce. Every element in this game is a
+    // prefix of one of its own spells (firebolt, frostbolt, stormbolt), which
+    // makes this the normal case and not a corner of one.
+    if (!new RegExp(`\\b${SCHOOLS[o.school].name}\\b`, "i").test(q.brief)) {
+      fail(`"${q.name}" never says "${SCHOOLS[o.school].name}" in its brief`);
+    }
+
+    // Same shape as the kill-quest gate, loosened by two. These deliberately
+    // reach past band 3, which no other quest does, because the technique is
+    // what makes a far creature tractable and a line that stopped at band 3
+    // would never get to the one with lightning for a seam.
+    if (stats.band > q.requiresLevel + 2) {
+      fail(`"${q.name}" sends a level-${q.requiresLevel} character at band ${stats.band}`);
+    }
+
+    console.log(
+      `  "${q.name}" — ${o.count}× ${MONSTER_LABELS[o.monster]} (band ${stats.band}) with ` +
+        `${o.school} at ${resist}%, from level ${q.requiresLevel}; ${ways.length} way(s) to deal it`,
+    );
+  }
+
+  // One per element, and exactly one. Two quests on the same element is a
+  // repeated lesson taking a slot from an element that has none.
+  for (const school of ELEMENTAL_SCHOOLS) {
+    const on = slayers.filter((q) => q.objective.school === school);
+    if (on.length === 0) fail(`no work anywhere in the game asks anybody to deal ${school}`);
+    else if (on.length > 1) {
+      fail(`${school} has ${on.length} quests (${on.map((q) => q.name).join(", ")}) — another element has none`);
+    }
+  }
+  console.log(`  ${slayers.length} quests, one per element, every pair a real weakness`);
+
+  // --- And the rule the counter actually turns on --------------------------
+  // `dominantSchoolOf` is the whole of what a slay objective MEANS, and until
+  // it was lifted out of the server it was the one part of this milestone that
+  // nothing offline could reach — which is the same argument that moved the
+  // height field out of `World.ts` a phase ago. What it has to get right is
+  // less about arithmetic than about which of three defensible answers it is
+  // giving, so the cases below are written as scenarios rather than as sums.
+
+  // Fighting as an element: an Ember Wand does nothing but fire.
+  if (dominantSchoolOf({ fire: 240 }) !== "fire") fail("a fight that was all fire is not fire");
+
+  // Garnishing a fight with one: a sword fight with a single firebolt in it is
+  // a physical kill, and this is the case the whole rule exists to refuse.
+  if (dominantSchoolOf({ physical: 300, fire: 40 }) !== "physical") {
+    fail("one firebolt inside a sword fight counts as burning it");
+  }
+
+  // A burn that did the work: Immolate lands small and ticks for most of it,
+  // so a fire build has to be able to win on the ticks alone.
+  if (dominantSchoolOf({ physical: 90, fire: 130 }) !== "fire") {
+    fail("a fight won on burn ticks does not count as fire");
+  }
+
+  // Only a debuff, and no damage at all. "Nothing" rather than a default.
+  if (dominantSchoolOf({}) !== null) fail("a player who dealt no damage killed it with something");
+
+  // Zero entries are not a school. A recorded-but-empty row must not win.
+  if (dominantSchoolOf({ frost: 0, nature: 0 }) !== null) fail("zero damage counts as a school");
+
+  // A Map is what the server actually holds, and both shapes must agree.
+  const asMap = new Map([["lightning", 500], ["physical", 120]]);
+  if (dominantSchoolOf(asMap) !== "lightning") fail("the Map form disagrees with the record form");
+
+  // Deterministic on a tie, whichever way it falls.
+  if (dominantSchoolOf({ fire: 50, frost: 50 }) !== dominantSchoolOf({ frost: 50, fire: 50 })) {
+    fail("a tie resolves differently depending on insertion order");
+  }
+  console.log("  \"most of your damage\" holds: a garnish is not a technique, a burn's ticks are");
+}
 
 // --- The waystones ----------------------------------------------------------
 // Four standing stones in open country, and every way they can be wrong is

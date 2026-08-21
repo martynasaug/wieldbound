@@ -227,6 +227,7 @@ import {
   offerStateFor,
   questDef,
   questSatisfied,
+  dominantSchoolOf,
   type QuestObjective,
 } from "../../shared/quests.ts";
 
@@ -931,7 +932,11 @@ function applyDotTick(
     const damage = Math.max(1, Math.round(applyResist(dot.damage, resist) * taken));
     monster.hp = Math.max(0, monster.hp - damage);
     const by = active.by;
-    if (by) addThreat(monster.id, by, damage);
+    // A burn is fire, and it counts toward killing something with fire. It has
+    // to: `Immolate` deals most of its damage as ticks, so a dot that did not
+    // carry its own school would make the one skill built for burning things
+    // the worst way to be credited with burning one.
+    if (by) addThreat(monster.id, by, damage, dot.school);
     for (const [pid, socket] of sockets) {
       if (!socket || socket.readyState !== WebSocket.OPEN) continue;
       // Only to people who can see it. A tick is a floating number over a
@@ -1011,6 +1016,7 @@ function handlePlayerDeath(playerId: string, socket: WebSocket | undefined, now:
   // Threat dies with you: a corpse should not still be holding a pack's
   // attention while it walks home.
   for (const table of monsterThreat.values()) table.delete(playerId);
+  for (const table of monsterSchoolDamage.values()) table.delete(playerId);
   if (socket) {
     sendXpUpdate(socket, xp, playerLevels.get(playerId) ?? 1, false);
     if (lost > 0) sendInfo(socket, `Defeated — lost ${lost} XP and feel weakened.`, "#ef5350");
@@ -1025,6 +1031,66 @@ function handlePlayerDeath(playerId: string, socket: WebSocket | undefined, now:
 // landed the final blow). Cleared when the monster dies or resets, which is
 // also what makes threat "decay" — no separate decay pass needed.
 const monsterThreat = new Map<string, Map<string, number>>();
+
+// The same table, split by what the damage was MADE of.
+//
+// It exists for one objective — "kill four wolves with fire" — and the whole
+// design of that objective is in how this is read rather than in how it is
+// written. Three answers to "what did you kill it with" were available:
+//
+//   THE KILLING BLOW. Wrong, and not marginally: combat here resolves itself
+//   on a swing timer, a dot ticks on its own clock, and a volley lands over
+//   half a second. Which blow happens to be last is the one thing in a fight
+//   the player has no control over at all, so a quest keyed on it would be a
+//   dice roll wearing a technique's clothes.
+//
+//   ANY OF IT. One firebolt in a thirty-second sword fight, and the counter
+//   moves. That teaches nothing, because it asks for nothing.
+//
+//   MOST OF IT — which is this. The school that did the largest share of YOUR
+//   damage to that body is what you killed it with, which means the quest is
+//   satisfied by fighting as that element rather than by garnishing a fight
+//   with it. It is the loot rule one level down: the same table already decides
+//   who a drop belongs to by asking who did most, and for the same reason.
+//
+// Keyed and cleared exactly alongside `monsterThreat`, because the two answer
+// questions about the same event and a body that forgot one and remembered the
+// other would credit a kill against damage nobody can account for.
+const monsterSchoolDamage = new Map<string, Map<string, Map<DamageSchool, number>>>();
+
+/**
+ * What this player has done most of their damage to this monster with.
+ *
+ * The rule itself is `dominantSchoolOf` in `shared/quests.ts` — it is a rule of
+ * the game rather than a detail of this process, and it was the one part of
+ * this milestone nothing offline could reach while it lived here. All this
+ * does is find the right row of the table.
+ */
+function dominantSchoolAgainst(monsterId: string, playerId: string): DamageSchool | null {
+  const byPlayer = monsterSchoolDamage.get(monsterId)?.get(playerId);
+  if (!byPlayer) return null;
+  return dominantSchoolOf(byPlayer);
+}
+
+function addSchoolDamage(
+  monsterId: string,
+  playerId: string,
+  school: DamageSchool,
+  amount: number,
+): void {
+  let table = monsterSchoolDamage.get(monsterId);
+  if (!table) {
+    table = new Map<string, Map<DamageSchool, number>>();
+    monsterSchoolDamage.set(monsterId, table);
+  }
+  let byPlayer = table.get(playerId);
+  if (!byPlayer) {
+    byPlayer = new Map<DamageSchool, number>();
+    table.set(playerId, byPlayer);
+  }
+  byPlayer.set(school, (byPlayer.get(school) ?? 0) + amount);
+}
+
 // When a telegraphed attack lands, and where the monster was aiming.
 const monsterWindupAt = new Map<string, number>();
 
@@ -1034,13 +1100,28 @@ const monsterLeapReadyAt = new Map<string, number>();
 // Packmates a shout has already woken, so one pull doesn't re-alert forever.
 const alertedMonsters = new Set<string>();
 
-function addThreat(monsterId: string, playerId: string, amount: number): void {
+function addThreat(
+  monsterId: string,
+  playerId: string,
+  amount: number,
+  /**
+   * What the amount was made of, where it was made of anything.
+   *
+   * Optional on purpose rather than defaulted to `physical`. The one caller
+   * that passes nothing is the token point a debuff adds for acquiring a
+   * target, and that is not damage — recording it as physical would let a
+   * character who marked something and then burned it to death be credited
+   * with a physical kill on a one-point tie.
+   */
+  school?: DamageSchool,
+): void {
   let table = monsterThreat.get(monsterId);
   if (!table) {
     table = new Map<string, number>();
     monsterThreat.set(monsterId, table);
   }
   table.set(playerId, (table.get(playerId) ?? 0) + amount);
+  if (school) addSchoolDamage(monsterId, playerId, school, amount);
 
   // Social aggro: the first time this monster is hurt, it shouts, and every
   // packmate of the same kind nearby inherits a token amount of threat on
@@ -1071,6 +1152,7 @@ function addThreat(monsterId: string, playerId: string, amount: number): void {
 
 function clearThreat(monsterId: string): void {
   monsterThreat.delete(monsterId);
+  monsterSchoolDamage.delete(monsterId);
   monsterWindupAt.delete(monsterId);
   monsterLeapUntil.delete(monsterId);
   // Re-arm the shout, so a camp that resets can be pulled fresh.
@@ -1150,7 +1232,16 @@ function awardKill(monster: MonsterState, now: number): void {
   // re-introducing it here would make questing together worse than questing
   // alone.
   for (const [playerId] of contributors) {
-    advanceQuests(playerId, (o) => (o.kind === "kill" && o.monster === monster.kind ? 1 : 0));
+    // What this particular player did most of their damage with. Asked per
+    // player and not once for the monster, because two people can kill one
+    // wolf and only one of them burned it — and the whole point of the
+    // objective is that it is a claim about how YOU fought.
+    const dominant = dominantSchoolAgainst(monster.id, playerId);
+    advanceQuests(playerId, (o) => {
+      if (o.kind === "kill" && o.monster === monster.kind) return 1;
+      if (o.kind === "slay" && o.monster === monster.kind && o.school === dominant) return 1;
+      return 0;
+    });
   }
 
   const topSocket = sockets.get(topId);
@@ -1282,7 +1373,7 @@ function applySkillDamage(
   );
   result.damage = damage;
   monster.hp = Math.max(0, monster.hp - result.damage);
-  addThreat(monster.id, playerId, result.damage);
+  addThreat(monster.id, playerId, result.damage, school);
   markInCombat(playerId, now);
   if (monster.hp > 0) {
     return { hit: true, crit: result.crit, damage: result.damage, killed: false, school, resisted };
@@ -1873,9 +1964,10 @@ function resolvePlayerAttack(
         Math.round(playerAttack.damage * statusDamageTaken(statusesOf(monster.id, now))),
       );
       monster.hp = Math.max(0, monster.hp - playerAttack.damage);
-      // Damage is threat: it is what decides who this monster turns on, and
-      // what earns a share of the XP when it dies.
-      addThreat(monster.id, playerId, playerAttack.damage);
+      // Damage is threat: it is what decides who this monster turns on, what
+      // earns a share of the XP when it dies, and — split by school — what the
+      // player is credited with having killed it WITH.
+      addThreat(monster.id, playerId, playerAttack.damage, school);
       markInCombat(playerId, now);
       if (monster.hp <= 0) {
         monsterDefeated = true;
@@ -3086,6 +3178,7 @@ wss.on("connection", (socket) => {
     for (const [pid, allyId] of playerAllyTargets) if (allyId === id) playerAllyTargets.set(pid, null);
     // Drop this player's threat everywhere so packs don't hold aggro on a ghost.
     for (const table of monsterThreat.values()) table.delete(id);
+    for (const table of monsterSchoolDamage.values()) table.delete(id);
     gatherLevels.delete(id);
     battlePowerLevels.delete(id);
     weaponRarities.delete(id);

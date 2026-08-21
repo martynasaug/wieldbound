@@ -266,9 +266,42 @@ names a monster and a resource that exist, that the chain has no cycle and
 nothing is stranded, and that the level gates never run ahead of what the
 quests before them pay.
 
+Plus the section that guards the Herald's line, where every failure is the game
+teaching a lie **in its own voice**: that every element a quest names is a real
+WEAKNESS in `MONSTER_STATS` rather than something the creature shrugs off, that
+there is a way in the catalogue or the skill tables to deal it at all (nature has
+exactly one weapon and it is band 5, so this is live rather than hypothetical),
+that the brief names its own element as a whole word, and that each of the five
+elements has exactly one quest — so an element added later without work behind it
+fails here instead of going quiet.
+
 ```powershell
 node tools/test/quests.mjs
 ```
+
+`slaying.mjs` — drives a real socket, like `smoke.mjs`, and tests the one part of
+the `slay` objective no offline suite can reach: the JOIN between every damage
+path recording what it was made of and `awardKill` reading the right player's row
+before `clearThreat` wipes it. It takes the Herald's frost quest, fights the same
+camp twice with two different weapons, and asserts that one phase can move the
+counter and the other cannot. Measured: twenty-four armabees killed with
+lightning move it by nothing, twenty-four with frost fill it.
+
+It asserts the SIGN of the change rather than a count, and that is the second
+version — the first asserted "+1 per kill" and failed against a working game,
+because this is an auto-battler and a phase kills however many it kills.
+
+```powershell
+node tools/seed.mjs Slayer --level 40   # server stopped
+node tools/quests-reset.mjs Slayer      # server stopped, if run before
+npm run dev:server
+node tools/test/slaying.mjs Slayer
+```
+
+`../quests-reset.mjs` — not a test. Clears one character's quest rows so
+`slaying.mjs` can run again; a counter that is already full does not move, which
+reads exactly like the feature being broken. Same constraint as `seed.mjs`: the
+server holds the database, so stop it first.
 
 `road.mjs` — no server needed. Walks the smoothed North Road and checks the one
 thing it exists for: that following it gets you from the palisade to the

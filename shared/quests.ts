@@ -17,10 +17,14 @@
 // already credited through the threat table, a gather it already resolved, a
 // forge it already paid for. Nothing here introduces a new thing to track.
 
-import type {
-  MonsterKind,
-  GatherableResource,
-  QuestProgressState,
+import {
+  DAMAGE_SCHOOLS,
+  SCHOOLS,
+  type DamageSchool,
+  type ElementalSchool,
+  type MonsterKind,
+  type GatherableResource,
+  type QuestProgressState,
 } from "./protocol-types.ts";
 import type { MaterialCost, ConsumableId } from "./items.ts";
 import { landmarkById, type Landmark } from "./landmarks.ts";
@@ -44,7 +48,23 @@ export type QuestObjective =
    * and every node is measured from spawn precisely so that walking further IS
    * the progression, and until now nothing ever asked anybody to walk.
    */
-  | { kind: "reach"; landmark: string; count: 1 };
+  | { kind: "reach"; landmark: string; count: 1 }
+  /**
+   * Kill something with a particular ELEMENT, which is the only objective in
+   * the game gated on a technique rather than on a place.
+   *
+   * Every other verb here counts something the player was going to do anyway
+   * and points them at where to do it. This one counts HOW. It exists because
+   * the deepest system in the combat design — six schools, and every creature
+   * with something that hurts it — was reachable only by reading a target
+   * frame, and nothing in the world had ever asked anybody to act on it.
+   *
+   * The school is an ELEMENT and never physical. Physical is what a blow is
+   * when nothing has an opinion about it, so "slay it with physical" would be
+   * satisfied by accident by most of the characters in the game and would teach
+   * exactly nothing.
+   */
+  | { kind: "slay"; monster: MonsterKind; school: ElementalSchool; count: number };
 
 export interface QuestReward {
   xp: number;
@@ -262,6 +282,131 @@ export const QUESTS: QuestDef[] = [
     after: "inn-forge",
     reward: { xp: 240, materials: { ore: 80, herb: 60 }, consumable: { id: "tonic", count: 1 } },
   },
+
+  // --- Elsbet Vane: what a thing is made of ----------------------------------
+  // A THIRD GIVER, and the reason for one is that her work is a different KIND
+  // of work. Cabel sends you somewhere and Marda sends you to the anvil; both
+  // are "go and do the thing you were going to do, over there". These are the
+  // only quests in the game that say HOW.
+  //
+  // They exist because the damage schools are the deepest system in this game
+  // and the quietest. Six schools, thirteen creatures with an opinion about
+  // them, five elemental palettes, five elemental spells and a target frame
+  // that says what the thing in front of you folds to — and until now not one
+  // line of work anywhere pointed at any of it. A player could finish every
+  // quest in Emberhold having never once noticed that a troll knits itself
+  // back together unless you burn it. That is the same dangling limb `salvage`
+  // was before "Take It Apart", one system over.
+  //
+  // ELSBET IS THE RIGHT PERSON and not merely a free slot. She already has the
+  // topic — "What is damage made of?" — and she has been answering it into the
+  // air since Phase 49. A herald who states a rule and then hands you the work
+  // that proves it is one character doing one job; the alternative was giving
+  // it to Cabel, whose entire voice is distance and who would have to start
+  // explaining resistances.
+  //
+  // ONE PER ELEMENT, which is the shape of the claim. `protocol-types.ts` says
+  // of the five elements that every one of them "has a monster that resists it,
+  // a monster that folds to it, a way for a player to deal it and a way to
+  // defend against it". Four of those were true and the fifth — a reason to
+  // ever deal it — was not. Five quests make the sentence true in the quest log
+  // as well, and `tools/test/quests.mjs` asserts exactly that, so an element
+  // added later without work behind it fails rather than going quiet.
+  //
+  // AND EVERY PAIR IS A REAL VULNERABILITY, read out of `MONSTER_STATS` by the
+  // test rather than trusted from these strings. A quest that told somebody to
+  // burn a demon would be the game teaching a lie with its own voice, and it is
+  // exactly what a retune of the resist table would silently produce.
+  //
+  // They walk outward like Cabel's do, and they walk PAST band 3, which no
+  // other quest does. That is the point of them: the technique is what makes a
+  // band-5 creature tractable, so the line has to reach one.
+  {
+    id: "rule-armabee",
+    giver: "herald",
+    name: "The Wing Is The Animal",
+    brief:
+      "You have heard me say that everything folds to something. Here is the cheapest place to " +
+      "find out I am not being poetic. Armabees, north-east — the whole creature is a wing, and " +
+      "cold takes a wing away. Four of them, killed with FROST and not with whatever you are " +
+      "holding now. Any wand will do it: the first thing a wand ever learns is a frostbolt.",
+    done:
+      "Four, and you will have noticed they came apart faster than the ones you have been " +
+      "hacking at. That was not luck and it was not your level. Now do it on purpose.",
+    objective: { kind: "slay", monster: "armabee", school: "frost", count: 4 },
+    requiresLevel: 5,
+    reward: { xp: 180, materials: { wood: 50, ore: 50, herb: 30 }, consumable: { id: "potion", count: 2 } },
+  },
+  {
+    id: "rule-wolf",
+    giver: "herald",
+    name: "What The Coat Is For",
+    brief:
+      "Wolves. That coat turns cold the way your armour turns a blade, so the thing that worked " +
+      "on the armabees will do nothing here — which is the lesson, and it is the half everybody " +
+      "misses. Four wolves, killed with FIRE. A staff learns a firebolt, and there is an Ember " +
+      "Wand out there made of the element itself if you would rather hold it than cast it.",
+    done:
+      "Good. Two creatures, two answers, and the second answer was the first one turned round. " +
+      "That is the whole system and you now know it better than most of the watch.",
+    objective: { kind: "slay", monster: "wolf", school: "fire", count: 4 },
+    requiresLevel: 8,
+    after: "rule-armabee",
+    reward: { xp: 380, materials: { wood: 90, ore: 90, herb: 45 } },
+  },
+  {
+    id: "rule-orcbrute",
+    giver: "herald",
+    name: "A Great Deal Of Blood",
+    brief:
+      "Orc brutes wear real armour, so hitting one harder is a conversation you will lose. But a " +
+      "body that size is a great deal of blood for something to travel, and that is what a " +
+      "coated blade is for. Three of them, killed with NATURE. A bow or a dagger learns a " +
+      "poison arrow, and the poison keeps working after you have stopped.",
+    done:
+      "Armour against the blow, nothing at all against what the blow carried. Remember that the " +
+      "next time something looks unkillable — it is almost never unkillable, it is armoured.",
+    objective: { kind: "slay", monster: "orcbrute", school: "nature", count: 3 },
+    requiresLevel: 11,
+    after: "rule-wolf",
+    reward: { xp: 700, materials: { wood: 150, ore: 150, herb: 80 }, consumable: { id: "tonic", count: 1 } },
+  },
+  {
+    id: "rule-ghost",
+    giver: "herald",
+    name: "Nothing To Cut",
+    brief:
+      "There are ghosts out past the trolls, and a blade goes through most of one without ever " +
+      "finding anything to stop on. This is the oldest rule in the world and it is the reason " +
+      "anybody ever picked up a staff. Three ghosts, killed with ARCANE — and that one is free: " +
+      "a staff or a wand deals it with its plain attack, no spell required.",
+    done:
+      "Then you have held the answer to a ghost since the first time you picked up a stick with " +
+      "a stone on the end of it. Most people carry it for years and never point it at one.",
+    objective: { kind: "slay", monster: "ghost", school: "arcane", count: 3 },
+    requiresLevel: 15,
+    after: "rule-orcbrute",
+    reward: { xp: 1200, materials: { wood: 220, ore: 220, herb: 110, ingot: 3 } },
+  },
+  {
+    id: "rule-golem",
+    giver: "herald",
+    name: "The Seam",
+    brief:
+      "Last one, and it is the far edge of the map. A golem is stone — it turns a blade, it does " +
+      "not burn, and everything you have been taught about hitting things stops applying. It " +
+      "has a seam, and the seam takes LIGHTNING. Two of them. Storm is the newest material in " +
+      "the world and it comes off the very thing it kills, so the first one is the hard one and " +
+      "the second is a different fight entirely.",
+    done:
+      "Two golems, with the one element nobody was carrying a year ago. There is nothing left in " +
+      "this world I can teach you about what things are made of. Go and find something that is " +
+      "made of something new.",
+    objective: { kind: "slay", monster: "golem", school: "lightning", count: 2 },
+    requiresLevel: 20,
+    after: "rule-ghost",
+    reward: { xp: 2400, materials: { wood: 350, ore: 350, herb: 180, ingot: 6, weave: 3 } },
+  },
 ];
 
 export function questDef(id: string): QuestDef | null {
@@ -278,6 +423,13 @@ export function objectiveLabel(o: QuestObjective): string {
   if (o.kind === "gather") return `${o.resource} gathered`;
   if (o.kind === "forge") return "things forged";
   if (o.kind === "salvage") return "things salvaged";
+  // The school's own verb, out of the table the combat log already reads —
+  // "Wolves burned", "Golems shocked". Restating it as a per-quest string would
+  // be five more chances for a fire quest to say "frozen", and the log and the
+  // tracker would be two opinions about what fire does to something.
+  if (o.kind === "slay") {
+    return `${MONSTER_PLURAL[o.monster] ?? o.monster} ${SCHOOLS[o.school].verb}`;
+  }
   // Named, not counted. "places reached 0 / 1" is technically what the counter
   // holds and it tells the player nothing they want to know; the name of the
   // stone is the whole instruction.
@@ -313,6 +465,8 @@ const MONSTER_PLURAL: Partial<Record<MonsterKind, string>> = {
   armabee: "Armabees",
   cactoro: "Cactoro",
   orcbrute: "Orc Brutes",
+  ghost: "Ghosts",
+  golem: "Golems",
 };
 
 // --- Per-player state -------------------------------------------------------
@@ -324,6 +478,56 @@ const MONSTER_PLURAL: Partial<Record<MonsterKind, string>> = {
 /** True when a quest's counter has reached its threshold. */
 export function questSatisfied(def: QuestDef, count: number): boolean {
   return count >= def.objective.count;
+}
+
+/**
+ * What a player killed something WITH, given everything they did to it.
+ *
+ * THE RULE IS "MOST OF IT", and this function is where that is decided rather
+ * than a line inside the server, because it is a rule of the game in exactly
+ * the sense every formula in `protocol-types.ts` is one — the thing a `slay`
+ * objective means. It lives here so it can be walked by a test; the server was
+ * the only caller and it was the only place that could ever be wrong.
+ *
+ * The two alternatives were both considered and both are worse:
+ *
+ *   THE KILLING BLOW. Combat here resolves on a swing timer, dots tick on
+ *   their own clocks and a volley lands over half a second, so which blow
+ *   happens to be last is the one thing in a fight the player does not choose.
+ *   A quest keyed on it is a dice roll wearing a technique's clothes.
+ *
+ *   ANY OF IT. One firebolt inside a thirty-second sword fight would count,
+ *   which asks for nothing and therefore teaches nothing.
+ *
+ * Most of it means the objective is satisfied by FIGHTING AS that element
+ * rather than by garnishing a fight with it — which is the whole lesson, and
+ * is the same shape as the loot rule, where the same accumulated-damage table
+ * already decides who a drop belongs to by asking who did most.
+ *
+ * Null when there was no damage at all. A player who only landed a debuff has
+ * a threat entry and nothing else, and "nothing" is the honest answer for them
+ * rather than a default school they never dealt.
+ *
+ * Ties break toward the earlier entry in `DAMAGE_SCHOOLS`, which is
+ * deterministic rather than meaningful: two schools landing on exactly equal
+ * totals is not a state worth designing for, but it is one worth resolving the
+ * same way twice.
+ */
+export function dominantSchoolOf(
+  damageBySchool: Partial<Record<DamageSchool, number>> | ReadonlyMap<DamageSchool, number>,
+): DamageSchool | null {
+  const read = (s: DamageSchool): number =>
+    damageBySchool instanceof Map ? (damageBySchool.get(s) ?? 0) : ((damageBySchool as Partial<Record<DamageSchool, number>>)[s] ?? 0);
+  let best: DamageSchool | null = null;
+  let most = 0;
+  for (const school of DAMAGE_SCHOOLS) {
+    const amount = read(school);
+    if (amount > most) {
+      most = amount;
+      best = school;
+    }
+  }
+  return best;
 }
 
 /**

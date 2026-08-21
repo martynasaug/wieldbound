@@ -5691,6 +5691,171 @@ milestone rather than being bolted onto this one.
 
 ---
 
+## Phase 58 — What it folds to
+Damage has had a school since Phase 48 M4, and it is the deepest system in the
+combat design: six schools, thirteen creatures each with something that hurts
+them, five elemental palettes, five elemental spells, resistance suffixes, a
+target frame that says what the thing in front of you folds to before you
+commit, and a log line that says *"you burned the Wolf for 9 — it feels that."*
+
+**And nothing in the world had ever asked anybody to use any of it.** A player
+could take all eleven quests in Emberhold, finish all eleven, and never once
+learn that a troll knits itself back together unless you burn it. That is the
+same dangling limb `salvage` was before *Take It Apart* — a system the game
+owns, resolves and draws, and never points at.
+
+### M58.1 — a third giver, and the only work in the game that says HOW
+Five quests, one per element, from Elsbet Vane.
+
+### The objective is a technique, which no other objective is
+Every other verb in `shared/quests.ts` counts something the player was going to
+do anyway and points them at WHERE to do it — a kill the threat table credited,
+a gather the server resolved, a forge it charged for, a place you walked to.
+`slay` counts HOW.
+
+    { kind: "slay"; monster: MonsterKind; school: ElementalSchool; count: number }
+
+**The school is an element and never physical.** Physical is what a blow is when
+nothing has an opinion about it, so "slay it with physical" would be satisfied by
+accident by most of the characters in the game and would teach exactly nothing.
+The test asserts it rather than the type alone, because the type is only as good
+as the next person who widens it.
+
+### "Killed it with" means MOST OF IT, and the other two answers are worse
+This is the whole design and it is one function:
+
+- **The killing blow.** Wrong, and not marginally. Combat here resolves on a
+  swing timer, a dot ticks on its own clock and a volley lands over half a
+  second — which blow happens to be last is the one thing in a fight the player
+  does not choose. A quest keyed on it is a dice roll wearing a technique's
+  clothes.
+- **Any of it.** One firebolt inside a thirty-second sword fight, and the
+  counter moves. It asks for nothing, so it teaches nothing.
+- **Most of it.** The school that did the largest share of YOUR damage to that
+  body. The objective is satisfied by FIGHTING AS that element rather than by
+  garnishing a fight with it, which is the lesson — and it is the loot rule one
+  level down, since the same accumulated-damage table already decides who a drop
+  belongs to by asking who did most.
+
+So the threat table grew a companion split by school, keyed and cleared exactly
+alongside it, and `addThreat` takes the school as an optional fourth argument.
+**Optional rather than defaulted to physical**, because the one caller that
+passes nothing is the token point a debuff adds for acquiring a target — and
+that is not damage. Recording it as physical would let somebody who marked a
+thing and then burned it to death be credited with a physical kill on a
+one-point tie.
+
+A burn carries its own school, and it has to: `Immolate` lands small and deals
+most of its damage as ticks, so a dot that did not would make the one skill
+built for burning things the worst way to be credited with burning one.
+
+### The rule moved to `shared/` before it was tested, not after
+`dominantSchoolOf` started inside `index.ts` and was lifted out, which is M57.3's
+lesson applied without waiting for three reported defects first. It is a rule of
+the game in exactly the sense every formula in `protocol-types.ts` is one, the
+server was its only caller and therefore the only place it could be wrong, and
+nothing offline could reach it there.
+
+### Elsbet is the right person, and "has work" is a fact of the table
+She has had the topic since Phase 49 — *"What is damage made of?"* — and has
+been answering it into the air ever since. A herald who states a rule and then
+hands you the work that proves it is one character doing one job. The
+alternative was Cabel, whose entire voice is distance and who would have had to
+start explaining resistances.
+
+The client used to decide who has work with `role === "quest"`, which is a second
+opinion about the same thing and was wrong the moment a guide was given a line.
+**`role` says what a person IS and `questsFrom` says what they have** — Elsbet is
+still a guide, still has the guide's portrait and plate, and now has five
+quests. Same call this project makes about where the fires are: read it off the
+table that owns it rather than keeping a register beside it. The server never
+checked a role at all, so it needed no change.
+
+### The five, and why each pair
+One per element, walking outward, each pair a real vulnerability in
+`MONSTER_STATS`:
+
+    The Wing Is The Animal   4x Armabee    band 2   frost      -30%   from level 5
+    What The Coat Is For     4x Wolf       band 3   fire       -30%   from level 8
+    A Great Deal Of Blood    3x Orc Brute  band 3   nature     -30%   from level 11
+    Nothing To Cut           3x Ghost      band 4   arcane     -40%   from level 15
+    The Seam                 2x Golem      band 5   lightning  -45%   from level 20
+
+**One per element is the shape of the claim.** `protocol-types.ts` says of the
+five that every one has "a monster that resists it, a monster that folds to it, a
+way for a player to deal it and a way to defend against it". Four of those were
+true and the fifth — a reason to ever deal it — was not. Now the sentence is true
+in the quest log too, and the test fails if an element gains a second quest while
+another has none.
+
+**And they reach past band 3, which no other quest does.** That is the point of
+them rather than an oversight: the technique is what makes a far creature
+tractable, and a line that stopped at band 3 would never get to the one with
+lightning for a seam. The second quest is deliberately the reverse of the first —
+a wolf's coat turns cold the way armour turns a blade — because *the thing that
+worked last time does nothing here* is the half of the system everybody misses.
+
+**The tracker's label is derived, not written.** `SCHOOLS[school].verb` already
+exists and the combat log already reads it, so the tracker says "Armabees
+chilled 4 / 4" and "Golems shocked" out of the same table. Five per-quest strings
+would have been five chances for a fire quest to say "frozen".
+
+### Four ways this can lie, and a check for each
+Every failure here is the game telling the player something untrue **in its own
+voice**, which is strictly worse than the silence this milestone exists to fix.
+None of them throws.
+
+- **A pair that is not a real weakness.** "Burn the demon" is a quest that can be
+  finished and should never have been offered, and it is exactly what a retune of
+  one row of `MONSTER_STATS` produces silently. The test reads the real resist
+  table and demands a negative number — zero is not enough, because sending
+  somebody at something with no opinion either way teaches that the system does
+  nothing.
+- **A school nothing can deal.** Nature has exactly ONE weapon in the whole
+  catalogue and it is band 5, so this is live rather than hypothetical: the
+  answer there is Poison Arrow, and if that skill were ever moved or retyped the
+  quest would become impossible. The test counts the ways out of the real
+  catalogue and the real skill table.
+- **A brief that never names the element.** The player cannot see the rule the
+  objective is enforcing, so "Wolves burned 0 / 4" after four dead wolves reads
+  as a bug rather than as an instruction.
+- **An element with no work behind it**, which is the check that would catch a
+  sixth school being added the way the fifth nearly was.
+
+### The ruler was wrong first, twice, in the usual direction
+- **The brief check passed a brief with the element deleted out of it.** It was a
+  bare substring, and *"a staff learns a firebolt"* contains "fire" — so the
+  assertion was being satisfied by a spell name rather than by the instruction it
+  was written to enforce. Every element in this game is a prefix of one of its own
+  spells (firebolt, frostbolt, stormbolt), so this is the normal case and not a
+  corner of one. Word boundaries now, and the mutation fails.
+- **The live probe asserted "+1 per kill" and failed against a working game.**
+  This is an auto-battler: an attack order stands until you walk away, so a phase
+  kills however many armabees it kills and the exact number is not the probe's to
+  know. Worse, the first run never equipped the mace at all — *"you cannot hold it
+  and an off-hand"* — so the phase meant to prove lightning does not count was
+  fought bare-handed. It asserts the SIGN now, and it reports which schools it
+  actually dealt, so a phase that fought with the wrong thing says so instead of
+  passing.
+
+### Verified
+`tools/test/slaying.mjs` is a live-socket suite in the same mould as `smoke.mjs`,
+and it is the only thing that can test the JOIN — that every damage path records
+what it was made of, that `awardKill` reads the right player's row before
+`clearThreat` wipes it, and that the counter therefore moves for one weapon and
+not another. Measured, on a seeded level-40 character standing in the same camp:
+
+    holding Thunderhead (lightning)   24 armabees killed   counter 0 -> 0
+    holding Frostbrand  (frost)       24 armabees killed   counter 0 -> 4
+
+Twenty-four kills with the wrong element move it by nothing. Plus the browser:
+the Herald's panel showing a ready hand-in, four chained follow-ups with their
+lock reasons and all six of her original topics, and the tracker reading
+"Armabees chilled 4 / 4". Seventeen offline suites, smoke, the new live suite,
+both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -5774,6 +5939,60 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- "KILLED IT WITH" MEANS MOST OF YOUR DAMAGE, never the killing blow and never
+  any of it. The killing blow is the one thing in a fight the player does not
+  choose — swings are on a timer, dots tick on their own clock, a volley lands
+  over half a second — so keying a technique on it is a dice roll wearing a
+  technique's clothes. "Any of it" is satisfied by one firebolt inside a
+  thirty-second sword fight, which asks for nothing. Most of it means the quest
+  is satisfied by FIGHTING AS the element, and it is the loot rule one level
+  down: the same accumulated-damage table already decides who a drop belongs to
+  by asking who did most.
+- A DEBUFF IS NOT DAMAGE, so the school argument is optional rather than
+  defaulted to physical. The token point a debuff adds for acquiring a target
+  would otherwise credit somebody who marked a thing and then burned it to death
+  with a physical kill, on a one-point tie.
+- A dot carries its OWN school into the threat split. `Immolate` lands small and
+  deals most of its damage as ticks, so a dot that did not would make the one
+  skill built for burning things the worst possible way to be credited with
+  burning one.
+- Move a rule to `shared/` BEFORE it has produced three reported defects.
+  `dominantSchoolOf` is a rule of the game in the sense every formula in
+  `protocol-types.ts` is one, the server was its only caller and therefore the
+  only place it could be wrong, and nothing offline could reach it inside
+  `index.ts`. This is M57.3's lesson applied without waiting for the bill.
+- WHETHER SOMEBODY HAS WORK IS A FACT OF THE QUEST TABLE, not of their role.
+  `role === "quest"` is a second opinion about the same thing and was wrong the
+  moment a guide was given a line of work. `role` says what a person IS — Elsbet
+  keeps the guide's portrait and plate — and `questsFrom` says what they have.
+  Same call as reading the fires off the tables they are placed from.
+- A rule the game has never asked anybody to USE is a rule most players will
+  never learn. Damage has had six schools and thirteen creatures with opinions
+  about them since Phase 48, all of it resolved, drawn, tooltipped and logged,
+  and a player could finish every quest in Emberhold without discovering any of
+  it. Showing a system is not pointing at one — the same gap `salvage` had until
+  a quest said it out loud.
+- An element in a quest is never PHYSICAL. Physical is what a blow is when
+  nothing has an opinion about it, so a physical objective is satisfied by
+  accident by most characters in the game and teaches nothing. Asserted rather
+  than left to the type, because a type is only as good as the next person who
+  widens it.
+- A pair in a quest must be a real WEAKNESS in the table, read out of
+  `MONSTER_STATS` by the test and never trusted from the prose. "Burn the demon"
+  is a quest that can be finished and should never have been offered, and it is
+  what a retune of one row produces silently. Zero is not good enough either: a
+  creature with no opinion either way teaches that the system does nothing.
+- Test the WORD, with boundaries. The check that a brief names its own element
+  passed a brief with the element deleted, because "a staff learns a firebolt"
+  contains "fire" — the assertion was being satisfied by a spell name rather than
+  by the instruction. Every element here is a prefix of one of its own spells, so
+  that is the normal case rather than a corner of one.
+- A live probe against an AUTO-BATTLER may not assert an exact count. An attack
+  order stands until you walk away, so a phase kills however many it kills;
+  "+1 per kill" failed against a working game. Assert the SIGN, and report what
+  the phase actually DEALT — the first run fought bare-handed because the mace
+  would not go on over an off-hand and nothing said so.
 
 - A HEIGHT FIELD MAY NOT STEP, because what you see is a mesh sampled off it on
   a 1.63-unit grid and a mesh cannot draw a step — it draws a wedge across
@@ -8257,7 +8476,29 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 57 complete (2026-08-21).
+Phase 0 through 58 complete (2026-08-21).
+
+**Phase 58 M58.1 — what it folds to.** Damage has had a school since Phase 48 —
+six of them, thirteen creatures each with something that hurts them, five
+elemental palettes, five elemental spells, a target frame that says what the
+thing in front of you folds to and a log line that says you burned it — and
+nothing in the world had ever asked anybody to use any of it. A player could
+finish all eleven quests in Emberhold and never learn that a troll knits itself
+back together unless you burn it. So there is a `slay` objective now, and it is
+the only work in the game that says HOW rather than where: five quests, one per
+element, from Elsbet Vane, who has had the topic since Phase 49 and has been
+answering it into the air ever since. **"Killed it with" means MOST of your
+damage** — not the killing blow, which is the one thing in a fight the player
+does not choose, and not any of it, which one firebolt inside a sword fight
+would satisfy — so the objective is met by FIGHTING AS the element rather than
+by garnishing a fight with it. That rule moved into `shared/` before it had
+produced a single defect rather than after three, and every pair the quests name
+is read out of the real resist table by the test, because a quest telling
+somebody to burn a demon would be the game teaching a lie in its own voice.
+Measured live: twenty-four armabees killed with lightning move the counter by
+nothing, and twenty-four killed with frost fill it. Both rulers were wrong
+first — the brief check was satisfied by the word "firebolt", and the probe
+asserted "+1 per kill" at an auto-battler that kills as many as it likes.
 
 **Phase 57 M57.3 — a trench at each abutment, and the height field finally gets
 a test.** *"The gap between the north bridge and dirt path, again"* — and again

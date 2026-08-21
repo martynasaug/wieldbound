@@ -112,7 +112,8 @@ unavailable.
   of the world, so an outline through the statue would be painted onto it
   permanently rather than being the passing hint the feature is for.
 - **Five people who each do something** — Elsbet Vane the Herald explains the
-  rules the game has never said out loud; Oswyn Thale the Provisioner runs a
+  rules the game has never said out loud, and now hands out the work that proves
+  the deepest of them; Oswyn Thale the Provisioner runs a
   shop priced in wood, ore and herb, because there is no currency and is not
   going to be one; Warden Cabel and Marda Quill hand out work; Tobin Ash at the
   anvil explains the bench's five verbs. One dialogue box serves all of them —
@@ -125,15 +126,26 @@ unavailable.
   be in different places. Talking to somebody is measured to where they are
   standing; staying in the conversation is measured to their post, so nobody
   walks out of their own shop.
-- **Eleven quests in five verbs, counted off things the server already
+- **Sixteen quests in six verbs, counted off things the server already
   resolves** — a kill it credited through the threat table, a gather it worked
-  out, a forge it charged you for, a salvage it just performed, and **a place
-  you walked to**. Kill credit follows the experience rule (everyone who damaged
-  it) rather than the loot rule (whoever did most), so questing together is not
-  worse than questing alone. A tracker sits under the minimap and hides itself
-  entirely when you have taken nothing — and a quest that names a place counts
-  down the distance instead of showing a counter that can only ever say two
-  things.
+  out, a forge it charged you for, a salvage it just performed, **a place you
+  walked to**, and **something killed with a particular element**. Kill credit
+  follows the experience rule (everyone who damaged it) rather than the loot rule
+  (whoever did most), so questing together is not worse than questing alone. A
+  tracker sits under the minimap and hides itself entirely when you have taken
+  nothing — and a quest that names a place counts down the distance instead of
+  showing a counter that can only ever say two things.
+- **And five that teach the thing the game never made you learn** — the Herald's
+  work is the only work here that says HOW rather than where. Chill an armabee,
+  burn a wolf, poison an orc, sear a ghost, and finally take a golem apart along
+  the seam that lightning finds: one quest per element, each pair a real weakness
+  in the table the server resolves with, walking outward past every band the rest
+  of the quests stop at. What counts is **most of your damage**, not the killing
+  blow — which is the one thing in a fight you do not choose — and not merely
+  some of it, so the counter moves for fighting *as* an element and not for
+  garnishing a fight with one. It exists because a system can be resolved, drawn,
+  tooltipped and logged and still be something most players never find out is
+  there.
 - **Four waystones, and a reason to walk to them** — the first built things
   outside the palisade, one for each difficulty band past the first, spiralling
   outward round the compass so no two are on the same trip. The Gate Stone with

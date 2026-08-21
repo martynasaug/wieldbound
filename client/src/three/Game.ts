@@ -2432,9 +2432,9 @@ export class Game {
   /**
    * What this person can DO for you, above their small talk.
    *
-   * Empty for the guide and for Tobin, and that is not a gap: their whole
-   * function is the topics themselves. The list is built fresh on every open so
-   * it reflects the bag and the level as they are now.
+   * Empty for Tobin, and that is not a gap: his whole function is the topics
+   * themselves. The list is built fresh on every open so it reflects the bag
+   * and the level as they are now.
    */
   private dialogueActionsFor(npc: NpcVisual): DialogueAction[] {
     const actions: DialogueAction[] = [];
@@ -2471,7 +2471,15 @@ export class Game {
       }
     }
 
-    if (npc.def.role === "quest") {
+    // WHETHER SOMEBODY HAS WORK IS A FACT OF THE QUEST TABLE, not of their
+    // role. This used to read `role === "quest"`, which is a second opinion
+    // about the same thing and was wrong the moment the Herald was given a
+    // line of work: `role` says what a person IS — Elsbet is a guide, and her
+    // portrait and her plate should keep saying so — and `questsFrom` says what
+    // they have. Deriving it from the table is the same call this project makes
+    // about where the fires are, and it means adding a giver is one entry in
+    // `shared/quests.ts` and nothing else anywhere.
+    if (questsFrom(npc.def.id).length > 0) {
       const active = this.questTracker.activeQuests;
       const completed = this.questTracker.completedQuests;
       for (const def of questsFrom(npc.def.id)) {
