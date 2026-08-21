@@ -5586,6 +5586,102 @@ things that would let this happen a third time:
 
 Sixteen suites, smoke, both workspaces, zero console errors.
 
+### M57.3 — a trench at each abutment, and the height field finally gets a test
+Reported from play: *"look at the gap between the north bridge and dirt path
+again"*. The word doing the work is **again** — this is the third time the
+crossing has been reported, and all three are the same class of fault.
+
+### What it was
+Sampling `surfaceHeight` every 25 pixels along the road, with the deck at 0.426:
+
+    along  -350     0.410
+    along  -325     0.050    <- a 0.38 notch at the south abutment
+    along  -300     0.426
+    along  ....     0.426    (the deck)
+    along  +300     0.426
+    along  +325    -0.849    <- a 1.27 TRENCH at the north abutment
+    along  +350    -0.335
+    along  +400     0.366
+
+A ditch immediately off the end of the planks, seventy per cent of a
+character's height on the north side, asymmetric only because of where the
+terrain grid's vertices happen to fall on each side. And because the road ribbon
+samples the same heights per vertex, the dirt dived into it too — which is
+exactly what read from play as the track stopping short of the bridge and
+picking up again further on. The gap was not in the ribbon; the ribbon was
+faithfully drawing a hole.
+
+### Why
+M54.1a moved the approach ramp into the height field, which was right and fixed
+the crossing's first two faults. What it left behind was a BRANCH:
+
+    if (along <= BRIDGE_HALF_SPAN_PX) return h;
+
+Under the deck, the ground stayed whatever `carveRiver` had cut — riverbed. Just
+outside it, the ramp started at deck height. So the height field stepped, in one
+pixel, from the bottom of the channel to the top of the ramp.
+
+**A height field may not step.** The thing you see is a MESH sampled off it on a
+1.63-unit grid, and a mesh cannot draw a step — it draws a wedge across whichever
+quad the step falls in. That is M55.3's lesson (the drawn ground is not the field
+it came from) meeting a discontinuity, and the product is a trench.
+
+### The fix is that there is no branch
+The bridge is 640px long and the water is 300px wide, so the deck overhangs the
+bank by about 170px at each end. That overhang is an **abutment**: solid ground
+at deck height, which is what a bridge lands on. This file already said the deck
+"only has to span the water and land on the slope either side" — now the ground
+says it too.
+
+One expression covers the channel, the landing, the ramp and the open field:
+
+    rise    = min(landing, climb) * shoulder
+    raised  = h + (deck - h) * rise
+
+where `landing` rises from nothing at the waterline to everything 130px clear of
+it, `climb` is full at the abutment and gone at the foot of the ramp, and
+`shoulder` tapers the causeway back to the land across its width. There is
+nothing left to be discontinuous. Worst step along the whole crossing is 0.03,
+down from 1.27; the two abutments now join to within 14mm and 4mm.
+
+### And the height field is testable now, which is the durable half
+Three defects, all reported by a person walking into them, and **not one could
+have been caught by anything in `tools/test/`** — because `terrainHeight`,
+`drawnHeight` and `surfaceHeight` lived in `World.ts`, which pulls in three.js, a
+renderer and a DOM. Node cannot load that, and the client's extensionless
+imports mean Node cannot load any of it without a resolver hook.
+
+So the height field is `client/src/three/heightfield.ts` now: 520 lines of
+arithmetic over the tables in `shared/`, no three.js, no DOM, and shared imports
+written with explicit `.ts` extensions — which Vite does not care about and Node
+requires. `World.ts` re-exports every name, so no call site had to learn it
+moved. It stays in `client/` rather than moving to `shared/`, because the
+decision that made height free in the first place — *nothing in the simulation
+reads a Y* — is what keeps it out of the server. Making it testable must not
+make it authoritative.
+
+`tools/test/crossing.mjs` walks it. What it asserts is CONTINUITY rather than
+any particular shape: the land may be whatever it is, and what it may not do is
+jump.
+
+### The ruler was wrong first, in the usual direction
+The first version asserted on the height difference between consecutive samples,
+and it failed — on the north bank, which climbs a steady 0.19 units every 25
+pixels for hundreds of pixels. That is an eighteen-degree hillside and it is
+supposed to be there. **A step is not a slope**, and a threshold low enough to
+catch a trench is low enough to ban hills.
+
+What a step actually is, is a discontinuity, and a discontinuity lives in the
+SECOND difference — flat for any slope however steep, spiking for any break
+however short. The trench scores 1.79; the land, measured across the whole
+crossing and the whole road, never exceeds 0.08. A separate, much looser check
+still catches an outright cliff.
+
+Five checks, and the one that would have caught this on its own is the simplest:
+*the height five pixels inside the abutment and five pixels outside it must be
+the same number.* Reverting `rampToBridge` to its old form fails six of them, so
+the suite tests the game rather than restating it.
+
 ### M57.2's other half — music — is parked
 User call: *"Let's plan it for later."* The soundscape is the half that makes the
 world a place; music is a different feature with a different set of decisions
@@ -5678,6 +5774,41 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- A HEIGHT FIELD MAY NOT STEP, because what you see is a mesh sampled off it on
+  a 1.63-unit grid and a mesh cannot draw a step — it draws a wedge across
+  whichever quad the step falls in. `rampToBridge` had one branch, `if (along <=
+  BRIDGE_HALF_SPAN_PX) return h`, which left riverbed under the deck and ramp
+  outside it; the mesh drew that as a 1.27-unit trench off the end of the
+  planks. The fix is not a smoother step, it is having no branch: one expression
+  covering the channel, the landing, the ramp and the open field.
+- A bridge lands on an ABUTMENT. The deck overhangs the bank by 170px at each
+  end and that overhang is solid ground at deck height — the file already said
+  the deck "only has to span the water", and now the ground says it too. The
+  height five pixels inside the abutment and five pixels outside it have to be
+  the same number, and asserting exactly that is the whole test.
+- A STEP IS NOT A SLOPE, and a first difference cannot tell them apart. The
+  north bank climbs 0.19 units every 25 pixels for hundreds of pixels — an
+  eighteen-degree hillside that is supposed to be there — so a threshold low
+  enough to catch a trench is low enough to ban hills. A discontinuity lives in
+  the SECOND difference: flat for any slope however steep, spiking for any break
+  however short. Trench 1.79, real land 0.08.
+- Code that keeps producing reported defects and cannot be tested should be
+  MOVED until it can be. The height field caused three faults in four phases —
+  walking through the bridge, feet in the floor, a trench at each abutment — all
+  three found by a person walking into them, and none reachable from
+  `tools/test/` because the functions lived in a module that pulls in three.js
+  and a DOM. `heightfield.ts` is the same arithmetic with no renderer in it and
+  explicit `.ts` extensions on its shared imports, which Vite ignores and Node
+  requires.
+- Making something testable must not make it AUTHORITATIVE. The height field
+  stays in `client/` rather than moving to `shared/`, because the decision that
+  made height free in the first place is that nothing in the simulation reads a
+  Y. A test needs to import it; the server still must not.
+- Verify that a new test FAILS on the code it was written for. Reverting
+  `rampToBridge` to its old branch fails six of the crossing's checks; a suite
+  that passes both before and after a fix is a suite that restates the game
+  rather than testing it.
 
 - A scatter is a DENSITY, never a headcount — and the ambient pool is a scatter
   even though its neighbourhood moves. This decision was already in this log for
@@ -8127,6 +8258,22 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 57 complete (2026-08-21).
+
+**Phase 57 M57.3 — a trench at each abutment, and the height field finally gets
+a test.** *"The gap between the north bridge and dirt path, again"* — and again
+is the word: the third report about this crossing in four phases. Measured, with
+the deck at 0.426, the ground five pixels past the north abutment was -0.849. A
+ditch seventy per cent of a character's height immediately off the end of the
+planks, which the road ribbon dived into as well, which is what read as the
+track stopping short. The cause was one branch left over from M54.1a — riverbed
+under the deck, ramp outside it — so the height field STEPPED, and a mesh
+sampled on a 1.63-unit grid cannot draw a step, it draws a wedge. There is no
+branch now: the deck's overhang is an abutment, solid ground at deck height,
+which is what a bridge lands on. And the durable half — the height field moved
+out of `World.ts` into `heightfield.ts`, three.js-free and loadable by Node,
+because all three of its reported defects were unreachable from `tools/test/`.
+A seventeenth suite walks the crossing and asserts CONTINUITY; reverting the fix
+fails six of its checks.
 
 **Phase 57 M57.2 — the air was six times too thick, and a bird was three times
 too big.** *"There are still too many butterflies around"*, reported from play

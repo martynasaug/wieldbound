@@ -405,6 +405,8 @@ unavailable.
 ```
 client/   Three.js + Vite + TypeScript
   src/three/   the renderer: Game (orchestrator), World (scene/terrain/camera),
+               heightfield (where the ground is — no three.js in it, so a Node
+                 test can walk it; see tools/test/crossing.mjs),
                Actor (animated model), gear (bodies, weapons, armour),
                attacks (per-weapon delivery + projectiles),
                terrain (the ground shader), scatter (instanced ground cover),
