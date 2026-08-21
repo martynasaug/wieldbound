@@ -89,7 +89,14 @@ unavailable.
   slung post to post on a sagging line, flower boxes under every upper window,
   planters, a handcart, a notice board and braziers that are a real light after
   dark. All of it solid, all of it placed from one shared table, so what you see
-  and what you walk round cannot disagree. Every
+  and what you walk round cannot disagree. **And every back yard says what the
+  building in front of it is** — a pell and a spear rack behind the watch, hay
+  behind one cottage and a chopping block behind the other, sheets and a handcart
+  behind the inn, crates and sacks behind the counting house, and behind the
+  chapel a small burial ground with the votive lamp the place is named for, which
+  until now had nowhere to stand. Each of them is placed from the building it
+  belongs to rather than from a typed bearing, because the last washing line hung
+  by a number ended up behind a chapel with no beds in it. Every
   structure is *generated* — boxes and gable prisms in the game's own palette,
   surfaced with procedural plaster, coursed masonry, thatch, shingle and slate —
   because the CC0 kits this project draws on have props, plants and characters

@@ -1770,6 +1770,172 @@ function rainBarrel(b: Builder, x: number, z: number): void {
   b.add("slate", new THREE.CylinderGeometry(0.3, 0.3, 0.03, 12), x, 0.79, z);
 }
 
+// --- The chapel's back land --------------------------------------------------
+// The Quiet Lamp is the only building in town that is not somebody's trade or
+// somebody's bed, and it was the one whose yard said nothing about it. A burial
+// ground is what a chapel has behind it.
+
+/**
+ * A grave marker: a slab with a rounded head, leaning.
+ *
+ * THE LEAN IS THE WHOLE PROP. Three identical uprights read as a fence; three
+ * stones at three different angles read as a churchyard, and the angle is
+ * seeded from the position so it is the same one every session rather than a
+ * different graveyard on every reload.
+ */
+function graveMarker(b: Builder, x: number, z: number, rotY: number, seed: number): void {
+  const r = seededRandom(Math.floor(Math.abs(seed) * 977) + 31);
+  // Enough to read as settled ground, not enough to read as fallen over.
+  const lean = (r() - 0.5) * 0.22;
+  const turn = rotY + (r() - 0.5) * 0.5;
+  const h = 0.62 + r() * 0.26;
+  const w = 0.34;
+  const thick = 0.11;
+
+  b.add("stoneDark", new THREE.BoxGeometry(0.42, 0.1, 0.3), x, 0.05, z, turn);
+
+  // THE LEAN AND THE STACKING ARE BAKED INTO THE GEOMETRY, not passed as Euler
+  // angles, and that is the whole of what was wrong with the first version.
+  // `Builder.add` composes rotX, rotY and rotZ through one Euler, and which
+  // order those multiply in decides whether "turn the slab, then tip it" and
+  // "tip it, then turn it" mean the same thing — they do not. Reasoning about it
+  // produced a cap sticking out sideways like a T-bar, three little anvils in a
+  // row where the churchyard should be.
+  //
+  // Rotating the geometry itself removes the question. Body and cap are built
+  // about the SAME local origin — the foot of the slab — and leaned by the same
+  // angle about it, so they are glued together by construction and only the
+  // bearing is left for the Builder to apply.
+  const body = new THREE.BoxGeometry(w, h, thick);
+  body.translate(0, h / 2, 0);
+  body.rotateZ(lean);
+  b.add("stone", body, x, 0.06, z, turn);
+
+  // A full cylinder lying across the slab's thickness, sunk to its waist: what
+  // shows above the slab is a semicircle, which is a headstone. A half
+  // cylinder would need a `thetaStart` pointing the right way, which is one
+  // more thing to be wrong about for no gain.
+  const cap = new THREE.CylinderGeometry(w / 2, w / 2, thick, 12);
+  cap.rotateX(Math.PI / 2);
+  cap.translate(0, h, 0);
+  cap.rotateZ(lean);
+  b.add("stone", cap, x, 0.06, z, turn);
+}
+
+/**
+ * A low offering stone with the lamp the chapel is named for standing on it.
+ *
+ * It is a real light after dark, like the braziers and the lanterns, because a
+ * building called The Quiet Lamp with an unlit lamp behind it is a joke the town
+ * is not in on. Registered through the same `lanterns` list everything else in
+ * town lights by, so nobody keeps a second opinion about the hour.
+ */
+function offeringStone(
+  b: Builder,
+  group: THREE.Group,
+  x: number,
+  z: number,
+  rotY: number,
+  lanterns: Lantern[],
+): void {
+  for (const side of [-1, 1]) {
+    b.box(
+      "stoneDark",
+      0.22,
+      0.42,
+      0.34,
+      x + Math.cos(rotY) * side * 0.42,
+      0,
+      z - Math.sin(rotY) * side * 0.42,
+    );
+  }
+  b.box("stone", 1.3, 0.14, 0.56, x, 0.42, z, rotY);
+  // The lamp: an iron stem, a glass bowl and a little slate cap.
+  b.cyl("iron", 0.035, 0.34, x, 0.56, z, 6);
+  b.add("iron", new THREE.CylinderGeometry(0.17, 0.13, 0.05, 8), x, 0.88, z);
+  b.add("glass", new THREE.SphereGeometry(0.15, 10, 8), x, 1.02, z);
+  b.add("slate", new THREE.ConeGeometry(0.19, 0.14, 8), x, 1.2, z);
+  // Through the same `lantern` every other light in town goes through, bare
+  // because this one builds its own fitting above. Half strength: it is a votive
+  // lamp behind a chapel, not a street light, and the back lane is meant to be
+  // the dark side of the square.
+  lantern(b, group, x, z, 1.02, lanterns, 0.5, true);
+}
+
+// --- The shop's back land ----------------------------------------------------
+// The Ledger & Lamp is a counting house, so what waits behind it is stock.
+
+/** Crates stacked against a wall, three up and one leaning off the pile. */
+function crateStack(b: Builder, x: number, z: number, rotY: number): void {
+  const crate = (w: number, cx: number, cy: number, cz: number, turn: number) => {
+    b.box("plank", w, w, w, cx, cy, cz, turn);
+    // Two battens across the face, which is what makes a box read as a crate.
+    b.box("timberLight", w * 1.02, 0.05, w * 0.14, cx, cy + w * 0.24, cz, turn);
+    b.box("timberLight", w * 1.02, 0.05, w * 0.14, cx, cy + w * 0.68, cz, turn);
+  };
+  crate(0.66, x, 0, z, rotY);
+  crate(0.54, x + Math.cos(rotY + 1.1) * 0.62, 0, z - Math.sin(rotY + 1.1) * 0.62, rotY + 0.35);
+  crate(0.48, x + 0.02, 0.66, z + 0.03, rotY + 0.22);
+}
+
+/**
+ * Sacks, which is the other half of what arrives at a merchant's back door.
+ *
+ * `thatch` and not `linen`, and the difference is the whole prop. Linen is the
+ * off-white the washing is hung in, and four pale rounded lumps in the grass
+ * photographed as BOULDERS sitting next to the crates — which is the failure
+ * this project already has a rule about one system over: nothing scattered may
+ * resemble something the player is meant to read as significant, and a rock is
+ * the ore node's silhouette. Sacking is straw-coloured, and the colour does more
+ * to separate the two than any amount of shape.
+ *
+ * Taller than they are wide, too, for the same reason: a sack stands up because
+ * something is in it, and the squat version had the proportions of a stone.
+ */
+function sackPile(b: Builder, x: number, z: number, seed: number): void {
+  const r = seededRandom(Math.floor(Math.abs(seed) * 613) + 17);
+  for (let i = 0; i < 4; i++) {
+    const a = r() * Math.PI * 2;
+    const d = r() * 0.3;
+    const sx = x + Math.cos(a) * d;
+    const sz = z + Math.sin(a) * d;
+    const h = 0.42 + r() * 0.18;
+    // Belly, shoulder and a tied neck: three primitives, and the neck is what
+    // stops it reading as a rounded thing lying in the grass.
+    b.add("thatch", new THREE.SphereGeometry(h * 0.46, 8, 6), sx, h * 0.42, sz, a);
+    b.add("thatch", new THREE.CylinderGeometry(h * 0.34, h * 0.46, h * 0.5, 8), sx, h * 0.72, sz, a);
+    b.add("thatch", new THREE.ConeGeometry(h * 0.26, h * 0.3, 7), sx, h * 1.06, sz, a);
+    b.cyl("timber", h * 0.09, h * 0.08, sx, h * 1.0, sz, 6);
+  }
+}
+
+/**
+ * A chopping block with the axe still in it, and the split logs beside it.
+ *
+ * What a cottage has out the back. It is here because every other yard had
+ * something that was ITS OWN and this one had a water butt and a share of a
+ * washing line, both of which two other buildings also have — see the
+ * distinctiveness check in `tools/test/town.mjs`.
+ */
+function choppingBlock(b: Builder, x: number, z: number, rotY: number, seed: number): void {
+  const r = seededRandom(Math.floor(Math.abs(seed) * 401) + 7);
+  b.add("timberLight", new THREE.CylinderGeometry(0.3, 0.32, 0.5, 10), x, 0.25, z);
+  // The axe: a haft leaning out of the block and a head buried in it.
+  const haft = new THREE.CylinderGeometry(0.032, 0.032, 0.62, 6);
+  haft.translate(0, 0.31, 0);
+  haft.rotateZ(0.42);
+  b.add("timber", haft, x, 0.46, z, rotY);
+  b.add("iron", new THREE.BoxGeometry(0.06, 0.2, 0.16), x, 0.52, z, rotY, 0.42);
+  // Split logs, stacked anyhow.
+  for (let i = 0; i < 5; i++) {
+    const a = rotY + 1.3 + (r() - 0.5) * 0.6;
+    const d = 0.52 + r() * 0.3;
+    const log = new THREE.CylinderGeometry(0.075, 0.08, 0.34 + r() * 0.12, 7);
+    log.rotateZ(Math.PI / 2);
+    b.add("timberLight", log, x + Math.cos(a) * d, 0.08 + (i % 2) * 0.15, z - Math.sin(a) * d, a + r());
+  }
+}
+
 // --- Buildings --------------------------------------------------------------
 
 interface KindStyle {
@@ -2605,10 +2771,34 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): vo
     const p = prop(id);
     beehive(b, p.x, p.z);
   }
-  for (const id of ["rainbarrel-a", "rainbarrel-b", "rainbarrel-c", "rainbarrel-d"]) {
-    const p = prop(id);
-    rainBarrel(b, p.x, p.z);
+  // Every rain barrel in the table, rather than a list typed beside it. The
+  // shop's yard gained one in the same milestone that gave it crates, and a
+  // hand-written list is how a prop ends up placed, collided with, and never
+  // drawn — visible from nowhere, because a barrel that is not there looks
+  // exactly like a barrel that was never asked for.
+  for (const p of TOWN_PROPS) {
+    if (!p.id.startsWith("rainbarrel-")) continue;
+    const at = prop(p.id);
+    rainBarrel(b, at.x, at.z);
   }
+
+  // The chapel's burial ground, and the lamp it is named for.
+  for (const p of TOWN_PROPS) {
+    if (!p.id.startsWith("grave-")) continue;
+    const at = prop(p.id);
+    graveMarker(b, at.x, at.z, facingOut(p.id), at.x + at.z);
+  }
+  const offering = prop("offeringstone");
+  offeringStone(b, group, offering.x, offering.z, facingOut("offeringstone"), lanterns);
+
+  // The shop's stock, waiting at the back door.
+  const crates = prop("cratestack");
+  crateStack(b, crates.x, crates.z, facingOut("cratestack"));
+  const sacks = prop("sackpile");
+  sackPile(b, sacks.x, sacks.z, sacks.x - sacks.z);
+
+  const block = prop("choppingblock");
+  choppingBlock(b, block.x, block.z, facingOut("choppingblock"), block.x + block.z);
 
   // Washing, on its own pair of posts behind the inn and behind the cottages.
   //

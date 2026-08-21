@@ -37,6 +37,8 @@ import {
   ROAD_HALF_WIDTH_PX,
   propById,
   propPosition,
+  buildingWedge,
+  BACK_LANE_PX,
   resolveTownCollision,
   inGateway,
   NPC_TALK_RANGE_PX,
@@ -722,6 +724,141 @@ section("solid things");
     if (Math.hypot(solved.x - x, solved.y - y) > 1) fail(`the ${gate}deg gateway is shut`);
   }
   console.log("  both gateways are open");
+}
+
+// --- The back lane ----------------------------------------------------------
+// A BACK YARD SAYS WHAT THE BUILDING IS, and every way of getting that wrong is
+// silent from every angle except standing in the yard itself.
+//
+//   * A yard with nothing in it. The shop had none of its own props inside its
+//     own width for two milestones, and "the chapel's back yard is the emptiest"
+//     was reported from play about the building with the MOST things behind it —
+//     because what was there was a washing line, and a washing line behind a
+//     chapel is somebody else's laundry.
+//   * A prop behind the wrong building. The second washing line is commented in
+//     `town.ts` as "the two cottages' between them" and was typed at 84 and 96,
+//     which is six degrees off the chapel; the cottages are at 135 and 330.
+//     Bearings are DERIVED from the building now, so this can only fail if the
+//     derivation is wrong — which is exactly why it is worth asserting.
+//   * A prop placed, collided with, and never DRAWN. That one is the most
+//     invisible of the three: a barrel that is not rendered looks exactly like a
+//     barrel nobody asked for, while still being something you walk around.
+
+section("the back lane");
+{
+  const back = TOWN_PROPS.filter((p) => p.behind);
+  const byBuilding = new Map();
+  for (const p of back) {
+    if (!byBuilding.has(p.behind)) byBuilding.set(p.behind, []);
+    byBuilding.get(p.behind).push(p);
+  }
+
+  const sep = (a, b) => Math.abs(((((a - b) % 360) + 540) % 360) - 180);
+
+  for (const b of TOWN_BUILDINGS) {
+    const mine = byBuilding.get(b.id) ?? [];
+    if (mine.length === 0) {
+      fail(`${b.id} has an empty back yard — nothing behind it says what it is`);
+      continue;
+    }
+    const wedge = buildingWedge(b.id);
+    for (const p of mine) {
+      // A yard may spill past the corner of its house — a washing line does,
+      // which is what the fractions past 1 in `behind()` are for — but not so
+      // far that it is standing in the neighbour's ground.
+      const off = sep(p.angleDeg, wedge.angleDeg) / wedge.halfDeg;
+      if (off > 2) {
+        fail(`${p.id} is ${off.toFixed(1)}x its building's own half-width from ${b.id}`);
+      }
+      // And whatever it spills into must not be somebody ELSE'S wedge.
+      for (const other of TOWN_BUILDINGS) {
+        if (other.id === b.id) continue;
+        const w = buildingWedge(other.id);
+        if (sep(p.angleDeg, w.angleDeg) <= w.halfDeg) {
+          fail(`${p.id} belongs to ${b.id} and is standing behind ${other.id}`);
+        }
+      }
+    }
+    console.log(`  ${b.id}: ${mine.length} — ${mine.map((p) => p.id).join(", ")}`);
+  }
+
+  // EVERY YARD NEEDS SOMETHING OF ITS OWN, which is the actual content of "a
+  // back yard says what the building is". Counting props does not say it: the
+  // east cottage had a water butt and half a washing line, and both of those
+  // are things two other buildings also have, so its yard was two objects that
+  // could have belonged to anybody.
+  //
+  // A kind is the prop id with any trailing -a/-b/-1/-2 dropped, so the four
+  // rain barrels are one kind and the two washing lines are one kind.
+  // `-a`, `-b1` and `-2` all mean "another one of these". The first version
+  // only stripped a bare letter or bare digits, so `laundry-b1` came back as a
+  // kind of its own and the east cottage's half of a SHARED washing line
+  // counted as something belonging to it alone — which is precisely the state
+  // this check exists to catch. It passed the mutation it was written for.
+  const kindOf = (id) => id.replace(/-(?:[a-z]\d*|\d+)$/, "");
+  const owners = new Map();
+  for (const p of back) {
+    const k = kindOf(p.id);
+    if (!owners.has(k)) owners.set(k, new Set());
+    owners.get(k).add(p.behind);
+  }
+  for (const b of TOWN_BUILDINGS) {
+    const mine = byBuilding.get(b.id) ?? [];
+    const own = mine.filter((p) => owners.get(kindOf(p.id)).size === 1);
+    if (own.length === 0) {
+      fail(
+        `${b.id}'s yard has nothing of its own — ` +
+          `${mine.map((p) => kindOf(p.id)).join(", ")} all belong to other buildings too`,
+      );
+    }
+  }
+
+  // AND HALF OF THEM CANNOT BE SEEN AT ALL, which is the thing worth knowing
+  // before anybody spends another milestone dressing one.
+  //
+  // This game has ONE camera bearing — it looks along -z and only its distance
+  // moves — so "behind" is permanent, which is already why the monument has a
+  // sight-line rule. A back yard is further from the centre than its building,
+  // and for the three buildings on the up-screen half of the ring that puts the
+  // yard behind its own house from every position a player can stand in.
+  //
+  // It is reported rather than failed: those yards are real, a player standing
+  // in one sees it (the blocking building fades), and the collision has to be
+  // right either way. What it means is that the three VISIBLE yards are the
+  // ones the square reads by — and it is exactly why "the chapel's back yard is
+  // the emptiest of the six" was reported from play about the building with the
+  // most things behind it: of the three you can see, the chapel's held a
+  // washing line and a barrel against a pell and a hayrick.
+  const visible = [];
+  const hidden = [];
+  for (const b of TOWN_BUILDINGS) {
+    const w = buildingWedge(b.id);
+    (Math.sin((w.angleDeg * Math.PI) / 180) > 0 ? visible : hidden).push(b.id);
+  }
+  console.log(`  seen from the square: ${visible.join(", ")}`);
+  console.log(`  behind their own building, permanently: ${hidden.join(", ")}`);
+  if (visible.length === 0) fail("no back yard in town can be seen from the square");
+
+  // Everything in the lane is either somebody's or deliberately the town's.
+  const lane = TOWN_PROPS.filter((p) => p.radiusPx >= 640 && p.radiusPx <= 730);
+  const communal = lane.filter((p) => !p.behind);
+  console.log(`  ${communal.length} in the gaps, belonging to the town: ${communal.map((p) => p.id).join(", ")}`);
+  if (BACK_LANE_PX < 600 || BACK_LANE_PX > TOWN_RADIUS_PX) {
+    fail(`the back lane at ${BACK_LANE_PX} is not between the houses and the wall`);
+  }
+
+  // And every one of them is actually drawn. The client either names a prop
+  // outright or sweeps a family of them by prefix, so both count.
+  const client = readFileSync(new URL("../../client/src/three/town.ts", import.meta.url), "utf8");
+  const named = new Set([...client.matchAll(/"([a-z][a-z0-9-]*)"/g)].map((m) => m[1]));
+  const prefixes = [...client.matchAll(/startsWith\("([a-z][a-z0-9-]*)"\)/g)].map((m) => m[1]);
+  const drawn = (id) => named.has(id) || prefixes.some((p) => id.startsWith(p));
+  const missing = lane.filter((p) => !drawn(p.id));
+  if (missing.length > 0) {
+    fail(`placed and never drawn: ${missing.map((p) => p.id).join(", ")}`);
+  } else {
+    console.log(`  all ${lane.length} back-lane props are drawn by the client`);
+  }
 }
 
 console.log(failures === 0 ? "\nOK — Emberhold still checks out." : `\n${failures} failure(s).`);

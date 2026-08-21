@@ -5983,6 +5983,125 @@ tuned on a hunch.
 
 ---
 
+## Phase 60 — A back yard says what the building is
+Reported from play: *"the chapel's back yard is still the emptiest of the six"*.
+
+**The first measurement said the opposite**, and the whole milestone is in why
+it was wrong. Counting the props behind each building put the chapel top with
+six; the honest count — props inside a building's OWN angular width — still put
+it joint top with three. Two rulers, both wrong, and both wrong because they
+were counting.
+
+### M60.1 — half the back yards cannot be seen at all
+The thing that explains the report is a fact about the camera, and this file
+already records it one system over: **this game has ONE camera bearing.** It
+looks along -z and only its distance moves, so "behind" is permanent — which is
+why the monument has a sight-line rule and why townspeople no longer draw a
+through-walls silhouette.
+
+A back yard is further from the centre than the building it belongs to. For the
+three buildings on the up-screen half of the ring, that puts the yard behind its
+own house from every position a player can stand in:
+
+    seen from the square                  watchpost, chapel, cottage-west
+    behind their own building, forever    inn, shop, cottage-east
+
+So of the three yards anybody ever looks at, the chapel's held a washing line
+and a water butt against a pell-and-spear-rack and a hayrick. **It was the
+emptiest of the three that exist, and the report was exactly right.** Proved by
+hiding the shop and re-shooting: its crates, sacks and barrel were all there and
+all behind it.
+
+This is reported by the test rather than failed. Those yards are real, a player
+standing in one sees it — the blocking building fades — and the collision has to
+be right either way. What it changes is where the effort goes.
+
+### And the washing line behind the chapel belonged to somebody else
+The comment in `town.ts` says the second line is *"the two cottages' between
+them"*. It was typed at bearings 84 and 96. The cottages are at 135 and 330; 90
+is the CHAPEL, which has no beds in it. It had hung there for two milestones,
+stated in prose and checked by nothing.
+
+**So a back-yard prop names its building now and the bearing is DERIVED.**
+`behind(id, building, across, ...)` places a prop as a fraction of its
+building's own half-width — 0 dead behind it, ±1 level with its corners, a
+little past 1 for a line that runs round the side. Being behind the wrong
+building stopped being a number you can get wrong and became a spelling mistake
+in a building id. Same call `clearRingAngles` made when two benches turned out
+to be standing inside a shop.
+
+### What each yard says now
+The rule is the milestone's title, and it is what the counting rulers missed:
+the watch had a pell and a spear rack, a cottage had hay, the inn had sheets and
+a handcart — four yards that say what they are from across the square. The
+chapel had somebody else's laundry and the shop had nothing inside its own width
+at all.
+
+- **The chapel — "The Quiet Lamp".** The one building in town that is not
+  somebody's trade or somebody's bed, so its back land is a small burial ground:
+  three markers leaning at their own angles on their own base stones, and a low
+  offering stone with a lamp on it — **the thing the place is named for, which
+  had nowhere to stand.** It is a real light after dark, through the same
+  `lantern` every other flame in town goes through, at half strength because it
+  is a votive lamp and the back lane is meant to be the dark side of the square.
+- **The shop — "The Ledger & Lamp".** A counting house, so what waits out the
+  back is stock: crates with battens across them and a pile of sacks.
+- **The east cottage** got a chopping block with the axe still in it and the
+  split logs beside it, because it was the one yard with nothing of its OWN — a
+  water butt and half a washing line are both things two other buildings have.
+- **And the inn's handcart is the inn's**, rather than a typed bearing sitting
+  two degrees outside its wedge.
+
+### Three checks, and each one caught a real thing
+`tools/test/town.mjs` grew a back-lane section:
+
+- **No empty yard.** Failing on the shop is what found it.
+- **Nothing behind a building it does not belong to.** Reverting the washing
+  line to 84/96 fails it twice over — once for being fifteen times its
+  building's own half-width away, once for standing behind the chapel.
+- **Every yard has something of its OWN**, where a kind is the id with its
+  `-a`/`-b1` suffix dropped, so four rain barrels are one kind. This is what
+  "says what the building is" actually means, and counting could never say it.
+- **And everything placed is DRAWN.** The client had a hand-typed list of four
+  rain barrels; the shop's yard gained a fifth. A barrel that is not rendered
+  looks exactly like a barrel nobody asked for, while still being something you
+  walk around. It reads the table now, and the test parses the client for the
+  ids and prefixes it actually draws.
+
+### The rulers were wrong three times, which is a record
+- **Counting props answered a question nobody asked.** Twice — once by nearest
+  bearing, once by angular width — and the answer was "the chapel is the
+  fullest" while a person looking at the game said it was the emptiest. What
+  they were looking at was the three yards that are visible and what was IN
+  them, and neither ruler knew about either.
+- **The angular-separation formula was wrong** and reported a prop at bearing 36
+  as nine degrees from a building at 225. It had a spurious `180 - d` in it, so
+  it returned the supplement. Every conclusion from that pass was noise.
+- **And the distinctiveness check passed the mutation it was written for.**
+  `kindOf` stripped a trailing bare letter or bare digits but not `-b1`, so half
+  of a SHARED washing line came back as a kind of its own and counted as
+  something belonging to the east cottage alone. Fixed, and it fails now.
+
+### One more thing measured and then fixed
+The first sacks were `linen` — the off-white the washing is hung in — and
+photographed as four pale rounded lumps in the grass beside the crates, which is
+to say as BOULDERS. That is the rule this project already has one system over:
+nothing scattered may wear the silhouette of something the player is meant to
+read as significant, and a rock is the ore node. Straw-coloured and taller than
+they are wide now, with a tied neck.
+
+And the grave markers' rounded tops came out sideways, like three little anvils
+in a row: `Builder.add` composes rotX, rotY and rotZ through one Euler, and
+whether "turn the slab then tip it" and "tip it then turn it" mean the same
+thing depends on an order it is not worth reasoning about. **The lean and the
+stacking are baked into the GEOMETRY now** — body and cap built about the same
+local origin and leaned by the same angle about it — so they are glued together
+by construction and only the bearing is left for the Builder.
+
+Eighteen suites, smoke, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -6066,6 +6185,43 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- HALF THE BACK YARDS IN EMBERHOLD CANNOT BE SEEN, and that is a fact about the
+  camera rather than about the town. This game has one bearing, so "behind" is
+  permanent — the rule the monument's sight line already runs on. A yard is
+  further from the centre than its building, so for the three houses on the
+  up-screen half of the ring it sits behind its own walls from everywhere. Not a
+  fault to fix; a fact to spend effort by.
+- A BACK YARD SAYS WHAT THE BUILDING IS, and counting props cannot tell you
+  whether it does. Two rulers said the chapel's was the fullest in town while a
+  person looking at the game said it was the emptiest, and both were right: of
+  the three yards that are visible, the chapel's held a washing line and a water
+  butt against a pell and a hayrick. The check that means anything is whether a
+  yard has something of its OWN — a kind no other building also has.
+- Placement that is stated in PROSE is placement nothing is checking. The second
+  washing line is commented as "the two cottages' between them" and was typed at
+  84 and 96, six degrees off a chapel with no beds in it. A back-lane prop names
+  its building and the bearing is DERIVED, so being behind the wrong one is a
+  spelling mistake rather than a plausible number.
+- Everything PLACED must be DRAWN, and the client may not keep a hand-typed list
+  of what to draw. Four rain barrels were listed by name and the shop's yard
+  gained a fifth; a barrel that is not rendered looks exactly like a barrel
+  nobody asked for while still being something you walk around. Read the table.
+- Bake a lean and a stack into the GEOMETRY, not into Euler angles. `Builder.add`
+  composes rotX, rotY and rotZ through one Euler, and whether "turn it then tip
+  it" and "tip it then turn it" agree depends on an order not worth reasoning
+  about — the first grave markers came out as three little anvils with their
+  caps sideways. Rotating the geometry about a shared local origin glues the
+  pieces together by construction and leaves only the bearing to apply.
+- A prop's COLOUR decides what it is mistaken for, before its shape does. Four
+  pale rounded sacks in `linen` beside the crates photographed as boulders, and
+  a rock is the ore node's silhouette — the same rule that keeps the ground
+  cover from resembling a resource node. Straw-coloured and taller than wide,
+  and the confusion goes away without a single vertex moving.
+- Check the angular-separation formula before believing anything it says. The
+  first pass had a spurious `180 - d` in it and reported a prop at bearing 36 as
+  nine degrees from a building at 225 — it was returning the supplement, and
+  every conclusion drawn from that pass was noise.
 
 - A GROUND MARK FOLLOWS THE GROUND PER VERTEX; a single tilt is not a smaller
   version of the same fix, it is a fix that runs out. The contact shade is 1.3
@@ -8645,7 +8801,28 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 59 complete (2026-08-21).
+Phase 0 through 60 complete (2026-08-21).
+
+**Phase 60 M60.1 — a back yard says what the building is.** Reported from play:
+*"the chapel's back yard is still the emptiest of the six"* — and the first two
+measurements said the opposite, which is the whole milestone. Counting props put
+the chapel top; what a person was actually looking at is that **half the back
+yards in Emberhold cannot be seen at all.** This game has one camera bearing, so
+"behind" is permanent, and a yard is further out than its own building — so the
+inn's, the shop's and the east cottage's sit behind their own walls from every
+position a player can stand in. Of the three that exist, the chapel's held a
+washing line and a water butt against a pell and a hayrick. And the washing line
+was somebody else's: `town.ts` calls it "the two cottages'" and it was typed six
+degrees off a chapel with no beds in it. Back-lane props name their building now
+and the bearing is DERIVED, so being behind the wrong one is a spelling mistake
+rather than a plausible number. The chapel got a burial ground and the votive
+lamp it is named for, which had nowhere to stand; the shop got the crates and
+sacks a counting house keeps out the back; the east cottage got a chopping block,
+because it was the one yard with nothing of its own. Four checks, one of which —
+that everything placed is actually drawn — caught a fifth rain barrel that the
+client's hand-typed list would have collided with and never rendered. Three
+rulers were wrong on the way, including the distinctiveness check passing the
+very mutation it was written for.
 
 **Phase 59 M59.1 — everything on the ground is on the ground.** The fourth time
 this project has had the same argument, one level down each time. Five skill

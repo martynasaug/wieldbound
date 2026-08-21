@@ -248,6 +248,8 @@ across town, that the palisade stops short of the nearest monster body, and
 that every node ring the server seeds is outside the walls and inside the
 world.
 
+It also owns the back lane. A yard with nothing in it, a prop standing behind a building it does not belong to, a yard with nothing of its OWN, and — the one that is invisible from every angle — a prop placed in the table, collided with, and never drawn. That last one caught a fifth rain barrel the client's hand-typed list of four would have silently skipped. It reports which yards the camera can see at all, too, because three of the six sit behind their own building permanently and that is worth knowing before anybody dresses one.
+
 It has already rewritten the town three times. The first layout put seven
 buildings on too tight a ring and it refused all of it — three overlapping
 pairs and three roads running into walls — which is what forced the change from

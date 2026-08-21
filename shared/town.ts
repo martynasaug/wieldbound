@@ -341,6 +341,16 @@ export interface TownProp {
   angleDeg: number;
   /** How far a body must stay from its centre. */
   blockRadiusPx: number;
+  /**
+   * The building whose back yard this belongs to, for anything in the back lane.
+   *
+   * Set by `behind()`, which DERIVES the bearing from it, so the two cannot
+   * disagree. Absent for everything in the square and for the handful of things
+   * that deliberately stand in the GAPS between buildings — a woodpile, a
+   * trough, the hives beside the herb garden — which belong to the town rather
+   * than to any one house.
+   */
+  behind?: string;
 }
 
 /** Where the smithy stands. The server seeds the station from this too. */
@@ -443,6 +453,61 @@ function clearRingAngles(): number[] {
 /** How much daylight ring furniture keeps between itself and a wall. */
 const RING_FURNITURE_CLEARANCE_PX = 16;
 
+// --- The back lane, placed from the building it belongs to -------------------
+//
+// The back-lane props were typed as bearings, and the same thing went wrong
+// that went wrong with the bench ring: a number that looks reasonable sits
+// behind the wrong thing and nothing says so. The washing line at 84/96 is
+// commented in this file as "the two cottages' between them" and the cottages
+// are at 135 and 330 — it was hung six degrees off the CHAPEL, which has no
+// beds in it, for two milestones.
+//
+// So a back-yard prop names its building and says where across it stands, and
+// the bearing is worked out. Being behind the wrong building is not a number
+// you can get wrong any more; it is a spelling mistake in a building id.
+//
+// `across` is a fraction of the building's OWN half-width as seen from the
+// centre: 0 is dead behind it, ±1 is level with its corners, and a little past
+// ±1 is the yard spilling round the side, which is where a real washing line
+// goes. The half-width is measured at the building's own radius, because that
+// is the angular wedge it occupies from the middle of the square — the lane is
+// further out, so the same wedge is more ground, which is exactly why there is
+// room out there for anything at all.
+
+/** How far out the belt of worked ground between the houses and the wall sits. */
+export const BACK_LANE_PX = 690;
+
+/** The bearing a building occupies from the centre, and how wide that wedge is. */
+export function buildingWedge(buildingId: string): { angleDeg: number; halfDeg: number } {
+  const b = TOWN_BUILDINGS.find((x) => x.id === buildingId);
+  if (!b) throw new Error(`no building "${buildingId}"`);
+  const dx = b.x - TOWN_CENTER.x;
+  const dy = b.y - TOWN_CENTER.y;
+  const radius = Math.hypot(dx, dy) || 1;
+  return {
+    angleDeg: ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360,
+    halfDeg: (Math.atan2(b.widthPx / 2, radius) * 180) / Math.PI,
+  };
+}
+
+/** A prop standing in the back lane behind a named building. */
+function behind(
+  id: string,
+  buildingId: string,
+  across: number,
+  blockRadiusPx: number,
+  radiusPx: number = BACK_LANE_PX,
+): TownProp {
+  const wedge = buildingWedge(buildingId);
+  return {
+    id,
+    radiusPx,
+    angleDeg: (wedge.angleDeg + across * wedge.halfDeg + 360) % 360,
+    blockRadiusPx,
+    behind: buildingId,
+  };
+}
+
 export const BENCH_ANGLES: readonly number[] = clearRingAngles();
 export const LANTERN_ANGLES: readonly number[] = BENCH_ANGLES;
 export const GARDEN_ANGLES = [20, 65, 110, 160, 200, 250, 295, 340] as const;
@@ -504,34 +569,73 @@ export const TOWN_PROPS: TownProp[] = [
   // Behind the inn rather than out on the paving. It was at 505/128 and that
   // put it inside the west cottage — which nothing noticed, because a handcart
   // indoors is invisible from every angle but one.
-  { id: "cart", radiusPx: 690, angleDeg: 240, blockRadiusPx: 52 },
   { id: "noticeboard", radiusPx: 470, angleDeg: 168, blockRadiusPx: 38 },
   { id: "brazier-a", radiusPx: 430, angleDeg: 312, blockRadiusPx: 26 },
   { id: "brazier-b", radiusPx: 430, angleDeg: 88, blockRadiusPx: 26 },
   // --- The back lane -------------------------------------------------------
   // The belt of grass between the houses and the palisade. A village's back
   // land is the most WORKED ground it has — firewood, laundry, hens, hay — and
-  // this was mown lawn with a fence round it for two milestones. Each of these
-  // sits behind the building it belongs to: the pell and the spears behind the
-  // watch, hay and hens behind a cottage, hives beside the herb garden.
-  { id: "trainingpost", radiusPx: 690, angleDeg: 36, blockRadiusPx: 34 },
-  { id: "spearrack", radiusPx: 686, angleDeg: 54, blockRadiusPx: 32 },
-  { id: "hayrick", radiusPx: 700, angleDeg: 133, blockRadiusPx: 48 },
+  // this was mown lawn with a fence round it for two milestones.
+  //
+  // A BACK YARD SAYS WHAT THE BUILDING IS. That is the rule these are chosen
+  // by, and it is why the chapel and the shop were the two that read as empty
+  // however many objects were standing in them: the watch has a pell and a
+  // spear rack, a cottage has hay, the inn has sheets and a handcart, and those
+  // four yards are legible from the far side of the square. The chapel had a
+  // washing line — hung there by a typed bearing, six degrees off a building
+  // with no beds in it — and the shop had nothing at all inside its own width.
+  //
+  // Everything here is placed by `behind()` now, from the building it belongs
+  // to. Only the gap pieces below keep a typed bearing, because they belong to
+  // the town rather than to a house.
+  ...[
+    // The watch: a pell to hit and somewhere to stand the spears.
+    behind("trainingpost", "watchpost", -0.85, 34),
+    behind("spearrack", "watchpost", 0.85, 32, 686),
+    // A cottage: hay, and a water butt at the corner.
+    behind("hayrick", "cottage-west", -0.3, 48, 700),
+    behind("rainbarrel-c", "cottage-west", 0.85, 18, 660),
+    // A cottage chops its own firewood, and this yard needed something of its
+    // OWN: a water butt and half a washing line are both things two other
+    // buildings also have.
+    behind("choppingblock", "cottage-east", -0.85, 40, 692),
+    behind("rainbarrel-d", "cottage-east", -0.15, 18, 664),
+    // The inn: sheets from the beds upstairs, a barrel, and the handcart —
+    // which is the inn's OWN, and was sitting two degrees outside its wedge as
+    // a typed bearing.
+    behind("rainbarrel-b", "inn", 0.55, 18, 664),
+    behind("laundry-a1", "inn", -1.05, 14, 700),
+    behind("laundry-a2", "inn", 0.1, 14, 700),
+    behind("cart", "inn", 1.15, 52, 690),
+    // THE CHAPEL. "The Quiet Lamp" — stone, slate, and the only building in
+    // town that is not somebody's trade or somebody's bed. Its back land is a
+    // small burial ground: three markers leaning at their own angles and a low
+    // offering stone with a lamp on it, which is the thing the place is named
+    // for and had nowhere to stand.
+    behind("grave-a", "chapel", -0.92, 16, 706),
+    behind("grave-b", "chapel", -0.5, 16, 700),
+    behind("grave-c", "chapel", -0.06, 16, 708),
+    behind("offeringstone", "chapel", 0.5, 30, 668),
+    behind("rainbarrel-a", "chapel", 0.95, 18, 662),
+    // THE SHOP. "The Ledger & Lamp" — a counting house, so its back land is
+    // where the goods wait: crates stacked against the wall and sacks beside
+    // them. It had nothing inside its own width at all.
+    behind("cratestack", "shop", -0.62, 34, 690),
+    behind("sackpile", "shop", -0.02, 28, 684),
+    behind("rainbarrel-e", "shop", 0.8, 18, 660),
+    // A cottage has beds too, which is where the second washing line was
+    // always meant to go — the comment that put it "between the two cottages"
+    // has been in this file since it was written, and 84/96 is between neither
+    // of them. A line legitimately runs past the corner of a house, which is
+    // what the fractions past 1 are for.
+    behind("laundry-b1", "cottage-east", 0.05, 14, 700),
+    behind("laundry-b2", "cottage-east", 1.55, 14, 700),
+  ],
+  // Hives beside the herb garden, and one more round the back. These stand in
+  // the GAPS rather than behind anything: bees belong to the town.
   { id: "beehive-a", radiusPx: 672, angleDeg: 74, blockRadiusPx: 20 },
   { id: "beehive-b", radiusPx: 672, angleDeg: 79, blockRadiusPx: 20 },
   { id: "beehive-c", radiusPx: 690, angleDeg: 258, blockRadiusPx: 20 },
-  { id: "rainbarrel-a", radiusPx: 662, angleDeg: 98, blockRadiusPx: 18 },
-  { id: "rainbarrel-b", radiusPx: 664, angleDeg: 232, blockRadiusPx: 18 },
-  { id: "rainbarrel-c", radiusPx: 660, angleDeg: 300, blockRadiusPx: 18 },
-  { id: "rainbarrel-d", radiusPx: 664, angleDeg: 324, blockRadiusPx: 18 },
-  // Washing lines, as a post at each end. The inn has beds upstairs, so the inn
-  // has sheets; the second is the two cottages' between them. Bearings picked
-  // out of the clear runs behind those buildings rather than guessed — see the
-  // note on `clearRingAngles` for what guessing cost last time.
-  { id: "laundry-a1", radiusPx: 700, angleDeg: 212, blockRadiusPx: 14 },
-  { id: "laundry-a2", radiusPx: 700, angleDeg: 226, blockRadiusPx: 14 },
-  { id: "laundry-b1", radiusPx: 700, angleDeg: 84, blockRadiusPx: 14 },
-  { id: "laundry-b2", radiusPx: 700, angleDeg: 96, blockRadiusPx: 14 },
 
   // Two per bench. Small, but a tub of earth is a thing you walk round.
   ...BENCH_ANGLES.flatMap((a) =>
