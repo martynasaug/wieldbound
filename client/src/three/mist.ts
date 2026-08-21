@@ -251,7 +251,10 @@ export class Mist {
     // does not for the fire: two transparent sheets that write no depth are
     // drawn in whatever order they were submitted, and a torch seen THROUGH
     // mist is right while mist seen through a torch is not.
-    this.mesh.renderOrder = 2;
+    // Over everything lying ON the ground — the surfacing, the contact shade
+    // and the pool of light — because mist is air standing in front of all of
+    // them. It used to be 2, alongside the paving it should always cover.
+    this.mesh.renderOrder = 6;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
     this.seeds = new THREE.InstancedBufferAttribute(new Float32Array(COUNT), 1);

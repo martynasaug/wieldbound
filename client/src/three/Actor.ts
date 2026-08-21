@@ -134,20 +134,54 @@ const FADE_MS = 180;
 // character, permanently, everywhere. Reported from play as feet slightly in
 // the ground, which is what four centimetres at ninety pixels looks like.
 //
-// THE FIX IS A LIFT, AND WHICH CLIPS IT IS MEASURED OVER IS THE WHOLE DECISION.
-// Only the clips in which the character is STANDING. `Roll` and `Death` reach
-// lower than any of them and must not be included: a body on the ground is
-// supposed to be on the ground, and lifting the rig until a corpse's shoulder
-// cleared the grass would raise the character in every other state to fix the
-// one state that was already right.
-const UPRIGHT_CLIPS = ["Idle", "Idle_Weapon", "Idle_Attacking", "Walk", "Run", "Run_Weapon", "Run_Holding"];
+// THE FIX IS A LIFT, AND IT IS PER STATE.
+//
+// M55.3 shipped ONE lift for the whole rig, taken as the worst case over every
+// clip in which the character is standing. That fixes the reported fault — no
+// upright pose puts a foot through the floor — and it does it by paying for the
+// deepest clip in every other clip: the single constant is Walk's 38mm, so an
+// IDLE character, which is what you are looking at most of the time you are
+// looking at all, hovered 38mm above the grass permanently. Trading a sunk foot
+// for a floating one is the right trade to make in a hurry and the wrong one to
+// leave standing.
+//
+// A lift per animation state costs nothing at runtime and is exact in every
+// state: Idle's own deepest point is 0.0000, so idle sits ON the ground; Walk
+// gets its own 38mm and touches at the bottom of its stride; Run gets 14mm.
+//
+// AND IT IS PER CLIP AND NOT PER FRAME, WHICH IS THE PART WORTH RECORDING.
+// The obvious next step is a lift SAMPLED THROUGH each clip, so the lowest
+// vertex is exactly on the ground at every instant — and that is wrong, because
+// it would delete the flight phase of the run. A run has a moment with both
+// feet off the ground, and "the lowest point is always at zero" is precisely
+// the statement that there is no such moment. The rule is that nothing may go
+// BELOW the ground, not that something must always be touching it, so the
+// per-clip minimum is the right resolution and a finer one is a regression
+// wearing a precision badge.
+//
+// `die` is exempt and gets a lift of zero. A body on the ground is supposed to
+// be on the ground, and Death reaches 131mm below the bind pose — it is the
+// clip that made a single shared constant unworkable in the first place.
+const NO_LIFT: readonly ActorAnim[] = ["die"];
+
+/** Every Nth vertex. Measured against every vertex on this rig: the two agree
+ *  to four decimal places, and stride 3 is a twelfth of the work. */
+const VERTEX_STRIDE = 3;
+/** Time samples in the pass that finds the sole. */
+const COARSE_STEPS = 20;
+/** And in the pass that measures it. See `measureLifts` for the convergence. */
+const FINE_STEPS = 160;
+/** How far above the deepest point still counts as the sole. Generous, because
+ *  the whole point of the second pass is that it can afford to be. */
+const SOLE_MARGIN = 0.05;
 
 /**
- * How far a model has to be lifted so no upright pose breaks the ground.
+ * How far one clip has to be lifted so no frame of it breaks the ground.
  *
- * Cached per model, because it is a property of the ASSET and not of the actor:
- * forty characters on one rig ask once. Measured rather than typed, so a new
- * body or a new walk cycle cannot silently reintroduce this.
+ * Keyed by `model|clip`, because it is a property of the ASSET pair and not of
+ * the actor: forty characters on one rig measuring one walk ask once. Measured
+ * rather than typed, so a new body or a new walk cycle cannot silently
+ * reintroduce this.
  */
 const groundLift = new Map<string, number>();
 
@@ -485,6 +519,10 @@ export class Actor {
   private instance: Instance | null = null;
   private mixer: THREE.AnimationMixer | null = null;
   private actions = new Map<ActorAnim, THREE.AnimationAction>();
+  /** Where `instantiate` seated the model, before any lift. See `NO_LIFT`. */
+  private seatY = 0;
+  /** How far each bound state has to be lifted. Filled by `measureLifts`. */
+  private readonly clipLifts = new Map<ActorAnim, number>();
   private currentAnim: ActorAnim = "idle";
   /** While set, a one-shot (attack/hit) owns the pose and update() will not override it. */
   private oneShotUntil = 0;
@@ -701,6 +739,10 @@ export class Actor {
     }
     this.instance = instance;
     this.bodyModel = model;
+    // The bind-pose seat, captured before anything can add a lift to it. Every
+    // frame writes `seatY + lift` rather than adding to whatever is there, or
+    // the lifts would accumulate.
+    this.seatY = instance.object.position.y;
     this.pivot.add(instance.object);
 
     this.bones.clear();
@@ -761,7 +803,7 @@ export class Actor {
     }
 
     this.tintBody();
-    this.seatOnGround(model);
+    this.measureLifts(model);
 
     // The new rig has its own action map, so whatever was playing has to be
     // started again on it. Without this a body swap leaves the character
@@ -832,7 +874,15 @@ export class Actor {
     // actions — see `buildActions` — so the character keeps its position, its
     // facing, its pose and its momentum through a swap, because there is
     // nothing left for a swap to interrupt.
-    if (this.usesClipLibrary) this.buildActions();
+    if (this.usesClipLibrary) {
+      this.buildActions();
+      // A weapon swap changes the ATTACK clip, and a clip that has never been
+      // measured has no lift — so this has to run here as well as in
+      // `buildBody`. Safe at this point and not before it: the holders were
+      // captured against the rest pose long ago and are `matrixAutoUpdate =
+      // false`, so playing a clip to measure it cannot disturb them.
+      this.measureLifts(this.bodyModel);
+    }
 
     const generation = ++this.dressGeneration;
     this.clearGear();
@@ -1017,73 +1067,187 @@ export class Actor {
   }
 
   /**
-   * Lifts the rig until no upright pose puts a foot through the floor.
+   * Measures how far each bound state has to be lifted to clear the ground.
    *
-   * See the note above `UPRIGHT_CLIPS` for why this is needed at all and why it
-   * is measured over some clips and not others.
+   * See the note above `NO_LIFT` for why there is a lift at all, why there is
+   * one PER STATE, and why there is not one per frame.
    *
-   * The measurement is exact where it matters and cheap where it does not:
-   * every third vertex, at twenty points through each clip. Coarser sampling
-   * UNDER-reports, which is the dangerous direction — every ninth vertex at
-   * twelve points found 0.029 where a finer scan found 0.038, and the missing
-   * nine millimetres is a foot still in the floor. The cost is paid once per
-   * model, not once per character, so there is no reason to be stingy.
+   * TWO PASSES, AND THE REASON IS THE ONE M55.3 ALREADY WROTE DOWN ONE AXIS
+   * OVER. That milestone found that sampling every ninth vertex under-reported
+   * a clearance where every third did not, and fixed the VERTEX axis. It left
+   * the TIME axis at twenty-one points, and measuring the converged answer
+   * afterwards showed that is where the rest of the error was living:
+   *
+   *     Walk, every third vertex, at N points through the clip
+   *       21 points   0.0408      <- what M55.3 shipped
+   *       81 points   0.0451
+   *      161 points   0.0456
+   *      321 points   0.0456
+   *
+   * Five millimetres of foot, permanently, in the one state you spend most of
+   * your time in. Every other clip is flat from twenty-one points, which is
+   * exactly why this survived: the number is only wrong for the clip whose sole
+   * passes through its lowest point quickly.
+   *
+   * A straight 161-point scan is the honest fix and costs about 220ms per clip,
+   * which is a visible hitch on a weapon swap. So the scan is split by the
+   * observation that the deepest point of a walk is the SAME FEW VERTICES at
+   * every instant — the sole of whichever foot is down:
+   *
+   *   - a coarse pass in time over every third vertex, keeping each vertex's own
+   *     minimum, which names the sole;
+   *   - a fine pass in time over the sole alone.
+   *
+   * The second pass is where the resolution is and it evaluates a few dozen
+   * vertices rather than a few thousand. Every third vertex is enough on this
+   * rig — measured against every vertex, and the two agree to four decimal
+   * places — and the margin below widens the candidate set well past the
+   * handful the minimum actually comes from.
+   *
+   * It measures against the RAW SEAT, which is why `seatY` is written back
+   * before the scan: the number wanted is how far the sole falls below the
+   * actor's own origin with no lift applied, and measuring while a lift is on
+   * would return that lift subtracted from itself.
    */
-  private seatOnGround(model: string): void {
+  private measureLifts(model: string): void {
     if (!this.instance || !this.mixer) return;
+    this.instance.object.position.y = this.seatY;
 
-    let lift = groundLift.get(model);
-    if (lift === undefined) {
-      const meshes: THREE.SkinnedMesh[] = [];
-      this.instance.object.traverse((o) => {
-        const m = o as THREE.SkinnedMesh;
-        if (m.isSkinnedMesh) meshes.push(m);
-      });
-      let deepest = 0;
-      const v = new THREE.Vector3();
-      for (const name of UPRIGHT_CLIPS) {
-        const clip = this.usesClipLibrary
-          ? pickClip(name)
-          : findClip(this.instance.animations, name);
-        if (!clip) continue;
-        const action = this.mixer.clipAction(clip);
-        action.reset();
-        action.setEffectiveWeight(1);
-        action.play();
-        action.paused = true;
-        for (let s = 0; s <= 20; s++) {
-          action.time = clip.duration * (s / 20);
-          this.mixer.update(0);
-          // From the ROOT, not from the model: the sole's height is compared
-          // against `root.position.y`, and updating the subtree alone would
-          // measure a world matrix built on whatever the root's was last frame.
-          this.root.updateMatrixWorld(true);
-          for (const mesh of meshes) {
-            const pos = mesh.geometry.attributes.position;
-            for (let i = 0; i < pos.count; i += 3) {
-              v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
-              mesh.applyBoneTransform(i, v);
-              v.applyMatrix4(mesh.matrixWorld);
-              // `object.position.y` is the seat `instantiate` applied, so this
-              // is the sole's height above the actor's own origin — which is
-              // the number that has to be non-negative.
-              const above = v.y - this.root.position.y;
-              if (above < deepest) deepest = above;
-            }
-          }
-        }
-        action.stop();
-        action.setEffectiveWeight(0);
+    let meshes: THREE.SkinnedMesh[] | null = null;
+
+    for (const [anim, action] of this.actions) {
+      if (NO_LIFT.includes(anim)) {
+        this.clipLifts.set(anim, 0);
+        continue;
       }
-      lift = -deepest;
-      groundLift.set(model, lift);
-      // The mixer is left with these actions stopped and weightless. That is
-      // safe rather than lucky: `buildBody` ends by calling `play`, and `play`
-      // resets and re-weights whatever action it selects — so anything touched
-      // here is restored the moment it is next asked for.
+      const key = `${model}|${action.getClip().name}`;
+      let lift = groundLift.get(key);
+      if (lift === undefined) {
+        if (!meshes) {
+          meshes = [];
+          this.instance.object.traverse((o) => {
+            const m = o as THREE.SkinnedMesh;
+            if (m.isSkinnedMesh) meshes!.push(m);
+          });
+        }
+        lift = -this.deepestPointOf(action, meshes);
+        groundLift.set(key, lift);
+      }
+      this.clipLifts.set(anim, lift);
     }
 
-    this.instance.object.position.y += lift;
+    // The mixer is left with these actions stopped and weightless. That is safe
+    // rather than lucky: every caller ends by calling `play`, and `play` resets
+    // and re-weights whatever action it selects — so anything touched here is
+    // restored the moment it is next asked for.
+    this.applyGroundLift();
+  }
+
+  /**
+   * How far below the actor's own origin one clip ever reaches. Negative.
+   *
+   * See `measureLifts` for why it is done in two passes.
+   */
+  private deepestPointOf(action: THREE.AnimationAction, meshes: THREE.SkinnedMesh[]): number {
+    const clip = action.getClip();
+    const v = new THREE.Vector3();
+    action.reset();
+    action.setEffectiveWeight(1);
+    action.play();
+    action.paused = true;
+
+    // --- pass one: where is the sole ------------------------------------------
+    // Each candidate vertex's own lowest height over the clip, so the set can be
+    // taken relative to the deepest of them once all of it is known.
+    const seen = meshes.map((m) => new Float32Array(m.geometry.attributes.position.count).fill(Infinity));
+    let deepest = 0;
+    for (let s = 0; s <= COARSE_STEPS; s++) {
+      action.time = clip.duration * (s / COARSE_STEPS);
+      this.mixer!.update(0);
+      // From the ROOT, not from the model: the sole's height is compared
+      // against `root.position.y`, and updating the subtree alone would measure
+      // a world matrix built on whatever the root's was last frame.
+      this.root.updateMatrixWorld(true);
+      for (let mi = 0; mi < meshes.length; mi++) {
+        const mesh = meshes[mi];
+        const pos = mesh.geometry.attributes.position;
+        const mins = seen[mi];
+        for (let i = 0; i < pos.count; i += VERTEX_STRIDE) {
+          v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+          mesh.applyBoneTransform(i, v);
+          v.applyMatrix4(mesh.matrixWorld);
+          // `object.position.y` is the seat `instantiate` applied, so this is
+          // the sole's height above the actor's own origin — which is the
+          // number that has to be non-negative.
+          const above = v.y - this.root.position.y;
+          if (above < mins[i]) mins[i] = above;
+          if (above < deepest) deepest = above;
+        }
+      }
+    }
+
+    const cutoff = deepest + SOLE_MARGIN;
+    const soleMesh: number[] = [];
+    const soleVertex: number[] = [];
+    for (let mi = 0; mi < meshes.length; mi++) {
+      const mins = seen[mi];
+      for (let i = 0; i < mins.length; i += VERTEX_STRIDE) {
+        if (mins[i] <= cutoff) {
+          soleMesh.push(mi);
+          soleVertex.push(i);
+        }
+      }
+    }
+
+    // --- pass two: and how low does it actually go ----------------------------
+    for (let s = 0; s <= FINE_STEPS; s++) {
+      action.time = clip.duration * (s / FINE_STEPS);
+      this.mixer!.update(0);
+      this.root.updateMatrixWorld(true);
+      for (let k = 0; k < soleVertex.length; k++) {
+        const mesh = meshes[soleMesh[k]];
+        const i = soleVertex[k];
+        const pos = mesh.geometry.attributes.position;
+        v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+        mesh.applyBoneTransform(i, v);
+        v.applyMatrix4(mesh.matrixWorld);
+        const above = v.y - this.root.position.y;
+        if (above < deepest) deepest = above;
+      }
+    }
+
+    action.stop();
+    action.paused = false;
+    action.setEffectiveWeight(0);
+    return deepest;
+  }
+
+  /**
+   * Seats the rig for whatever it is playing THIS frame.
+   *
+   * The lift is the mixer's own weights applied to the per-state lifts, which
+   * is what makes a crossfade correct for free: three quarters of the way from
+   * idle into a walk, the pose is three quarters of the way and so is the seat.
+   * Easing it separately would be a second copy of the blend that could drift
+   * from the first, and the drift is a foot skimming the grass for a fifth of a
+   * second every time somebody sets off.
+   */
+  private applyGroundLift(): void {
+    if (!this.instance) return;
+    let weight = 0;
+    let lifted = 0;
+    for (const [anim, action] of this.actions) {
+      if (!action.isRunning()) continue;
+      const w = action.getEffectiveWeight();
+      if (w <= 1e-4) continue;
+      weight += w;
+      lifted += w * (this.clipLifts.get(anim) ?? 0);
+    }
+    // No weight at all is the frame between building a rig and playing on it.
+    // Holding the last seat is right there — dropping to the raw one would be a
+    // one-frame twitch on every weapon swap.
+    if (weight <= 1e-4) return;
+    this.instance.object.position.y = this.seatY + lifted / weight;
   }
 
   /** Sets how much of the rim weight to spend. See `outlineWeight`. */
@@ -1384,6 +1548,8 @@ export class Actor {
 
   update(dtSeconds: number): void {
     this.mixer?.update(dtSeconds);
+    // After the mixer, because it reads the weights the mixer just advanced.
+    this.applyGroundLift();
     this.applyEmissive();
     this.updateGlance();
 

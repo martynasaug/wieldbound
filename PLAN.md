@@ -5211,6 +5211,163 @@ screenshot forces a render but not the easing.
 
 ---
 
+## Phase 56 — The ground under your feet
+Both halves were written down at the end of Phase 55 as follow-ups, and they are
+one milestone because they are one complaint: *the feet are geometrically
+planted and they do not look it.*
+
+### M56.1 — a lift per state, and something under the body
+M55.3 fixed a real fault — the rig is seated in the bind pose and stands in a
+clip, so walking put the sole four centimetres into the ground — and it fixed it
+with ONE lift for the whole rig, taken as the worst case over every upright
+clip. That is the right trade to make in a hurry and the wrong one to leave
+standing, because the worst case is `Walk` and the cost is paid in every other
+state: an IDLE character, which is what you are looking at most of the time you
+are looking at all, hovered 38mm above the grass permanently. A sunk foot was
+traded for a floating one.
+
+### The lift is per state, and per CLIP rather than per frame
+A lift per animation state costs nothing at runtime and is exact in each one:
+
+    Idle_Weapon           lift 0.0000    clearance 0.0000
+    Walk                  lift 0.0456    clearance 0.0000
+    Run_Weapon            lift 0.0141    clearance 0.0000
+    Sword_Attack          lift 0.0007    clearance 0.0000
+    RecieveHit_Attacking  lift 0.0004    clearance 0.0000
+    Death                 lift 0.0000    clearance -0.1408
+
+Two of those rows are the interesting ones. `Sword_Attack` and `RecieveHit` were
+never in the old measurement at all — the single constant was measured over
+seven standing clips and then applied to every state — so an attack and a
+stagger floated the full 38mm as well, which is most of a fight. And `Death` is
+supposed to be negative: a body on the ground belongs on the ground, so `die` is
+exempt and gets a lift of zero.
+
+**The obvious next step is a lift sampled THROUGH each clip, and it is wrong.**
+It would put the lowest vertex exactly on the ground at every instant, which is
+precisely the statement that a run has no moment with both feet off the ground.
+The rule is that nothing may go BELOW the ground, not that something must always
+be touching it — so the per-clip minimum is the right resolution and a finer one
+is a regression wearing a precision badge.
+
+The blend is the mixer's own weights applied to the per-state lifts, so a
+crossfade is correct for free: measured at the half-way point of a 180ms fade
+from idle into a walk, the seat is 50% of the way across. Easing it separately
+would be a second copy of the blend, and the drift would be a foot skimming the
+grass for a fifth of a second every time somebody set off.
+
+### And the ruler was under-sampled on the OTHER axis
+M55.3 found that every ninth vertex under-reported a clearance where every third
+did not, fixed the vertex axis, and left the time axis at twenty-one points.
+That is where the rest of the error was living:
+
+    Walk, every third vertex, at N points through the clip
+      21 points   0.0408      <- what M55.3 shipped
+      81 points   0.0451
+     161 points   0.0456
+     321 points   0.0456
+
+Five millimetres of foot, permanently, in the one state you spend most of your
+time in. Every other clip is flat from twenty-one points, which is exactly why
+it survived: the number is only wrong for the clip whose sole passes through its
+lowest point quickly. Every third vertex against every vertex agrees to four
+decimal places, so the vertex axis really was already fine.
+
+A straight 161-point scan costs about 220ms a clip, which is a visible hitch on
+a weapon swap. So the scan is split by the observation that the deepest point of
+a walk is the SAME FEW VERTICES throughout — the sole of whichever foot is down.
+A coarse pass in time over every third vertex names the sole; a fine pass in time
+evaluates the sole alone. 40–55ms a clip, once per model and clip.
+
+### Two: a contact shadow, which is not the shadow there already is
+Every actor casts into the sun's 2048px shadow map and has since Phase 47, and
+that is not this. A cast shadow says where the LIGHT is: at noon it is under the
+feet and at every other hour it is a streak lying ten units away, so the place
+the eye actually checks has nothing under it. What was missing is the other
+thing — the ambient light a body keeps off the ground it is sitting on, which
+does not care where the sun is and is what says *these two surfaces are
+touching*.
+
+- **It multiplies, it does not paint.** `presence.ts` is additive because it is
+  light falling on the ground; this is the opposite. A dark quad blended
+  normally is a grey decal lying on the grass and looks like one at every
+  opacity; the grass has to survive underneath it, darker.
+- **It is under EVERYTHING** — players, monsters and townspeople. `presence` is
+  deliberately players-only because it answers "which of these figures is mine".
+  This answers "is this thing touching the floor", and a wolf's feet are as
+  unanchored as yours.
+- **It is sized from the body radius the game already collides with**, so the
+  shade and the footprint cannot disagree about how much room a creature takes
+  up. Same argument `bodies.mjs` makes about hitboxes.
+
+### The strength is constant, and the first version charged twice
+It was scaled by the hemisphere fill's own intensity, on the reasoning that
+occlusion removes ambient light and there is less of it at night. True, and
+already paid for: a multiply takes a fraction of whatever is on the ground, so
+darker ground loses less in absolute terms without anybody arranging it. Scaling
+the strength as well made it *absent* at midnight rather than weaker — measured
+at a peak channel delta of zero.
+
+Which puts three mechanisms under a figure running on three different schedules,
+and they do not overlap: the sun's shadow map is where the light is, the pool of
+light is strongest at midnight, and the shade is a fixed fraction of whatever
+the ground already had.
+
+### A flat mark on ground that is not flat is mostly inside the hill
+The patch drew a clean 1% of its box on grass and **exactly nothing** on
+Emberhold's paving, from the same code in the same frame. Two separate causes,
+and both are lessons this project has already written down once.
+
+**The ground is not flat, and a horizontal quad is a chord across it.** Measured
+over nine hundred positions, for a quad 1.32 units across:
+
+    the ground rises above a FLAT quad seated at its centre    median 0.086
+    the ground rises above a quad TILTED to the local slope    median 0.003
+
+Sixty per cent of the patch was inside the terrain, and the depth test was
+throwing it away. This is M55.3's own lesson one more level down — there it was
+the terrain mesh riding above the field it was sampled from and the cost was a
+foot in the floor; here it is a decal riding through ground that rises under it.
+`layOnGround` takes four height samples and tilts the quad, which removes
+essentially all of it; what is left is curvature, and a 35mm lift covers the
+ninety-fifth percentile of that. **The pool of light had exactly the same defect
+for exactly the same reason** and has been on the same footing since.
+
+**And Emberhold's paving is a transparent decal that writes no depth.** It draws
+at render order 2, so a shade at 1 was drawn and then painted over by the
+cobbles. Order 4 puts the shade over the road, the paving and the flagstone
+island; the pool of light moved to 5, because light falls ON shaded ground; and
+the mist moved to 6, because mist is air standing in front of all of them — it
+had been at 2, alongside the paving it should always cover.
+
+### Verified, and the probe was wrong before the game was — twice
+- **"The patch changes 9.6% of the frame."** The game loop was still running, so
+  the two screenshots differed by the wind, the mist, the flames and the
+  butterflies. A difference image across a live world is a picture of the
+  weather. The loop is stopped first now.
+- **"The patch is drawn four hundred pixels from the character."** It was. The
+  camera's distance is a stored PREFERENCE, so a fresh browser profile framed
+  the scene differently from the one the crops were written against, and the
+  probe measured a clean difference of somebody else's feet. It pins the zoom
+  now, and — the check that would have caught it in one run — it projects the
+  character and refuses to measure anything until it is confirmed in frame.
+- **And the ruler was in the wrong units.** A multiply is a RATIO, and absolute
+  channel delta under-reports on dark ground by exactly as much as the ground is
+  dark. Measured as a fraction of what was there, the deepest point of the mark
+  takes the ground to 52% at noon in a meadow and 58% on the paving.
+- Dawn and midnight are recorded rather than gated: at midnight there is almost
+  no light under a figure to take a fraction of, and at dawn the mist lies over
+  the mark — which is correct, and is why the pool of light runs the other way.
+
+Two things `__wieldboundRules` now carries, for the same reason everything else
+on it is there: `surfaceHeight` and the two server-pixel conversions. A probe
+that keeps its own copy of where the ground is measures its own idea of where
+the ground is, and this project has spent rounds on that three times.
+
+Fourteen suites, smoke, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -5294,6 +5451,65 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- The ground lift is PER STATE and per CLIP — never one constant, and never per
+  frame. One constant is the worst clip's, paid in every other clip: `Walk`'s
+  38mm left an idle character hovering permanently, and an attack and a stagger
+  were never measured at all. Per frame is the opposite mistake and a subtler
+  one: forcing the lowest vertex onto the ground at every instant deletes the
+  flight phase of the run. The rule is that nothing may go BELOW the ground, not
+  that something must always touch it.
+- A crossfaded seat is the mixer's own weights applied to the per-state lifts,
+  never a second easing beside the first. Two blends of the same thing drift,
+  and the drift here is a foot skimming the grass for a fifth of a second every
+  time somebody sets off.
+- Under-sampling a minimum has TWO axes and fixing one says nothing about the
+  other. M55.3 fixed the vertex stride and left the time axis at twenty-one
+  points, which under-reported `Walk` by five millimetres — and only `Walk`,
+  because it is the one clip whose sole passes through its lowest point quickly.
+  Converge the scan and then find a cheaper way to reach the same number, rather
+  than picking a sampling rate that looks generous.
+- A cast shadow and a contact shadow are different things and neither substitutes
+  for the other. One says where the LIGHT is and walks away from the feet at
+  every hour but noon; the other is the ambient a body keeps off the ground it is
+  sitting on and never moves. There has been a real sun casting a real shadow
+  since Phase 47, and characters still did not look like they were standing on
+  anything.
+- Shade MULTIPLIES; light ADDS. A dark quad blended normally is a grey decal
+  lying on the grass and looks like one at every opacity — the surface underneath
+  has to survive, darker. It is the exact mirror of the argument that made the
+  pool of light additive.
+- A multiply needs no help from the clock, and giving it some charges twice. The
+  first version scaled the shade by the hemisphere fill's intensity as well, and
+  at midnight it came out at a peak channel delta of zero — not weaker, absent.
+  A fraction of whatever is on the ground already does the whole job.
+- A flat mark on ground that is not flat is a CHORD, and most of it is inside the
+  hill. Measured for a quad 1.32 units across: the drawn ground rises above a
+  level quad by a median of 86mm and above one TILTED to the local slope by 3mm.
+  Four height samples and no shader. This is M55.3's own lesson one level down,
+  which is now three times this project has had the argument about a thing and
+  the ground it sits on being one answer.
+- Emberhold's paving is a TRANSPARENT decal that writes no depth, so anything
+  meant to lie on the ground has to be ordered against it explicitly. The shade
+  measured a clean 1% of its box on grass and exactly nothing on cobbles, from
+  the same code in the same frame. The stack is: town surfacing 1–3, contact
+  shade 4, pool of light 5 (light falls on shaded ground), mist 6 (air in front
+  of all of them). The pool of light had been sharing order 2 with the paving
+  since Phase 54.
+- Stop the game loop before differencing two frames. A running world differs
+  frame to frame by the wind, the mist, the flames and the butterflies, and a
+  difference across that is a picture of the weather. Reported as 9.6% of the
+  frame changed by a patch a metre across.
+- The camera's distance is a stored PREFERENCE, so a probe that does not pin it
+  is framing the scene however the last person to spin a wheel left it. Pin the
+  zoom, and — the check that actually catches it — PROJECT the subject and refuse
+  to measure until it is confirmed in frame. Without that, a probe reports a
+  perfectly clean measurement of somebody else's feet.
+- Measure a multiply as a RATIO, never as an absolute channel delta. Delta
+  under-reports on dark ground by exactly as much as the ground is dark, which is
+  the same shape of mistake as the magenta threshold that could not see a
+  35%-alpha mote. As a fraction of what was there, the mark takes the ground to
+  52% at noon.
 
 - The feet stand on the ground AS DRAWN, not on the field it was sampled from.
   A terrain mesh joins its samples with flat triangles, and a chord rides above
@@ -7580,7 +7796,39 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 54 complete (2026-08-21).
+Phase 0 through 56 complete (2026-08-21).
+
+**Phase 56 M56.1 — the ground under your feet.** Two follow-ups written down at
+the end of Phase 55, and they turned out to be one complaint: the feet are
+geometrically planted and they do not look it. The rig's ground lift is per
+STATE now rather than one worst-case constant, so idle sits on the grass instead
+of hovering 38mm over it, and an attack and a stagger — which the old
+measurement never covered at all — sit right too; the crossfade between two
+states blends the seat with the mixer's own weights, so it is exact by
+construction. And there is a contact shadow under every player, monster and
+townsperson: not the cast shadow, which has existed since Phase 47 and walks
+away from the feet at every hour but noon, but the ambient a body keeps off the
+ground it is sitting on. It multiplies rather than paints, its strength is
+constant because a multiply already gives you the light-dependence for free, and
+it is TILTED to the ground — a level quad is a chord, and the drawn ground rises
+through one by a median of 86mm against 3mm for a tilted one, which is M55.3's
+own lesson a level down. Three rounds of measurement, two of which found the
+PROBE was wrong: once for differencing two frames of a world that was still
+moving, and once for measuring a multiply in absolute channel delta rather than
+as a ratio.
+
+**Phase 55 — one character.** The body stops changing when the weapon does, and
+it keeps every animation: all five rigs share the same forty-four bones, so the
+twenty-five clips welded inside five character files were pooled into one
+library and the tool in your hand now decides everything about how you fight and
+nothing about who is holding it. What that left behind was four character models
+nothing loads, still wearing their clothes — ten of those pieces are harvested
+onto the one body where the kit's version beats what the game generates. The
+body is tinted from the character's NAME, which is a character creator that
+needs no column, no wire field and no creation screen. And the feet were put on
+the ground: the rig is seated in a bind pose no clip ever holds, and the ground
+it stands on is a mesh whose flat triangles ride above the field they were
+sampled from.
 
 **Phase 54 M54.2–M54.5 — the world is alive, on fire, in weather, and you can
 find yourself in it.** Butterflies over meadow by day and fireflies in the woods

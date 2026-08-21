@@ -34,6 +34,17 @@ import { LANDMARKS, landmarkPosition } from "../../../shared/landmarks";
 // that space and every formula in shared/ is written against it. Rendering
 // divides by this and re-centres on the origin, so nothing in the protocol had
 // to change to move to 3D.
+/**
+ * Where the distance fog starts and where it is total.
+ *
+ * Exported because two other things have to agree with it. Anything drawn with
+ * a ShaderMaterial gets three's fog DEFINE and not its uniforms, so it applies
+ * the falloff by hand — and a hand-applied falloff reading its own copy of
+ * these numbers is a fog line in a different place from the fog.
+ */
+export const FOG_NEAR = 55;
+export const FOG_FAR = 165;
+
 export const PX_PER_UNIT = 40;
 
 export const WORLD_UNITS_W = WORLD_WIDTH / PX_PER_UNIT;
@@ -468,6 +479,64 @@ export function surfaceHeight(x: number, z: number): number {
   return drawnHeight(x, z);
 }
 
+/**
+ * How steep a quad laid on the ground may get. About 56 degrees.
+ *
+ * Only a riverbank reaches it, and there the honest answer — a near-vertical
+ * sheet — is worse than a slightly wrong one, because the quads that use this
+ * are soft round marks and a vertical soft round mark is a floating disc.
+ */
+const MAX_GROUND_SLOPE = 1.5;
+
+/**
+ * Seats a flat unit quad on the ground AS DRAWN, tilted to the local slope.
+ *
+ * THIS IS M55.3's LESSON A THIRD TIME, and it is worth stating in those terms:
+ * a flat thing laid on ground that is not flat is a CHORD, and a chord and the
+ * curve it spans do not agree. There the mistake was the terrain mesh riding
+ * above the smooth field it was sampled from, and the cost was a foot in the
+ * floor. Here it is a horizontal decal riding through ground that rises
+ * underneath it, and the cost is a mark that is mostly not drawn.
+ *
+ * Measured over nine hundred positions, for a quad 1.32 units across:
+ *
+ *     the ground rises above a FLAT quad seated at its centre   median 0.086
+ *     the ground rises above a quad TILTED to the local slope    median 0.003
+ *
+ * The slope is where essentially all of it lives, and a slope costs four
+ * samples and no shader. What is left after the tilt is curvature, and a lift
+ * of a few centimetres covers the ninety-fifth percentile of that.
+ *
+ * The two tangents are taken UNNORMALISED on purpose, so the quad stretches
+ * along a slope exactly as a shape projected onto that slope would.
+ */
+export function layOnGround(
+  out: THREE.Matrix4,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+): void {
+  const half = width * 0.5;
+  const gx = Math.max(
+    -MAX_GROUND_SLOPE,
+    Math.min(MAX_GROUND_SLOPE, (surfaceHeight(x + half, z) - surfaceHeight(x - half, z)) / width),
+  );
+  const gz = Math.max(
+    -MAX_GROUND_SLOPE,
+    Math.min(MAX_GROUND_SLOPE, (surfaceHeight(x, z + half) - surfaceHeight(x, z - half)) / width),
+  );
+  // Row-major, so the columns are (width, width*gx, 0), (0, 1, 0) and
+  // (0, width*gz, width): local (u, 0, v) lands on the plane through (x, y, z)
+  // with that gradient.
+  out.set(
+    width, 0, 0, x,
+    width * gx, 1, width * gz, y,
+    0, 0, width, z,
+    0, 0, 0, 1,
+  );
+}
+
 export function terrainHeight(x: number, z: number): number {
   let h = rampToBridge(x, z, carveRiver(x, z, baseHeight(x, z)));
 
@@ -588,7 +657,7 @@ export class World {
     // far ridge was fogged out before it resolved, which meant the hills only
     // existed within one screen of the player and the horizon was a flat wash —
     // the exact impression the hills were added to fix.
-    this.scene.fog = new THREE.Fog(0x9fb8cf, 55, 165);
+    this.scene.fog = new THREE.Fog(0x9fb8cf, FOG_NEAR, FOG_FAR);
 
     this.fill = new THREE.HemisphereLight(0xbcd7ff, 0x4a5233, 0.8);
     this.scene.add(this.fill);

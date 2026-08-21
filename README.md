@@ -168,6 +168,17 @@ unavailable.
   also, it turned out, the same feature — the through-walls silhouette used to
   draw as a filled cutout, which is an X-ray, and both wanted the same thing: the
   shape of a person and nothing inside it.
+- **And everything that stands here is standing on something** — a soft patch of
+  shade under every player, monster and townsperson, tied to the body radius the
+  game already collides with. There is a real sun casting a real shadow, and it
+  is not this: a cast shadow says where the light is, and at every hour but noon
+  it is a streak lying ten units away while the FEET — the place the eye checks —
+  have nothing under them. This is the other half, the ambient light a body keeps
+  off the ground it is sitting on, and it does not care where the sun is. It
+  multiplies rather than paints, so the grass survives underneath it, and it is
+  tilted to the slope it lies on, because a flat mark on ground that is not flat
+  is mostly inside the hill. Feet also stand at the right height in every state
+  now, not just the one the rig was measured in.
 - **And it moves** — wind, on every blade of grass, every plant and every tree
   in the world, gusting on a slow swell with a faster gust riding it and veering
   right round the compass over half an hour. Derived from the wall clock like

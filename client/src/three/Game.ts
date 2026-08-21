@@ -103,6 +103,8 @@ import { Indicators } from "./indicators";
 import { ATTACK_STYLES, Projectiles, attackStyle, impactDelayMs } from "./attacks";
 import { playSfx, preloadSfx, toggleMuted } from "./sfx";
 import {
+  FOG_FAR,
+  FOG_NEAR,
   PX_PER_UNIT,
   WORLD_UNITS_H,
   WORLD_UNITS_W,
@@ -154,6 +156,7 @@ import { River } from "./river";
 import { Ambience } from "./ambience";
 import { Mist } from "./mist";
 import { Presence, type Mark } from "./presence";
+import { ContactShadows, type Contact } from "./contact";
 import { updateWind } from "./wind";
 import { NORTH_TOWN_NAME, NORTH_TOWN_SITE } from "../../../shared/road";
 import { resolveRiverCollision } from "../../../shared/river";
@@ -290,6 +293,16 @@ const MOVE_START_PX = 2.0;
 const MOVE_STOP_PX = 0.7;
 
 /**
+ * How far out a contact shadow is still worth drawing, in world units.
+ *
+ * Well inside the fog, because the patch is a metre across and a metre at a
+ * hundred units is a couple of pixels of very slightly darker grass. The point
+ * of the bound is not the fill rate, it is that the instance pool is finite and
+ * a camp behind the camera must never crowd the player's own feet out of it.
+ */
+const CONTACT_CULL_UNITS = 70;
+
+/**
  * Whether a snapshot-driven actor should be running, measured between the last
  * two SERVER positions rather than between rendered ones.
  *
@@ -401,6 +414,9 @@ export class Game {
   private readonly mist = new Mist();
   /** A pool of light under every person, so a figure is findable. See presence.ts. */
   private readonly presence = new Presence();
+  /** And the shade under every body that stands on the ground. See contact.ts. */
+  private readonly contacts = new ContactShadows(FOG_NEAR, FOG_FAR);
+  private readonly contactList: Contact[] = [];
   /** Scratch for the above, so a frame with five players allocates nothing. */
   private readonly marks: Mark[] = [];
 
@@ -830,6 +846,14 @@ export class Game {
       forgeCost,
       reforgeCost,
       salvageYield,
+      // And the two conversions everything in the renderer goes through: where
+      // the ground is at a point, and how a server pixel becomes a world unit.
+      // A console session — or a probe — that keeps its own copy of either has
+      // a second opinion about where things are, and this project has now
+      // spent rounds on exactly that mistake three times.
+      surfaceHeight,
+      toWorldX,
+      toWorldZ,
     };
     // Starts as the bare-handed body; WELCOME's appearance re-dresses it, and
     // swaps the rig outright if the saved character is already holding something.
@@ -897,6 +921,9 @@ export class Game {
     // `renderOrder`, so where it goes in the graph decides nothing — but it
     // reads the river's surface height, which the river has to have built.
     this.world.scene.add(this.mist.mesh);
+    // The shade first and the pool of light second, which is also their render
+    // order: light falls ON the shaded ground rather than being eaten by it.
+    this.world.scene.add(this.contacts.mesh);
     this.world.scene.add(this.presence.mesh);
 
     const decor = this.world.buildDecor();
@@ -2883,6 +2910,7 @@ export class Game {
       this.localActor?.position.z ?? 0,
     );
     this.updatePresence(nightAmount(hour.clock));
+    this.updateContacts();
     // And the outlines, which run the OTHER way from the pool of light at the
     // feet — see `outlineWeight` in Actor.ts. A pale line needs weight to
     // register against a lit field and almost none against black.
@@ -2934,6 +2962,66 @@ export class Game {
     // the road. Read from the same field the woods themselves are drawn from.
     const gloom = forestStrengthAt(this.playerX, this.playerY);
     this.presence.update(this.marks, night, gloom, performance.now() / 1000);
+  }
+
+  /**
+   * The shade under every body that is standing on the ground.
+   *
+   * EVERYTHING, unlike the pool of light above — players, monsters and
+   * townspeople alike. See `contact.ts` for why the two features have opposite
+   * scopes: one answers "which of these figures is mine", which only a player
+   * can be, and this one answers "is this thing touching the floor", which a
+   * wolf and a shopkeeper are as entitled to as you are.
+   *
+   * Bounded by distance rather than by luck. The pool is finite, and a camp of
+   * twenty behind you must never be able to push your own feet out of it — so
+   * the local player goes in first and anything past the cull is simply too
+   * small to read anyway.
+   */
+  private updateContacts(): void {
+    this.contactList.length = 0;
+    const self = this.localActor;
+    if (self) {
+      this.contactList.push({
+        x: self.position.x,
+        y: self.position.y,
+        z: self.position.z,
+        radius: PLAYER_BODY_RADIUS_PX / PX_PER_UNIT,
+      });
+    }
+    const cx = self?.position.x ?? 0;
+    const cz = self?.position.z ?? 0;
+    const near = (p: THREE.Vector3): boolean =>
+      (p.x - cx) * (p.x - cx) + (p.z - cz) * (p.z - cz) < CONTACT_CULL_UNITS * CONTACT_CULL_UNITS;
+
+    for (const actor of this.players.values()) {
+      if (!near(actor.position)) continue;
+      this.contactList.push({
+        x: actor.position.x,
+        y: actor.position.y,
+        z: actor.position.z,
+        radius: PLAYER_BODY_RADIUS_PX / PX_PER_UNIT,
+      });
+    }
+    for (const monster of this.monsters.values()) {
+      const p = monster.actor.position;
+      if (!near(p)) continue;
+      // The radius the game already collides with, so the shade and the body
+      // cannot disagree about how much room the creature takes up.
+      const radiusPx = MONSTER_STATS[monster.kind]?.bodyRadiusPx ?? PLAYER_BODY_RADIUS_PX;
+      this.contactList.push({ x: p.x, y: p.y, z: p.z, radius: radiusPx / PX_PER_UNIT });
+    }
+    for (const npc of this.npcs.values()) {
+      const p = npc.actor.position;
+      if (!near(p)) continue;
+      this.contactList.push({
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        radius: PLAYER_BODY_RADIUS_PX / PX_PER_UNIT,
+      });
+    }
+    this.contacts.update(this.contactList);
   }
 
   private updateIndicators(): void {

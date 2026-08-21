@@ -48,6 +48,7 @@
 // It is one instanced quad and one draw call for every person on screen.
 
 import * as THREE from "three";
+import { layOnGround, surfaceHeight } from "./World";
 
 /** How many people may be marked at once. A node crowd, generously. */
 const CAPACITY = 48;
@@ -120,7 +121,6 @@ export class Presence {
   private readonly colors: THREE.InstancedBufferAttribute;
   private readonly strengths: THREE.InstancedBufferAttribute;
   private readonly matrix = new THREE.Matrix4();
-  private readonly scratch = new THREE.Vector3();
 
   constructor() {
     const geo = new THREE.PlaneGeometry(1, 1);
@@ -146,8 +146,12 @@ export class Presence {
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = false;
     this.mesh.receiveShadow = false;
-    // Above the ground and the mist, below the actors and the fires.
-    this.mesh.renderOrder = 2;
+    // Above every surface the ground is made of, and above the contact shade at
+    // 4 — light falls ON shaded ground. It used to be 2, which is the same
+    // number Emberhold's paving carries, so in the plaza the pool was a coin
+    // flip against the cobbles; found while giving the contact shade an order
+    // it could not lose. Below the mist at 6, because mist is air in front.
+    this.mesh.renderOrder = 5;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
     this.colors = new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY * 3), 3);
@@ -191,12 +195,13 @@ export class Presence {
       const swing = m.self ? 0.5 : 0.36;
       this.strengths.setX(i, base + dark * swing);
 
-      // Barely off the ground. Any higher and the pool detaches from the feet
-      // as the camera pitches; any lower and it z-fights the terrain, which the
-      // depth test would resolve as a flicker rather than as a mark.
-      this.scratch.set(m.x, m.y + 0.035, m.z);
-      this.matrix.makeScale(RADIUS * 2, 1, RADIUS * 2);
-      this.matrix.setPosition(this.scratch);
+      // Seated on the ground AS DRAWN and TILTED to it. It used to be a level
+      // quad at the actor's own height plus 35mm, which is a chord across
+      // ground that is not flat — and the ground rises through such a quad by a
+      // median of 86mm, so most of the pool was inside the hill it was lying
+      // on. Found while building the contact shade in M56.1, which had exactly
+      // the same defect for exactly the same reason; see `layOnGround`.
+      layOnGround(this.matrix, m.x, surfaceHeight(m.x, m.z) + 0.045, m.z, RADIUS * 2);
       this.mesh.setMatrixAt(i, this.matrix);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
