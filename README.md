@@ -278,7 +278,17 @@ unavailable.
 - **A shape per skill** — a nova rings outward, a poison pool lingers, a cleave
   sweeps a wedge, a heal throws light up from the feet, arrows fall as a volley
   and chain lightning hops target to target. Real geometry, sized from each
-  skill's own radius and range rather than from a constant beside it.
+  skill's own radius and range rather than from a constant beside it — and drawn
+  on the ground rather than at sea level, which is where all five of them used to
+  be. That was correct for exactly as long as the ground was a plane.
+- **And every mark on the floor is ON the floor** — the ring round your target,
+  the ring at the edge of your reach, and the red disc where a boss is about to
+  land. They follow the ground per vertex instead of being flat discs laid at one
+  height, because a flat disc on ground that is not flat is a chord and most of
+  it is inside the hill. **The telegraph is why it matters**: a troll's whole
+  design is an attack you answer by stepping out of it, and on any real slope the
+  old marker drew as a sliver — so the thing you were meant to read was the thing
+  the hill was eating.
 - **Buffs and debuffs, in one table and on the screen** — fourteen timed
   effects, from Rallied and Bloodlust to Burning, Exposed and Marked. Each is
   a row speaking the same vocabulary talents and affixes do, so a buff reaches

@@ -15,7 +15,14 @@
 import * as THREE from "three";
 import { TOWN_NPCS, npcPoseAt, type NpcBody, type TownNpc } from "../../../shared/town";
 import { Actor } from "./Actor";
-import { terrainHeight, toWorldX, toWorldZ } from "./World";
+// SURFACE, not terrain — the same distinction the player's own feet have been
+// standing on since M55.3, and townspeople were left behind by it. The drawn
+// ground is the smooth field sampled on a 1.63-unit grid and joined with flat
+// triangles, so it rides above the field across a quarter of the world; a
+// shopkeeper placed on the field is a shopkeeper up to 0.14 units into the
+// cobbles. They stand in one place for the life of the world, which makes it
+// the one case where being slightly sunk is permanent rather than passing.
+import { surfaceHeight, toWorldX, toWorldZ } from "./World";
 
 /**
  * Which rig each archetype wears.
@@ -96,7 +103,7 @@ export async function buildNpcs(scene: THREE.Scene): Promise<Map<string, NpcVisu
       const pose = npcPoseAt(def);
       const px = toWorldX(pose.x);
       const pz = toWorldZ(pose.y);
-      actor.snapTo(px, terrainHeight(px, pz), pz);
+      actor.snapTo(px, surfaceHeight(px, pz), pz);
       // Server bearings are measured in the XY plane where +y is south, and
       // south is +z here — so a bearing turns into a direction with no sign
       // flip at all. Getting this wrong leaves everyone facing out of town,
@@ -149,7 +156,7 @@ export function updateNpcs(npcs: Map<string, NpcVisual>, nowMs = Date.now()): vo
     // Emberhold is levelled, so this is 0 for all five of them today — but it
     // is the ground's answer rather than an assumption, and it stops being 0
     // the first time anybody's beat crosses the wall.
-    vis.actor.snapTo(wx, terrainHeight(wx, wz), wz);
+    vis.actor.snapTo(wx, surfaceHeight(wx, wz), wz);
     // Server bearings are XY with +y south, and south is +z here, so a bearing
     // becomes a direction with no sign flip — the same conversion the initial
     // facing uses, and the same one that leaves everybody staring out of town

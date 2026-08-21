@@ -5856,6 +5856,133 @@ both workspaces, zero console errors.
 
 ---
 
+## Phase 59 — Everything on the ground is on the ground
+The fourth time this project has had the same argument, one level down each
+time: the crossing (M54.1a), the feet (M55.3), the contact shade and the pool of
+light (M56.1), and now the marks drawn on the floor. Every one of them was two
+answers to *where is the ground*, every one was found by a person walking into
+it, and none of them threw.
+
+### M59.1 — the marks on the floor, the skill shapes, and the townspeople
+Three things, and they are one complaint: they were all drawn at a height
+nothing in the world stands at.
+
+### One: five skill shapes were drawn at sea level
+A nova, a lingering pool, a cleave wedge, a heal pillar and a volley — every one
+of them called with a **literal `0`** for its Y, and they had been since skill
+shapes were added. That was exactly right for as long as the ground was a plane,
+and it has been wrong since M53.3 gave it relief.
+
+`onGround`'s own note says it was *"spread into every call that used to pass a
+literal 0 for Y"*. These five were missed, and nothing catches a number that is
+correct everywhere the ground happens to be at sea level.
+
+Measured across the five bands the game is actually played in, where the surface
+runs from **-5.5 to +5.7 units**:
+
+    a shape drawn at y = 0 is more than 0.5 units off the ground   39.8% of the play area
+    more than 1.0 units off — over half a character's height       28.9%
+
+So a nova rang out underneath a hill and a poison pool hung in the air over a
+hollow, across better than a third of the map.
+
+### Two: the ground rings were on the wrong datum AND flat
+Both halves, and they are the two halves this log has already recorded twice.
+
+**The datum.** `terrainHeight` is the smooth analytic field; what you can SEE is
+that field sampled on a 1.63-unit grid and joined with flat triangles, which
+rides above it across **26.8% of the play area, by up to 0.184 units**. Every
+ring was placed on the field and lifted 0.028–0.032 — an order of magnitude less
+than the error it had to clear.
+
+**And a flat disc on ground that is not flat is a chord.** Measured as the worst
+point on the circle, at the ninety-fifth percentile:
+
+                          flat quad   tilted to slope   laid on the ground
+    target ring  r=0.6      0.184          0.013              0
+    slam         r=2.5      0.783          0.151              0
+    reach        r=5.0      1.568          0.551              0
+
+**Which is why these follow the ground per VERTEX rather than being tilted to
+it, and that is the decision worth recording.** A single tilt is exactly right
+for the contact shade — 1.3 units across, and a plane fits it to 3mm. It is not
+right here, and the table says why: at a reach ring's ten units across, a plane
+is still a third of a character out at p95. The thing this project already knows
+about a chord gets worse with the square of the span, and these marks are the
+widest flat things in the game.
+
+**The telegraph is the one that matters.** The whole design of the troll — an
+attack you answer by walking out of it rather than by out-healing it — depends on
+seeing where it lands. Photographed on the steepest ground in the bands, where
+the surface under a 5-unit ring runs from 0.0 to 4.76 against a centre of 0.19:
+flat, the slam telegraph is a **sliver** and the reach ring a thin crescent, both
+mostly swallowed by the rise. Laid on the ground they are complete circles.
+
+### Three: townspeople stood on the field while players stood on the mesh
+M55.3 put the player's feet on `surfaceHeight` and `npcs.ts` was left reading
+`terrainHeight`. It is the *worst* case of the three, because a shopkeeper stands
+in one place for the life of the world — so where a player's sunk foot is a
+passing thing on some ground, a townsperson's is permanent.
+
+### What it costs
+One height sample per vertex per move, sixty-four segments a ring. Measured at
+the absolute worst case — all five rings rebuilding every frame — **0.54ms of a
+16.7ms frame**, and the common case is far below it because `set` returns
+immediately when nothing has moved. That guard is the same one the soundscape's
+ramps needed and for the same reason: this runs from the render loop, and
+standing still is the common case.
+
+Sixty-four segments is chosen so that a segment is shorter than a terrain quad
+at every radius these reach — what is left between samples is smaller than the
+thing being sampled.
+
+### An eighteenth suite, for a rule this project keeps re-learning
+`tools/test/ground.mjs` is a SOURCE test, like `forests.mjs` reading the real
+model tables and `ambience.mjs` enforcing the rule its own first paragraph
+states. Nothing in Node can import `indicators.ts` or `Game.ts` — they pull in
+three.js — and the failure being guarded against is a call site reading the wrong
+name, which is plain in the text and invisible everywhere else.
+
+- **Who must read `surfaceHeight`**, by file, each with the reason spelled out.
+- **And who may read `terrainHeight`, with a reason each.** The allow-list is the
+  interesting half: the smooth field is the RIGHT answer for a dragonfly over the
+  Coldwater (it belongs over the water, not over the bridge deck) and for a
+  rooted plant (being slightly sunk is what rooted looks like). Requiring a
+  reason means the next person to reach for it has to argue here rather than in
+  a diff nobody reads.
+- **No skill shape drawn at a literal `y = 0`.**
+- **And the rule is load-bearing**, which is the half that keeps the rest honest:
+  every assertion above is vacuous if the two height functions happen to agree,
+  so the gap is measured and the suite FAILS if it ever closes. Somebody then
+  gets to delete the rule on purpose rather than by accident.
+- **Plus the flat/tilted/per-vertex table**, asserted, so "simplifying" the rings
+  back to a tilted quad fails loudly instead of quietly re-burying the telegraph.
+
+Three realistic mutations were run against it — the pillar back to `y = 0`,
+`npcs.ts` back to `terrainHeight`, the rings back onto the smooth field — and all
+three fail. Eighteen suites, smoke, the live slay suite, both workspaces, zero
+console errors.
+
+### The ruler was wrong first, again, and in a new way
+The first bank probe reported every sample on the riverbank as near-black and
+**the frame was at 23:15**. `dayNight.freeze()` only sets a field; the value is
+applied by `update`, which runs from the game loop — so stopping the loop before
+freezing pins whatever hour was already on screen. Freeze, let the loop run, then
+stop. That is now written down beside the other harness notes, because the
+symptom is a perfectly clean measurement of a world at midnight.
+
+### And one thing measured and deliberately not changed
+The pale shingle band along the riverbanks was on the list as *possibly reads
+wide*. Photographed at noon and sampled along a transect across the Coldwater, it
+does not: the ground is back to open-field colour within about 3.2 units of the
+waterline, against a river 7.5 units across. `RIVER_BANK_UNITS` is also doing two
+jobs at once — it sets the width of the shingle AND how far the bank climbs to
+its crest — so narrowing it for the texture would flatten the relief M53.4
+deliberately measured up. Left alone, with the measurement recorded, rather than
+tuned on a hunch.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -5939,6 +6066,48 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- A GROUND MARK FOLLOWS THE GROUND PER VERTEX; a single tilt is not a smaller
+  version of the same fix, it is a fix that runs out. The contact shade is 1.3
+  units across and a plane fits it to 3mm, which is why M56.1 tilted it. A reach
+  ring is ten units across and a slam telegraph five, and at those spans a plane
+  is still 0.55 and 0.15 units buried at p95 — a third of a character on the
+  thing the fight is about. Chord error grows with the square of the span, and
+  these are the widest flat objects in the game.
+- The TELEGRAPH is the one that decides it. Photographed on the steepest ground
+  in the bands, a flat slam marker is a sliver and a flat reach ring a crescent —
+  most of both is inside the rise. The troll's entire design is an attack you
+  answer by stepping out of it, so a telegraph that only draws the near third of
+  itself is the mechanic not working rather than a cosmetic fault.
+- A literal `0` for a ground Y is correct until the day the ground stops being a
+  plane, and then it is wrong everywhere and nothing says so. Five skill shapes
+  kept theirs across six phases of relief; measured, that is more than half a
+  character off the ground across 28.9% of the play area. `onGround` exists
+  precisely to be spread into these calls and the comment saying so was already
+  there.
+- An exception to a rule must carry its REASON in the test. `terrainHeight` is
+  not a bug — a dragonfly over the Coldwater belongs over the water and not over
+  the bridge deck, and a rooted plant slightly under the drawn mesh is what
+  rooted looks like. Listing those with reasons is what makes the next person
+  reaching for the smooth field argue in the suite rather than in a diff.
+- Assert that a rule is LOAD-BEARING, not only that it is obeyed. Every check
+  about which height function to read is vacuous if the two agree, so the suite
+  measures the gap and fails when it closes — which turns "the mesh got finer,
+  delete this rule" into a deliberate act instead of an accident.
+- Guard a per-vertex rebuild against not having moved. It runs from the render
+  loop and standing still is the common case; the same guard the soundscape's
+  ramps needed. Worst case measured at 0.54ms of a 16.7ms frame with all five
+  rings rebuilding every frame, and the common case is one of them.
+- FREEZE THE HOUR, THEN STOP THE LOOP — never the other way round. `freeze` only
+  sets a field; the value is applied by `update`, which runs from the game loop,
+  so a probe that stops the loop first pins whatever hour was already on screen.
+  A riverbank measurement came back with every sample near-black because the
+  frame was at 23:15, and nothing about the numbers said so.
+- Two jobs in one constant is a reason NOT to tune it. `RIVER_BANK_UNITS` sets
+  both the width of the shingle band and how far the bank climbs to its crest,
+  so narrowing it to answer "the sand reads wide" would flatten relief that was
+  deliberately measured up in M53.4. Measured first, found the band already ends
+  within 3.2 units of a waterline on a river 7.5 across, and left it alone.
 
 - "KILLED IT WITH" MEANS MOST OF YOUR DAMAGE, never the killing blow and never
   any of it. The killing blow is the one thing in a fight the player does not
@@ -8476,7 +8645,29 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 58 complete (2026-08-21).
+Phase 0 through 59 complete (2026-08-21).
+
+**Phase 59 M59.1 — everything on the ground is on the ground.** The fourth time
+this project has had the same argument, one level down each time. Five skill
+shapes — a nova, a lingering pool, a cleave, a heal pillar and a volley — were
+drawn at a **literal y = 0**, which was right for exactly as long as the ground
+was a plane and has been wrong since Phase 53 gave it relief: measured, that is
+more than half a character off the ground across 28.9% of the play area. Every
+ground ring was placed on the smooth analytic field rather than on the mesh you
+can see, and lifted three centimetres against an error of up to 0.184. And they
+were flat, which on ground that is not flat is a chord — so they follow the
+ground per VERTEX now, because a single tilt is not a smaller version of that fix
+but one that runs out: it leaves a five-unit reach ring 0.55 units buried at p95.
+**The telegraph is what decides it** — photographed on the steepest ground in the
+bands, a flat slam marker is a sliver and a flat reach ring a crescent, most of
+both inside the rise, which is the troll's whole mechanic not working rather than
+a cosmetic fault. Townspeople were still standing on the field too, which is the
+worst of the three because they never move. An eighteenth suite enforces which
+feature may read which height, with a written reason for every exception, and
+asserts that the rule is load-bearing so it cannot go vacuous unnoticed. Three
+realistic mutations fail it. The ruler was wrong first again, in a new way: a
+riverbank probe returned every sample near-black because `freeze` only sets a
+field and the loop that applies it had already been stopped.
 
 **Phase 58 M58.1 — what it folds to.** Damage has had a school since Phase 48 —
 six of them, thirteen creatures each with something that hurts them, five

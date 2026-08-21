@@ -364,6 +364,30 @@ wrap depends on.
 node tools/test/wind.mjs
 ```
 
+`ground.mjs` — no server needed. Enforces the rule this project has now
+re-learned four times: anything that lies on the ground has to lie on the ground
+you can SEE. There are two ways to get it wrong — reading `terrainHeight`, the
+smooth analytic field, when the drawn mesh rides above it across a quarter of the
+world; and using no datum at all, which is what five skill shapes were doing with
+a literal `y = 0` since before the ground had relief.
+
+A source test, because Node cannot import anything that pulls in three.js and the
+failure is a call site reading the wrong name. It lists who MUST read
+`surfaceHeight` and who MAY read `terrainHeight` **with a reason each** — a
+dragonfly over the Coldwater belongs over the water and not over the bridge deck,
+and a rooted plant slightly under the mesh is what rooted looks like — so
+reaching for the smooth field means arguing here rather than in a diff.
+
+It also asserts the rule is LOAD-BEARING, which is what keeps the rest honest:
+every check is vacuous if the two height functions agree, so the gap is measured
+and the suite fails if it ever closes. Plus the flat/tilted/per-vertex burial
+table, so "simplifying" the rings back to a tilted quad fails loudly instead of
+quietly re-burying the slam telegraph.
+
+```powershell
+node tools/test/ground.mjs
+```
+
 `rng.mjs` — no server needed, and the most important twenty lines in this
 directory. The seeded generator was the textbook C LCG copy-pasted into six
 files, and in JavaScript `s * 1103515245` overflows a double before the mask

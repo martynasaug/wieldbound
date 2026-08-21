@@ -1641,23 +1641,38 @@ export class Game {
     const first = hits.length > 0 ? this.monsters.get(hits[0].monsterId)?.actor.position : undefined;
     const centre = first ?? at;
 
+    // EVERY ONE OF THESE USED TO PASS A LITERAL ZERO for Y, and had since the
+    // day skill shapes were added — which was fine for exactly as long as the
+    // ground was a plane, and has been wrong since M53.3 gave it relief.
+    // `onGround`'s own note says it was "spread into every call that used to
+    // pass a literal 0 for Y"; these five were missed, and nothing catches a
+    // number that is right everywhere the ground happens to be at sea level.
+    //
+    // Measured over the five bands the game is played in, where the surface
+    // runs from -5.5 to +5.7 units: a shape drawn at zero is more than half a
+    // unit off the ground across 38.7% of it and more than a whole unit —
+    // over half a character's height — across 28.3%. So a nova rings out
+    // underneath a hill, and a poison pool hangs in the air over a hollow.
     switch (fx.shape) {
       case "nova":
-        this.skillFx.nova(at.x, 0, at.z, radius, fx.color);
+        this.skillFx.nova(at.x, surfaceHeight(at.x, at.z), at.z, radius, fx.color);
         break;
       case "ground":
-        this.skillFx.ground(centre.x, 0, centre.z, radius, fx.color);
+        this.skillFx.ground(centre.x, surfaceHeight(centre.x, centre.z), centre.z, radius, fx.color);
         break;
       case "cone": {
         const facing = self.facingVector();
-        this.skillFx.cone(at.x, 0, at.z, Math.atan2(facing.x, facing.z), reach, fx.color);
+        this.skillFx.cone(
+          at.x, surfaceHeight(at.x, at.z), at.z,
+          Math.atan2(facing.x, facing.z), reach, fx.color,
+        );
         break;
       }
       case "pillar":
-        this.skillFx.pillar(at.x, 0, at.z, fx.color);
+        this.skillFx.pillar(at.x, surfaceHeight(at.x, at.z), at.z, fx.color);
         break;
       case "rain":
-        this.skillFx.rain(centre.x, 0, centre.z, radius, fx.color);
+        this.skillFx.rain(centre.x, surfaceHeight(centre.x, centre.z), centre.z, radius, fx.color);
         break;
       case "chain": {
         // Hops caster -> first -> second -> ..., which is what the skill
