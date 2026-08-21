@@ -4741,6 +4741,34 @@ textures Vite served as `index.html` in M53.3: **before bisecting a renderer,
 confirm the bytes it is running are the bytes you wrote.** The browser pass now
 restarts the dev server first.
 
+### M54.2 — ambient life. STARTED, NOT WIRED.
+`client/src/three/ambience.ts` is written and committed and **nothing imports
+it**. It went into the M54.1a commit as dead code because the bridge reports
+arrived mid-file; that is untidy rather than harmful, and it is flagged here so
+the next session does not have to work out whether it was abandoned or
+forgotten.
+
+What it is: butterflies over open meadow by day, dragonflies over the water,
+fireflies in the woods and along the river after dark, and birds circling high.
+A fixed pool living in a MOVING NEIGHBOURHOOD around the player rather than
+placed across the world — the fog closes at 165 units, so a world-wide placement
+would pay for a hundred thousand things nobody can see, and a butterfly is not a
+landmark that anyone will notice is always in the same field. What is out is
+decided by WHERE AND WHEN, in the same vocabulary `placeNameAt` speaks, so a
+wood at dusk is a different place to stand in than a meadow. They drift downwind
+on M54.1's wind field.
+
+Deliberately NOT derived from the clock, which is a departure from how the hour,
+the wind, the woods and the river all work — and the reason is worth keeping:
+those are places and rules, and two players who disagree about them disagree
+about the world. A butterfly is neither. It does not persist, nothing can be
+told to go to one, and no two clients will ever be compared over it.
+
+Still to do: instantiate it in `Game.start`, add it to the scene, call
+`update(dt, timeSeconds, night, playerX, playerZ)` from the frame loop beside
+`river.update`, then verify with the frame-differencing probe — it is motion, so
+a single screenshot proves nothing.
+
 ---
 
 ## Coldharrow — parked deliberately, and what it is for
