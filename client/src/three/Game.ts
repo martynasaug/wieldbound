@@ -149,10 +149,14 @@ import { landmarkById, landmarkPosition } from "../../../shared/landmarks";
 import { buildWaystones, WAYSTONE_PLATE_HEIGHT, type WaystoneVisual } from "./waystones";
 import { NorthRoad } from "./road";
 import { River } from "./river";
+import { Ambience } from "./ambience";
+import { Mist } from "./mist";
+import { Presence, type Mark } from "./presence";
 import { updateWind } from "./wind";
 import { NORTH_TOWN_NAME, NORTH_TOWN_SITE } from "../../../shared/road";
 import { resolveRiverCollision } from "../../../shared/river";
 import { placeNameAt } from "../../../shared/places";
+import { forestStrengthAt } from "../../../shared/forests";
 import {
   NPC_TALK_RANGE_PX,
   NPC_TETHER_PX,
@@ -389,6 +393,14 @@ export class Game {
   /** The way out of town. Its torches are the only lights outside the walls. */
   private readonly northRoad = new NorthRoad();
   private readonly river = new River();
+  /** Butterflies, dragonflies, fireflies and birds — see ambience.ts. */
+  private readonly ambience = new Ambience();
+  /** Ground mist, where and when there would be. See mist.ts. */
+  private readonly mist = new Mist();
+  /** A pool of light under every person, so a figure is findable. See presence.ts. */
+  private readonly presence = new Presence();
+  /** Scratch for the above, so a frame with five players allocates nothing. */
+  private readonly marks: Mark[] = [];
 
   // --- authoritative local state (server position is in px, as in the 2D game)
   private playerId = "";
@@ -826,6 +838,8 @@ export class Game {
       model: CLASS_BODIES.adventurer,
       height: PLAYER_HEIGHT,
       interpolate: false,
+      // Yours is the strongest, because yours is the one you must never lose.
+      rim: 0.5,
     });
     this.localActor.setAppearance(this.appearance);
 
@@ -868,6 +882,18 @@ export class Game {
     // Both are cheap merged geometry, so this costs nothing but an order.
     this.world.scene.add(this.river.build());
     this.world.scene.add(this.northRoad.build());
+
+    // The small living things. AFTER the river, because a dragonfly asks the
+    // water how high it is; into the scene rather than `decor`, because the
+    // camera-fade group exists for things that can stand between you and your
+    // character, and nothing here is solid enough to.
+    this.world.scene.add(this.ambience.build());
+
+    // The mist, after everything it lies over. It writes no depth and sorts by
+    // `renderOrder`, so where it goes in the graph decides nothing — but it
+    // reads the river's surface height, which the river has to have built.
+    this.world.scene.add(this.mist.mesh);
+    this.world.scene.add(this.presence.mesh);
 
     const decor = this.world.buildDecor();
     const body = this.localActor.load();
@@ -986,7 +1012,14 @@ export class Game {
       this.playerClasses.set(s.id, appearanceClass(s.appearance));
       let actor = this.players.get(s.id);
       if (!actor) {
-        actor = new Actor({ model: CLASS_BODIES.adventurer, height: PLAYER_HEIGHT });
+        // Other players get one too, weaker: they are people rather than
+        // scenery, and telling a player from a monster at a glance is worth as
+        // much in a crowd as finding yourself is.
+        actor = new Actor({
+          model: CLASS_BODIES.adventurer,
+          height: PLAYER_HEIGHT,
+          rim: 0.3,
+        });
         this.players.set(s.id, actor);
         this.playerMotion.set(s.id, { x: s.x, y: s.y, moving: false });
         void actor.load().then(() => this.world.scene.add(actor!.root));
@@ -2811,6 +2844,30 @@ export class Game {
     // Not on the clock, unlike everything else updated here: a river runs at
     // night.
     this.river.update(performance.now() / 1000);
+    // The small living things, beside the river and for the same reason: they
+    // move because they are alive rather than because the clock says so, so
+    // they run on `performance.now` and take the real frame delta. They do take
+    // the HOUR, because who is out is a question about the light.
+    this.ambience.update(
+      dt,
+      performance.now() / 1000,
+      nightAmount(hour.clock),
+      this.localActor?.position.x ?? 0,
+      this.localActor?.position.z ?? 0,
+    );
+    // And the mist, which takes the raw CLOCK rather than `nightAmount`: it is
+    // a dawn phenomenon above all, and night-ness cannot tell dawn from dusk.
+    // It is also handed the scene's own fog colour, so mist and sky can never
+    // be two different weathers in one frame.
+    this.mist.update(
+      dt,
+      performance.now() / 1000,
+      hour.clock,
+      (this.world.scene.fog as THREE.Fog).color,
+      this.localActor?.position.x ?? 0,
+      this.localActor?.position.z ?? 0,
+    );
+    this.updatePresence(nightAmount(hour.clock));
     // Three uniform writes, shared by reference across every patched foliage
     // material in the scene — so this costs the same whether fifty thousand
     // plants are swaying or none are. Fed the WALL clock rather than
@@ -2828,6 +2885,35 @@ export class Game {
     this.world.render();
     requestAnimationFrame(this.loop);
   };
+
+  /**
+   * The pool of light under each person. See presence.ts for why it is a pool
+   * and not a ring.
+   *
+   * Players only — you and whoever else is out here. NOT monsters, which have
+   * nameplates, a target ring and a difficulty colour already, and not
+   * townspeople, who stand in one place for the life of the world and would
+   * therefore wear a permanent scorch mark on the flagstones.
+   */
+  private updatePresence(night: number): void {
+    this.marks.length = 0;
+    if (this.localActor) {
+      this.marks.push({
+        x: this.localActor.position.x,
+        y: this.localActor.position.y,
+        z: this.localActor.position.z,
+        self: true,
+      });
+    }
+    for (const actor of this.players.values()) {
+      this.marks.push({ x: actor.position.x, y: actor.position.y, z: actor.position.z, self: false });
+    }
+    // Under a canopy is the other way this world gets dark, and it is the one
+    // the day/night value cannot see: noon in Blackstand is dimmer than dusk on
+    // the road. Read from the same field the woods themselves are drawn from.
+    const gloom = forestStrengthAt(this.playerX, this.playerY);
+    this.presence.update(this.marks, night, gloom, performance.now() / 1000);
+  }
 
   private updateIndicators(): void {
     const self = this.localActor;

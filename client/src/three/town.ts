@@ -48,6 +48,7 @@ import {
   type TownBuilding,
 } from "../../../shared/town";
 import { clipName, instantiate } from "./assets";
+import { Flames } from "./flame";
 import { PX_PER_UNIT, toWorldX, toWorldZ } from "./World";
 
 // --- Palette ----------------------------------------------------------------
@@ -1143,6 +1144,17 @@ export interface Lantern {
   strength: number;
 }
 
+/**
+ * The open fires in town.
+ *
+ * Only the braziers, deliberately. A post lantern is a wick behind four panes
+ * of glass and its little emissive ball is the right object for that — you are
+ * looking at a lamp, not at a fire. A brazier is a basket of burning wood that
+ * people stand round, and until now the two were literally the same sphere with
+ * a different multiplier on the light.
+ */
+let townFlames: Flames | null = null;
+
 const lanternGlowMaterial = new THREE.MeshBasicMaterial({ color: 0xffc06a, fog: false });
 
 /**
@@ -1172,6 +1184,8 @@ function lantern(
    * on one clock.
    */
   bare = false,
+  /** Suppresses the emissive ball, for a fitting that supplies its own fire. */
+  noGlow = false,
 ): void {
   if (!bare) {
     b.cyl("iron", 0.07, height, x, 0, z, 6);
@@ -1186,9 +1200,12 @@ function lantern(
   light.position.set(x, height + 0.22, z);
   group.add(light);
 
-  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 8), lanternGlowMaterial);
-  glow.position.copy(light.position);
-  group.add(glow);
+  let glow: THREE.Mesh | null = null;
+  if (!noGlow) {
+    glow = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 8), lanternGlowMaterial);
+    glow.position.copy(light.position);
+    group.add(glow);
+  }
 
   lanterns.push({ light, glow, phase: (x * 12.9898 + z * 78.233) % (Math.PI * 2), strength });
 }
@@ -1543,11 +1560,21 @@ function brazier(
   }
   b.add("iron", new THREE.CylinderGeometry(0.42, 0.28, 0.34, 8), x, 0.78, z);
   b.add("iron", new THREE.TorusGeometry(0.4, 0.035, 4, 12), x, 0.94, z, 0, Math.PI / 2);
-  // The coals, which read as embers at noon and light the place at midnight.
-  b.add("awning", new THREE.IcosahedronGeometry(0.26, 0), x, 0.92, z);
+  // The coals. CHARRED, not red — this used to be an awning-coloured ball,
+  // which was the right call when it was the only warm thing in the basket and
+  // the wrong one the moment a real fire went in behind it: a maroon facet next
+  // to a flame reads as painted card, not as burning wood. Dark and small now,
+  // sitting low, so what you see in the basket is the fire.
+  b.add("rockDark", new THREE.IcosahedronGeometry(0.19, 0), x, 0.86, z);
   // Stronger than a lamp, because an open fire is: the lanterns line the square
-  // and a brazier is meant to be a place people stand round after dark.
-  lantern(b, group, x, z, 1.05, lanterns, 1.25, true);
+  // and a brazier is meant to be a place people stand round after dark. No
+  // glow ball — the fire below IS the visible half now.
+  lantern(b, group, x, z, 1.05, lanterns, 1.25, true, true);
+  // Sitting IN the basket, on the coals, and wider than a torch's: a brazier
+  // burns logs laid flat and a torch burns a bundle held upright, so one is
+  // squat and one is a tongue.
+  // Squat and wide: a basket of logs, not a torch. 0.86 tall and 1.15 across.
+  townFlames?.add(x, 1.0, z, 0.9, Math.abs(x * 13.1 + z * 7.7), 1.1);
 }
 
 
@@ -2720,9 +2747,21 @@ export class Town {
   private readonly townFill = new THREE.HemisphereLight(0xffd8a0, 0x3a2c1e, 0);
   /** A soft warm pool over the square itself, so the middle is the brightest. */
   private readonly squareGlow = new THREE.PointLight(0xffbe72, 0, 46, 1.6);
+  /** The braziers' fire. See `townFlames`. */
+  private flames: Flames | null = null;
 
   build(scene: THREE.Scene): void {
     const builder = new Builder();
+
+    // Before anything that burns is built, because `brazier` reaches for it.
+    // Two entries in `TOWN_PROPS`, so the capacity is a count rather than a
+    // guess — the same rule the props table already enforces on collision.
+    this.flames = new Flames(
+      TOWN_PROPS.filter((p) => p.id.startsWith("brazier-")).length,
+      "flames:town",
+    );
+    townFlames = this.flames;
+    this.group.add(this.flames.mesh);
 
     for (const b of TOWN_BUILDINGS) {
       const built = makeBuilding(b, this.lanterns);
@@ -3092,6 +3131,9 @@ export class Town {
     // that only lights up once you are inside it is a town with nothing to walk
     // toward.
     const lit = night;
+    // The braziers, on the same `lit` the lanterns and the windows take, so
+    // everything warm in town comes up together.
+    this.flames?.update(timeSeconds, lit);
     for (const l of this.lanterns) {
       const flicker =
         0.86 +

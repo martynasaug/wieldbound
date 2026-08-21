@@ -13,10 +13,13 @@
 // and it would be paying for lights nobody can see, since the fog closes at 110
 // units and the road is 108 units long. So a torch is two separable things:
 //
-//   * a FLAME, which every torch always has. An unlit emissive ball, one draw
-//     call in the merged mesh, visible from as far as the fog allows. This is
-//     what makes the road read at night as a chain of lights going north, which
-//     is the whole point of lighting it.
+//   * a FLAME, which every torch always has. One instance of the shared fire in
+//     `flame.ts` — a billboard whose shape is cut and animated in its own
+//     shader — so all fourteen are one draw call, visible from as far as the
+//     fog allows. This is what makes the road read at night as a chain of
+//     lights going north, which is the whole point of lighting it. It used to
+//     be an emissive icosahedron scaled on two sines, which is a good pinpoint
+//     at three hundred units and an orange ball on a stick at ten.
 //   * a LIGHT, which only the nearest few have. A small pool of PointLights is
 //     re-assigned to the closest torches every frame, so the cost is fixed no
 //     matter how long the road gets.
@@ -40,6 +43,7 @@ import {
   bridgePoint,
 } from "../../../shared/river";
 import { Builder, roadTexture } from "./town";
+import { Flames } from "./flame";
 import {
   PX_PER_UNIT,
   bridgeDeckHeight,
@@ -75,10 +79,9 @@ interface Torch {
   /** Stable per-torch offset, so fourteen flames are not one flame drawn
    *  fourteen times. Seeded from distance along the road. */
   phase: number;
-  flame: THREE.Mesh;
+  /** Its slot in the shared fire. */
+  flame: number;
 }
-
-const flameMaterial = new THREE.MeshBasicMaterial({ color: FLAME_COLOR, fog: true });
 
 export class NorthRoad {
   readonly group = new THREE.Group();
@@ -87,6 +90,8 @@ export class NorthRoad {
   private readonly lights: THREE.PointLight[] = [];
   /** Scratch, so the per-frame sort does not allocate. */
   private readonly ranked: { i: number; d: number }[] = [];
+  /** All fourteen fires, in one instanced billboard. Sized in `buildTorches`. */
+  private flames: Flames | null = null;
 
   build(): THREE.Group {
     this.buildSurface();
@@ -238,8 +243,11 @@ export class NorthRoad {
   private buildTorches(): void {
     const b = new Builder();
     const posts = new THREE.Group();
+    const spec = roadTorches();
+    this.flames = new Flames(spec.length, "flames:road");
+    this.group.add(this.flames.mesh);
 
-    for (const t of roadTorches()) {
+    for (const t of spec) {
       // ON THE RAIL, NOT ON THE ROAD. A torch that lands within the span used
       // to be planted on the deck at the road's own offset, which put a post in
       // the middle of the crossing — the one stretch of the whole route where
@@ -292,13 +300,19 @@ export class NorthRoad {
         }
       }
 
-      const flame = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), flameMaterial);
-      flame.position.set(x, g + height + 0.3, z);
-      posts.add(flame);
+      // The fire sits ON the head rather than above it — the quad's origin is
+      // its bottom edge, so this is where the pitch is, not where the middle of
+      // the flame ends up. A torch's flame is also taller than it is wide and
+      // taller than the old ball was round: 0.72 units of fire on a 2.6-unit
+      // post is about what a bundle of rag and pitch actually looks like.
+      const flameFoot = g + height + 0.16;
+      const flame = this.flames!.add(x, flameFoot, z, 0.72, Math.abs(t.alongPx) * 0.37);
 
       this.torches.push({
         x,
-        y: g + height + 0.3,
+        // The LIGHT hangs at the middle of the fire rather than at its foot,
+        // which is where an observer would say the torch is.
+        y: flameFoot + 0.3,
         z,
         // Distance along the road, so no two neighbours flicker together and
         // every client agrees about which is which.
@@ -388,14 +402,9 @@ export class NorthRoad {
   update(night: number, playerX: number, playerZ: number, timeSeconds: number): void {
     const lit = night;
 
-    for (const t of this.torches) {
-      const flicker =
-        0.82 +
-        Math.sin(timeSeconds * 7.3 + t.phase) * 0.11 +
-        Math.sin(timeSeconds * 2.9 + t.phase * 2) * 0.07;
-      t.flame.visible = lit > 0.04;
-      if (t.flame.visible) t.flame.scale.setScalar(0.8 + flicker * 0.4);
-    }
+    // Two uniform writes for all fourteen fires. The shape, the lick and the
+    // guttering are in the shader; nothing here has an opinion about them.
+    this.flames?.update(timeSeconds, lit);
 
     if (lit <= 0.04) {
       for (const l of this.lights) l.visible = false;

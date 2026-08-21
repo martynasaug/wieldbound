@@ -102,6 +102,143 @@ const SILHOUETTE_COLOR = 0x7fc4ee;
 const SILHOUETTE_RENDER_ORDER = 1;
 /** Everything an actor owns — body, gear, held items — draws after that. */
 const ACTOR_RENDER_ORDER = 2;
+/**
+ * The outline goes AFTER the body, and that is the whole trick — see `buildRim`.
+ * Silhouette 1, body 2, outline 3.
+ */
+const OUTLINE_RENDER_ORDER = 3;
+/** Warm and pale. Warm, because every light in this world is: a cool rim on a
+ *  figure lit by a forge, a torch or a low sun would read as a second sun. */
+const RIM_COLOR = 0xffe6bd;
+
+// --- The rim -----------------------------------------------------------------
+//
+// Two problems, one shape, and finding out they were the same thing is the
+// whole of this section.
+//
+// **A figure standing in front of scenery is hard to pick out.** Not occluded —
+// occlusion has three mechanisms already — simply low-contrast: brown leather
+// against brown earth, at a camera distance where the character is ninety
+// pixels tall. Reported from play as wanting "a slight highlight around the
+// player model".
+//
+// **A figure standing BEHIND scenery used to show through as a solid.** The
+// silhouette below is exactly the right idea and it was drawn as a filled
+// human-shaped cutout in flat pale blue, which is an X-ray. Reported from play,
+// in the word this project has used for that look once before: a skeleton.
+//
+// A RIM ANSWERS BOTH, because both are asking for the OUTLINE of the figure and
+// nothing inside it. In front, the outline is a highlight that separates the
+// body from what is behind it. Behind, the outline is the shape of somebody
+// standing there rather than a picture of them through a wall.
+//
+// It is a fresnel — how edge-on this fragment's surface is to the eye — and not
+// a hull expanded along its normals, which is the other way to draw an outline.
+// The hull needs a second copy of every geometry on the rig, a per-mesh scale
+// that is wrong wherever the mesh is not convex, and a stencil buffer to make
+// the occluded case an outline rather than a filled blob. The fresnel needs one
+// varying and four lines of fragment shader, works on the skinned mesh already
+// being drawn, and gives the occluded case an outline for free — because a
+// fresnel IS an outline, wherever it is drawn.
+//
+// Injected with `onBeforeCompile` rather than written as a ShaderMaterial,
+// because the rig is SKINNED and reimplementing three's skinning would be
+// reimplementing three's skinning. MeshBasicMaterial already carries the normal
+// and skinning chunks — it needs them for environment mapping — so
+// `transformedNormal` and `mvPosition` are both in scope by the time this runs.
+const RIM_GLSL = {
+  pars: "varying vec3 vRimN;\nvarying vec3 vRimV;\n",
+  vertex:
+    // The guard is not belt-and-braces. MeshBasicMaterial compiles the normal
+    // chunks only when it needs them — under USE_ENVMAP or USE_SKINNING — so on
+    // the skinned body `transformedNormal` exists and on an unskinned held
+    // weapon nothing normal-related does. Reaching for it unguarded is a shader
+    // that fails to compile for exactly the meshes nobody thinks to test.
+    "#if defined( USE_ENVMAP ) || defined( USE_SKINNING )\n" +
+    "  vRimN = normalize( transformedNormal );\n" +
+    "#else\n" +
+    "  vRimN = normalize( normalMatrix * normal );\n" +
+    "#endif\n" +
+    "vRimV = normalize( mvPosition.xyz );\n",
+};
+
+/**
+ * Patches a MeshBasicMaterial so it draws only its own rim.
+ *
+ * `hard` discards the interior outright, for the occluded silhouette, which has
+ * to stay in the OPAQUE pass — see the long note below for why that ordering is
+ * load-bearing and cannot be traded for alpha. `soft` fades it instead, for the
+ * highlight, which is additive and may blend.
+ */
+function makeRim(
+  material: THREE.MeshBasicMaterial,
+  mode: "hard" | "soft",
+  power: number,
+  cut: number,
+): void {
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace("void main() {", RIM_GLSL.pars + "void main() {")
+      .replace("#include <project_vertex>", "#include <project_vertex>\n" + RIM_GLSL.vertex);
+    const tail =
+      mode === "hard"
+        ? "float rimF = pow(1.0 - abs(dot(normalize(vRimN), normalize(-vRimV))), " +
+          power.toFixed(2) +
+          ");\n" +
+          "if (rimF < " + cut.toFixed(3) + ") discard;\n" +
+          "gl_FragColor.rgb *= 0.55 + 0.45 * smoothstep(" + cut.toFixed(3) + ", 1.0, rimF);\n"
+        : "float rimF = pow(1.0 - abs(dot(normalize(vRimN), normalize(-vRimV))), " +
+          power.toFixed(2) +
+          ");\n" +
+          "rimF = smoothstep(" + cut.toFixed(3) + ", 1.0, rimF);\n" +
+          "if (rimF <= 0.004) discard;\n" +
+          "gl_FragColor.a *= rimF;\n";
+    shader.fragmentShader = shader.fragmentShader
+      .replace("void main() {", RIM_GLSL.pars + "void main() {")
+      .replace("#include <opaque_fragment>", "#include <opaque_fragment>\n" + tail);
+  };
+  // Two materials with the same program cache key share a compiled program, and
+  // these two do not want to.
+  material.customProgramCacheKey = () => "rim-" + mode + "-" + power + "-" + cut;
+  material.needsUpdate = true;
+}
+
+/**
+ * Patches a MeshBasicMaterial into an OUTLINE: the same mesh, pushed out along
+ * its own normals, drawn back-faces-only.
+ *
+ * This is the other half, and it exists because the fresnel above is the wrong
+ * instrument for the unoccluded case. A fresnel lights every surface that is
+ * edge-on to the eye, and on a low-poly rig that includes the inside of an
+ * elbow, the top of a belt and the rim of every buckle — so what it draws is
+ * not an outline, it is a stipple of bright specks all over the armour.
+ * Measured, on a four-times crop: the shoulders and the belt lit up and the
+ * actual silhouette barely did.
+ *
+ * An expanded hull cannot make that mistake, because it does not know where the
+ * eye is. Back faces only, so what survives is exactly the band by which the
+ * hull overhangs the real body — a line of even weight all the way round it, and
+ * nothing at all in the middle, where the body itself draws over it.
+ *
+ * The push happens in OBJECT space, before the skinning chunk, so an outline on
+ * a moving arm moves with the arm. Doing it after would leave the outline in
+ * the rest pose while the character walked out of it.
+ */
+function makeOutline(material: THREE.MeshBasicMaterial, width: number): void {
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <begin_vertex>",
+      "#include <begin_vertex>\n" +
+        "#if defined( USE_ENVMAP ) || defined( USE_SKINNING )\n" +
+        "  transformed += normalize( objectNormal ) * " + width.toFixed(4) + ";\n" +
+        "#else\n" +
+        "  transformed += normalize( normal ) * " + width.toFixed(4) + ";\n" +
+        "#endif\n",
+    );
+  };
+  material.customProgramCacheKey = () => "outline-" + width;
+  material.needsUpdate = true;
+}
 
 export interface ActorOptions {
   model: string;
@@ -169,6 +306,17 @@ export interface ActorOptions {
    * walk about.
    */
   silhouette?: boolean;
+
+  /**
+   * A soft light along this actor's own outline, always, whether occluded or
+   * not. See RIM_GLSL.
+   *
+   * Off by default and deliberately: it is for PEOPLE. A monster wearing one
+   * would be a monster the game had drawn attention to, which is the target
+   * ring's job and would make an ordinary wolf look special; a townsperson
+   * wearing one would glow in a lit square for the life of the world.
+   */
+  rim?: number;
 }
 
 export class Actor {
@@ -250,6 +398,9 @@ export class Actor {
   /** The through-walls copy of every mesh on the rig. See SILHOUETTE_COLOR. */
   private silhouettes: THREE.Mesh[] = [];
   private silhouetteMaterial: THREE.MeshBasicMaterial | null = null;
+  /** The outline copy of every mesh on the rig. See `makeOutline`. */
+  private rims: THREE.Mesh[] = [];
+  private outlineMaterial: THREE.MeshBasicMaterial | null = null;
 
   constructor(private readonly options: ActorOptions) {
     this.facingOffset = options.facingOffset ?? 0;
@@ -369,6 +520,7 @@ export class Actor {
     // material it finds down there, which would destroy the one silhouette
     // material the body is still using.
     this.buildSilhouette(instance.object);
+    this.buildRim(instance.object);
 
     // Re-dress: the gear was hanging off the rig that just went away. The body
     // check inside will pass, because `bodyModel` is already the new one.
@@ -491,6 +643,10 @@ export class Actor {
     if (!this.silhouetteMaterial) {
       this.silhouetteMaterial = new THREE.MeshBasicMaterial({
         color: SILHOUETTE_COLOR,
+        // Only the outline. The filled version of this was the "skeleton" — see
+        // the rim note above. A hard cut rather than a fade because the opaque
+        // pass has no alpha to fade with, and the cut is generous enough that
+        // what survives is a band rather than a hairline.
         // OPAQUE, and that is the whole fix. See the long note above: three.js
         // splits its render lists on this flag, and a transparent silhouette is
         // drawn after every opaque thing in the scene — including the gear on
@@ -503,6 +659,10 @@ export class Actor {
         depthWrite: false,
         fog: false,
       });
+      // 1.9 and 0.34: a wide band rather than a hairline, because this one is
+      // read at a glance through a palisade and a thin line at ninety pixels is
+      // a thing you have to look for.
+      makeRim(this.silhouetteMaterial, "hard", 1.9, 0.34);
     }
 
     const sources: THREE.Mesh[] = [];
@@ -535,6 +695,101 @@ export class Actor {
       ghost.scale.copy(mesh.scale);
       mesh.parent?.add(ghost);
       this.silhouettes.push(ghost);
+    }
+  }
+
+  /**
+   * The rim highlight: a soft light along this actor's outline, drawn ON TOP of
+   * its own body.
+   *
+   * Render order 3 and `depthFunc: LessEqual` together are the whole trick. The
+   * body draws at 2 and writes depth; the rim then draws at exactly the same
+   * depth and is let through by the EQUAL half of the test, so it lands on the
+   * body's own surface with no polygon offset to tune and nothing to z-fight —
+   * a bias would have needed a different value at every zoom, which is the same
+   * trap the silhouette's ordering was built to avoid.
+   *
+   * Additive, so it lifts the edge rather than painting over it: a rim that
+   * REPLACED the colour there would flatten the armour it is meant to separate
+   * from the background.
+   */
+  private buildRim(root: THREE.Object3D): void {
+    const strength = this.options.rim ?? 0;
+    if (strength <= 0) return;
+    for (const r of this.rims) r.removeFromParent();
+    this.rims = [];
+    if (!this.outlineMaterial) {
+      this.outlineMaterial = new THREE.MeshBasicMaterial({
+        color: RIM_COLOR,
+        // Back faces only. See `makeOutline` — this is what makes it a line
+        // round the figure rather than a bigger copy of the figure.
+        side: THREE.BackSide,
+        transparent: true,
+        // Low, and it looks far too low written down. The line is read against
+        // the WORST background it will ever have — a character at midnight is a
+        // dark figure on black — and at anything above this the seams between
+        // the parts of the rig start drawing too and the whole thing reads as a
+        // chalk sketch rather than as a person with light on their edge.
+        opacity: strength * 0.42,
+        // Tests but never writes. Testing is what erases the seams between the
+        // eleven meshes a rig is made of; writing would let one outline occlude
+        // the next and put the seams straight back.
+        depthWrite: false,
+        depthTest: true,
+        fog: false,
+      });
+      // Under two centimetres on a 1.8-unit body: about a pixel at this camera,
+      // which is a line you notice and not one you look at. It was 0.025 first,
+      // and the extra half-pixel was enough for the overhang of each PART of the
+      // rig — the hood over the head, a bracer over a forearm — to clear the
+      // part beside it and draw its own loop. One outline round a person; not
+      // eleven round the eleven meshes a person is made of.
+      makeOutline(this.outlineMaterial, 0.022);
+      this.ownedMaterials.add(this.outlineMaterial);
+    }
+
+    const sources: THREE.Mesh[] = [];
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh) sources.push(mesh);
+    });
+
+    for (const mesh of sources) {
+      const skinned = mesh as THREE.SkinnedMesh;
+      let out: THREE.Mesh;
+      if (skinned.isSkinnedMesh) {
+        const s = new THREE.SkinnedMesh(skinned.geometry, this.outlineMaterial!);
+        s.bind(skinned.skeleton, skinned.bindMatrix);
+        out = s;
+      } else {
+        out = new THREE.Mesh(mesh.geometry, this.outlineMaterial!);
+      }
+      // AFTER the whole body, and depth-tested against it. THIS IS THE ORDERING
+      // THAT MATTERS, and getting it the other way round is what put loops
+      // around the character's collar, wrists and belt.
+      //
+      // Drawn BEFORE the body, each mesh's hull is erased only by the mesh it
+      // belongs to, so wherever the hood overhangs the neck or a bracer
+      // overhangs a forearm, that mesh's own outline survives on top of its
+      // neighbour — eleven outlines round the eleven parts a person is made of,
+      // which reads as jewellery.
+      //
+      // Drawn AFTER, every part of the rig has already written depth, and the
+      // hull's back faces sit BEHIND the real surface, so they fail against any
+      // of them. What survives is only where the hull overhangs the WHOLE
+      // figure — one line, round the outside, which is what an outline is. The
+      // same shape either way; the only difference is what it is measured
+      // against, and it is the same class of mistake the silhouette's own
+      // ordering note is about.
+      out.renderOrder = OUTLINE_RENDER_ORDER;
+      out.castShadow = false;
+      out.receiveShadow = false;
+      out.frustumCulled = false;
+      out.position.copy(mesh.position);
+      out.quaternion.copy(mesh.quaternion);
+      out.scale.copy(mesh.scale);
+      mesh.parent?.add(out);
+      this.rims.push(out);
     }
   }
 

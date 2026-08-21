@@ -45,7 +45,7 @@
 // like a resource node, applied to things that fly.
 
 import * as THREE from "three";
-import { terrainHeight, toServerX, toServerY } from "./World";
+import { terrainHeight, riverSurfaceHeight, toServerX, toServerY } from "./World";
 import { forestStrengthAt } from "../../../shared/forests";
 import { riverAt, RIVER_HALF_WIDTH_PX } from "../../../shared/river";
 import { currentWind } from "./wind";
@@ -53,15 +53,73 @@ import { currentWind } from "./wind";
 /**
  * How far from the player anything lives.
  *
- * A little short of the fog, on purpose: a mote respawning at the radius should
- * arrive already half faded rather than popping into clear air. The fog runs
- * 55–165, so 74 puts every respawn well inside the far end of it.
+ * Set by DENSITY, not by the fog — which is what the first value got wrong. 74
+ * was picked to sit inside the fog's far end so a respawn would arrive already
+ * faded, and the arithmetic nobody did is that a 74-unit disc is seventeen
+ * thousand square units. The camera sits about fifteen units behind the player
+ * looking down at 41 degrees; the ground it can actually resolve is a wedge of
+ * perhaps sixteen hundred, and half the disc is behind it.
+ *
+ * The number that settled this is not a screenshot. It is the count of pool
+ * instances that PROJECT INSIDE THE VIEWPORT: at radius 74 with 76 butterflies
+ * it was three, and at radius 42 with 118 it was four. Both look like an empty
+ * field, which is exactly what the first two rounds of screenshots said and
+ * neither said why.
+ *
+ * 26 is roughly what the camera can see, so the pool is spent where it is
+ * looked at. Beyond it the air is empty — which is not a compromise: you cannot
+ * see a butterfly forty metres away either, and `edgeFade` makes the boundary a
+ * thinning rather than a wall.
  */
-const RADIUS = 74;
+const RADIUS = 26;
 
-/** And how high above the ground the low-flying kinds stay. */
-const LOW_MIN = 0.35;
-const LOW_MAX = 2.4;
+/**
+ * How a mote arrives and leaves: a fade on DISTANCE from the player rather than
+ * on age.
+ *
+ * Age would need a birthday on every mote and would still pop things out of
+ * existence at the rim, because a thing that has been alive for ten seconds is
+ * at full size the frame it crosses the boundary. Distance fades both ends with
+ * no state at all, and it is the same number that decides whether the mote is
+ * still in the neighbourhood, so the two can never disagree about where the
+ * edge is.
+ */
+function edgeFade(d: number): number {
+  const t = Math.min(1, Math.max(0, (RADIUS - d) / (RADIUS * 0.22)));
+  return t * t * (3 - 2 * t);
+}
+
+/** How high above the ground a low-flying kind stays, unless it says otherwise. */
+const LOW_BAND: [number, number] = [0.35, 2.4];
+
+/**
+ * And how high the birds are.
+ *
+ * Twelve, not thirty, and the reason is the camera rather than ornithology. The
+ * pitch is fixed at about 41 degrees looking DOWN — a decided thing, argued in
+ * PLAN — so the top of the frame is a little above the horizon and anything
+ * twenty-two units over your head is behind you and out of shot. Measured: nine
+ * birds, and never once did one of them project inside the viewport.
+ */
+const HIGH_BAND: [number, number] = [11, 18];
+
+/**
+ * What a flying thing measures its height from.
+ *
+ * NOT `terrainHeight`, and that is the whole reason this exists: over the
+ * Coldwater the terrain is the RIVERBED, three units under the water, so a
+ * dragonfly anchored to it would be skimming the bottom of the channel. This is
+ * the same mistake `surfaceHeight` was introduced for in M54.1a — the crossing
+ * being three opinions about where the ground is — arriving one more time, in
+ * the one system whose whole job is to be over the water. It is not
+ * `surfaceHeight` itself, because that answers with the bridge DECK and a
+ * dragonfly is perfectly entitled to fly under a bridge.
+ */
+function flyingGround(x: number, z: number): number {
+  const q = riverAt(toServerX(x), toServerY(z));
+  if (q.distancePx < RIVER_HALF_WIDTH_PX) return riverSurfaceHeight(q.along);
+  return terrainHeight(x, z);
+}
 
 interface Mote {
   /** Where it is drifting around. Pushed by the wind; the mote orbits it. */
@@ -85,8 +143,8 @@ interface Kind {
   name: string;
   mesh: THREE.InstancedMesh;
   motes: Mote[];
-  /** How high above the ground this kind flies. */
-  low: boolean;
+  /** How high above the ground this kind flies, low end and high end. */
+  band: [number, number];
   /** How many of the pool may be awake right now, 0..1, from the hour. */
   presence: (night: number) => number;
   /** True where one may be spawned. Server pixels. */
@@ -116,8 +174,15 @@ interface Scratch {
  */
 function butterflyGeometry(): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
-  // Four triangles: two wings, each a pair. Slight dihedral so it is never a
-  // flat card even when the flap is at its widest.
+  // Four triangles: two wings, each a pair, with a STEEP dihedral.
+  //
+  // The first version's wings rose 0.12 over a 0.5 span — about thirteen
+  // degrees, which is flat. Flat is fatal here for a reason that only shows up
+  // once you look at one: the flap is a squash along the wing axis, and
+  // squashing a horizontal wing seen from above changes its width and nothing
+  // else, so forty of them read as cream-coloured chevrons sliding about. At
+  // forty degrees the same squash folds the V shut and opens it again, which is
+  // a wingbeat, and it costs exactly the same.
   const v: number[] = [];
   const tri = (
     ax: number, ay: number, az: number,
@@ -125,8 +190,11 @@ function butterflyGeometry(): THREE.BufferGeometry {
     cx: number, cy: number, cz: number,
   ) => v.push(ax, ay, az, bx, by, bz, cx, cy, cz);
   for (const s of [-1, 1]) {
-    tri(0, 0, 0, s * 0.5, 0.12, 0.34, s * 0.42, 0.1, -0.3);
-    tri(0, 0, 0, s * 0.42, 0.1, -0.3, s * 0.2, 0.03, -0.42);
+    // Forewing: the big one, swept forward.
+    tri(0, 0, 0, s * 0.46, 0.4, 0.3, s * 0.4, 0.34, -0.26);
+    // Hindwing: smaller, behind it, and lower — so the pair is never one
+    // silhouette even at the top of the beat.
+    tri(0, 0, 0, s * 0.4, 0.34, -0.26, s * 0.22, 0.15, -0.44);
   }
   g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
   g.computeVertexNormals();
@@ -160,6 +228,7 @@ export class Ambience {
     scale: new THREE.Vector3(),
   };
   private readonly matrix = new THREE.Matrix4();
+  private readonly fadeScale = new THREE.Vector3();
   /** Where the neighbourhood was centred last frame, so respawns can chase it. */
   private cx = 0;
   private cz = 0;
@@ -184,13 +253,38 @@ export class Ambience {
         depthWrite: opacity >= 1,
       });
 
+    // A firefly is the one thing here that is a LIGHT rather than an object, so
+    // it is the one thing here that adds rather than covers. Additive against a
+    // dark wood is a glow; the same green on an opaque material is a painted
+    // dot, which is what it looked like on the first pass — the counter said
+    // ninety-two were lit and the picture said the wood was empty.
+    const emissive = (color: number) =>
+      new THREE.MeshBasicMaterial({
+        color,
+        fog: true,
+        side: THREE.DoubleSide,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+
     this.addKind({
       name: "butterfly",
       geometry: wing,
       material: flat(0xf2d05a),
-      count: 46,
-      low: true,
-      size: [0.22, 0.34],
+      // Reported from play: "way too many butterflies in some places". 150 put
+      // forty on screen at once, which is not a meadow, it is a hatch. The
+      // ceiling on this number is not what looks busy in a still — it is what
+      // still reads as INDIVIDUALS when they are all moving.
+      count: 62,
+      band: LOW_BAND,
+      // Twice life size, and that is the same call M54.1 made when it raised
+      // the grass: a real butterfly is four pixels at this camera, which is not
+      // a small butterfly, it is dirt on the screen. It went too far the other
+      // way first — at 0.58 they were sixteen pixels of flat cream, and an
+      // untextured polygon that big does not read as an insect, it reads as
+      // paper. Reported from play in exactly those words.
+      size: [0.2, 0.3],
       // Gone by dusk. Nothing about a butterfly says night, and leaving them out
       // after dark is what makes the fireflies arriving read as a change.
       presence: (night) => Math.max(0, 1 - night * 2.2),
@@ -203,9 +297,9 @@ export class Ambience {
       name: "cabbage-white",
       geometry: wing,
       material: flat(0xe8e4d4),
-      count: 30,
-      low: true,
-      size: [0.2, 0.3],
+      count: 34,
+      band: LOW_BAND,
+      size: [0.18, 0.27],
       presence: (night) => Math.max(0, 1 - night * 2.2),
       suits: (sx, sy) => forestStrengthAt(sx, sy) < 0.25,
       animate: butterflyAnimate,
@@ -214,10 +308,17 @@ export class Ambience {
     this.addKind({
       name: "dragonfly",
       geometry: wing,
-      material: flat(0x63c7d8),
-      count: 26,
-      low: true,
-      size: [0.24, 0.36],
+      // Dark, not bright. A cyan this saturated at fifteen pixels is a piece of
+      // blue card; a dragonfly seen over water is a dark dart that catches the
+      // light for an instant, and the catching is done by the flap rather than
+      // by the colour.
+      material: flat(0x2f7d86),
+      count: 34,
+      // Skimming. The one kind with a band of its own: a dragonfly hunting a
+      // river holds a hand's breadth off the surface, and putting it in the
+      // same column as the butterflies loses the only thing that says water.
+      band: [0.25, 0.9],
+      size: [0.19, 0.28],
       // Over the water and out at first light, which is when a river actually
       // has them.
       presence: (night) => Math.max(0, 1 - night * 1.7),
@@ -228,10 +329,13 @@ export class Ambience {
     this.addKind({
       name: "firefly",
       geometry: speck,
-      material: flat(0xc8ff9a),
-      count: 130,
-      low: true,
-      size: [0.1, 0.17],
+      material: emissive(0xd6ff8a),
+      // The largest pool in the system and it still shows the fewest at once,
+      // because the blink below spends most of the cycle dark. The count is the
+      // size of the swarm; the blink is how much of it you can see.
+      count: 190,
+      band: [0.3, 1.9],
+      size: [0.26, 0.42],
       // The mirror of the butterflies: nothing until the light goes, then all of
       // them. The two never overlap, so dusk is a handover rather than a crowd.
       presence: (night) => Math.max(0, night * 1.5 - 0.35),
@@ -248,8 +352,10 @@ export class Ambience {
       geometry: bird,
       material: flat(0x2e2a26),
       count: 9,
-      low: false,
-      size: [0.5, 0.85],
+      band: HIGH_BAND,
+      // Bigger than the rest and still small on screen: a bird up here is a
+      // dozen units further away than anything else in this file.
+      size: [0.8, 1.4],
       presence: (night) => Math.max(0, 1 - night * 1.9),
       suits: () => true,
       animate: birdAnimate,
@@ -263,7 +369,7 @@ export class Ambience {
     geometry: THREE.BufferGeometry;
     material: THREE.Material;
     count: number;
-    low: boolean;
+    band: [number, number];
     size: [number, number];
     presence: (night: number) => number;
     suits: (sx: number, sy: number) => boolean;
@@ -299,7 +405,7 @@ export class Ambience {
       name: spec.name,
       mesh,
       motes,
-      low: spec.low,
+      band: spec.band,
       presence: spec.presence,
       suits: spec.suits,
       animate: spec.animate,
@@ -331,9 +437,8 @@ export class Ambience {
       if (!kind.suits(toServerX(x), toServerY(z))) continue;
       m.ax = x;
       m.az = z;
-      m.ay = kind.low
-        ? terrainHeight(x, z) + LOW_MIN + Math.random() * (LOW_MAX - LOW_MIN)
-        : terrainHeight(x, z) + 22 + Math.random() * 12;
+      m.ay =
+        flyingGround(x, z) + kind.band[0] + Math.random() * (kind.band[1] - kind.band[0]);
       m.p1 = Math.random() * Math.PI * 2;
       m.p2 = Math.random() * Math.PI * 2;
       m.live = true;
@@ -346,9 +451,11 @@ export class Ambience {
   /**
    * One frame.
    *
-   * Two hundred and forty matrices at worst, which is nothing — the cost of
-   * this system is five draw calls and a handful of trigonometry, and that is
-   * the entire argument for a pooled neighbourhood over a placed one.
+   * Three hundred and twenty-nine matrices at worst, which is nothing — the
+   * cost of this system is five draw calls and a handful of trigonometry, and
+   * that is the entire argument for a pooled neighbourhood over a placed one.
+   * It is also why the counts could be moved by a factor of six in both
+   * directions across one afternoon without anybody having to think about it.
    */
   update(dtSeconds: number, timeSeconds: number, night: number, x: number, z: number): void {
     this.cx = x;
@@ -379,7 +486,7 @@ export class Ambience {
 
         if (!m.live) {
           // A first placement fills the disc; every later one arrives at the rim.
-          if (!this.place(kind, m, m.scale === 0 && night >= 0)) {
+          if (!this.place(kind, m, m.scale === 0)) {
             this.matrix.makeScale(0, 0, 0);
             kind.mesh.setMatrixAt(i, this.matrix);
             continue;
@@ -392,10 +499,8 @@ export class Ambience {
         // Out of the neighbourhood, or over ground that no longer suits it —
         // walking into a wood should empty the butterflies out of the air
         // around you rather than carry a meadow's worth of them in.
-        const gone =
-          Math.hypot(m.ax - this.cx, m.az - this.cz) > RADIUS ||
-          !kind.suits(toServerX(m.ax), toServerY(m.az));
-        if (gone) {
+        const d = Math.hypot(m.ax - this.cx, m.az - this.cz);
+        if (d > RADIUS || !kind.suits(toServerX(m.ax), toServerY(m.az))) {
           m.live = false;
           this.matrix.makeScale(0, 0, 0);
           kind.mesh.setMatrixAt(i, this.matrix);
@@ -403,6 +508,15 @@ export class Ambience {
         }
 
         kind.animate(m, timeSeconds, this.matrix, this.scratch);
+        // The rim fade, applied to the composed matrix rather than inside every
+        // `animate` — `Matrix4.scale` touches the basis columns and leaves the
+        // translation alone, so a mote shrinks where it is rather than sliding
+        // toward the origin as it goes.
+        const fade = edgeFade(d);
+        if (fade < 1) {
+          this.fadeScale.set(fade, fade, fade);
+          this.matrix.scale(this.fadeScale);
+        }
         kind.mesh.setMatrixAt(i, this.matrix);
       }
       kind.mesh.instanceMatrix.needsUpdate = true;
@@ -435,7 +549,14 @@ function butterflyAnimate(m: Mote, t: number, out: THREE.Matrix4, s: Scratch): v
   s.quat.setFromEuler(s.euler);
   // The flap is a squash on the wing axis. At a dozen pixels this and a hinged
   // wing are the same picture, and one of them needs no second bone.
-  s.scale.set(m.size * (0.35 + 0.65 * Math.abs(flap)), m.size, m.size);
+  //
+  // It goes NEARLY TO NOTHING at the closed end, and that is the single change
+  // that stopped these reading as shapes: a butterfly at the top of its beat is
+  // edge-on and effectively invisible, so what the eye actually receives is an
+  // intermittent flicker rather than a polygon that is continuously present and
+  // merely changing width. 0.35 kept a solid sliver on screen at all times,
+  // which is what a piece of paper does.
+  s.scale.set(m.size * (0.08 + 0.92 * Math.abs(flap)), m.size, m.size);
   out.compose(s.pos, s.quat, s.scale);
 }
 
@@ -446,13 +567,14 @@ function dragonflyAnimate(m: Mote, t: number, out: THREE.Matrix4, s: Scratch): v
   const dart = Math.sign(Math.sin(a)) * Math.pow(Math.abs(Math.sin(a)), 0.35);
   const x = m.ax + dart * m.spread * 1.6;
   const z = m.az + Math.sin(a * 0.7 + m.p2) * m.spread;
-  const y = m.ay * 0.55 + Math.sin(a * 2.3) * 0.12;
+  const y = m.ay + Math.sin(a * 2.3) * 0.12;
   s.pos.set(x, y, z);
   s.euler.set(0.1, Math.atan2(Math.cos(a) * 2, Math.cos(a * 0.7 + m.p2)), 0);
   s.quat.setFromEuler(s.euler);
   // Barely flaps — the wings are a blur at this size, so a shallow squash reads
-  // better than a full one.
-  s.scale.set(m.size * (0.72 + 0.28 * Math.abs(Math.sin(t * 24))), m.size * 0.7, m.size * 1.5);
+  // better than a full one. Long and low, which is the dragonfly's whole
+  // silhouette.
+  s.scale.set(m.size * (0.6 + 0.4 * Math.abs(Math.sin(t * 24))), m.size * 0.6, m.size * 1.7);
   out.compose(s.pos, s.quat, s.scale);
 }
 
@@ -468,7 +590,11 @@ function fireflyAnimate(m: Mote, t: number, out: THREE.Matrix4, s: Scratch): voi
   // so most of the cycle is dark — a field where they were all lit at once
   // would read as fairy lights strung between the trees.
   const pulse = Math.sin(t * 1.9 * m.rate + m.p2);
-  const lit = Math.max(0, pulse - 0.45) / 0.55;
+  // Sharp, but not as sharp as it was: at a threshold of 0.45 barely a fifth of
+  // the swarm was alight at any moment and a wood at midnight had four visible
+  // sparks in it. 0.22 keeps most of the cycle dark — which is the effect —
+  // while leaving enough of them lit to read as a swarm.
+  const lit = Math.max(0, pulse - 0.22) / 0.78;
   const k = m.size * lit * lit;
   s.quat.identity();
   s.scale.set(k, k, k);

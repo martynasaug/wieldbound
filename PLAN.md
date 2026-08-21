@@ -4741,34 +4741,174 @@ textures Vite served as `index.html` in M53.3: **before bisecting a renderer,
 confirm the bytes it is running are the bytes you wrote.** The browser pass now
 restarts the dev server first.
 
-### M54.2 — ambient life. STARTED, NOT WIRED.
-`client/src/three/ambience.ts` is written and committed and **nothing imports
-it**. It went into the M54.1a commit as dead code because the bridge reports
-arrived mid-file; that is untidy rather than harmful, and it is flagged here so
-the next session does not have to work out whether it was abandoned or
-forgotten.
+### M54.2 — ambient life, WIRED. And four more things reported from play.
+`ambience.ts` had been written and committed and imported by nothing. Three
+lines wired it in — a field, a `scene.add`, a call beside `river.update` — and
+then five rounds of measurement said the hard part was never the wiring.
 
-What it is: butterflies over open meadow by day, dragonflies over the water,
-fireflies in the woods and along the river after dark, and birds circling high.
-A fixed pool living in a MOVING NEIGHBOURHOOD around the player rather than
-placed across the world — the fog closes at 165 units, so a world-wide placement
-would pay for a hundred thousand things nobody can see, and a butterfly is not a
-landmark that anyone will notice is always in the same field. What is out is
-decided by WHERE AND WHEN, in the same vocabulary `placeNameAt` speaks, so a
-wood at dusk is a different place to stand in than a meadow. They drift downwind
-on M54.1's wind field.
+**Two real faults in the file as written.** A dragonfly's height was
+`m.ay * 0.55`, where `ay` is an ABSOLUTE world height, so halving it put every
+dragonfly underground on high terrain and in the air on low. And `ay` came from
+`terrainHeight`, which over the Coldwater is the RIVERBED — so the one kind
+whose whole purpose is to be over the water was anchored three units under it.
+That is `surfaceHeight`'s lesson from M54.1a arriving a third time, and it now
+has a third name: `flyingGround` here, `groundAt` in `mist.ts`, neither of them
+`surfaceHeight` itself, because a dragonfly is entitled to fly under a bridge.
 
-Deliberately NOT derived from the clock, which is a departure from how the hour,
-the wind, the woods and the river all work — and the reason is worth keeping:
-those are places and rules, and two players who disagree about them disagree
-about the world. A butterfly is neither. It does not persist, nothing can be
-told to go to one, and no two clients will ever be compared over it.
+**And then the number nobody had:** how many of the pool are ON SCREEN. Three
+rounds of screenshots said "the field looks empty" and none of them said why,
+because "a mote exists", "a mote is drawn" and "a mote is where the camera is
+pointed" are three different questions and only the first had ever been asked.
+At `RADIUS = 74` with 76 butterflies it was **three**. The radius had been
+chosen against the fog — a respawn should arrive already faded — and the
+arithmetic nobody did is that a 74-unit disc is seventeen thousand square units
+while the camera can resolve a wedge of about sixteen hundred, half the disc
+being behind it. 26 is roughly what the camera sees, and the popping the big
+radius was bought to avoid is solved properly instead, by an `edgeFade` on
+DISTANCE that does both ends in one expression and needs no per-mote birthday.
 
-Still to do: instantiate it in `Game.start`, add it to the scene, call
-`update(dt, timeSeconds, night, playerX, playerZ)` from the frame loop beside
-`river.update`, then verify with the frame-differencing probe — it is motion, so
-a single screenshot proves nothing.
+**Then it went too far the other way**, which is worth keeping because it is the
+same failure of judgement in the opposite direction: 150 butterflies at 0.58
+units put forty on screen at sixteen pixels each, and an untextured polygon that
+big does not read as an insect. Reported from play in one sentence: *"Theres way
+too many butterflies in some places?"* The fix was three things and only one of
+them was the count — smaller (0.2–0.3), fewer (62), and **the flap now closes to
+0.08 rather than 0.35**, which is the change that actually did it. A butterfly at
+the top of its beat is edge-on and effectively gone, so what the eye receives is
+an intermittent flicker; a wing that never shrinks below a third of its span is
+continuously present, and a shape that is continuously present is paper.
 
+The wings also got a real dihedral. They rose 0.12 over a 0.5 span — thirteen
+degrees, which is flat — and the flap is a squash along the wing axis, so
+squashing a horizontal wing seen from above changes its width and nothing else.
+At forty degrees the same squash folds a V shut and opens it, which is a
+wingbeat, and it costs the same.
+
+Birds came down from 22–34 units to 11–18. The pitch is fixed at 41 degrees
+looking DOWN, so nine birds at thirty units never once projected inside the
+viewport — paid for on every frame and never seen by anyone.
+
+### M54.3 — fire that is actually burning
+Every open flame in the project was one object: a small emissive icosahedron in
+flat orange, scaled on two sines. Fourteen road torches, two braziers, the
+smithy's coals. At three hundred units that is a perfectly good pinpoint of
+light and it is what makes the road read at night as a chain going north; at ten
+units it is an orange ball on a stick.
+
+`flame.ts` is one instanced quad for every fire in the world, billboarded
+CYLINDRICALLY — screen-right across, world up along, so it turns to follow you
+and never leans as the camera pitches. The shape is cut in the fragment shader
+rather than modelled, because the silhouette has to change every frame: a width
+profile that pinches with height, displaced by scrolling noise whose amplitude
+grows with height so the base stays on the wick and the tip whips, and a top
+that wanders on its own slow noise so the flame GUTTERS rather than merely
+brightening. Two columns of the instance matrix carry width and height
+separately, which is free and is the whole difference between a torch (a tongue
+of rag and pitch) and a brazier (a basket of logs).
+
+**The colour ramp runs on HEIGHT, not on heat, and that is the interesting
+mistake.** The obvious version ramps by temperature — red where cool, white
+where hot — and it is wrong twice. A real flame is white at the wick and red at
+the tip, which is a gradient UP the flame and not IN from its edge. And on an
+additive surface the cool end of a colour ramp is not dim, it is a different hue
+at full strength: the low-heat band across the bottom of the quad came out as a
+solid maroon triangle sitting in the brazier, which looked like painted card.
+Height decides the hue, heat decides only the brightness.
+
+Two things fell out of looking at it. The brazier's coals were an
+awning-coloured ball — the right call when it was the only warm thing in the
+basket, and the wrong one the moment a real fire went in behind it; they are
+charred and smaller now. And the whole output is multiplied by 0.72, because
+additive light on a surface a point light is ALREADY brightening saturates long
+before the shader thinks it has: the first version turned the iron basket into a
+flat white disc.
+
+### M54.4 — ground mist
+Distance fog has been in since Phase 47 and does what distance fog does. What it
+cannot do is BE somewhere. `mist.ts` is overlapping horizontal sheets — the old
+trick, and the right one at this camera specifically, since a fixed 41-degree
+pitch means a ground-parallel sheet is always seen at the shallow angle at which
+a flat card reads as depth.
+
+Where it lies is a rule, not a scatter: `mistAt` answers over the water, in the
+hollows and under the trees, blended rather than picked, because a hollow in a
+wood beside the river is the mistiest place in this world and a rule that chose
+one reason would say it was only as misty as its strongest. Height is a pure
+rendering property in this project — nothing anywhere reads a Y — which makes it
+exactly the right field to hang mist on: it already describes where cold air
+would sit, and using it desyncs nothing.
+
+When is deliberately NOT symmetric about noon. Mist forms overnight and burns
+off in the first hours of sun, so the curve peaks hard at dawn, returns weakly
+at dusk and holds a low floor through the night. A curve symmetric about noon
+would be the same shape as the light and would therefore say nothing the light
+was not already saying. It takes the scene's own fog colour, so mist and sky can
+never be two different weathers in one frame.
+
+### M54.5 — you can find yourself
+Two reports, one shape, and finding out they were the same thing is the whole of
+it. *"Should we make players slightly highlighted for better visibility?"* — a
+brown-and-leather figure against brown earth is not occluded, it is
+low-contrast, and the three mechanisms this project has for visibility (camera
+pull-in, building fade, silhouette) all answer occlusion and none answers that.
+And: *"I don't like that you see the skeleton of characters when standing behind
+objects"* — the silhouette drew as a filled human-shaped cutout in flat pale
+blue, which is an X-ray.
+
+Both are asking for the OUTLINE of the figure and nothing inside it.
+
+**The occluded silhouette became a fresnel**, discarding its own interior, so
+what shows through a palisade is the shape of somebody standing there rather
+than a picture of them. Injected with `onBeforeCompile` rather than written as a
+ShaderMaterial, because the rig is skinned and reimplementing three's skinning
+would be reimplementing three's skinning.
+
+**The unoccluded highlight is an expanded hull**, and it had to be, because the
+fresnel is the wrong instrument for it: a fresnel lights every surface edge-on to
+the eye, and on a low-poly rig that is the inside of an elbow, the top of a belt
+and the rim of every buckle. Measured on a four-times crop, what it drew was not
+an outline but a stipple of specks all over the armour. A hull cannot make that
+mistake because it does not know where the eye is.
+
+**And the outline draws AFTER the body, which is the ordering that matters.**
+Drawn before, each mesh's hull is erased only by the mesh it belongs to, so
+wherever the hood overhangs the neck or a bracer overhangs a forearm that mesh's
+own outline survives on top of its neighbour — eleven outlines round the eleven
+parts a person is made of, which reads as jewellery. Drawn after, every part has
+already written depth and the hull's back faces fail against all of them, so
+what survives is only where it overhangs the WHOLE figure. Same shape either
+way; the only difference is what it is measured against, and it is the same
+class of mistake the silhouette's own ordering note is about.
+
+Plus `presence.ts`: a soft pool of light under every PERSON, warm for you and
+cool for other players, scaled by how dark it actually is — almost nothing at
+noon in an open field, carrying the whole scene at midnight under trees. A pool
+and not a ring, because this game already speaks in ground rings and all four of
+them mean something else; another ring would be a fifth dialect of a
+four-word language, and it would say "selected" rather than "here".
+
+### Five measurements, and one of them was the ruler
+Every visual verdict in this milestone came from a probe, and the probes were
+wrong twice before the game was.
+
+- **"The ambience draws nothing."** Wrong. A magenta-pixel counter required
+  R>150 and B>150, and a mote at 35% alpha lands at R≈89. The mist got the same
+  verdict for the same reason. The test that settled both differences the SAME
+  FRAME with the mesh shown and hidden — no threshold to guess — and said 78% of
+  pixels changed at the river.
+- **"`suits` is being ignored — butterflies in a wood."** Wrong. The
+  neighbourhood radius was 2,960 SERVER PIXELS across; a disc that wide centred
+  in a wood contains a great deal of meadow. The world is only 400 units square,
+  and forgetting which of the two units a number is in is this project's oldest
+  recurring bug.
+- **The collar rings on the character.** Read as an outline artefact through
+  three rounds of tuning. They are the model. Hiding the outline meshes and
+  taking the identical crop settled it in one run.
+
+And a fourth, for the harness rather than the game: `tools/patch.mjs` takes a
+FLAT ARRAY of `{file, find, replace}`. That is already in `tools/README.md` and
+the session guessed instead of reading it, which cost a round to an error
+reading `spec.entries is not a function`.
 ---
 
 ## Seeding a character for testing
@@ -4853,6 +4993,40 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- An OUTLINE is what both visibility problems were asking for. "Highlight the
+  player" and "stop showing me a skeleton through walls" arrived as two reports
+  and are one shape: the contour of a figure and nothing inside it. Unoccluded
+  it is an expanded hull, occluded it is a fresnel, and the reason they are
+  different instruments is that a fresnel lights every edge-on surface — which on
+  a low-poly rig is a stipple over the armour, not an outline.
+- The outline draws AFTER the body. Before it, each mesh is erased only by
+  itself and every overhang between the parts of a rig keeps its own line;
+  after, the whole figure has written depth and only the true silhouette
+  survives. Same geometry, different question.
+- A flame's colour ramps on HEIGHT, not on heat. Fire is white at the wick and
+  red at the tip, which is a gradient up it rather than in from its edge — and
+  on an additive surface the cool end of a ramp is a different HUE at full
+  strength rather than a dim version of the hot end, so ramping on heat painted
+  a solid maroon triangle across the bottom of every fire.
+- Mist is not symmetric about noon. It forms overnight and burns off in the
+  first hours of sun, so it peaks at dawn and returns weakly at dusk. A curve
+  symmetric about noon would be the same shape as the light and would say
+  nothing the light was not already saying.
+- The size of a pooled neighbourhood is set by what the CAMERA can resolve, not
+  by where the fog ends. A 74-unit disc is seventeen thousand square units and
+  the visible wedge is about sixteen hundred, so 76 butterflies put three on
+  screen. Count the instances that PROJECT INSIDE THE VIEWPORT; existing, being
+  drawn, and being looked at are three different questions.
+- A small flying thing is sold by DISAPPEARING, not by being visible. The flap
+  closes to 8% of the wingspan, so most of the beat is edge-on and the eye gets
+  an intermittent flicker. A wing that never shrinks past a third is
+  continuously present, and continuously present at fifteen pixels is paper.
+- Verify a faint additive effect by DIFFERENCING the frame with the mesh shown
+  and hidden, never by counting pixels above a colour threshold. Both the
+  ambience and the mist were declared broken by a magenta counter that wanted
+  R>150 when a 35%-alpha magenta lands at 89. Two of the five measurement rounds
+  in M54.2 were spent debugging the ruler.
 
 - ONE surface height, taken by everything that stands on the ground. The
   crossing was three opinions about where the road is — the terrain said
@@ -7043,6 +7217,20 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 54 complete (2026-08-21).
+
+**Phase 54 M54.2–M54.5 — the world is alive, on fire, in weather, and you can
+find yourself in it.** Butterflies over meadow by day and fireflies in the woods
+after dark, living in a moving neighbourhood round the player rather than placed
+across four kilometres nobody can see. Real fire on every torch and brazier —
+one instanced billboard whose shape is cut and animated in its own shader,
+replacing the emissive ball every open flame in the project had been since
+Phase 47. Ground mist that lies over the water and in the hollows and burns off
+by mid-morning, taking the sky's own colour so it can never be a different
+weather from the sky. And an outline on every player plus a pool of light at
+their feet, which turned out to be the same feature as fixing the through-walls
+silhouette: both were asking for the shape of a person and nothing inside it.
+Five rounds of measurement, two of which found the PROBE was wrong rather than
+the game.
 
 **Phase 54 M54.1 — the world moves, and the world was never sparse.** Wind, on
 every blade of grass and every tree, derived from the wall clock like the hour

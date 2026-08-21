@@ -133,6 +133,30 @@ unavailable.
   third ring" is a number, and "get to the Hollow Stone" is somewhere to go. The
   minimap grows a rim arrow pointing at whichever one you have been sent to,
   because the nearest is four times further out than the widest zoom can show.
+- **And it is alive, and on fire, and in weather** — butterflies and cabbage
+  whites over open meadow by day, dragonflies skimming the Coldwater, fireflies
+  in the six woods and along the water after dark, and birds turning overhead.
+  They live in a moving neighbourhood around you rather than being placed across
+  four kilometres: the fog closes at 165 units, so a world-wide scatter would
+  pay for a hundred thousand things nobody can see, and a butterfly is not a
+  landmark anyone will notice is always in the same field. What is out is
+  decided by WHERE AND WHEN, in the same vocabulary the map names places with,
+  so a wood at dusk is a different place to stand in than a meadow. **Every open
+  flame is a real fire** — one instanced billboard per torch and brazier, its
+  shape cut and its lick animated in its own shader, so a flame gutters and
+  changes silhouette instead of being an orange ball that changes size. And
+  **the air has weather in it**: mist lies over the water and in the hollows and
+  under the trees, thickest at dawn and burnt off by mid-morning, taking the
+  sky's own colour so it can never be a different weather from the sky above it.
+- **And you can always find yourself** — a soft outline on every player and a
+  pool of light at their feet, warm for you and cool for everyone else, both
+  fading to almost nothing at noon in an open field and carrying the whole scene
+  at midnight under a canopy. This is a different problem from the three
+  occlusion mechanisms above it: a leather figure on brown earth is not hidden
+  behind anything, it is simply the same colour and value as the ground. It is
+  also, it turned out, the same feature — the through-walls silhouette used to
+  draw as a filled cutout, which is an X-ray, and both wanted the same thing: the
+  shape of a person and nothing inside it.
 - **And it moves** — wind, on every blade of grass, every plant and every tree
   in the world, gusting on a slow swell with a faster gust riding it and veering
   right round the compass over half an hour. Derived from the wall clock like
