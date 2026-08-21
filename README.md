@@ -152,7 +152,10 @@ unavailable.
   pay for a hundred thousand things nobody can see, and a butterfly is not a
   landmark anyone will notice is always in the same field. What is out is
   decided by WHERE AND WHEN, in the same vocabulary the map names places with,
-  so a wood at dusk is a different place to stand in than a meadow. **Every open
+  so a wood at dusk is a different place to stand in than a meadow. How many are
+  out is a **density** rather than a headcount, so shrinking the neighbourhood
+  cannot silently thicken the air — which is exactly what happened once, and put
+  ninety butterflies on screen at a time. **Every open
   flame is a real fire** — one instanced billboard per torch and brazier, its
   shape cut and its lick animated in its own shader, so a flame gutters and
   changes silhouette instead of being an orange ball that changes size. And

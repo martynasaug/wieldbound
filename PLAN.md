@@ -5503,6 +5503,96 @@ which is exactly the moment this test has to fail.
 
 Fifteen suites, smoke, both workspaces, zero console errors.
 
+### M57.2 — the air was six times too thick, and a bird was three times too big
+Reported from play, and for the second time: *"there are still too many
+butterflies around"*. M54.2 had already answered exactly that complaint, and
+what makes this worth writing out is that **the fix made it six times worse
+while every individual number in it was argued for in writing.**
+
+### What happened
+M54.2 did two things in one milestone.
+
+- It cut the butterfly pool from 150 to 62, because forty on screen read as a
+  hatch rather than as a meadow.
+- It cut `RADIUS` from 74 to 26, because a 74-unit disc is seventeen thousand
+  square units and most of it is never looked at.
+
+Each of those is right on its own and the milestone defends both at length. What
+nobody did is the arithmetic BETWEEN them: the disc got eight times smaller
+while the count only halved, so the density went up by a factor of six. The
+milestone's own note — *"26 is roughly what the camera can see, so the pool is
+spent where it is looked at"* — is what turns that into the visible fault, and it
+is understated: at that radius the whole neighbourhood projects inside the
+viewport, so the pool size **is** the on-screen count and there is nowhere for a
+surplus to hide.
+
+**And there are two butterfly kinds.** Every sentence in M54.2 reasons about
+"62". The cabbage-white's 34 was never once added in. So the number the player
+was looking at was ninety-six in a disc the camera sees all of.
+
+Measured, before anything was changed: **ninety butterflies on screen at once**
+in an open meadow at noon, against forty that had already been reported as too
+many.
+
+### The fix is a density, not a smaller number
+A pool is declared as a count per thousand square units of the neighbourhood
+now, and the headcount is derived from `RADIUS`. That is the call `PLAN` already
+recorded for the treeline and the ground cover — *"scenery counts are densities,
+not headcounts, so the next time the world is resized it does not silently thin
+out"* — arriving in this file three phases late, and it is the only version of
+the fix that could not have been made wrong the same way.
+
+Twenty on screen now. The band is bracketed by two measurements rather than by
+taste: three was photographed in M54.2 and read as an empty field, and ninety
+was reported from play.
+
+### And then the measurement found the bird
+The probe that counted what was on screen was extended to ask how BIG each of
+them was, from the real geometry rather than from the `size` field — which is a
+scale factor and not an extent. In the same frame, at the default zoom:
+
+    butterfly        14 on screen      6 px across
+    cabbage-white     7 on screen      5 px
+    bird              4 on screen     73 px across, 106 at worst
+    (the player)                      28 px tall
+
+**A bird was three times the height of the character.** The comment above it
+said *"bigger than the rest and still small on screen: a bird up here is a dozen
+units further away than anything else in this file"* — which is arithmetic
+nobody did. The camera sits forty-six units out, so a dozen units of extra
+distance costs about a quarter of the apparent size, not an order of magnitude.
+What it drew was a flat black chevron the size of a hang glider lying in the
+grass, and it is in every meadow screenshot this phase took, including the ones
+used to sign off the contact shadow.
+
+Down to about eighteen pixels: bigger than a butterfly beside you and
+unmistakably further away, which is the whole relationship the two are meant to
+have.
+
+### A sixteenth suite, for a rule the file already stated and never enforced
+`ambience.ts` opens by saying that nothing in it is *"larger than a fist"*. That
+was the rule the whole time. `tools/test/ambience.mjs` asserts it, plus the
+things that would let this happen a third time:
+
+- **no kind may be declared as a headcount** — one `count:` added in review
+  reintroduces the exact bug, and it would look perfectly reasonable;
+- **no kind's size may exceed 0.5 units**, well under a character's 1.8 rather
+  than merely under it, because these are the things a player must never mistake
+  for something that matters — the same argument that keeps the ground cover
+  from resembling a resource node;
+- **and the two flutterers are counted TOGETHER**, which is the check that would
+  have caught the original defect, since the whole failure was that one of the
+  two pools was never in the arithmetic.
+
+Sixteen suites, smoke, both workspaces, zero console errors.
+
+### M57.2's other half — music — is parked
+User call: *"Let's plan it for later."* The soundscape is the half that makes the
+world a place; music is a different feature with a different set of decisions
+behind it (when it plays, when it stops, whether combat has its own, whether it
+is derived like everything else here or authored). It waits for its own
+milestone rather than being bolted onto this one.
+
 ---
 
 ## Seeding a character for testing
@@ -5588,6 +5678,41 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- A scatter is a DENSITY, never a headcount — and the ambient pool is a scatter
+  even though its neighbourhood moves. This decision was already in this log for
+  the treeline and the ground cover and `ambience.ts` did not have it, which is
+  how one milestone cut the butterfly count in half, cut the neighbourhood's AREA
+  by eight, and shipped six times as many butterflies with every individual
+  number defended in writing.
+- Two changes that are each right can be wrong together, and nothing catches it
+  when they are expressed in different units. "Fewer butterflies" and "a smaller
+  neighbourhood" are both correct and their product is a density that nobody
+  wrote down. Whenever a milestone moves a count and an extent in the same
+  breath, the thing to state afterwards is the RATIO.
+- When a system has two kinds of the same thing, tune the SUM. Every sentence of
+  M54.2 reasons about the butterfly pool's 62 and the cabbage-white's 34 is never
+  once added in — so the number the player was actually looking at was ninety-six
+  and no note in the file mentions it. The test now counts them together, which
+  is the check that would have caught it.
+- At the default zoom the WHOLE ambient neighbourhood projects inside the
+  viewport, so the pool size IS the on-screen count. There is no hiding place and
+  no cull to hope for: the count in the table is the count in the frame.
+- `size` is a scale factor, not an extent, and measuring one and reporting the
+  other is how a bird came to be three times the height of the player. Ask the
+  GEOMETRY how big something is — its bounding sphere times the instance's scale
+  times the projection — and compare it against something in the scene the player
+  knows the size of.
+- A comment that asserts an outcome instead of measuring it is worth less than no
+  comment. "Bigger than the rest and still small on screen, because a bird up
+  here is a dozen units further away" was wrong by a factor of three, and it was
+  wrong in a way that made everybody who read it stop looking. The camera is
+  forty-six units out; twelve units of extra distance is a quarter of the size,
+  not an order of magnitude.
+- Enforce the rule a file states about itself. `ambience.ts` opens by saying
+  nothing in it is "larger than a fist", which was true when it was written,
+  false by the end of the same phase, and checked by nothing. A prose rule with
+  no assertion behind it is a rule that documents its own violation.
 
 - The soundscape is DERIVED from where you are, when it is and how hard it is
   blowing, and none of it is sent. Third time this argument has been made — the
@@ -8002,6 +8127,22 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 57 complete (2026-08-21).
+
+**Phase 57 M57.2 — the air was six times too thick, and a bird was three times
+too big.** *"There are still too many butterflies around"*, reported from play
+for the second time — and the first fix had made it six times worse while every
+number in it was argued for in writing. M54.2 halved the butterfly pool and cut
+the neighbourhood's AREA by eight in the same milestone, which is a sixfold rise
+in density that nobody wrote down, and it reasoned about one of the two
+butterfly kinds and never added the other in. Measured before anything changed:
+ninety on screen at once, against forty already reported as too many. Pools are
+DENSITIES now, derived from the radius, which is the call this log already
+recorded for the treeline and the ground cover. The same measurement then found
+a bird drawn seventy-three pixels across against a twenty-eight-pixel player —
+three times the height of the character, under a comment asserting it would be
+"still small on screen". And a sixteenth suite enforces the rule `ambience.ts`
+states about itself in its first paragraph and nothing had ever checked: nothing
+in it may be sized like a character.
 
 **Phase 57 M57.1 — a world you can hear.** Sound has existed since Phase 39 and
 has never been a PLACE: twelve baked cues fire when something happens and

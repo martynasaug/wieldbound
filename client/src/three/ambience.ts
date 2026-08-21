@@ -89,6 +89,39 @@ function edgeFade(d: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/**
+ * A pool is declared as a DENSITY, not as a headcount.
+ *
+ * This is the whole reason the field was full of butterflies, and the failure is
+ * worth writing out because every individual number in it was defended in
+ * writing at the time.
+ *
+ * M54.2 did two things in one milestone. It cut the butterfly pool from 150 to
+ * 62 because forty on screen read as a hatch — and it cut `RADIUS` from 74 to
+ * 26, because a 74-unit disc is seventeen thousand square units and most of it
+ * is not looked at. Each change is right on its own. Together they raised the
+ * DENSITY by a factor of six, because the disc they were spread over got eight
+ * times smaller while the count only halved. The milestone's own note says "26
+ * is roughly what the camera can see, so the pool is spent where it is looked
+ * at", which is true and is exactly what makes it worse: at that radius the
+ * whole neighbourhood projects inside the viewport, so the pool size IS the
+ * on-screen count and there is nowhere for a surplus to hide.
+ *
+ * And there are TWO butterfly kinds. Every sentence in that milestone reasons
+ * about "62", and the cabbage-white's 34 was never once added in. Measured
+ * afterwards: ninety on screen at once in an open meadow at noon, against forty
+ * that had already been reported as too many.
+ *
+ * A density cannot make that mistake. The count is derived from `RADIUS`, so
+ * moving the neighbourhood moves the pool with it and the air stays as busy as
+ * it was — which is the call `PLAN` already recorded for the treeline and the
+ * ground cover, arriving here one phase late.
+ */
+function poolFor(perThousandSquareUnits: number): number {
+  const area = Math.PI * RADIUS * RADIUS;
+  return Math.max(1, Math.round((perThousandSquareUnits * area) / 1000));
+}
+
 /** How high above the ground a low-flying kind stays, unless it says otherwise. */
 const LOW_BAND: [number, number] = [0.35, 2.4];
 
@@ -272,11 +305,13 @@ export class Ambience {
       name: "butterfly",
       geometry: wing,
       material: flat(0xd8b856),
-      // Reported from play: "way too many butterflies in some places". 150 put
-      // forty on screen at once, which is not a meadow, it is a hatch. The
-      // ceiling on this number is not what looks busy in a still — it is what
-      // still reads as INDIVIDUALS when they are all moving.
-      count: 62,
+      // Reported from play twice. The first round cut the pool from 150 and cut
+      // the neighbourhood by more, which raised the density sixfold and put
+      // NINETY on screen — see `poolFor`. The two flutterers between them are
+      // budgeted at about twenty in frame now, which is the band the two
+      // failures bracket: three read as an empty field and forty read as a
+      // hatch, and both of those are measured rather than remembered.
+      density: 6.6,
       band: LOW_BAND,
       // Twice life size, and that is the same call M54.1 made when it raised
       // the grass: a real butterfly is four pixels at this camera, which is not
@@ -300,7 +335,10 @@ export class Ambience {
       // dawn or a dusk frame — brighter than the sky it is under — and the eye
       // goes to the brightest thing whether or not it is the subject.
       material: flat(0xcdc5b2),
-      count: 34,
+      // Roughly half the yellow, as it always was. The ratio was never the
+      // problem; that this pool existed at all and was left out of the
+      // arithmetic was.
+      density: 3.8,
       band: LOW_BAND,
       size: [0.18, 0.27],
       presence: (night) => Math.max(0, 1 - night * 2.2),
@@ -316,7 +354,10 @@ export class Ambience {
       // light for an instant, and the catching is done by the flap rather than
       // by the colour.
       material: flat(0x2f7d86),
-      count: 34,
+      // Down with the butterflies, and for the same reason measured the same
+      // way: seventeen of them in frame over the Coldwater is a swarm, and a
+      // dragonfly hunting a river is a thing you notice one of.
+      density: 6.0,
       // Skimming. The one kind with a band of its own: a dragonfly hunting a
       // river holds a hand's breadth off the surface, and putting it in the
       // same column as the butterflies loses the only thing that says water.
@@ -335,8 +376,10 @@ export class Ambience {
       material: emissive(0xd6ff8a),
       // The largest pool in the system and it still shows the fewest at once,
       // because the blink below spends most of the cycle dark. The count is the
-      // size of the swarm; the blink is how much of it you can see.
-      count: 190,
+      // size of the swarm; the blink is how much of it you can see — measured at
+      // thirty-four lit at midnight out of a hundred and ninety, which is the
+      // one pool in this file whose reasoning survived being checked.
+      density: 89.5,
       band: [0.3, 1.9],
       size: [0.26, 0.42],
       // The mirror of the butterflies: nothing until the light goes, then all of
@@ -354,11 +397,24 @@ export class Ambience {
       name: "bird",
       geometry: bird,
       material: flat(0x2e2a26),
-      count: 9,
+      density: 2.8,
       band: HIGH_BAND,
-      // Bigger than the rest and still small on screen: a bird up here is a
-      // dozen units further away than anything else in this file.
-      size: [0.8, 1.4],
+      // A BIRD WAS THREE TIMES THE HEIGHT OF THE PLAYER, and the old note here
+      // is why: "bigger than the rest and still small on screen, because a bird
+      // up here is a dozen units further away than anything else in this file".
+      // That is arithmetic nobody did. The camera sits forty-six units out, so
+      // a dozen units of extra distance costs about a quarter of the size — not
+      // an order of magnitude. Measured: seventy-three pixels across on average
+      // and a hundred and six at worst, against a whole character twenty-eight
+      // pixels tall. What that draws is a black chevron the size of a hang
+      // glider lying in the grass, which reads as a rendering fault rather than
+      // as a bird, and it was in every frame this phase photographed.
+      //
+      // A bird overhead should be SMALLER than the person you are playing. This
+      // puts it at about eighteen pixels: bigger than a butterfly beside you and
+      // unmistakably further away, which is the whole relationship the two are
+      // meant to have.
+      size: [0.26, 0.44],
       presence: (night) => Math.max(0, 1 - night * 1.9),
       suits: () => true,
       animate: birdAnimate,
@@ -371,14 +427,16 @@ export class Ambience {
     name: string;
     geometry: THREE.BufferGeometry;
     material: THREE.Material;
-    count: number;
+    /** Per thousand square units of the neighbourhood. See `poolFor`. */
+    density: number;
     band: [number, number];
     size: [number, number];
     presence: (night: number) => number;
     suits: (sx: number, sy: number) => boolean;
     animate: Kind["animate"];
   }): void {
-    const mesh = new THREE.InstancedMesh(spec.geometry, spec.material, spec.count);
+    const count = poolFor(spec.density);
+    const mesh = new THREE.InstancedMesh(spec.geometry, spec.material, count);
     mesh.name = `ambience:${spec.name}`;
     // Never casts and never receives: a shadow from something this small is a
     // few pixels of noise, and every caster is paid for twice.
@@ -392,7 +450,7 @@ export class Ambience {
     this.group.add(mesh);
 
     const motes: Mote[] = [];
-    for (let i = 0; i < spec.count; i++) {
+    for (let i = 0; i < count; i++) {
       motes.push({
         ax: 0, az: 0, ay: 0,
         p1: Math.random() * Math.PI * 2,
