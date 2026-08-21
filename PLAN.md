@@ -4939,9 +4939,95 @@ And a fourth, for the harness rather than the game: `tools/patch.mjs` takes a
 FLAT ARRAY of `{file, find, replace}`. That is already in `tools/README.md` and
 the session guessed instead of reading it, which cost a round to an error
 reading `spec.entries is not a function`.
+## Phase 55 — One character
+User brief: *"Model shouldn't change when swapping weapons. It should be one
+consistent, highly customizable, very good quality, rigged, animated character
+with all the proper physics and necessities for combat, skills and all the other
+things."*
+
+### M55.1 — the body stops changing, and keeps every animation
+For eight phases this project has said, in the README and in its own head, that
+picking up a staff turns you into a robed mage — and called it the purest
+expression of the one rule the game is named for.
+
+**It was a rendering constraint wearing a design decision's clothes.** The kit
+ships five characters, and each one is a mesh AND an animation set welded into a
+single file. The only sword swing in the project is inside `Warrior.fbx`. The
+only bow draw is inside `Ranger.fbx`. `Spell1` and `Spell2` exist nowhere but
+`Wizard.fbx`. So holding a sword meant BEING the Warrior, because that is where
+the swing was. Nobody chose that; it was the only way to have a staff animation
+while the staff animation lived inside the staff character.
+
+### The measurement that unlocked it
+All five rigs share **the same forty-four bones, named identically**, and every
+clip in every file addresses the same thirty-three of them. Measured before a
+line was written, because the whole milestone rests on it and "they look like
+the same skeleton" is not a fact — the Wizard even reports 76 bones rather than
+44, which is exactly the kind of thing that would have looked like a refutation
+from a distance. Its extra thirty-two are robe bones and not one of its clips
+touches them.
+
+So the clips can be lifted out of the characters they arrived in. `clips.ts`
+loads all five files once and harvests **twenty-five distinct animations** into
+one library: every attack, cast, draw, punch, roll, pickup, death, hit reaction,
+idle, walk and run a person in this world can perform. One body plays all of
+them.
+
+### What a weapon changes now
+Everything it changed before except the person. `classForWeapon` still decides
+the skill bar, the reach, the mana pool and the damage attribute; the swing
+timer still makes an axe land later and heavier than a dagger. And two things
+that are new here only because the body swap used to carry them implicitly:
+
+- **The attack clip.** A sword swings, a dagger stabs, a bow draws and looses, a
+  staff sweeps, a wand casts. One row per family in `ATTACK_CLIPS`.
+- **The stance.** Armed, you stand and run weapon-ready — `Idle_Weapon`,
+  `Run_Weapon` — and a bow gets `Run_Holding`, which is the one that carries it
+  across the body rather than out to the side. Bare-handed you stand at ease,
+  because a weapon-ready stance with nothing in it is a character miming a
+  sword.
+
+Three of those rows are judgements rather than lookups. An axe and a mace swing
+the SWORD animation, because the kit has no axe clip and the honest alternatives
+were to reuse one or to invent one — and the weight is already carried by the
+thing that governs it, the attack slot's curtain. A wand casts `Spell1` while a
+staff swings `Staff_Attack`, which is exactly right: a staff is a stick you
+swing and a wand is a thing you point. And fists take the Monk's `Attack` over
+the generic `Punch`, because bare hands are a real archetype here rather than a
+broken state.
+
+### And a weapon swap no longer interrupts anything
+The old path tore down the entire rig and built a new one, which is why
+`buildBody` carries a note about restarting whatever was playing so the
+character does not freeze in the bind pose with its arms out sideways. The new
+path rebinds six actions on the existing mixer. Position, facing, pose and
+momentum survive a swap because there is nothing left for a swap to interrupt.
+
+`Monk` for the body, chosen because it is what a character with nothing in its
+hands already was: the plainest silhouette of the five, the only one with
+genuinely empty hands, and the one least dressed as a profession before you have
+picked one.
+
+### Verified
+A probe that swapped through all eight weapon families and asked two separate
+questions per family, because "it worked" and "nothing happened" look identical
+in a screenshot: is the rig the SAME OBJECT (`instance.object.uuid`), and did
+the bound attack clip CHANGE. Eight for eight on both.
+
+Then each attack held at a fixed fraction of its own duration and the bone
+bounding box measured, to catch the failure this whole approach risks — a clip
+authored against one bind pose played on another comes out bent, stretched or
+inside out, and it is not visible at rest. Spans came out 0.5–0.85 wide by
+1.5–1.6 tall on a 1.8-unit character, for all six sampled.
+
+Plus a seeded level-40 character in full Enchanted plate with a mace and a
+shield, to confirm the procedural armour still fits a body it was never sized
+against. Fourteen suites, smoke, both workspaces, zero console errors.
+
 ---
 
 ## Seeding a character for testing
+
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
 it was a paragraph describing what somebody had once typed into sqlite by hand.
 `tools/seed.mjs` is that, written down:
@@ -5023,6 +5109,21 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- ONE body, for everybody, forever. The per-class rig was never a design
+  decision — it was the kit welding each character to its own animations, so the
+  only sword swing in the project lived inside the Warrior. Pooling all five
+  files onto the shared 44-bone skeleton unwelds them. What you hold still
+  decides your class, your bar, your reach, your mana, your damage attribute and
+  now your SWING; it does not decide who is holding it.
+- Verify a skeleton claim by MEASURING bone names, never by looking at two rigs
+  and deciding they match. The Wizard reports 76 bones against the others’ 44
+  and would have read as a refutation from across the room; the extra 32 are
+  robe bones no clip touches.
+- A borrowed clip is verified MID-MOTION, at a fixed fraction of its own
+  duration, by measuring the bone bounding box. A bind-pose mismatch renders a
+  character bent, stretched or inside out, and none of that is visible at rest —
+  which is the only pose a naive screenshot ever catches.
 
 - An OUTLINE is what both visibility problems were asking for. "Highlight the
   player" and "stop showing me a skeleton through walls" arrived as two reports

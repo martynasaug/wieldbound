@@ -9,9 +9,12 @@ no hosting, no accounts.
 
 There is no class selection. Pick up a sword and you fight as a Warrior; drop
 it for a staff and you are a Mage, mid-fight, with a different skill bar, a
-different reach and a different mana pool. Bare-handed you are an Adventurer —
-a real, weak archetype rather than a broken state. That one rule is where the
-name comes from.
+different reach, a different mana pool and a different swing. Bare-handed you
+are an Adventurer — a real, weak archetype rather than a broken state. That one
+rule is where the name comes from.
+
+What a weapon does **not** change is who you are. You are one character, with
+one body, and it stays yours across every swap.
 
 Originally started as a study of [Idlekin](https://app.playidlekin.com/), but
 it has drifted a long way: the idle framing was removed outright in favour of
@@ -60,9 +63,16 @@ unavailable.
   enough mana, right class — never gated on something being in range.
 - **Class from your weapon** — there is no class selection. `classForWeapon`
   derives it from whatever you have equipped, so swapping weapons swaps your
-  skills, reach, damage attribute and mana pool — *and your whole body*, since
-  each class has its own rig. Pick up a staff and you do not become a soldier
-  holding a staff, you become a robed mage. Each of the eight weapon families
+  skills, reach, damage attribute, mana pool *and how you move* — the stance you
+  hold, the way you carry it at a run, and the animation you attack with. What it
+  does **not** swap is your body. It used to: each class had its own rig, and
+  picking up a staff turned you into a robed mage. That read as the purest
+  expression of the rule and it was actually a rendering constraint — the kit
+  welds each character's mesh to its animations in one file, and the only sword
+  swing in the project lived inside the Warrior. Pooling all five files' clips
+  onto the one shared 44-bone skeleton unwelds them, so the tool in your hand
+  decides everything about how you fight and nothing about who is holding it.
+  Each of the eight weapon families
   also *fights* like itself: a bow looses a real arrow that takes time to
   arrive, a staff throws a bolt, a wand fires a beam, and an axe lands heavier
   and later than a dagger. Bare hands are a real (weak) archetype rather than

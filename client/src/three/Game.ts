@@ -89,7 +89,8 @@ import { CombatLog } from "../ui/CombatLog";
 import { TargetFrame } from "../ui/TargetFrame";
 import { ATTACK_SLOT, Hotbar, type BarAction } from "../ui/Hotbar";
 import { Actor } from "./Actor";
-import { CLASS_BODIES } from "./gear";
+import { PLAYER_BODY } from "./gear";
+import { loadClipLibrary } from "./clips";
 import { Hud } from "./hud";
 import { Floaters, type FloatSpec } from "./floaters";
 import { Drops } from "./drops";
@@ -835,7 +836,7 @@ export class Game {
     // every frame by stepMovement; easing toward it would only add lag, and the
     // lag is what makes the character glide after you let go of the key.
     this.localActor = new Actor({
-      model: CLASS_BODIES.adventurer,
+      model: PLAYER_BODY,
       height: PLAYER_HEIGHT,
       interpolate: false,
       // Yours is the strongest, because yours is the one you must never lose.
@@ -896,11 +897,17 @@ export class Game {
     this.world.scene.add(this.presence.mesh);
 
     const decor = this.world.buildDecor();
+    // Every animation a person can perform, harvested from all five character
+    // files. Eagerly and in parallel with the body, because a clip fetched on
+    // demand arrives after the swing it was fetched for — you would press
+    // attack, stand still, and see it on the second blow, which reads as input
+    // lag rather than as a missing file.
+    const anims = loadClipLibrary();
     const body = this.localActor.load();
     const people = buildNpcs(this.world.scene).then((npcs) => {
       this.npcs = npcs;
     });
-    await Promise.all([decor, body, people]);
+    await Promise.all([decor, anims, body, people]);
     // The models have parsed; their textures have not necessarily arrived, and
     // a first frame that repaints itself twenty megabytes at a time is exactly
     // what a loading screen exists to hide.
@@ -1016,7 +1023,7 @@ export class Game {
         // scenery, and telling a player from a monster at a glance is worth as
         // much in a crowd as finding yourself is.
         actor = new Actor({
-          model: CLASS_BODIES.adventurer,
+          model: PLAYER_BODY,
           height: PLAYER_HEIGHT,
           rim: 0.3,
         });

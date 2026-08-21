@@ -2,12 +2,21 @@
 // a monster. Wraps a loaded model with an animation state machine, smoothed
 // movement, a weapon socket and a set of gear attachments.
 //
-// Players differ from monsters in one way: their model is not fixed. Class is
-// whatever weapon is in hand and the body follows the class, so `setAppearance`
-// may swap the entire rig mid-fight. Everything an actor owns that is *not* the
-// model — world position, facing, animation state, chill — survives that swap,
-// because from the game's point of view nothing happened except a change of
-// clothes.
+// Players differ from monsters in one way, and it is no longer the model.
+//
+// It USED to be: class is whatever weapon is in hand, the body followed the
+// class, and `setAppearance` could swap the entire rig mid-fight. That was
+// never a design decision, though it read as one for eight phases — it was a
+// rendering constraint wearing a design decision's clothes. The kit welds each
+// character's mesh to its animations in one file, the only sword swing in the
+// project lives inside the Warrior file, and so picking up a sword meant
+// becoming the Warrior because that is where the swing was.
+//
+// `clips.ts` unwelds them. All five rigs share one 44-bone skeleton, so a body
+// is now one body and the animations are a library it draws from. What you are
+// holding still decides your class, your skills, your reach, your mana and your
+// damage attribute — the actual rule is untouched — and it now decides which
+// ANIMATION you swing with rather than which person you are.
 
 import * as THREE from "three";
 import {
@@ -18,15 +27,68 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, CLASS_BODIES, buildArmour, buildHeldItem } from "./gear";
+import { BUILTIN_WEAPON_MESHES, PLAYER_BODY, buildArmour, buildHeldItem } from "./gear";
+import { pickClip, loadClipLibrary } from "./clips";
+import type { WeaponType } from "../../../shared/protocol-types";
 
 export type ActorAnim = "idle" | "walk" | "run" | "attack" | "hit" | "die";
+
+/**
+ * How each weapon family MOVES, now that it no longer decides who is holding it.
+ *
+ * One row per family, best clip first, falling through to the library's
+ * generic entries. This is the table that carries what the body swap used to
+ * carry implicitly: a bow still draws and looses, a staff still casts, a dagger
+ * still stabs twice for every axe swing — the difference simply lives in an
+ * animation rather than in a different person.
+ *
+ * Three of these are choices rather than lookups:
+ *
+ * - **An axe and a mace swing the sword animation, not a slower one.** The kit
+ *   has no axe clip, and the honest alternatives were to reuse the sword's or
+ *   to invent a stand-in. The swing timer already makes an axe land later and
+ *   heavier than a dagger — that is the attack slot's curtain, visible on the
+ *   bar — so the weight is already communicated by the thing that governs it.
+ * - **A wand casts `Spell1` and a staff swings `Staff_Attack`.** The Wizard
+ *   file has both and the difference is exactly right: a staff is a stick you
+ *   swing and a wand is a thing you point.
+ * - **Fists get `Attack` before `Punch`.** `Punch` exists on four of the five
+ *   rigs as the what-do-I-do-with-no-weapon fallback and is a single jab; the
+ *   Monk's `Attack` is a real unarmed strike, and bare hands are a real
+ *   archetype in this game rather than a broken state.
+ */
+const ATTACK_CLIPS: Record<WeaponType, string[]> = {
+  fist: ["Attack", "Attack2", "Punch"],
+  sword: ["Sword_Attack", "Sword_AttackFast", "Attack"],
+  axe: ["Sword_Attack", "Attack"],
+  mace: ["Sword_Attack", "Attack"],
+  dagger: ["Dagger_Attack", "Dagger_Attack2", "Sword_AttackFast", "Attack"],
+  bow: ["Bow_Attack_Shoot", "Bow_Attack_Draw", "Attack"],
+  staff: ["Staff_Attack", "Spell1", "Attack"],
+  wand: ["Spell1", "Spell2", "Staff_Attack", "Attack"],
+};
+
+/**
+ * And how each family STANDS and MOVES while holding something.
+ *
+ * `Idle_Weapon` and `Run_Weapon` are a weapon-ready stance — hands up, blade
+ * out — and every armed family wants them. A bow is the exception: the kit's
+ * `Run_Holding` is the one that carries a bow properly, across the body rather
+ * than out to the side.
+ */
+const ARMED_IDLE = ["Idle_Weapon", "Idle_Attacking", "Idle"];
+const ARMED_RUN = ["Run_Weapon", "Run"];
+const BOW_RUN = ["Run_Holding", "Run_Weapon", "Run"];
 
 // Which clips satisfy each state, best first. Different packs name things
 // differently, so this is a preference list rather than an exact mapping —
 // `findClip` falls back to a loose match before giving up.
 const CLIP_PREFERENCES: Record<ActorAnim, string[]> = {
   idle: ["Idle_Weapon", "Idle", "Idle2", "Flying_Idle", "Flying"],
+  // NOTE: this table is for MONSTERS and townspeople now. A player rig builds
+  // its actions from `clips.ts` and the two tables above, because a player is
+  // the only actor whose animation set has to change without its model doing
+  // so. See `buildActions`.
   // An amble, and it is a separate state from `run` rather than a slower
   // playback of it. Every character rig in the pack ships a `Walk`, and it has
   // been sitting unused since the port: `run` lists it only as a FALLBACK, so
@@ -340,6 +402,15 @@ export class Actor {
   private readonly variance: number;
   private readonly idleGlance: boolean;
   private readonly wantsSilhouette: boolean;
+  /**
+   * Whether this actor animates from the shared human library.
+   *
+   * True for people, false for monsters — and it is derived from the model
+   * rather than passed in, because the fact that decides it is exactly "is this
+   * the human skeleton", and asking the caller to remember that is asking for
+   * a dragon that plays a sword swing.
+   */
+  private readonly usesClipLibrary: boolean;
   /** When this actor next glances somewhere while standing still. */
   private nextGlanceAt = 0;
   /** Facing it has chosen to idle at, so a glance eases rather than snaps. */
@@ -425,6 +496,7 @@ export class Actor {
     this.variance = options.variance ?? Math.random();
     this.idleGlance = options.idleGlance ?? false;
     this.wantsSilhouette = options.silhouette ?? true;
+    this.usesClipLibrary = options.model === PLAYER_BODY;
     this.nextGlanceAt = performance.now() + this.glanceDelay();
     this.bodyModel = options.model;
     this.root.add(this.pivot);
@@ -440,8 +512,86 @@ export class Actor {
    * Builds (or rebuilds) the rig. Animation state is deliberately not reset
    * here: a body swap should look like a change of clothes, not a respawn.
    */
+  /**
+   * Binds one clip per animation state, for whatever is currently in hand.
+   *
+   * Called on load and again on every weapon change — which is the whole point,
+   * and is the ONE thing a weapon change now does to the model. It used to
+   * rebuild the entire rig; it now rebinds six actions on a mixer, which costs
+   * nothing and, more importantly, cannot drop what the character was doing.
+   *
+   * A player draws from `clips.ts`; anything else reads the clips its own file
+   * shipped with, because a dragon's skeleton has wings on it and the library is
+   * a library of human movement.
+   */
+  private buildActions(): void {
+    if (!this.mixer || !this.instance) return;
+
+    // Preserve what is playing. Rebinding is not supposed to be visible, and a
+    // naive rebuild drops the character into the bind pose for a frame — arms
+    // out sideways — which is exactly what a weapon swap must not look like.
+    const wasPlaying = this.currentAnim;
+    const wasBase = this.baseAnim;
+    for (const action of this.actions.values()) action.stop();
+    this.actions.clear();
+
+    const weapon = this.usesClipLibrary ? this.appearance?.weaponType : undefined;
+    for (const anim of Object.keys(CLIP_PREFERENCES) as ActorAnim[]) {
+      const clip = this.usesClipLibrary
+        ? pickClip(...this.playerClipsFor(anim, weapon))
+        : findClip(this.instance.animations, ...CLIP_PREFERENCES[anim]);
+      if (!clip) continue;
+      const action = this.mixer.clipAction(clip);
+      if (anim === "attack" || anim === "hit" || anim === "die") {
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+      }
+      this.actions.set(anim, action);
+    }
+
+    this.baseAnim = wasBase;
+    this.currentAnim = "idle";
+    this.oneShotUntil = 0;
+    this.play(wasPlaying === "attack" || wasPlaying === "hit" ? wasBase : wasPlaying, true);
+  }
+
+  /** The preference list for one state, given what is in hand. */
+  private playerClipsFor(anim: ActorAnim, weapon: WeaponType | undefined): string[] {
+    const armed = weapon !== undefined && weapon !== "fist";
+    switch (anim) {
+      case "attack":
+        return ATTACK_CLIPS[weapon ?? "fist"];
+      case "idle":
+        // Bare hands stand at ease. A weapon-ready stance with nothing in it is
+        // a character miming a sword, which is worse than standing normally.
+        return armed ? ARMED_IDLE : ["Idle", "Idle_Attacking"];
+      case "run":
+        if (!armed) return ["Run", "Walk"];
+        return weapon === "bow" ? BOW_RUN : ARMED_RUN;
+      case "walk":
+        // One walk for everybody. The kit has no armed walk, and an armed RUN
+        // played at walking speed is a character sprinting on the spot.
+        return ["Walk", "Run"];
+      case "hit":
+        // There are two, and which one you take depends on whether you were
+        // mid-swing — which is a distinction this rig ships and nothing has
+        // ever used.
+        return armed
+          ? ["RecieveHit_Attacking", "RecieveHit"]
+          : ["RecieveHit", "RecieveHit_Attacking"];
+      case "die":
+        return ["Death"];
+    }
+  }
+
   private async buildBody(model: string): Promise<void> {
     const request = ++this.bodyRequest;
+    // The library before the body, for anything that animates out of it.
+    // `buildActions` reads it synchronously, so a rig built first would bind no
+    // actions at all and stand in the bind pose until the next equip — which is
+    // a bug that only appears on a cold cache and therefore never locally.
+    // Both are cached promises, so this costs an await and not a fetch.
+    if (this.usesClipLibrary) await loadClipLibrary();
     const instance = await instantiate(model, this.options.height);
     if (request !== this.bodyRequest) return; // a later swap overtook this one
 
@@ -471,16 +621,7 @@ export class Actor {
     for (const o of builtIn) o.removeFromParent();
 
     this.mixer = new THREE.AnimationMixer(instance.object);
-    for (const [anim, preferences] of Object.entries(CLIP_PREFERENCES) as [ActorAnim, string[]][]) {
-      const clip = findClip(instance.animations, ...preferences);
-      if (!clip) continue;
-      const action = this.mixer.clipAction(clip);
-      if (anim === "attack" || anim === "hit" || anim === "die") {
-        action.setLoop(THREE.LoopOnce, 1);
-        action.clampWhenFinished = true;
-      }
-      this.actions.set(anim, action);
-    }
+    this.buildActions();
 
     // The rig ships a dedicated weapon socket; the weapon that was parented to
     // it is what makes "class is what you hold" a mesh swap on one bone.
@@ -584,13 +725,13 @@ export class Actor {
   }
 
   private applyAppearance(appearance: Appearance): void {
-    const wantBody = CLASS_BODIES[appearanceClass(appearance)];
-    if (wantBody !== this.bodyModel) {
-      // Rebuilding re-enters this method once the new rig exists, at which
-      // point `bodyModel` matches and the rest of the dressing runs.
-      void this.buildBody(wantBody);
-      return;
-    }
+    // THE RIG IS NOT REBUILT HERE ANY MORE. It used to be: `CLASS_BODIES` was
+    // read from the weapon, and a different answer tore the whole model down
+    // and started again. What a weapon change does now is rebind six animation
+    // actions — see `buildActions` — so the character keeps its position, its
+    // facing, its pose and its momentum through a swap, because there is
+    // nothing left for a swap to interrupt.
+    if (this.usesClipLibrary) this.buildActions();
 
     const generation = ++this.dressGeneration;
     this.clearGear();

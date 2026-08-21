@@ -47,12 +47,32 @@ import { PALETTES, itemBase, type PaletteDef } from "../../../shared/items";
 // a warrior holding a staff, you are a robed mage. Bare-handed maps to the
 // Monk, the one body in the pack that reads as "carries nothing" rather than as
 // a disarmed soldier — which is exactly what Adventurer is meant to be.
-export const CLASS_BODIES: Record<CharacterClass, string> = {
-  adventurer: "Monk",
-  warrior: "Warrior",
-  ranger: "Ranger",
-  mage: "Wizard",
-};
+/**
+ * The body. One of them, for everybody, at every moment.
+ *
+ * This was a `Record<CharacterClass, string>` — four bodies, picked by whatever
+ * was in your hand — and it read as the strongest expression of the game's one
+ * rule: pick up a staff and you do not become a soldier holding a staff, you
+ * become a robed mage. It was in the README as a headline.
+ *
+ * It was a rendering constraint. The kit welds each character's mesh to its
+ * animations in one file; the only sword swing in the project is inside the
+ * Warrior file, so holding a sword meant BEING the Warrior. `clips.ts` unwelds
+ * them — all five rigs share one 44-bone skeleton — and with the animations
+ * pooled there is no longer any reason for the person to change when the tool
+ * does.
+ *
+ * The rule itself is untouched, and it was always the more interesting half:
+ * what you hold still decides your class, your skill bar, your reach, your mana
+ * pool and your damage attribute. It now also decides how you SWING. What it no
+ * longer decides is who you are, which was never something a weapon should get
+ * to say.
+ *
+ * Monk, because it is what a character with nothing in its hands already was:
+ * the plainest silhouette of the five, the only one with genuinely empty hands,
+ * and the one least dressed as a profession before you have chosen one.
+ */
+export const PLAYER_BODY = "Monk";
 
 // Every body carries its own weapon baked into the scene graph, so they all
 // have to go: otherwise a ranger who picks up a sword walks around holding both
