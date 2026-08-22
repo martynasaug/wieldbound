@@ -35,6 +35,7 @@ import {
   doubleAttackChance,
   equippedBySlot,
   isRetreating,
+  skillIsCast,
   bandAt,
   gatherDurationForLevel,
   gatherYieldFor,
@@ -788,7 +789,11 @@ export class Game {
         if (p.skillId) {
           this.castingSkill = p.skillId;
           this.hud.startCast(SKILLS[p.skillId]?.name ?? "Casting", p.castMs);
-          this.localActor?.play("attack");
+          // Channelling holds the cast pose for the length of the bar, which is
+          // the whole visual point of a cast time — a character standing in
+          // their idle for three quarters of a second and then throwing
+          // something has not cast anything, they have paused.
+          this.localActor?.play("cast");
           playSfx("cast", 0.55);
         } else {
           this.castingSkill = null;
@@ -1832,7 +1837,12 @@ export class Game {
       return;
     }
 
-    self?.play("attack");
+    // SWUNG OR CAST, by what the skill is and what is in your hands. This was
+    // one `play("attack")` for all forty-three skills, so a sword user pressing
+    // Mend did a sword swing and War Cry was a sword swing — while `Spell1` and
+    // `Spell2` sat in the pooled library reachable only as a wand's ordinary
+    // attack. See `skillIsCast` for the rule and for why a bow is the exception.
+    self?.play(skillIsCast(skill, this.appearance.weaponType) ? "cast" : "attack");
     playSfx(skill.kind === "heal" ? "heal" : "cast");
 
     if (skill.kind === "heal" || skill.kind === "buff") {

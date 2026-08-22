@@ -835,6 +835,48 @@ export function castMsFor(skill: SkillDef): number {
 }
 
 /**
+ * Whether a skill is SWUNG or CAST.
+ *
+ * Every skill in the game animated as your weapon's basic attack — one
+ * `play("attack")` for all forty-three — so a sword user pressing Mend did a
+ * sword swing, War Cry was a sword swing, and Shield Wall was a sword swing.
+ * `Spell1` and `Spell2` have been in the pooled library since M55.1 and were
+ * reachable only as a WAND'S ORDINARY ATTACK.
+ *
+ * The rule is the obvious one once said out loud: **what you are holding
+ * decides how you SWING, and what you are doing decides whether you swing at
+ * all.** A greatsword is how a cleave looks; it is not how mending somebody
+ * looks.
+ *
+ * Derived rather than tabled, for the reason cast times are: forty-three
+ * hand-picked poses are forty-three things to keep true, and a skill added
+ * later would silently arrive swinging.
+ *
+ *   - Mobility is neither. A dash is a roll, and it has been since M67.1.
+ *   - Anything that lands at ARM'S LENGTH is swung, whatever it is called —
+ *     Execute, Riposte, Gut Punch and Cleave are all things you do with the
+ *     object in your hand.
+ *   - AND A BOW IS ITS OWN DELIVERY. This is why the pose reads the weapon as
+ *     well as the skill: a ranger's Power Shot, Multishot and Killshot are
+ *     archery, and the bow's own draw-and-loose is exactly the right animation
+ *     for them. Casting a spell to fire an arrow would be the same mistake in
+ *     reverse. Staves and wands are the opposite — `Spell1` IS their attack, so
+ *     a ranged spell and a ranged basic attack look alike because they are.
+ *   - Everything else is cast: every heal, every buff, and anything else thrown
+ *     from range. Those are the ones where what you are holding is incidental
+ *     to what is happening.
+ */
+export function skillIsCast(skill: SkillDef, weapon?: WeaponType | null): boolean {
+  if (skill.kind === "mobility") return false;
+  // A heal or a buff is never swung, whatever is in your hands.
+  if (skill.kind === "heal" || skill.kind === "buff") return true;
+  if (skill.rangePx < CAST_RANGE_FLOOR_PX) return false;
+  // Ranged, so it would be cast — unless the thing you are holding is already
+  // the way it gets there.
+  return weapon !== "bow";
+}
+
+/**
  * How far you may drift before a cast is dropped.
  *
  * Not zero, and that is deliberate: bodies push each other apart, a monster

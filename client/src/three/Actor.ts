@@ -49,7 +49,16 @@ export type ActorAnim =
   | "hit"
   | "die"
   | "roll"
-  | "pickup";
+  | "pickup"
+  /**
+   * Casting, as opposed to swinging.
+   *
+   * `Spell1` and `Spell2` have been in the pooled library since M55.1 and were
+   * reachable only as a WAND'S ORDINARY ATTACK — so every one of the
+   * forty-three skills animated as your weapon's basic swing, and a sword user
+   * pressing Mend did a sword swing.
+   */
+  | "cast";
 
 /**
  * How each weapon family MOVES, now that it no longer decides who is holding it.
@@ -131,6 +140,9 @@ const CLIP_PREFERENCES: Record<ActorAnim, string[]> = {
   // simply binds nothing, and `play` refuses a state it has no action for.
   roll: [],
   pickup: [],
+  // A monster that casts falls back to whatever it attacks with, since nothing
+  // in the bestiary has a separate cast pose.
+  cast: ["Spell1", "Spell2", "Attack", "Bite"],
 };
 
 const FADE_MS = 180;
@@ -701,7 +713,14 @@ export class Actor {
         : findClip(this.instance.animations, ...CLIP_PREFERENCES[anim]);
       if (!clip) continue;
       const action = this.mixer.clipAction(clip);
-      if (anim === "attack" || anim === "hit" || anim === "die" || anim === "roll" || anim === "pickup") {
+      if (
+        anim === "attack" ||
+        anim === "hit" ||
+        anim === "die" ||
+        anim === "roll" ||
+        anim === "pickup" ||
+        anim === "cast"
+      ) {
         action.setLoop(THREE.LoopOnce, 1);
         action.clampWhenFinished = true;
       }
@@ -745,6 +764,13 @@ export class Actor {
         return ["Roll"];
       case "pickup":
         return ["PickUp", "Pickup"];
+      // Every body in the game can reach these, which is exactly what pooling
+      // the five rigs' clips bought: a warrior holding a greatsword still has
+      // the Wizard's cast to call on when the thing being done is a spell.
+      // Falls through to the weapon's own attack for a rig that somehow has
+      // neither, rather than freezing in the bind pose.
+      case "cast":
+        return ["Spell1", "Spell2", "Staff_Attack", ...ATTACK_CLIPS[weapon ?? "fist"]];
     }
   }
 

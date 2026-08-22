@@ -6719,6 +6719,50 @@ and `pickup` to `PickUp`.
 
 Nineteen suites, both workspaces, zero console errors.
 
+### M67.3 — a skill is posed by what it IS, not by what you are holding
+One `play("attack")` served all forty-three skills. So a sword user pressing
+Mend did a sword swing, War Cry was a sword swing, and Shield Wall was a sword
+swing — while `Spell1` and `Spell2` sat in the pooled library, reachable only as
+a **wand's ordinary attack**.
+
+The rule is obvious once it is said out loud: **what you are holding decides how
+you SWING, and what you are doing decides whether you swing at all.** A
+greatsword is how a cleave looks; it is not how mending somebody looks.
+
+Derived rather than tabled, for the reason cast times are — forty-three
+hand-picked poses are forty-three things to keep true, and a skill added later
+would silently arrive swinging.
+
+- **Mobility is neither**: a dash rolls, and has since M67.1.
+- **Arm's length is a swing**, whatever it is called. Execute, Riposte, Gut
+  Punch and Cleave are things you do with the object in your hand.
+- **A BOW IS ITS OWN DELIVERY**, and this is why the pose reads the WEAPON as
+  well as the skill. A ranger's Power Shot, Multishot and Killshot are archery,
+  and the draw-and-loose is exactly right for them; casting a spell to fire an
+  arrow is the same mistake in reverse. Staves and wands are the opposite —
+  `Spell1` IS their attack, so a ranged spell and a ranged basic attack look
+  alike because they are.
+- **Everything else casts**: every heal, every buff, anything else thrown from
+  range. Those are the ones where what you are holding is incidental.
+
+Holding a sword that is 25 cast, 16 swung and 2 rolled; **fourteen skills a bow
+looses that a staff casts**, which is the weapon being read rather than ignored.
+And a channelled cast now HOLDS the pose for the length of its bar, which is the
+visual point of a cast time — a character standing in their idle for three
+quarters of a second and then throwing something has not cast anything, they
+have paused.
+
+Every body in the game can reach `Spell1`, which is exactly what pooling the
+five rigs bought in M55.1: a warrior holding a greatsword still has the Wizard's
+cast to call on when the thing being done is a spell. Verified in the browser —
+`cast` resolves to `Spell1` on a sword-wielding character.
+
+The suite checks the rule rather than a table: nothing at arm's length may be
+cast, no heal or buff may be swung with ANY of the eight families, archery may
+never be a spell, and at least one skill must pose differently for a bow than
+for a staff — or the weapon is not being read and the rule is decoration. Two
+mutations fail it.
+
 ### M67.2 — and the player was being stun-locked by the courtesy
 Writing the monster's gate turned up the mirror of it. The player's hit reaction
 was `play("hit")` on **any HP decrease at all**, ungated — and the hit clip is a
@@ -6867,6 +6911,19 @@ rarities), multiple crafting stations. Not committing to order yet.
   by running deliberately — a planted swing pose while the character travels is
   the sliding that rule exists to stop — but a dash IS travel, so cancelling on
   the movement it causes plays the clip for one frame.
+- A SKILL IS POSED BY WHAT IT IS, not by what is in your hand. One
+  `play("attack")` served all forty-three, so a sword user pressing Mend did a
+  sword swing while `Spell1` sat in the pooled library reachable only as a
+  wand's ordinary attack. What you hold decides how you SWING; what you are
+  doing decides whether you swing at all.
+- BUT THE POSE STILL READS THE WEAPON, because a bow is its own delivery.
+  Archery must not be a spell cast — the draw is the right animation, and
+  casting one to fire an arrow is the same mistake in reverse. Fourteen skills
+  a bow looses are ones a staff casts, and a rule where that number is zero is
+  a rule not reading the weapon at all.
+- A channelled cast HOLDS its pose for the length of the bar. A character
+  standing in their idle for three quarters of a second and then throwing
+  something has not cast anything, they have paused.
 - THE SAME REACTION NEEDS DIFFERENT GATES ON A PLAYER AND ON A MONSTER, and
   forcing one rule on both cannot work. A player's health grows far faster than
   anything's damage, so a share of health is 12% for a burn tick at level 1 and
@@ -9743,7 +9800,16 @@ monster damage so fast that one share threshold is both too loose at level 1 (a
 burn tick is 12% of fifty health) and too tight at level 40 (a troll's slam is
 4.3%): a monster's problem is magnitude, a player's is frequency. The suite's own
 ruler was wrong three times on the way — twice reading its comments instead of
-its code, once unable to find the end of a function.
+its code, once unable to find the end of a function. **M67.3** then posed the
+skills. One `play("attack")` had served all forty-three, so a sword user pressing
+Mend did a sword swing and War Cry was a sword swing — while `Spell1` and
+`Spell2` sat in the pooled library reachable only as a WAND'S ORDINARY ATTACK.
+What you hold decides how you swing; what you are doing decides whether you swing
+at all. Except that **a bow is its own delivery**, which is why the pose reads the
+weapon back: fourteen skills a bow looses are ones a staff casts, and archery
+being a spell cast would be the same mistake in reverse. A channelled cast holds
+its pose for the length of its bar now, too — standing in an idle for three
+quarters of a second and then throwing something is a pause, not a cast.
 
 **Phase 66 M66.1 — something that throws it.** Twelve of the thirteen kinds were
 melee, so every fight in the game had one shape: it runs at you and you stand
