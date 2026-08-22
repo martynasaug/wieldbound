@@ -7062,6 +7062,62 @@ And the only way to play it was to REMEMBER which skill wanted which condition,
 notice it on a nameplate mid-fight, and press in time. Press early and a 2.4x
 multiplier resolves as a 1x, with nothing to tell you that is what happened.
 
+### M69.2 — six skills that looked exactly like a swing
+Every skill draws the school's impact burst on whatever it lands on. **So does an
+ordinary auto-attack.** Which means a skill whose only visual is that burst is
+one the player cannot tell they pressed — and six were: Gut Punch, Concuss,
+Stagger, Expose, Backstab and Exploit, all `shape: "none"`.
+
+That is a problem in proportion to what they do. Exploit is a 140% multiplier.
+Expose and Stagger are the skills that SET UP the multipliers M69.1 just lit the
+bar for. The whole sequencing game was being played with four of its six moves
+invisible.
+
+### Two shapes, and each says what the skill does
+- **`mark` — a ring snapping INWARD onto a body.** The converging direction is
+  the whole idea, and it is the exact opposite of `nova`: a nova radiates out of
+  a point because something happened there, and a mark closes in on a body
+  because something is being done TO it. Camera-facing rather than flat, which
+  matters more than it sounds — a ring at the feet says "this patch of ground",
+  and every one of these skills is about the body standing on it.
+- **`strike` — one heavy blow landing.** Two rings on the same beat, one
+  lagging: a single ring reads as a bubble, and the offset is what makes it read
+  as an impact travelling outward.
+
+The four debuff-appliers share the inward ring **deliberately**, for the same
+reason the eight readers share an amber cast: what a player has to learn is *a
+condition just landed on that*, and four unrelated signatures would teach them
+nothing.
+
+Both are placed at the struck creature's own middle rather than at a fixed
+height — a slime is 0.8 units tall and a dragon 3.4, and a constant offset puts
+the ring round one's ankles and inside the other. Same trade the impact burst
+already makes.
+
+### And a rule, plus two places it over-reached
+**A melee skill must draw something an auto-attack does not.** `shape: "none"`
+stays legitimate for anything RANGED — M64.1 gave those a real projectile that
+leaves your hands — and for a dash, which is a roll and a change of position.
+
+The rule was written too broadly twice and the suite said so both times:
+
+- It demanded every melee debuff-applier share the ring, which swept in **Frost
+  Nova and Rend** — both AREA skills, whose shape is telling you WHERE it landed
+  rather than what it did. Narrowed to single-target.
+- Then it still caught **Rend**, which is a slash that happens to bleed and whose
+  cone is a signature of its own, already unmistakable from a swing. Forcing it
+  into the ring would be the rule reaching into a case it was not written for. So
+  what is asserted now is that the ring is a shared VOCABULARY — worn by more
+  than one skill — rather than a uniform.
+
+And a third time on the ruler rather than the rule: the check for "can the
+renderer draw this shape" scraped method signatures with a pattern anchored on
+`name(x: number`, which cannot see `cone` because it declares its parameters
+across several lines. It reported a shape the renderer draws perfectly well as
+undrawable.
+
+Twenty suites, both workspaces, zero console errors.
+
 ### M69.1 — the bar lights when the condition is met
 The slot glows when its own condition is satisfied right now — on you for a
 self-read, on what you are actually fighting for a target-read.
@@ -7197,6 +7253,23 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A SKILL MUST DRAW SOMETHING AN AUTO-ATTACK DOES NOT. Every skill paints the
+  school's impact burst on what it hits, and so does an ordinary swing — so six
+  melee skills with `shape: "none"` were things the player could not tell they
+  had pressed, including the two that set up the 140% multipliers. `none` stays
+  right for anything ranged, which throws a visible projectile, and for a dash,
+  which is a roll.
+- A MARK CONVERGES; A NOVA RADIATES. The direction is the meaning: a nova comes
+  out of a point because something happened there, and a mark closes onto a body
+  because something is being done to it. Camera-facing rather than flat, because
+  a ring at the feet describes a patch of ground and these skills are about the
+  creature standing on it.
+- A SHARED SIGNATURE IS A VOCABULARY, NOT A UNIFORM. Four single-target debuff
+  appliers share the inward ring so "a condition just landed" is one thing to
+  learn — but Rend is a slash that happens to bleed and its cone is already
+  unmistakable, and a rule that forced it in would be reaching into a case it was
+  not written for. Assert that the signature is worn by more than one skill, not
+  that it is worn by all of them.
 - A CONDITIONAL YOU CANNOT SEE IS ONE YOU WILL NOT PLAY AROUND — and this file
   already said so about the empowered flash, which fires after you have
   committed. Eight skills read a status for up to 140% more damage and the only
@@ -10168,7 +10241,9 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 69 complete (2026-08-21).
 
-**Phase 69 M69.1 — a conditional you can see.** The deepest skill expression in
+**Phase 69 — a conditional you can see, and skills that look like skills.** M69.2 gave six melee skills a look of their own: every skill paints the school impact burst and so does an ordinary swing, so Gut Punch, Concuss, Stagger, Expose, Backstab and Exploit were things you could not tell you had pressed — including the two that set up the multipliers M69.1 lit the bar for. A mark closes INWARD onto a body, the exact opposite of a nova, meaning "something is being done to this"; a strike is one heavy blow landing. The rule that no melee skill may draw nothing over-reached twice, sweeping in Frost Nova and Rend, which are AREA skills whose shape says where rather than what — a shared signature is asserted as a vocabulary now, not a uniform.
+
+**M69.1 — a conditional you can see.** The deepest skill expression in
 the game already existed and was invisible: eight skills READ a status rather
 than applying one — Exploit spends Exposed for 140% more damage, Combust spends
 Burning, Execute hits 85% harder into any damage-over-time — and the only way to

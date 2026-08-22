@@ -312,5 +312,93 @@ console.log("\n== a conditional you can see ==");
   console.log("  the bar is told every frame, and reads self and target separately");
 }
 
+// --- A skill has to LOOK like a skill ---------------------------------------
+// Every skill draws the school's impact burst on whatever it lands on — and so
+// does an ordinary auto-attack. So a skill whose only visual is that burst is
+// one the player cannot tell they pressed, which for a 140% multiplier is a
+// problem: Backstab, Exploit, Gut Punch, Concuss, Stagger and Expose all looked
+// exactly like a swing.
+//
+// `shape: "none"` is still legitimate — for anything RANGED, because M64.1 gave
+// those a real projectile that leaves your hands, and for a dash, which is a
+// roll and a change of position. What may not happen is a melee skill drawing
+// nothing of its own.
+
+console.log("\n== a skill looks like a skill ==");
+{
+  const { SKILLS, CAST_RANGE_FLOOR_PX } = await import("../../shared/protocol-types.ts");
+  const skillfx = readFileSync(new URL("../../client/src/three/skillfx.ts", import.meta.url), "utf8");
+  const table = skillfx.match(/export const SKILL_FX[\s\S]*?\n\};/);
+  if (!table) fail("could not find SKILL_FX");
+  const shapeOf = Object.fromEntries(
+    [...(table?.[0] ?? "").matchAll(/^\s+(\w+):\s*\{\s*shape:\s*"(\w+)"/gm)].map((m) => [m[1], m[2]]),
+  );
+
+  let silent = 0;
+  for (const s of Object.values(SKILLS)) {
+    const shape = shapeOf[s.id];
+    if (!shape) {
+      fail(`${s.id} has no entry in SKILL_FX at all`);
+      continue;
+    }
+    if (shape !== "none") continue;
+    // Ranged draws a projectile; a dash draws a roll.
+    if (s.rangePx >= CAST_RANGE_FLOOR_PX) continue;
+    if (s.kind === "mobility") continue;
+    silent++;
+    fail(
+      `${s.id} lands at ${s.rangePx}px and draws no shape of its own — it is ` +
+        `indistinguishable from an ordinary swing`,
+    );
+  }
+  if (silent === 0) console.log("  every melee skill draws something an auto-attack does not");
+
+  // And the two shapes that carry a MEANING have to keep it. The four
+  // debuff-appliers share one signature deliberately, exactly as the eight
+  // readers share an amber cast: what a player has to learn is "a condition
+  // just landed", and four unrelated signatures would teach them nothing.
+  // SINGLE-TARGET only. Frost Nova rings outward and Rend sweeps a wedge —
+  // both apply a debuff and both are AREA skills, whose shape is telling you
+  // where it landed rather than what it did. The shared signature is for the
+  // ones that put a condition on ONE body, which is the case where nothing else
+  // distinguishes them from a swing.
+  const appliers = Object.values(SKILLS).filter(
+    (s) =>
+      s.applies &&
+      s.kind !== "buff" &&
+      s.kind !== "heal" &&
+      s.rangePx < CAST_RANGE_FLOOR_PX &&
+      s.radiusPx === 0,
+  );
+  // What matters is that the mark IS a shared vocabulary rather than one
+  // skill's decoration — not that every applier is forced into it. Rend is a
+  // slash that happens to bleed, and its cone is a signature of its own that is
+  // already unmistakable from a swing; demanding it join the ring would be the
+  // rule over-reaching into a case it was not written for.
+  const marks = appliers.filter((s) => shapeOf[s.id] === "mark");
+  if (appliers.length > 1 && marks.length < 2) {
+    fail(
+      `only ${marks.length} single-target melee applier uses the inward ring — ` +
+        `a signature one skill wears is decoration, not a vocabulary`,
+    );
+  }
+  console.log(
+    `  ${marks.length} of ${appliers.length} single-target melee appliers share the inward ring`,
+  );
+
+  // Every shape named in the table must be one the renderer can actually draw.
+  // Matched per shape rather than by scraping every method signature: `cone`
+  // declares its parameters across several lines, so a pattern anchored on
+  // `name(x: number` cannot see it and reported a shape the renderer draws
+  // perfectly well as undrawable.
+  for (const shape of new Set(Object.values(shapeOf))) {
+    if (shape === "none" || shape === "chain") continue;
+    if (!new RegExp(`^  ${shape}\\(`, "m").test(skillfx)) {
+      fail(`SKILL_FX names the shape "${shape}" and SkillFx cannot draw it`);
+    }
+  }
+  console.log(`  ${[...new Set(Object.values(shapeOf))].length} distinct shapes, all drawable`);
+}
+
 console.log(failures === 0 ? "\nOK — every state binds, and something plays it." : `\n${failures} failure(s).`);
 process.exit(failures === 0 ? 0 : 1);

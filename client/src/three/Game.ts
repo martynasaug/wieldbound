@@ -1766,6 +1766,19 @@ export class Game {
       case "rain":
         this.skillFx.rain(centre.x, surfaceHeight(centre.x, centre.z), centre.z, radius, fx.color);
         break;
+      // Both land ON A BODY rather than on the ground, so they are placed at the
+      // struck creature's own middle — a slime is 0.8 units tall and a dragon
+      // 3.4, and a constant offset puts the ring round one's ankles and inside
+      // the other, which is the same trade the impact burst already makes.
+      case "mark":
+      case "strike": {
+        const hit = hits.length > 0 ? this.monsters.get(hits[0].monsterId) : undefined;
+        const on = hit?.actor.position ?? centre;
+        const mid = hit ? on.y + MONSTER_MODELS[hit.kind].height * 0.55 : on.y + 1.0;
+        if (fx.shape === "mark") this.skillFx.mark(on.x, mid, on.z, fx.color);
+        else this.skillFx.strike(on.x, mid, on.z, fx.color);
+        break;
+      }
       case "chain": {
         // Hops caster -> first -> second -> ..., which is what the skill
         // actually does; drawing a bolt to each target from the caster would

@@ -33,6 +33,26 @@ export type FxShape =
   | "chain"
   /** A wedge sweeping the facing. Cleaves and sweeps. */
   | "cone"
+  /**
+   * A ring snapping INWARD onto a body. Anything that puts a condition on
+   * something.
+   *
+   * The converging direction is the whole idea, and it is the exact opposite of
+   * `nova`: a nova radiates OUT of a point because something happened there, and
+   * a mark closes IN on a body because something is being done TO it. Four
+   * control skills — Gut Punch, Concuss, Stagger and Expose — drew nothing of
+   * their own and were indistinguishable from an ordinary swing, which is a
+   * problem when what they actually did was set up a 140% multiplier.
+   */
+  | "mark"
+  /**
+   * One heavy blow landing on a body, rather than a sweep or a ring.
+   *
+   * For the single-target strikes: Backstab and Exploit. Camera-facing at the
+   * target's own middle rather than flat on the ground, because the event being
+   * described happened to a CREATURE and not to a patch of floor.
+   */
+  | "strike"
   /** Nothing extra — the atlas flash alone is right for it. */
   | "none";
 
@@ -53,7 +73,7 @@ export const SKILL_FX: Record<SkillId, FxSpec> = {
   // fists — close, blunt, unarmed
   haymaker: { shape: "cone", color: 0xffd9a0 },
   roar: { shape: "nova", color: 0xffc46a },
-  gutpunch: { shape: "none", color: 0xffe0b0 },
+  gutpunch: { shape: "mark", color: 0xffe0b0 },
 
   // sword / axe / mace
   cleave: { shape: "cone", color: 0xffe9b0 },
@@ -65,7 +85,7 @@ export const SKILL_FX: Record<SkillId, FxSpec> = {
   rend: { shape: "cone", color: 0xd8484a },
   reckless: { shape: "pillar", color: 0xff9a5c },
   shockwave: { shape: "nova", color: 0xd8c89a },
-  concuss: { shape: "none", color: 0xffe27a },
+  concuss: { shape: "mark", color: 0xffe27a },
 
   // dagger / bow
   powershot: { shape: "none", color: 0xd8e8a0 },
@@ -73,7 +93,7 @@ export const SKILL_FX: Record<SkillId, FxSpec> = {
   poisonarrow: { shape: "ground", color: 0x7ec44a },
   disengage: { shape: "none", color: 0xcfe8ff },
   rainofarrows: { shape: "rain", color: 0xd8e0a8 },
-  backstab: { shape: "none", color: 0xb07ad8 },
+  backstab: { shape: "strike", color: 0xb07ad8 },
   flurry: { shape: "cone", color: 0xdfe8f5 },
 
   // staff / wand
@@ -92,9 +112,14 @@ export const SKILL_FX: Record<SkillId, FxSpec> = {
   focus: { shape: "nova", color: 0xffe08a },
   rally: { shape: "pillar", color: 0xffd873 },
   bloodlust: { shape: "nova", color: 0xff6a4a, light: true },
-  stagger: { shape: "none", color: 0xd8c7a0 },
-  expose: { shape: "none", color: 0xffab6a },
-  huntersmark: { shape: "none", color: 0x8fd15a },
+  // The four debuff-appliers share the inward ring on purpose, for the same
+  // reason the eight readers share an amber cast: the thing a player has to
+  // learn is "a condition just landed on that", and four unrelated signatures
+  // would teach them nothing. Hunter's Mark is thrown rather than swung, so it
+  // keeps its projectile and takes the ring on arrival.
+  stagger: { shape: "mark", color: 0xd8c7a0 },
+  expose: { shape: "mark", color: 0xffab6a },
+  huntersmark: { shape: "mark", color: 0x8fd15a },
   immolate: { shape: "none", color: 0xff7a3a, light: true },
   stormbolt: { shape: "chain", color: 0xffe066, light: true },
 
@@ -108,7 +133,7 @@ export const SKILL_FX: Record<SkillId, FxSpec> = {
   onslaught: { shape: "cone", color: 0xffa63d, light: true },
   execute: { shape: "cone", color: 0xff8a3d },
   followthrough: { shape: "nova", color: 0xffb05c },
-  exploit: { shape: "none", color: 0xffa63d },
+  exploit: { shape: "strike", color: 0xffa63d },
   killshot: { shape: "none", color: 0xffc46a },
   combust: { shape: "ground", color: 0xff7a3a, light: true },
 };
@@ -250,6 +275,48 @@ export class SkillFx {
       object: mesh, material: mat, startedAt: performance.now(),
       durationMs, fromRadius: reach * 0.35, toRadius: reach, spin: 0, peakOpacity: 0.42,
     });
+  }
+
+  /**
+   * A ring closing onto a body — something has been put ON this creature.
+   *
+   * Camera-facing rather than flat, which matters more than it sounds: a flat
+   * ring at the feet says "this patch of ground", and every one of these skills
+   * is about the body standing on it. This game has exactly one camera bearing,
+   * so an unrotated ring faces the viewer by construction.
+   */
+  mark(x: number, y: number, z: number, color: number, durationMs = 380): void {
+    const mat = this.material(color, 0.9);
+    const mesh = new THREE.Mesh(this.ring, mat);
+    mesh.position.set(x, y, z);
+    mesh.renderOrder = 3;
+    this.scene.add(mesh);
+    this.live.push({
+      object: mesh, material: mat, startedAt: performance.now(),
+      // Inward, and fast. A condition lands; it does not bloom.
+      durationMs, fromRadius: 2.0, toRadius: 0.75, spin: -0.9, peakOpacity: 0.85,
+    });
+  }
+
+  /** One heavy blow landing on a body. */
+  strike(x: number, y: number, z: number, color: number, durationMs = 260): void {
+    // Two rings on the same beat, one lagging: a single ring reads as a bubble,
+    // and the offset is what makes it read as an impact travelling outward.
+    for (const [from, to, width, peak] of [
+      [0.25, 1.5, 0.95, 0.9],
+      [0.1, 0.9, 0.55, 0.7],
+    ] as const) {
+      const mat = this.material(color, peak);
+      const mesh = new THREE.Mesh(this.ring, mat);
+      mesh.position.set(x, y, z);
+      mesh.scale.setScalar(width);
+      mesh.renderOrder = 3;
+      this.scene.add(mesh);
+      this.live.push({
+        object: mesh, material: mat, startedAt: performance.now(),
+        durationMs, fromRadius: from, toRadius: to, spin: 2.4, peakOpacity: peak,
+      });
+    }
   }
 
   /** Light stabbing up from someone's feet. */
