@@ -33,6 +33,7 @@ import {
   SCHOOLS,
   SKILLS,
   WEAPON_TYPES,
+  WEAPON_TREES,
   applyResist,
   passiveResist,
   resistOf,
@@ -419,6 +420,109 @@ section("8. the defensive half");
     if (!resisty) continue;
     check(`${affix.id} does not roll on opening-hour gear`, affix.minBand >= 3,
       `minBand ${affix.minBand}`);
+  }
+}
+
+// --- Who can actually deal one -----------------------------------------------
+// The school system is the deepest thing in the combat design and for a long
+// time half the game could not reach it. Measured before any of this was
+// written, the earliest band each weapon family could HOLD an element was:
+//
+//     fist   —      sword  4      axe    —      mace   5
+//     dagger 5      bow    5      staff  1      wand   1
+//
+// and neither the axe tree nor the fist tree contained a single elemental
+// skill. So four of the eight talent trees — half the builds in the game — had
+// no opinion at all about what anything was made of, and the two caster
+// families had all five elements between them from tier 0.
+//
+// Nothing threw. A player holding an axe in front of a troll simply had no
+// move, and the game never said why.
+
+section("everyone gets an opinion");
+{
+  // What each family can hold, and from what band.
+  const holds = {};
+  for (const family of WEAPON_TYPES) holds[family] = {};
+  for (const base of Object.values(ITEM_BASES)) {
+    if (!base.weaponType) continue;
+    const school = baseSchool(base);
+    if (school === "physical") continue;
+    const seen = holds[base.weaponType][school];
+    if (seen === undefined || base.band < seen) holds[base.weaponType][school] = base.band;
+  }
+
+  // And what each family's own tree can cast.
+  const casts = {};
+  for (const family of WEAPON_TYPES) {
+    casts[family] = new Set();
+    for (const node of WEAPON_TREES[family] ?? []) {
+      const skill = node.active ? SKILLS[node.active] : null;
+      if (skill?.school && skill.school !== "physical") casts[family].add(skill.school);
+    }
+  }
+
+  // FISTS ARE ABSENT FROM `WEAPON_TYPES` ALREADY, and deliberately rather than
+  // by oversight: bare hands are a real archetype here and there is no item to
+  // make them out of, so physical is the only honest answer for them. The first
+  // version of this loop skipped "fist" by hand as well, which was dead code —
+  // and the count it printed said "7/6", which is what dead code looks like
+  // when nobody reads the output.
+  for (const family of WEAPON_TYPES) {
+    const held = Object.entries(holds[family]).filter(([, band]) => band <= 3);
+    const cast = [...casts[family]];
+    check(
+      `a ${family} can deal an element by band 3`,
+      held.length > 0 || cast.length > 0,
+      `holds ${JSON.stringify(holds[family])}, casts [${cast.join(", ")}]`,
+    );
+  }
+
+  // NO ELEMENT MAY BE ENDGAME-ONLY. "Every school is something you can be
+  // holding" is the claim this project makes about its own damage system, and
+  // it was only true at band 5 for frost and nature — which is the same as not
+  // being true, because the whole premise is that the thing in your hand
+  // decides what you are good against while you are still choosing.
+  for (const school of ELEMENTAL_SCHOOLS) {
+    let earliest = null;
+    for (const family of WEAPON_TYPES) {
+      const band = holds[family][school];
+      if (band !== undefined && (earliest === null || band < earliest)) earliest = band;
+    }
+    check(
+      `${school} can be held by band 3`,
+      earliest !== null && earliest <= 3,
+      earliest === null ? "no weapon is made of it" : `earliest is band ${earliest}`,
+    );
+
+    // And it has to arrive no later than the thing it answers. Levinbrand's own
+    // note says it: "a player who can only buy the answer at the same ring as
+    // the question has no answer at all".
+    let question = null;
+    for (const [kind, stats] of Object.entries(MONSTER_STATS)) {
+      if ((stats.resist?.[school] ?? 0) >= 0) continue;
+      if (question === null || stats.band < question.band) question = { kind, band: stats.band };
+    }
+    if (question && earliest !== null) {
+      check(
+        `${school} is holdable by the time something folds to it`,
+        earliest <= question.band,
+        `held at band ${earliest}, ${MONSTER_LABELS[question.kind]} stands at band ${question.band}`,
+      );
+    }
+  }
+
+  const covered = WEAPON_TYPES.filter(
+    (f) => Object.keys(holds[f]).length > 0 || casts[f].size > 0,
+  );
+  console.log(
+    `  ${covered.length}/${WEAPON_TYPES.length} weapon families can deal an element; ` +
+      `fists are physical by construction and are not in the list`,
+  );
+  for (const school of ELEMENTAL_SCHOOLS) {
+    const fams = WEAPON_TYPES.filter((f) => holds[f][school] !== undefined);
+    const earliest = Math.min(...fams.map((f) => holds[f][school]));
+    console.log(`  ${school.padEnd(10)} held from band ${earliest} (${fams.join(", ")})`);
   }
 }
 

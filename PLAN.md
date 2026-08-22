@@ -6189,6 +6189,109 @@ Nineteen suites, smoke, both workspaces, zero console errors.
 
 ---
 
+## Phase 62 — an axe has no opinions
+Phase 48 M4 gave damage a school and gave every creature something that hurts
+it. Phase 50 added Storm because a test kept printing `lightning 0 weapons`.
+What nobody had ever asked is the question from the other end: **who can
+actually deal one?**
+
+### M62.1 — half the weapon families could not reach the school system at all
+Measured before anything was written. The earliest band each family could Hold
+an element, and what its own talent tree could cast:
+
+              fire  frost  nature  arcane  lightning     its tree casts
+    fist        —      —      —       —        —          nothing
+    sword       5      5      —       —        4          nothing
+    axe         —      —      —       —        —          nothing
+    mace        —      —      —       —        5          nothing
+    dagger      —      —      5       —        —          nature
+    bow         5      —      —       —        —          nature
+    staff       —      5      —       1        —          arcane, fire, lightning
+    wand        3      —      —       1        5          frost, arcane, lightning
+
+**An axe could not deal a single element by any route** — no weapon of any band
+and no skill anywhere in its tree. Neither could fists. A sword reached one at
+band 4 and a mace at band 5, and neither could cast anything at all.
+
+So four of the eight talent trees — half the builds in the game — had no opinion
+about the deepest system in the combat design, while the two caster families had
+all five elements between them from tier 0. Nothing threw. A player holding an
+axe in front of a troll simply had no move, and the game never said why.
+
+### And three elements arrived after the thing they answer
+The other half of the same measurement. `Levinbrand` carries the rule in its own
+comment — *"a player who can only buy the answer at the same ring as the
+question has no answer at all"* — and it had only ever been applied to lightning:
+
+    element     earliest creature that folds to it     earliest weapon
+    fire        spiky blob, band 2                     band 3
+    frost       armabee, band 2                        band 5
+    nature      orc brute, band 3                      band 5
+    arcane      ghost, band 4                          band 1   ✓
+    lightning   golem, band 5                          band 4   ✓
+
+Frost was four rings late. *"Every school is something you can be holding"* is
+the claim this project makes about its own damage system, and for two of the five
+it was only true in the last ring of the game — which is the same as not being
+true, because the whole premise is that the thing in your hand decides what you
+are good against **while you are still choosing**.
+
+### Five weapons, and not one of them needed an artist
+This is what the three independent axes are FOR. Mesh says what shape it is,
+palette says what it is made of, rarity only tints — so an elemental weapon is an
+existing model and an existing palette, which is exactly how Storm was added.
+
+- **Cinderbite**, band 2 axe, crimson — the first elemental axe in the game.
+- **Adderfang**, band 2 dagger, verdant — nature had exactly one weapon and it
+  was band 5.
+- **Hoarstring**, band 2 bow, frost — the armabee never touches the ground and
+  folds to cold, so a shot is how you reach it and cold is what takes the wing.
+- **Rimeblade**, band 3 sword, frost.
+- **Sparkhead**, band 3 mace, storm.
+
+No mods on any of them, deliberately: they are the same numbers as their band's
+neighbours and the element is the whole difference. *"Within a band the choice is
+what you want to BE, not which number is bigger"* — and an element cuts both
+ways, since a fire axe against a demon at +50 fire is far worse than a plain one.
+
+Every family now reaches an element by band 3, every element is holdable by band
+3, and every element arrives no later than the first creature that folds to it.
+Fists stay physical, and that is by construction rather than oversight: bare
+hands are a real archetype and there is no item to make them out of.
+
+### The test states the rule, and it found the last gap itself
+`tools/test/schools.mjs` grew a section that asserts all three:
+
+- every weapon family can deal an element by band 3, by material or by its own
+  tree;
+- no element is endgame-only;
+- and no element arrives later than the thing it answers.
+
+The third one failed on the first pass — **frost held at band 3 against an
+armabee at band 2** — which is how Hoarstring came to exist. Removing Cinderbite
+fails it twice over (`a axe can deal an element by band 3 — holds {}, casts []`,
+and fire arriving a ring late); removing Hoarstring reproduces the frost failure
+exactly.
+
+### Two rulers wrong, both mine
+- **The count printed `7/6`.** `WEAPON_TYPES` already excludes fists, so the
+  `if (family === "fist") continue` guard was dead code and the denominator was
+  off by one. Dead code looks exactly like working code until somebody reads the
+  output.
+- **And the preview sheet said all five weapons were missing.** They were not:
+  `client/preview/` takes `?sheet=weapons` and the default is the full armour
+  sheet. A round was spent restarting Vite on the assumption it was serving stale
+  modules, which is the failure this file already has a note about — and this
+  time it was the URL.
+
+All five photographed on the real rig afterwards, because a mesh and a palette
+that have never been combined before can resolve to an invisible weapon while
+every number about it stays correct.
+
+Nineteen suites, smoke, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -6272,6 +6375,35 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- EVERY WEAPON FAMILY GETS AN OPINION ABOUT WHAT THINGS ARE MADE OF. Measured:
+  an axe could not deal a single element by any route — no weapon at any band,
+  no skill anywhere in its tree — and nor could fists, while a sword reached one
+  at band 4 and a mace at band 5. Four of eight talent trees were locked out of
+  the deepest system in the combat design, and the two caster families had all
+  five elements from tier 0.
+- The fix is WEAPONS, not skills. A fireball in the axe tree is a mage's skill
+  with an axe icon on it; an axe made of ember is an axe. That is what the three
+  independent axes are for — mesh, palette, rarity — and it is exactly how Storm
+  was added in Phase 50: an existing model and an existing palette, no artist.
+- An elemental weapon carries NO stat mods over its band's neighbours. The
+  element is the entire difference, and it cuts both ways — a fire axe against a
+  demon at +50 fire is much worse than a plain one — so it is a sideways choice
+  rather than an upgrade, which is what "within a band the choice is what you
+  want to BE" already said.
+- AN ELEMENT MAY NOT ARRIVE LATER THAN THE THING IT ANSWERS, and that rule was
+  already written down — inside `Levinbrand`'s own comment, applied to lightning
+  and to nothing else. Measured against it, fire was one ring late, nature two
+  and frost four.
+- Fists stay physical by construction rather than by exemption: bare hands are a
+  real archetype here and there is no item to make them out of. `WEAPON_TYPES`
+  already excludes them, which is why a hand-written "skip fist" guard in the
+  test was dead code that printed `7/6`.
+- The dev-only contact sheet takes `?sheet=weapons`; its default is the full
+  armour sheet. A round went into restarting Vite on the theory that it was
+  serving stale modules — the failure this log already records — when the URL
+  was simply wrong. Confirm what you asked for before concluding the answer is
+  stale.
 
 - THE PROVISIONER TAKES MATERIAL AND NEVER ITEMS. "He only sells, never buys"
   reads as a missing feature and the obvious version of it is a downgrade: a
@@ -8920,7 +9052,24 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 61 complete (2026-08-21).
+Phase 0 through 62 complete (2026-08-21).
+
+**Phase 62 M62.1 — an axe has no opinions.** The damage schools have been the
+deepest system in this game since Phase 48 and nobody had ever asked who can
+actually deal one. Measured: **an axe could not deal a single element by any
+route** — no weapon at any band, no skill anywhere in its tree — and nor could
+fists; a sword reached one at band 4 and a mace at band 5, and neither could cast
+anything. Four of the eight talent trees were locked out of it, while the two
+caster families had all five elements from tier 0. The other half of the same
+measurement: fire arrived one ring after the first creature that folds to it,
+nature two and frost four — against a rule this project had already written down
+inside `Levinbrand`'s own comment and applied to lightning alone. Five weapons
+fix both, and not one needed an artist: an existing mesh and an existing
+elemental palette, which is what the catalogue's three independent axes are for.
+No stat mods on any of them — the element is the whole difference, and it cuts
+both ways. The test now states all three rules, and **found the last gap itself**
+(frost at band 3 against an armabee at band 2), which is how the frost bow came
+to exist.
 
 **Phase 61 M61.1 — the Provisioner takes something in.** *"He only sells, never
 buys"* — and the obvious version of that is a downgrade, because a counter that

@@ -299,6 +299,13 @@ const WEAPON_BASES: ItemBase[] = [
     { model: "weapons/Dagger", palette: "obsidian" },
     "The edge is hard to see. That is most of the point.",
     { mods: { damage: 1.12 } }),
+  // The early rung of the nature ladder. Venomkiss was the ONLY thing in the
+  // catalogue made of verdant, at band 5, which meant the one creature that
+  // folds to nature — the orc brute, at band 3 — could not be answered with a
+  // weapon until two rings past it. See the note above `PALETTE_SCHOOL`.
+  w("adderfang", "Adderfang", 2, "dagger",
+    { model: "weapons/Dagger", palette: "verdant" },
+    "Kept in its sheath for reasons that have nothing to do with the edge."),
   w("venomkiss", "Venomkiss", 5, "dagger",
     { model: "weapons/Dagger_2", palette: "verdant" },
     "The groove down the blade is not decorative.",
@@ -322,6 +329,12 @@ const WEAPON_BASES: ItemBase[] = [
   w("longsword", "Longsword", 3, "sword",
     { model: "weapons/Sword", palette: "steel", scale: 1.12 },
     "The measure every other blade in the yard gets compared against."),
+  // A sword you can hold an element with before band 4, which the family could
+  // not do at all: frost existed only at band 5, and the demon that folds to it
+  // stands at band 4.
+  w("rimeblade", "Rimeblade", 3, "sword",
+    { model: "weapons/Sword_2", palette: "frost", scale: 1.05 },
+    "It sweats in summer and the water runs the wrong way."),
   w("greatsword", "Greatsword", 3, "sword",
     { model: "weapons/Sword_Big", palette: "steel" },
     "Two hands, and a stance you have to commit to.",
@@ -353,6 +366,14 @@ const WEAPON_BASES: ItemBase[] = [
   w("woodcutter", "Woodcutter's Axe", 2, "axe",
     { model: "weapons/Axe", palette: "steel" },
     "Honest work, redirected."),
+  // THE FIRST ELEMENTAL AXE IN THE GAME. Measured before it was written: the
+  // axe family could not deal a single one of the five elements by any route —
+  // no weapon of any band and no skill anywhere in its tree — and neither could
+  // fists. Half the warrior families had no opinion at all about the deepest
+  // system in the combat design.
+  w("cinderbite", "Cinderbite", 2, "axe",
+    { model: "weapons/Axe", palette: "crimson" },
+    "Left in the coals overnight by somebody who meant to."),
   w("beardedaxe", "Bearded Axe", 3, "axe",
     { model: "weapons/Axe", palette: "bronze", scale: 1.1 },
     "The hook below the blade is for pulling shields aside.",
@@ -373,6 +394,13 @@ const WEAPON_BASES: ItemBase[] = [
   w("warhammer", "Warhammer", 3, "mace",
     { model: "weapons/Hammer_Small", palette: "steel", scale: 1.15 },
     "Armour does not have to be cut to stop working."),
+  // And the first for the mace, which reached exactly one element — lightning,
+  // at band 5, which is the same ring as the golem it answers. "A player who
+  // can only buy the answer at the same ring as the question has no answer at
+  // all" is Levinbrand's own note, one family over.
+  w("sparkhead", "Sparkhead", 3, "mace",
+    { model: "weapons/Hammer_Small", palette: "storm" },
+    "Sits in the rack with its head pointed away from the others."),
   w("deepsledge", "Deepsledge", 4, "mace",
     { model: "weapons/Hammer_Double", palette: "steel" },
     "Slow enough to see coming. It does not help.",
@@ -399,6 +427,15 @@ const WEAPON_BASES: ItemBase[] = [
   w("recurve", "Recurve Bow", 2, "bow",
     { model: "weapons/Bow_Wooden2", palette: "wood" },
     "The curve stores what your arm cannot.",
+    { twoHanded: true }),
+  // The armabee is the earliest thing in the world that folds to frost and it
+  // stands at band 2, so frost had to be holdable at band 2 — the test says so
+  // in as many words. A bow is the right home for it twice over: the armabee
+  // lives on the wing and never touches the ground, so cold is what takes the
+  // wing away and a shot is how you reach it.
+  w("hoarstring", "Hoarstring", 2, "bow",
+    { model: "weapons/Bow_Wooden", palette: "frost" },
+    "The nocks are rimed even indoors, and the string never quite warms.",
     { twoHanded: true }),
   w("yewlongbow", "Yew Longbow", 3, "bow",
     { model: "weapons/Bow_Wooden", palette: "bone", scale: 1.15 },

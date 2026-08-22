@@ -347,7 +347,18 @@ unavailable.
   suffixes are for. **And every school is something you can be holding** —
   lightning was two spells and no weapon until Storm became a material, which is
   the thirteenth palette, three weapons, a five-slot kit, and the seam a golem
-  both throws at you and folds to.
+  both throws at you and folds to. **And every weapon can hold one now**, which
+  it could not: an axe was unable to deal a single element by any route — no
+  weapon of any band, no skill anywhere in its tree — and a sword reached one at
+  band 4 and a mace at band 5, so half the talent trees in the game had no
+  opinion at all about what anything was made of while the two caster families
+  had all five from their first node. Five weapons close it, none of which needed
+  an artist: an existing model in an existing elemental palette, which is the
+  whole reason mesh, material and rarity are three separate axes. They carry no
+  extra numbers — the element *is* the choice, and it cuts both ways, because a
+  fire axe against a demon is much worse than a plain one. **And an element never
+  arrives later than the thing it answers**, which is now a rule with a test
+  behind it rather than a note inside one sword's comment.
 - **MMO-style windows** — the dock sits on the right and its panels open there
   too, laid out side by side so the bag and the character sheet can be open at
   once without covering each other or the world. Every icon in the interface is
@@ -372,7 +383,7 @@ unavailable.
   proficiency is what you can do with the thing in your hand, and it is earned
   only while holding it. Stat points come with per-weapon advice, since which
   attribute multiplies your damage depends on what you are wielding.
-- **Items** — a catalogue of **115 named things**, each with its own model,
+- **Items** — a catalogue of **120 named things**, each with its own model,
   palette, difficulty band and flavour. Seven qualities that are conditions
   rather than colours — Broken, Worn, Honed, Tempered, Forged, Runed,
   Enchanted — where Broken is genuinely *worse* than baseline and Honed is
