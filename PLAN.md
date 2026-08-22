@@ -6867,6 +6867,86 @@ Nineteen suites, both workspaces, zero console errors.
 
 ---
 
+## Phase 68 — Can you actually beat the ring you are standing in?
+This game's one rule is that **distance from spawn IS difficulty**: five bands
+radiating out, a level-1 character clears band 1, the reforge ladder priced
+against band 5. Every number behind that has been tuned by argument, none of it
+has ever been played through, and so the rule has never once been checked.
+
+It is checkable. `resolveHit` is a pure function in `shared/`, the stat curves
+are pure, and the item catalogue is a table. **A fight is a loop.**
+
+### M68.1 — a twentieth suite that simulates the game
+`tools/test/balance.mjs` builds a plausible character for each band — the level
+the QUEST TABLE gates that band's monsters behind, band gear at Honed (the rung
+the catalogue is authored at), stat points where the game's own advice puts
+them — and fights every creature four hundred times.
+
+It exists because M66.1 shipped three ranged monsters with a comment admitting
+the balance was unverified: a thrower gets free hits while you close, and nothing
+anywhere said how many.
+
+### It is a MODEL, and saying so is the point
+No skills, no potions, no statuses, no crowding, no double-attack roll —
+deliberately, because those are all things the player BRINGS. What is measured
+is the floor: an auto-attacking character with band gear and nothing clever. If
+the floor holds, the ceiling is the player's business.
+
+    kind        band  lvl  worst win%   slowest kill   worst hp left
+    Slime         1    1        100%           6.0s             99%
+    Goblin        2    4        100%          11.1s             96%
+    Orc Brute     3    8        100%          19.8s             90%
+    Troll         4   15        100%          19.6s             98%
+    Dragon        5   20        100%          25.3s             87%
+
+Every ring is clearable at the level the game sends you to it, with any of the
+seven weapon families, on auto-attack alone.
+
+### And it says what it does not know
+The model simulates the approach and then a stationary exchange. **A thrower does
+not stand still**: you close, it gives ground, you close again, so its real cost
+is spread across the whole fight and this measures only the opening walk. Those
+numbers are a LOWER BOUND, and the file says so — the difference between a model
+and a claim.
+
+The opening walk turns out to be **nearly free**, which is worth recording rather
+than passing over: the aggro radius is 260 and a thrower reaches 185 to 210, so
+it notices you about half a second before you are on it and usually does not get
+a shot away. Whatever a ranged creature is worth here, it is not worth an opening
+volley — it is the giving-ground that makes the fight.
+
+### Four rulers wrong before one number was believable
+And every one produced output that looked like a finding about the game.
+
+- **A guessed signature.** `swingIntervalOf(item, rarity, battlePower, agility)`
+  called with two arguments returns NaN, which propagated into the fight clock
+  and made every comparison false. Reported: every creature in the game wins
+  100% of the time with the player still on full health.
+- **A second guessed signature.** `critDamageMultiplier(weaponRarity, ...)`
+  called with AGILITY indexes the rarity table with a number and returns NaN —
+  but only ever reached ON A CRIT, so fights ran normally until the first one
+  and then stopped dead. Reported: a level-15 character loses to a troll 99% of
+  the time, untouched.
+- **A reimplemented character.** Debugging the above in a scratch script rather
+  than in the suite put the stat points in the wrong attribute for a dagger user,
+  and conclusions were drawn about a character the suite had never built. The
+  report now PRINTS who it simulated, because a balance table nobody can check
+  is a table nobody should believe.
+- **And one expression for two situations.** The approach used the DIFFERENCE of
+  the two speeds for every creature. An armabee runs at 215 against a player's
+  220, so the model had it walking away from somebody it was charging at, and
+  invented a 43-second stroll before a blow was struck. The suite duly failed
+  the armabee for being a 51-second fight. **The creature was fine.** A melee
+  monster closes at the SUM; only a thrower closes at the difference.
+
+The suite now guards its own arithmetic: a non-finite clock or a non-finite
+health throws rather than being reported. An impossible result — a defeat at
+full health — is a simulation reporting on itself.
+
+Twenty suites, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -6950,6 +7030,34 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- THE ONE RULE THIS WORLD IS LAID OUT BY IS TESTABLE. "Distance from spawn is
+  difficulty" had been tuned entirely by argument for sixty-odd phases and never
+  once checked, and it did not need to be played through to check: `resolveHit`
+  is pure, the stat curves are pure, the catalogue is a table, and a fight is a
+  loop.
+- A BALANCE MODEL MUST SAY WHAT IT LEAVES OUT. No skills, no potions, no
+  statuses, no crowding — deliberately, because those are what the PLAYER brings.
+  What is measured is the floor; if the floor holds, the ceiling is their
+  business. A model that quietly included half of them would be a claim.
+- And it must say what it CANNOT know. A thrower does not stand still, so
+  simulating an approach and then a stationary exchange measures the opening walk
+  and nothing else. Those numbers are a lower bound and the file says so.
+- A REPORT MUST PRINT WHO IT SIMULATED. A balance table nobody can check is a
+  table nobody should believe — and the debugging pass that skipped this
+  reimplemented the character in a scratch script, put the stat points in the
+  wrong attribute, and drew conclusions about somebody the suite had never built.
+- NEVER DEBUG A SUITE BY REIMPLEMENTING IT. Instrument the thing itself. Every
+  reimplementation is a second chance to be wrong in a new way, and it was.
+- AN IMPOSSIBLE RESULT IS THE SIMULATION REPORTING ON ITSELF. "Loses 100% of the
+  time at full health" cannot happen in the game, so it was never about the game.
+  NaN makes every comparison false, which stops a loop silently and looks like a
+  decisive outcome. Guard the arithmetic and throw.
+- ONE EXPRESSION FOR TWO SITUATIONS IS A BUG WAITING. The approach used the
+  difference of two speeds for every creature, so an armabee at 215 against a
+  player's 220 was modelled walking away from somebody it was charging at — a
+  43-second stroll, and the suite failed the creature for it. A melee monster
+  closes at the SUM; only a thrower closes at the difference.
 
 - A STATE NOBODY PLAYS IS AN ABSENCE, and an absence is indistinguishable from a
   decision not to have the feature. `Roll` and `PickUp` were harvested, bindable
@@ -9843,7 +9951,28 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 67 complete (2026-08-21).
+Phase 0 through 68 complete (2026-08-21).
+
+**Phase 68 M68.1 — can you actually beat the ring you are standing in?** This
+game's one rule is that distance from spawn IS difficulty, and in sixty-odd
+phases it had been tuned entirely by argument and never once checked. It did not
+need to be played through: `resolveHit` is pure, the stat curves are pure, the
+catalogue is a table, and a fight is a loop. A twentieth suite builds a plausible
+character per band — the level the QUEST TABLE gates that band behind, band gear
+at Honed, points where the game's own advice puts them — and fights every
+creature four hundred times with each of the seven weapon families. **Every ring
+is clearable at the level the game sends you to it, on auto-attack alone**, in
+five to twenty-five seconds. It is a MODEL and says so: no skills, no potions, no
+crowding, because those are what the player brings, and it measures the floor. It
+also says what it cannot know — a thrower does not stand still, so the ranged
+numbers are a lower bound — and records that the opening volley is nearly free,
+since aggro is 260 and a thrower reaches 210. **Four rulers were wrong before one
+number was believable**, each producing output that read as a finding about the
+game: two guessed signatures returning NaN (one reported every creature winning
+100% of the time against a player on full health), a character reimplemented in a
+scratch script with the stat points in the wrong attribute, and one expression
+serving two situations — which had an armabee walking away from somebody it was
+charging at and failed the creature for a 51-second fight it never had.
 
 **Phase 67 M67.1 — the body reacts.** M55.1 pooled twenty-five clips off five
 rigs and the game bound six. `Roll` and `PickUp` had been in the library for ten
