@@ -1299,8 +1299,12 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // needs far less compensation, which is why the dragon's number is lower
     // than this one rather than higher.
     //
-    //     x1.7  7%    x2.2 14%    x2.8 21%    x3.4 28%    x4.0 36%
-    slamDamageMultiplier: 3.4,
+    // RE-SOLVED. The first sweep ran against a model that gave a swordsman zero
+    // agility — against the game's own advice — so it understated how tanky a
+    // real band-4 character is and picked a multiplier too low. Corrected:
+    //
+    //     x3.4 16%    x4.2 21%    x5.0 27%    x5.8 32%    x6.6 38%
+    slamDamageMultiplier: 5.8,
     // Hide like bark and it knits itself back together — unless you burn it,
     // which is the one thing everyone has always known about trolls.
     resist: { physical: 25, nature: 25, fire: -45 },
@@ -1545,8 +1549,8 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // Same sweep, same reason — x1.8 cost eleven per cent of a level-20
     // character's health for ignoring the telegraph entirely.
     //
-    //     x1.7 10%    x2.2 16%    x2.8 24%    x3.4 31%    x4.0 39%
-    slamDamageMultiplier: 3.4,
+    //     x3.4 19%    x4.2 25%    x5.0 31%    x5.8 37%    x6.6 43%
+    slamDamageMultiplier: 5.0,
     // Stone: it does not care about blades and it does not care about heat.
     // Lightning is the seam, and it is the only creature in the world that
     // gives Chain Lightning a reason to exist.
@@ -1598,8 +1602,8 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // than tripled, and it stays the worst thing in the world to stand in front
     // of — which is what being the apex means.
     //
-    //     x1.7 30%    x1.9 35%    x2.2 43%    x2.8 59%
-    slamDamageMultiplier: 2.2,
+    //     x2.2 26%    x2.8 ~35%    x3.4 44%    x4.2 57%
+    slamDamageMultiplier: 2.8,
     leapRangePx: 320,
     leapSpeedMultiplier: 2.8,
     leapDurationMs: 500,

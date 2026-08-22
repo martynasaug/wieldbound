@@ -6945,6 +6945,55 @@ full health — is a simulation reporting on itself.
 
 Twenty suites, both workspaces, zero console errors.
 
+### M68.3 — is every weapon still a weapon, and the model was wrong again
+"You are whatever you're holding" is the premise this game is named for, and it
+only means something if what you pick up is a CHOICE rather than a mistake.
+Eight families, one body, and nothing had ever checked the eight were within
+sight of each other.
+
+The first measurement was alarming: **a 6.9x spread at band 5** — a dagger
+clearing its own band in 3.3 seconds against a scythe's 23.1. Broken down, a
+ranger was doing ~99 damage a second against a warrior's ~15, because agility is
+the ranger's damage stat AND buys attack speed, accuracy and crit — four things —
+while strength buys damage alone.
+
+### Except the model was putting points where the game does not
+It spent everything on the class's damage stat plus vitality, which gives a
+swordsman **zero agility** — against the game's own printed advice for a sword:
+*"Strength is your damage. Agility adds accuracy, crits and the odd double
+swing."* `statAdviceFor` is the priority order the character sheet shows a
+player, and the model was measuring a build nobody is told to make.
+
+Spending down the advice order instead:
+
+    band 3   2.4x  ->  1.6x
+    band 5   6.9x  ->  3.4x
+
+**I nearly rebalanced the entire stat system off it.** The remaining spread is
+reported and bounded at 4x — generously, because a slow two-hander is supposed
+to be slower per swing, and none of the talent trees are modelled here, which is
+where the heavy families do much of their work. What the bound guards against is
+a family that has stopped being playable, not one that is merely slower.
+
+### And it invalidated M68.2's numbers, which were re-solved
+The slam multipliers in M68.2 were swept against that same wrong character —
+too little vitality, too little armour — so they were tuned against somebody
+squishier than a real player. Under the corrected model they landed at 16%, 18%
+and 26% rather than the ~30% they were chosen for. Re-swept and re-picked:
+
+    troll   x3.4 16%   x4.2 21%   x5.0 27%   x5.8 32%   x6.6 38%
+    golem   x3.4 19%   x4.2 25%   x5.0 31%   x5.8 37%   x6.6 43%
+    dragon  x2.2 26%   x2.8 ~35%  x3.4 44%   x4.2 57%
+
+Troll x5.8, golem x5.0, dragon x2.8 — standing in every slam now costs 33%, 30%
+and 35%. The dragon's multiplier stays much the lowest for the reason M68.2
+found: armour subtracts after the multiplier, and a creature that already hits
+15-25 needs far less compensation than one hitting 8-16.
+
+**Both curves stay in the file.** A number chosen off a measured curve can be
+re-chosen by the next person for a stated reason; a number that sounds right
+cannot.
+
 ### M68.2 — the telegraph was decoration, and the suite proved it
 The first report had the dragon leaving a player on 87% health and the troll on
 98%, which read as bosses being harmless. It was the model: **a telegraphing
@@ -7084,6 +7133,19 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A MODEL MUST SPEND STAT POINTS WHERE THE GAME SAYS TO. `statAdviceFor` is the
+  priority order the character sheet prints; a model that ignored it gave a
+  swordsman zero agility and reported warriors at a sixth of a ranger's damage.
+  The spread across weapon families went from 6.9x to 3.4x the moment the model
+  followed the game's own advice — and a whole stat-system rebalance was nearly
+  argued from the difference.
+- A BALANCE NUMBER SOLVED AGAINST A WRONG MODEL IS A WRONG NUMBER. M68.2's slam
+  multipliers were swept against that same too-squishy character, so they landed
+  at 16-26% instead of the ~30% they were chosen for. Fixing a model means
+  re-solving everything solved with it, not just re-running it.
+- KEEP THE CURVE, not just the chosen point. A number picked off a measured
+  sweep can be re-picked by somebody else for a stated reason; a number that
+  sounds right can only be argued about.
 - A TELEGRAPHING CREATURE HAS NO ORDINARY ATTACK. The tick winds up, lands the
   slam and `continue`s, so a troll, a golem and a dragon land nothing else — and
   therefore a player who reads every telegraph takes NOTHING from the three
@@ -10050,8 +10112,16 @@ is exactly the cost of ignoring it. That cost was **8% of a health bar on a
 troll**: the oldest skill expression in the game was decoration on two of its
 three users. Armour subtracts after the multiplier, so a big multiplier on a
 small base is eaten — which is why the fix is three different numbers and why the
-dragon's is LOWER than the troll's. Solved off a swept curve rather than picked;
-standing in every slam now costs 30%, 30% and 43%.
+dragon's is LOWER than the troll's. Solved off a swept curve rather than picked.
+**M68.3** then checked that every weapon family is still a weapon — the premise
+the game is named for — and the first answer was a 6.9x spread at band 5, a
+ranger at ~99 damage a second against a warrior's ~15. The model was spending
+every point on the class's damage stat, which gives a swordsman ZERO agility
+against the game's own printed advice; following `statAdviceFor` instead took
+the spread to 3.4x, and a whole stat-system rebalance was nearly argued from the
+difference. That correction also invalidated M68.2's multipliers, which had been
+swept against the same too-squishy character — re-solved, standing in every slam
+now costs 33%, 30% and 35%.
 
 **Phase 67 M67.1 — the body reacts.** M55.1 pooled twenty-five clips off five
 rigs and the game bound six. `Roll` and `PickUp` had been in the library for ten

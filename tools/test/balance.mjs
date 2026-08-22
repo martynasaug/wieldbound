@@ -29,6 +29,7 @@ import {
   playerAttackIntervalMs,
   playerCritChance,
   primaryStatValue,
+  statAdviceFor,
   resolveHit,
   critDamageMultiplier,
   classForWeapon,
@@ -101,13 +102,23 @@ function character(level, band, weaponBaseId) {
   const eq = equippedBySlot(items);
   const weapon = eq.weapon ?? null;
   const cls = classForWeapon(weapon?.weaponType);
-  // Every stat point into the attribute that scales this weapon, plus vitality
-  // from levelling — the shape the game's own advice describes.
+  // POINTS GO WHERE THE GAME SAYS THEY GO. `statAdviceFor` is the per-weapon
+  // advice the character sheet actually prints, in priority order, and spending
+  // down it is what a player following the game does.
+  //
+  // The first version put everything into the class's damage stat plus vitality,
+  // which gave a swordsman ZERO agility — against advice that reads "Strength is
+  // your damage. Agility adds accuracy, crits and the odd double swing." It
+  // reported warriors at a sixth of a ranger's damage and I nearly rebalanced
+  // the game off it. A model that ignores the game's own advice is measuring a
+  // build nobody is told to make.
   const points = Math.max(0, (level - 1) * 3);
   const attrs = { strength: 5, agility: 5, vitality: 5, intelligence: 5 };
-  const primary = { warrior: "strength", ranger: "agility", mage: "intelligence", adventurer: "strength" }[cls];
-  attrs[primary] += Math.round(points * 0.6);
-  attrs.vitality += Math.round(points * 0.4);
+  const order = statAdviceFor(weapon?.weaponType).order;
+  const weights = [0.5, 0.3, 0.2];
+  order.slice(0, 3).forEach((stat, i) => {
+    attrs[stat] += Math.round(points * weights[i]);
+  });
 
   const passives = itemPassives(weapon ?? { baseId: "", rarity: "honed", affixes: [] });
   return {
@@ -423,6 +434,47 @@ for (const [kind, s] of Object.entries(MONSTER_STATS)) {
 // That is a far stronger statement than it looks, and it is what the mechanic is
 // for: against the three biggest things in the world, **the entire fight is
 // whether you move.**
+
+// --- Is every weapon still a weapon? ----------------------------------------
+//
+// "You are whatever you're holding" is the premise this game is named for, and
+// it only means something if what you pick up is a CHOICE rather than a
+// mistake. Eight families, one body, and nothing has ever checked that the
+// eight are within sight of each other.
+//
+// Measured as time to clear a band's own creatures, dodging telegraphs, on
+// auto-attack alone — so this is the floor a family gives you before any
+// talent is spent, which is the fairest thing to compare.
+
+console.log("\n== is every weapon still a weapon? ==");
+for (const b of [1, 2, 3, 4, 5]) {
+  const kinds = Object.entries(MONSTER_STATS).filter(([, s]) => s.band === b).map(([k]) => k);
+  const rows = [];
+  for (const id of familiesFor(b)) {
+    const pc = character(bandLevel[b], b, id);
+    let total = 0;
+    for (const k of kinds) total += average(pc, k, 200, 1).ms;
+    rows.push({ id, s: total / kinds.length / 1000 });
+  }
+  rows.sort((x, y) => x.s - y.s);
+  const spread = rows[rows.length - 1].s / rows[0].s;
+  console.log(
+    `  band ${b}: ${rows[0].id} ${rows[0].s.toFixed(1)}s .. ` +
+      `${rows[rows.length - 1].id} ${rows[rows.length - 1].s.toFixed(1)}s   (${spread.toFixed(1)}x)`,
+  );
+  // Generous, deliberately. A slow two-hander is SUPPOSED to be slower per
+  // swing — it hits harder and reaches further — and none of the talent trees
+  // are modelled here, which is where the heavy families do much of their work.
+  // What this is guarding against is a family that has quietly stopped being
+  // playable, not a family that is merely slower.
+  if (spread > 4) {
+    fail(
+      `band ${b} spreads ${spread.toFixed(1)}x across the weapon families ` +
+        `(${rows[0].id} ${rows[0].s.toFixed(1)}s against ${rows[rows.length - 1].id} ` +
+        `${rows[rows.length - 1].s.toFixed(1)}s) — one of them has stopped being a choice`,
+    );
+  }
+}
 
 console.log("\n== what a dodge is worth ==");
 console.log("  kind      band  standing in it   dodging it   the difference");
