@@ -6719,6 +6719,59 @@ and `pickup` to `PickUp`.
 
 Nineteen suites, both workspaces, zero console errors.
 
+### M67.2 — and the player was being stun-locked by the courtesy
+Writing the monster's gate turned up the mirror of it. The player's hit reaction
+was `play("hit")` on **any HP decrease at all**, ungated — and the hit clip is a
+one-shot that INTERRUPTS, so every one of them cancelled whatever the character
+was doing. Measured:
+
+    a wolf pack of three          2.1 blows/sec
+    plus a burn ticking           1.0/sec
+    a burning player in that pack 3.1 flinches/sec
+
+Three times a second, each cancelling the swing. The animation meant to
+acknowledge being hit was locking the player out of their own attack.
+
+### One function, two thresholds, and the asymmetry is the finding
+The obvious fix was to pass the monster's rule straight across. The arithmetic
+says it cannot work:
+
+    share of the player's health   burn tick   wolf max   troll SLAM
+      level  1 (50 hp)               12.0%       8.0%       54.4%
+      level 40 (640 hp)               0.9%       0.6%        4.3%
+
+A player's health grows far faster than anything's damage, so **one share
+threshold is simultaneously too loose at level 1** — where a burn TICK clears it
+and locks you — **and too tight at level 40**, where a troll's slam does not and
+you would never react to anything again.
+
+So the two are gated on what is actually wrong with each. **A monster's problem
+is MAGNITUDE**: a dagger lands three blows a second and a troll has a lot of
+health, so chip damage must not rock it — a share. **A player's problem is
+FREQUENCY**: a hit is a hit whatever it was worth, and what it may not do is
+happen twice in a beat — so no share, and the cooldown does the work.
+
+And **a damage-over-time tick never staggers anybody**, which is categorical
+rather than a threshold — you do not stagger from a burn. It is enforced by
+where the call sits: real blows arrive as `MONSTER_ATTACK`, which the death
+burst, the slam and the ordinary swing all send and a tick does not.
+
+### The ruler was wrong three times in one suite
+- **It read the comments.** Two checks failed against a working game by matching
+  the prose that explains the code — the sentence inside `maybeFlinch` describing
+  what it does, and a comment in `onHpUpdate` saying the reaction is no longer
+  driven from there. A ruler that reads comments is measuring the documentation.
+- **It could not find the end of a function.** `/name[\s\S]*?\n  }/` is
+  non-greedy, so it stops at the first line that happens to be a closing brace at
+  that indent — well before the end of `onHpUpdate`. A mutation putting the
+  flinch back was applied, confirmed present in the file, and the suite passed
+  anyway. It counts braces now.
+- **And the mutation itself was landing in the wrong method**, because
+  `String.replace` takes the first occurrence and the anchor was not unique.
+  Twice in a row the conclusion "the test does not catch this" was false.
+
+Nineteen suites, both workspaces, zero console errors.
+
 ---
 
 ## Seeding a character for testing
@@ -6814,6 +6867,28 @@ rarities), multiple crafting stations. Not committing to order yet.
   by running deliberately — a planted swing pose while the character travels is
   the sliding that rule exists to stop — but a dash IS travel, so cancelling on
   the movement it causes plays the clip for one frame.
+- THE SAME REACTION NEEDS DIFFERENT GATES ON A PLAYER AND ON A MONSTER, and
+  forcing one rule on both cannot work. A player's health grows far faster than
+  anything's damage, so a share of health is 12% for a burn tick at level 1 and
+  4.3% for a troll's SLAM at level 40 — too loose where it locks you and too
+  tight where you would never react again. A monster's problem is magnitude (a
+  dagger must not rock a troll); a player's is frequency (3.1 interrupts a
+  second). Gate each on the one that is actually wrong with it.
+- A DAMAGE-OVER-TIME TICK STAGGERS NOBODY, and that is categorical rather than a
+  threshold — you do not stagger from a burn. Enforced by WHERE the call sits:
+  real blows arrive as `MONSTER_ATTACK`, which the burst, the slam and the swing
+  all send and a tick does not. Hoping a tick falls under a share is not the
+  same statement and is false at low level.
+- A SOURCE TEST MUST STRIP COMMENTS FIRST. Two checks failed against a working
+  game by matching the prose that explains the code they were looking for. A
+  ruler that reads comments is measuring the documentation.
+- Find the end of a function by COUNTING BRACES, never with a non-greedy regex
+  to a closing brace at some indent — it stops at the first line that looks like
+  one. A mutation was applied, confirmed present in the file, and the suite
+  passed anyway.
+- And check that a MUTATION LANDED. `String.replace` takes the first occurrence,
+  so an anchor that is not unique quietly edits a different method — twice in a
+  row here the conclusion "the test does not catch this" was itself wrong.
 - A flinch needs a THRESHOLD and a COOLDOWN or the animation eats the fight. A
   dagger lands three blows a second; reacting to each would leave anything
   fast-attacked permanently mid-stagger and never swinging back. Seven per cent
@@ -9659,7 +9734,16 @@ dagger lands three blows a second and reacting to each would leave anything
 fast-attacked permanently mid-stagger — with crits always shown. A nineteenth
 suite checks that every state in the union binds for players AND for everything
 else, and that something actually PLAYS it: a state nobody plays is an absence,
-and an absence looks exactly like a decision.
+and an absence looks exactly like a decision. **M67.2** then found the mirror of
+the monster gate: the player's own hit reaction fired on any HP decrease at all,
+measured at 3.1 interrupts a second for a burning character in a wolf pack — the
+animation meant to acknowledge being hit was locking them out of their own swing.
+The two are gated differently on purpose, because a player's health outgrows
+monster damage so fast that one share threshold is both too loose at level 1 (a
+burn tick is 12% of fifty health) and too tight at level 40 (a troll's slam is
+4.3%): a monster's problem is magnitude, a player's is frequency. The suite's own
+ruler was wrong three times on the way — twice reading its comments instead of
+its code, once unable to find the end of a function.
 
 **Phase 66 M66.1 — something that throws it.** Twelve of the thirteen kinds were
 melee, so every fight in the game had one shape: it runs at you and you stand

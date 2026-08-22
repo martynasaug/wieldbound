@@ -295,8 +295,6 @@ interface MonsterVisual {
   windupStartedAt: number;
   /** Latched run/idle decision — see `isMoving`. */
   moving: boolean;
-  /** When it may rock back again. See `maybeFlinch`. */
-  flinchReadyAt?: number;
 }
 
 // How far a snapshot-driven actor must travel between snapshots to count as
@@ -1438,7 +1436,10 @@ export class Game {
     this.hp = p.hp;
     this.maxHp = p.maxHp;
     this.hud.setHp(this.hp, this.maxHp);
-    if (delta < 0) this.localActor?.play("hit");
+    // NOT HERE ANY MORE. This was `play("hit")` on any HP decrease at all,
+    // which caught every damage-over-time tick as well as every blow — see
+    // `maybeFlinch` for what that measured out at. The reaction is driven from
+    // `onMonsterAttack` now, which is where real blows arrive.
 
     // Healing was completely silent before — a potion looked identical to
     // nothing happening. The threshold keeps passive regen (1-5 HP every 5s)
@@ -1522,7 +1523,7 @@ export class Game {
       playSfx(p.playerCrit ? "crit" : "hit");
 
       if (target) {
-        this.maybeFlinch(target, p.playerDamage, p.playerCrit);
+        this.maybeFlinch(target.actor, target.state.id, p.playerDamage, target.state.maxHp, p.playerCrit, FLINCH_SHARE);
         const at = target.actor.position;
         // Land the effect at the monster's middle, not a fixed height — a slime
         // is 0.8 units tall and a dragon 3.4, and a constant offset puts the
@@ -1668,6 +1669,10 @@ export class Game {
       playSfx("hurt");
       if (this.localActor) {
         const at = this.localActor.position;
+        // A real blow, so it can rock you — and only a real blow reaches here.
+        // Gated on the cooldown alone: see `maybeFlinch` for why a share of
+        // health is the wrong ruler for a player.
+        this.maybeFlinch(this.localActor, "self", p.damage, this.maxHp, p.crit, 0);
         this.localActor.flash(0xff6b6b, 130);
         this.floatOnPlayer(this.localActor, { kind: "taken", text: `-${p.damage}`, crit: p.crit }, p.damage);
         this.effects.play("impact", at.x, at.y + 1.0, at.z, {
@@ -1952,7 +1957,7 @@ export class Game {
         // bigger number, and a bigger number is indistinguishable from a lucky
         // roll. So an empowered hit gets its own flash colour and its own mark
         // on the floater, and the log says which condition paid.
-        this.maybeFlinch(vis, hit.damage, hit.crit || !!hit.empowered);
+        this.maybeFlinch(vis.actor, vis.state.id, hit.damage, vis.state.maxHp, hit.crit || !!hit.empowered, FLINCH_SHARE);
         vis.actor.flash(hit.empowered ? 0xffa63d : hit.crit ? 0xffd85e : 0x9ad4ff, hit.empowered ? 220 : 150);
         this.floatOnMonster(
           vis,
@@ -2001,31 +2006,59 @@ export class Game {
    * back to your facing when standing still.
    */
   /**
-   * A monster rocks back when something lands hard enough to rock it.
+   * Rocking back when something lands hard enough to rock you.
    *
-   * The rigs have carried a hit reaction all along and nothing had ever played
-   * it on a monster — they flashed white and went on swinging, which is why
-   * even a critical hit read as a number rather than as an event.
+   * ONE FUNCTION, TWO THRESHOLDS, and the asymmetry is the finding rather than
+   * an inconsistency. The first version of this passed the same share of
+   * health for both and the arithmetic said it could not work:
    *
-   * TWO GATES, and both are load-bearing. A dagger lands three blows a second,
-   * so flinching on every hit would leave anything fast-attacked permanently
-   * mid-stagger and never attacking back — the animation would eat the fight.
-   * So it takes a hit worth a real share of the creature's health, which is
-   * the same measure the floating numbers already size themselves by, and it
-   * cannot fire again for a beat afterwards.
+   *     share of the player's health      burn tick   wolf max   troll SLAM
+   *       level  1 (50 hp)                  12.0%       8.0%       54.4%
+   *       level 40 (640 hp)                  0.9%       0.6%        4.3%
    *
-   * A crit always shows, whatever it was worth. That is the one moment the
-   * player most wants the world to acknowledge, and it is rare enough to be
-   * safe.
+   * A player's health grows far faster than anything's damage, so one share
+   * threshold is simultaneously too loose at level 1 — where a burn TICK clears
+   * it and locks you — and too tight at level 40, where a troll's slam does not
+   * and you would never react to anything again.
+   *
+   * So the two are gated on what is actually wrong with each:
+   *
+   *   A MONSTER'S PROBLEM IS MAGNITUDE. A dagger lands three blows a second and
+   *   a troll has a great deal of health, so chip damage must not rock it —
+   *   hence a share, the same measure the floating numbers size themselves by.
+   *
+   *   A PLAYER'S PROBLEM IS FREQUENCY. Measured, a burning character in a pack
+   *   of three wolves took 3.1 separate HP decreases a second, and since the
+   *   hit clip is a one-shot that interrupts, they were stun-locked out of
+   *   their own swing by the animation meant to acknowledge being hit. A hit is
+   *   a hit whatever it was worth; what it may not do is happen twice in a
+   *   beat. So: no share, and the cooldown does the work.
+   *
+   * And a damage-over-time tick never flinches ANYBODY, which is a categorical
+   * rule rather than a threshold — you do not stagger from a burn. It is
+   * enforced by where this is CALLED from: real blows arrive as
+   * `MONSTER_ATTACK`, which the burst, the slam and the ordinary swing all
+   * send and a tick does not.
+   *
+   * A crit always shows. That is the one moment the player most wants
+   * acknowledged, and it is rare enough to be safe.
    */
-  private maybeFlinch(vis: MonsterVisual, damage: number, crit: boolean): void {
-    if (vis.dead) return;
+  private readonly flinchReadyAt = new Map<string, number>();
+
+  private maybeFlinch(
+    actor: Actor | null | undefined,
+    key: string,
+    damage: number,
+    maxHp: number,
+    crit: boolean,
+    shareGate: number,
+  ): void {
+    if (!actor) return;
     const now = performance.now();
-    if (now < (vis.flinchReadyAt ?? 0)) return;
-    const share = damage / Math.max(1, vis.state.maxHp);
-    if (!crit && share < FLINCH_SHARE) return;
-    vis.flinchReadyAt = now + FLINCH_COOLDOWN_MS;
-    vis.actor.play("hit");
+    if (now < (this.flinchReadyAt.get(key) ?? 0)) return;
+    if (!crit && damage / Math.max(1, maxHp) < shareGate) return;
+    this.flinchReadyAt.set(key, now + FLINCH_COOLDOWN_MS);
+    actor.play("hit");
   }
 
   private performDash(distancePx: number, away: boolean): void {

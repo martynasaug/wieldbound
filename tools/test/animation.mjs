@@ -25,6 +25,43 @@ const fail = (msg) => {
 };
 const src = (p) => readFileSync(new URL(`../../client/src/three/${p}`, import.meta.url), "utf8");
 
+/**
+ * The same file with its comments taken out.
+ *
+ * Needed because this suite greps for CALLS, and the first version of it failed
+ * twice against a working game by matching the prose that explains the calls —
+ * once on the sentence inside `maybeFlinch` describing what it does, and once
+ * on a comment in `onHpUpdate` saying the reaction is no longer driven from
+ * there. A ruler that reads comments is measuring the documentation.
+ */
+const code = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
+/**
+ * The body of a named method, by COUNTING BRACES.
+ *
+ * The obvious `/name[\s\S]*?\n  }/` is wrong and quietly so: it is non-greedy,
+ * so it stops at the first line that happens to be a closing brace at that
+ * indent — which in `onHpUpdate` is well before the end. A mutation putting the
+ * flinch back into it was applied, confirmed present in the file, and the suite
+ * still passed. Counting is the only thing that actually knows where a function
+ * ends.
+ */
+function bodyOf(source, name) {
+  const at = source.indexOf(name);
+  if (at < 0) return null;
+  const open = source.indexOf("{", source.indexOf(")", at));
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(open, i + 1);
+    }
+  }
+  return null;
+}
+
 const actor = src("Actor.ts");
 const game = src("Game.ts");
 const npcs = src("npcs.ts");
@@ -100,6 +137,54 @@ if (!/currentAnim === "roll"/.test(actor)) {
   fail("nothing protects a roll from being cancelled by the movement it causes");
 } else {
   console.log("  a roll survives the running it causes");
+}
+
+// --- The hit reaction is GATED ---------------------------------------------
+// The one-shot that acknowledges being hit is also a one-shot that INTERRUPTS,
+// so an ungated one is a stun-lock wearing a courtesy's clothes. The player's
+// was `play("hit")` on any HP decrease at all — measured at 3.1 a second for a
+// burning character in a pack of three wolves, each one cancelling their swing.
+//
+// Neither call may be a bare `play("hit")` again.
+
+console.log("\n== the hit reaction is gated ==");
+{
+  // Everything except `maybeFlinch`'s own body, which is the one place allowed
+  // to play it — that IS the gate.
+  const gameCode = code(game);
+  const gate = bodyOf(gameCode, "private maybeFlinch") ?? "";
+  const outsideGate = gameCode.replace(gate, "");
+  const bare = [...outsideGate.matchAll(/\bplay\(\s*"hit"\s*\)/g)].length;
+  if (bare > 0) {
+    fail(
+      `${bare} play("hit") call(s) outside maybeFlinch — a hit reaction interrupts, so an ` +
+        `ungated one stun-locks whoever it is meant to be acknowledging`,
+    );
+  } else {
+    console.log("  nothing plays it directly; every call goes through maybeFlinch");
+  }
+
+  if (!/private maybeFlinch/.test(gameCode)) {
+    fail("there is no maybeFlinch — nothing is rate-limiting the hit reaction");
+  }
+  // A cooldown is the gate both sides share, and it is the whole fix for the
+  // player. Without it the share threshold alone lets a level-1 character be
+  // locked by a burn tick, which is 12% of fifty health.
+  if (!/FLINCH_COOLDOWN_MS/.test(gameCode)) fail("the hit reaction has no cooldown");
+
+  // And it must be driven from real BLOWS, not from HP deltas — that is what
+  // keeps damage-over-time from staggering anybody, categorically rather than
+  // by hoping a tick falls under a threshold.
+  const hpUpdate = bodyOf(gameCode, "private onHpUpdate");
+  if (!hpUpdate) fail("could not find onHpUpdate to check it");
+  else if (/maybeFlinch|play\(\s*"hit"/.test(hpUpdate)) {
+    fail(
+      "onHpUpdate drives the hit reaction — that catches every damage-over-time " +
+        "tick, and you do not stagger from a burn",
+    );
+  } else {
+    console.log("  driven from blows, so a burn tick never staggers anybody");
+  }
 }
 
 console.log(failures === 0 ? "\nOK — every state binds, and something plays it." : `\n${failures} failure(s).`);
