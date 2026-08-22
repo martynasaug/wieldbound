@@ -1041,6 +1041,34 @@
         border-color: var(--gold);
         box-shadow: 0 3px 10px #0009, inset 0 1px 0 #ffffff18, 0 0 12px #d9a44166;
       }
+      /* PRIMED: this skill's own condition is met RIGHT NOW — the target is
+         Exposed and you are holding Exploit, the target is Bleeding and you are
+         holding Execute.
+
+         Eight skills read a status rather than applying one, for up to 140%
+         more damage, and until now the only way to play them was to remember
+         which wanted which, spot it on a nameplate, and press in time. A
+         conditional you cannot see is a conditional you will not play around —
+         which this project already wrote down about the empowered flash, and
+         that fires AFTER you have committed.
+
+         Amber, because amber is already this game's word for "the condition
+         paid" on an empowered hit and on a creature that has overcommitted.
+         Learn it once, read it everywhere. And it PULSES: the window is closing
+         — a stagger runs out, a burn is about to be spent by something else —
+         and a steady glow would say a state where the truth is a clock. */
+      @keyframes hbPrimed {
+        0%, 100% { box-shadow: 0 3px 10px #0009, inset 0 1px 0 #ffffff18, 0 0 10px #ffa63d70; }
+        50%      { box-shadow: 0 3px 10px #0009, inset 0 1px 0 #ffffff28, 0 0 20px #ffa63dcc; }
+      }
+      .skill-btn.primed {
+        border-color: #ffa63d;
+        animation: hbPrimed 700ms ease-in-out infinite;
+      }
+      /* It outranks `ready`, which is only "off cooldown" — a primed skill is
+         off cooldown AND worth pressing, and the stronger fact should win the
+         border. */
+      .skill-btn.ready.primed { border-color: #ffa63d; }
       /* Unaffordable is dimmed from JS (opacity); this makes it read as
          "greyed out" rather than merely faint. */
       .skill-btn[style*="0.45"] { filter: saturate(0.35); }

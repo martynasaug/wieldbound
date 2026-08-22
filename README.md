@@ -348,6 +348,13 @@ unavailable.
   from red, and position alone stops meaning anything the moment one side is
   empty. Monsters inflict them back: a cactoro poisons, a dragon sets you
   alight, a troll takes your feet out.
+- **And the bar tells you when the combo is on** — those eight light up, amber
+  and pulsing, the moment their own condition is met: the target starts bleeding
+  and Execute glows, something is Exposed and Exploit glows. Setting the
+  condition up used to be a thing you had to remember and spot yourself, and
+  pressing early spent a 140% multiplier as a plain hit with nothing to say so.
+  The light asks the same function the server pays the bonus with, so it cannot
+  promise something the damage will not honour.
 - **And eight skills that READ one instead of applying it** — which is where a
   set of timers becomes something you sequence. Execute hits far harder against
   anything already bleeding or burning and leaves the bleed running; Combust,

@@ -3145,6 +3145,23 @@ export class Game {
     // than in the ten steps a second the snapshots arrive in.
     this.serverTime += dt * 1000;
     this.statusBar.update(this.serverTime);
+    // What is on you and what is on whatever you are fighting, handed to the bar
+    // so a skill that READS a condition can say when its condition is met.
+    // Refreshed every frame because the answer changes as fast as the fight
+    // does — a bleed lands, a stagger wears off — and this is the moment the
+    // player is deciding what to press.
+    //
+    // The engaged target rather than the locked one: `engagedId` is what you are
+    // ACTUALLY hitting this instant, which is what the skill will land on.
+    const facing = this.engagedId ? this.monsters.get(this.engagedId) : null;
+    this.hotbar.setConditions(
+      this.statusBar.active,
+      // The broadcast carries ids and end times only — "the client already has
+      // the table, so sending what a status DOES on every snapshot would be
+      // sending a constant sixty times a second" — and `findRead` only ever
+      // looks at the id, so that is all this needs.
+      (facing?.state.statuses ?? []).map((s) => ({ id: s.id, endsAt: s.endsAt })),
+    );
     this.updateForges();
     this.updateMinimap();
     // Derived before anything draws, so the ring, the frame and the nameplate

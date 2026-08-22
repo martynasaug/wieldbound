@@ -243,5 +243,74 @@ console.log("\n== swung or cast ==");
   console.log(`  ${differ.length} skill(s) a bow looses that a staff casts`);
 }
 
+// --- A conditional you can see ----------------------------------------------
+// Eight skills READ a status rather than applying one, for up to 140% more
+// damage. Playing them means knowing the condition is met AT THE MOMENT OF
+// PRESSING, and the only feedback used to arrive afterwards — an amber flash on
+// a hit you had already committed. The bar lights the slot now.
+//
+// Both halves fail silently: a skill whose condition nothing in the game can
+// produce is a skill that never lights, and a bar that is never told the
+// statuses lights nothing at all.
+
+console.log("\n== a conditional you can see ==");
+{
+  const { SKILLS, STATUSES, statusGroupIds, readCovers } = await import(
+    "../../shared/protocol-types.ts"
+  );
+  const hotbar = readFileSync(new URL("../../client/src/ui/Hotbar.ts", import.meta.url), "utf8");
+
+  const readers = Object.values(SKILLS).filter((s) => s.reads);
+  if (readers.length === 0) fail("no skill reads a status any more");
+
+  // Everything anything in the game can put on a body.
+  const producible = new Set(Object.values(SKILLS).map((s) => s.applies).filter(Boolean));
+  for (const id of ["weakened", "enraged", "recovering"]) producible.add(id);
+  for (const m of Object.values(
+    (await import("../../shared/protocol-types.ts")).MONSTER_STATS,
+  )) {
+    if (m.inflicts?.status) producible.add(m.inflicts.status);
+  }
+
+  for (const s of readers) {
+    // What would satisfy it.
+    const candidates = s.reads.any
+      ? s.reads.any
+      : s.reads.group
+        ? statusGroupIds(s.reads.group)
+        : Object.keys(STATUSES);
+    const reachable = candidates.filter((c) => producible.has(c));
+    if (reachable.length === 0) {
+      fail(
+        `${s.id} reads [${candidates.join(", ")}] and nothing in the game can apply any of ` +
+          `them — the slot will never light and the bonus can never be spent`,
+      );
+    }
+    // And whatever it reads must be able to sit on what it targets, or the
+    // condition is unreachable for a second reason.
+    for (const c of reachable) {
+      if (!readCovers(s.reads, c)) fail(`${s.id} does not actually cover ${c}`);
+    }
+  }
+  console.log(`  ${readers.length} skills read a status, every one of them reachable`);
+
+  // The bar has to be TOLD, and it has to look at the right place: a self-read
+  // checks your own statuses and a target-read checks the target's. Getting
+  // that backwards lights every slot at the wrong moment.
+  if (!/setConditions/.test(hotbar)) fail("the hotbar is never told what conditions are met");
+  if (!/findRead/.test(hotbar)) fail("the hotbar does not use findRead to decide — it is guessing");
+  if (!/read\.on === "self"/.test(hotbar)) {
+    fail("the hotbar does not separate a self-read from a target-read");
+  }
+  const game = readFileSync(new URL("../../client/src/three/Game.ts", import.meta.url), "utf8");
+  // Anchored on the RECEIVER, because a bare `setConditions\(` still matches
+  // `noop_setConditions(` — which is exactly how the mutation for this check
+  // slipped past it the first time it was written.
+  if (!/\bhotbar\.setConditions\(/.test(game)) {
+    fail("nothing ever calls hotbar.setConditions — the bar lights nothing");
+  }
+  console.log("  the bar is told every frame, and reads self and target separately");
+}
+
 console.log(failures === 0 ? "\nOK — every state binds, and something plays it." : `\n${failures} failure(s).`);
 process.exit(failures === 0 ? 0 : 1);

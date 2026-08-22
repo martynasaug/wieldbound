@@ -7049,6 +7049,70 @@ Twenty suites, both workspaces, zero console errors.
 
 ---
 
+## Phase 69 — A conditional you can see
+User brief: *"skill expressions are a must in our game"*.
+
+The deepest skill expression this game has already existed and was invisible.
+**Eight skills READ a status rather than applying one** — Exploit spends Exposed
+for 140% more damage, Follow Through spends Staggered for 120%, Combust spends
+Burning, Execute hits 85% harder into any damage-over-time. That is a real
+sequencing game: apply the condition, then spend it.
+
+And the only way to play it was to REMEMBER which skill wanted which condition,
+notice it on a nameplate mid-fight, and press in time. Press early and a 2.4x
+multiplier resolves as a 1x, with nothing to tell you that is what happened.
+
+### M69.1 — the bar lights when the condition is met
+The slot glows when its own condition is satisfied right now — on you for a
+self-read, on what you are actually fighting for a target-read.
+
+**This project already wrote the argument down**, about the empowered flash: *"a
+conditional you cannot see is one you will not play around"*. That flash fires
+AFTER you have committed. This is the same sentence moved to the moment the
+decision is made.
+
+- **Amber**, because amber is already this game's word for *the condition paid*
+  on an empowered hit, and for a creature that has overcommitted. Learn it once,
+  read it everywhere.
+- **And it pulses.** The window is closing — a stagger runs out, a burn is about
+  to be spent by something else — and a steady glow says a state where the truth
+  is a clock. Same call as the opening's glow in M67.4.
+- **Driven from `update`, not `render`.** It changes as fast as the fight does,
+  and a marker that waited for the next re-render would be a lie for as long as
+  it waited.
+- **It reads the ENGAGED target**, not the locked one: `engagedId` is what you
+  are hitting this instant, which is what the skill will land on.
+- **And it is dark when you cannot afford it.** A slot that says "press me" and
+  then refuses is worse than one that says nothing.
+
+The hotbar asks `findRead` — the same function the server resolves the bonus
+with — rather than reimplementing the match, so the light and the damage cannot
+disagree about whether a condition counted.
+
+### Two rules, because both halves fail silently
+- **Every reader's condition must be REACHABLE.** A skill that reads a status
+  nothing in the game can apply is a slot that never lights and a bonus that can
+  never be spent — the same dangling limb `salvage` and `shape: "none"` were.
+  Checked against everything skills apply, everything monsters inflict, and the
+  three the server applies directly.
+- **And the bar has to be told, and told correctly.** A self-read checks your
+  own statuses and a target-read checks the target's; getting that backwards
+  lights every slot at the wrong moment, which is worse than lighting none.
+
+Verified in the browser by driving real statuses through the real bar: nothing
+lit with no condition, Execute lit the moment the target was bleeding, and a
+self-read did not light off a target's status.
+
+### And the ruler was too loose, caught by mutating it
+The check for "something calls `setConditions`" was a bare `/setConditions\(/`,
+which happily matches `noop_setConditions(` — so the mutation written to break
+it passed. Anchored on the receiver now. Mutation testing earns its keep
+precisely here: the check looked right and was worth nothing.
+
+Twenty suites, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -7132,6 +7196,25 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- A CONDITIONAL YOU CANNOT SEE IS ONE YOU WILL NOT PLAY AROUND — and this file
+  already said so about the empowered flash, which fires after you have
+  committed. Eight skills read a status for up to 140% more damage and the only
+  way to play them was to remember which wanted which and press in time. The bar
+  lights the slot now, at the moment the decision is made.
+- THE LIGHT ASKS THE SAME FUNCTION THE DAMAGE DOES. `findRead` decides both, so
+  what the bar promises and what the server pays cannot disagree about whether a
+  condition counted.
+- A slot that says "press me" and then refuses is worse than one that says
+  nothing, so it stays dark when the mana is not there.
+- A READER'S CONDITION MUST BE REACHABLE. A skill that reads a status nothing in
+  the game can apply is a slot that never lights and a bonus that can never be
+  spent — the same dangling limb `salvage` was before a quest pointed at it, and
+  `shape: "none"` was on three missiles.
+- Anchor a source check on the RECEIVER. `/setConditions\(/` matches
+  `noop_setConditions(`, so the mutation written to break that check passed it.
+  A check that looks right and is worth nothing is the reason mutations get
+  written at all.
 
 - A MODEL MUST SPEND STAT POINTS WHERE THE GAME SAYS TO. `statAdviceFor` is the
   priority order the character sheet prints; a model that ignored it gave a
@@ -10083,7 +10166,24 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 68 complete (2026-08-21).
+Phase 0 through 69 complete (2026-08-21).
+
+**Phase 69 M69.1 — a conditional you can see.** The deepest skill expression in
+the game already existed and was invisible: eight skills READ a status rather
+than applying one — Exploit spends Exposed for 140% more damage, Combust spends
+Burning, Execute hits 85% harder into any damage-over-time — and the only way to
+play them was to remember which wanted which, spot it on a nameplate mid-fight,
+and press in time. Press early and a 2.4x resolves as a 1x with nothing to say
+so. The hotbar slot lights now, amber and pulsing, when its own condition is met
+on you or on what you are actually fighting — the same argument this file already
+recorded about the empowered flash, which fires only after you have committed.
+It asks `findRead`, the function the server resolves the bonus with, so the light
+and the damage cannot disagree. Two rules keep it honest: every reader's
+condition must be producible by something in the game, and a self-read must check
+you while a target-read checks the target. Verified live by driving real statuses
+through the real bar. The mutation for one of those checks passed a bare
+`/setConditions\(/` that also matched `noop_setConditions(` — a check that looked
+right and was worth nothing.
 
 **Phase 68 M68.1 — can you actually beat the ring you are standing in?** This
 game's one rule is that distance from spawn IS difficulty, and in sixty-odd

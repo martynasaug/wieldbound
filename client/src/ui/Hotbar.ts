@@ -3,8 +3,10 @@ import {
   SKILLS,
   defaultAttackFor,
   describeRead,
+  findRead,
   emptyHotbar,
   normalizeHotbar,
+  type ActiveStatus,
   type HotbarEntry,
   type HotbarLayout,
   type SkillId,
@@ -255,6 +257,9 @@ export class Hotbar {
     }
   }
 
+  private selfStatuses: readonly ActiveStatus[] = [];
+  private targetStatuses: readonly ActiveStatus[] = [];
+
   private render(): void {
     for (const slot of this.slots) {
       const entry = this.layout.slots[slot.index];
@@ -289,6 +294,36 @@ export class Hotbar {
     }
   }
 
+  /**
+   * Which conditions are satisfied right now — the player's own statuses and
+   * the target's — so a slot can say when it is worth pressing.
+   *
+   * THIS IS THE DEEPEST THING IN THE COMBAT DESIGN AND IT WAS INVISIBLE. Eight
+   * skills READ a status rather than applying one: Exploit spends Exposed for
+   * 140% more damage, Follow Through spends Staggered for 120%, Combust spends
+   * Burning. Until now the only way to play them was to remember which skill
+   * wanted which condition, notice it on a nameplate, and press in time — and
+   * pressing early spends a 2.4x multiplier as a 1x, with nothing to say you
+   * had missed it.
+   *
+   * A conditional you cannot see is a conditional you will not play around.
+   * That sentence is already in `PLAN` about the empowered FLASH, which fires
+   * after the fact; this is the same argument moved to the moment the decision
+   * is actually made.
+   */
+  setConditions(onSelf: readonly ActiveStatus[], onTarget: readonly ActiveStatus[]): void {
+    this.selfStatuses = onSelf;
+    this.targetStatuses = onTarget;
+  }
+
+  /** Whether this skill's own condition is met on whatever it reads. */
+  private primed(skillId: SkillId): boolean {
+    const read = SKILLS[skillId]?.reads;
+    if (!read) return false;
+    const where = read.on === "self" ? this.selfStatuses : this.targetStatuses;
+    return findRead(read, where) !== null;
+  }
+
   /** Called every frame; drives the curtain height and the seconds text. */
   update(mana = Infinity): void {
     const now = performance.now();
@@ -301,6 +336,16 @@ export class Hotbar {
       }
       const cost = entry === ATTACK_SLOT ? 0 : SKILLS[entry].manaCost;
       slot.button.style.opacity = mana < cost ? "0.45" : "1";
+
+      // PRIMED: this skill's condition is met right now, on you or on what you
+      // are fighting. Driven from `update` rather than `render` because it
+      // changes as fast as the fight does — a bleed lands, a stagger wears off —
+      // and a marker that waited for the next re-render would be a lie for as
+      // long as it waited.
+      slot.button.classList.toggle(
+        "primed",
+        entry !== ATTACK_SLOT && this.primed(entry) && mana >= cost,
+      );
 
       const remaining = (this.readyAt.get(entry) ?? 0) - now;
       if (remaining <= 0) {
