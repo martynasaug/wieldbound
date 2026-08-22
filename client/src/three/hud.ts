@@ -333,6 +333,38 @@ const STYLE = `
 #hud3d .plate-npc.engaged .pt::after { content: " · click to talk"; }
 
 #hud3d .toasts { position: absolute; left: 14px; bottom: 190px; display: flex; flex-direction: column; gap: 5px; }
+/* THE CAST BAR.
+   Centred and low, just above the action bar, which is where every game with
+   one puts it — because it is the one readout you have to watch while also
+   watching the fight, and the middle of the screen is the only place your eye
+   is already. Deliberately NOT beside the unit frame: a cast is a thing you are
+   doing right now, not a property of your character. */
+#hud3d .castbar {
+  position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%);
+  width: 240px; height: 20px; display: none;
+  background: linear-gradient(#241a0f, #16100a);
+  border: 1px solid var(--gold, #d9a441); border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.55); overflow: hidden;
+}
+#hud3d .castbar.on { display: block; }
+#hud3d .castbar .cfill {
+  position: absolute; inset: 0; width: 0%;
+  background: linear-gradient(#ffe9a8, #d9a441);
+  /* Driven by a CSS transition rather than a rAF loop: the duration is known
+     the instant the cast starts and the browser interpolates it for free, which
+     also means it cannot drift against the server's own clock the way a
+     frame-counted bar would. */
+}
+#hud3d .castbar .cname {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; font-size: 11px; letter-spacing: .04em;
+  color: #2a1d0e; text-shadow: 0 1px 0 rgba(255,255,255,.25);
+}
+/* Interrupted: it goes red and dies where it stood, so a cast you walked out of
+   looks different from one that completed. */
+#hud3d .castbar.broke .cfill { background: linear-gradient(#e08a6a, #a8402c); }
+#hud3d .castbar.broke .cname { color: #3a1a10; }
+
 #hud3d .toast {
   background: linear-gradient(#3a2a17, #241a0f); border: 1px solid var(--gold, #d9a441);
   border-radius: 5px; padding: 6px 10px; font-size: 12px; max-width: 330px;
@@ -428,6 +460,7 @@ export class Hud {
   private readonly mpFill: HTMLElement;
   private readonly mpText: HTMLElement;
   private readonly toastHost: HTMLElement;
+  private readonly castBar: HTMLElement;
   private readonly frameEl: HTMLElement;
   private readonly portraitEl: HTMLElement;
   private readonly levelBadge: HTMLElement;
@@ -465,6 +498,7 @@ export class Hud {
         </div>
       </div>
       <div class="toasts"></div>
+      <div class="castbar"><div class="cfill"></div><div class="cname"></div></div>
     `;
     parent.appendChild(this.root);
 
@@ -477,6 +511,7 @@ export class Hud {
     this.mpFill = this.root.querySelector(".bar.mp .fill")!;
     this.mpText = this.root.querySelector(".bar.mp .txt")!;
     this.toastHost = this.root.querySelector(".toasts")!;
+    this.castBar = this.root.querySelector(".castbar")!;
     this.frameEl = this.root.querySelector(".frame")!;
     this.portraitEl = this.root.querySelector(".portrait .pi")!;
     this.levelBadge = this.root.querySelector(".portrait .lvl")!;
@@ -577,6 +612,48 @@ export class Hud {
     this.xpFill.style.width = `${ratio * 100}%`;
     this.xpText.textContent = `XP ${Math.round(xp)}/${Math.round(needed)}`;
     this.levelEl.textContent = `Lv ${level}`;
+  }
+
+  /**
+   * Start drawing a cast.
+   *
+   * The fill is animated by handing CSS the duration and letting it interpolate,
+   * so the bar and the server's own clock cannot drift — and a bar that lies
+   * about how much time is left is worse than no bar, because the player will
+   * plan around it.
+   */
+  startCast(name: string, ms: number): void {
+    const bar = this.castBar;
+    const fill = bar.querySelector<HTMLElement>(".cfill")!;
+    bar.classList.remove("broke");
+    bar.classList.add("on");
+    bar.querySelector<HTMLElement>(".cname")!.textContent = name;
+    // Snap to zero with no transition, then let the next frame animate — set
+    // both in one frame and the browser coalesces them into no animation at all.
+    fill.style.transition = "none";
+    fill.style.width = "0%";
+    void fill.offsetWidth;
+    fill.style.transition = `width ${ms}ms linear`;
+    fill.style.width = "100%";
+  }
+
+  /** Stop drawing it. A cast that was broken says so before it goes. */
+  endCast(reason?: string): void {
+    const bar = this.castBar;
+    if (!bar.classList.contains("on")) return;
+    const fill = bar.querySelector<HTMLElement>(".cfill")!;
+    if (reason) {
+      // Freeze the fill where it actually got to, which is the information the
+      // player wants: how close they were.
+      const at = getComputedStyle(fill).width;
+      fill.style.transition = "none";
+      fill.style.width = at;
+      bar.classList.add("broke");
+      bar.querySelector<HTMLElement>(".cname")!.textContent = reason;
+      window.setTimeout(() => bar.classList.remove("on"), 420);
+    } else {
+      bar.classList.remove("on");
+    }
   }
 
   toast(text: string, color = "#f3e3c4"): void {

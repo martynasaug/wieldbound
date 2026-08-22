@@ -27,6 +27,10 @@ import {
   unlockedActives,
   weaponProgress,
   weaponXpToNext,
+  castMsFor,
+  CAST_MIN_MS,
+  CAST_MAX_MS,
+  CAST_RANGE_FLOOR_PX,
 } from "../../shared/protocol-types.ts";
 
 let failures = 0;
@@ -145,6 +149,58 @@ const atCap = weaponProgress(totalXp);
 if (atCap.level !== MAX_WEAPON_LEVEL) fail(`curve does not reach the cap: ${totalXp} xp gives level ${atCap.level}`);
 if (weaponProgress(0).level !== 1) fail("zero xp is not level 1");
 console.log(`  ${totalXp} xp spans levels 1 to ${atCap.level}; ${weaponXpToNext(1)} for the first, ${weaponXpToNext(MAX_WEAPON_LEVEL - 1)} for the last`);
+
+// --- Cast times -------------------------------------------------------------
+// Derived from the cooldown rather than typed, so the RULE is the thing worth
+// checking rather than eleven numbers. Every way it can go wrong is silent:
+// a melee skill that grew a cast is one you get killed holding, and a survival
+// cooldown that grew one is a survival cooldown that does not work.
+
+console.log("\n== cast times ==");
+{
+  const cast = Object.values(SKILLS).filter((s) => castMsFor(s) > 0);
+
+  for (const s of Object.values(SKILLS)) {
+    const ms = castMsFor(s);
+    if (ms === 0) continue;
+    // Nothing you have to plant your feet for may be a reaction.
+    if (s.kind !== "damage" && s.kind !== "heal") {
+      fail(`${s.id} is a ${s.kind} with a ${ms}ms cast — only damage and heals may have one`);
+    }
+    if (s.rangePx < CAST_RANGE_FLOOR_PX) {
+      fail(
+        `${s.id} casts for ${ms}ms at ${s.rangePx}px, which is melee — standing still there ` +
+          `while something winds up is a death sentence with no counterplay`,
+      );
+    }
+    if (ms < CAST_MIN_MS || ms > CAST_MAX_MS) {
+      fail(`${s.id} casts for ${ms}ms, outside ${CAST_MIN_MS}..${CAST_MAX_MS}`);
+    }
+  }
+
+  // An escape with a wind-up is not an escape.
+  for (const s of Object.values(SKILLS)) {
+    if (s.kind === "mobility" && castMsFor(s) > 0) fail(`${s.id} is an escape with a cast on it`);
+  }
+
+  // The cheap rhythm skills stay instant on purpose. If these ever grow one,
+  // the basic loop has become sluggish and somebody should have chosen that.
+  for (const id of ["arcanebolt", "powershot"]) {
+    if (castMsFor(SKILLS[id]) > 0) fail(`${id} carries the moment-to-moment rhythm and must stay instant`);
+  }
+
+  // And the rule has to select something, or it is decoration.
+  if (cast.length === 0) fail("no skill in the game has a cast time at all");
+  else {
+    console.log(
+      `  ${cast.length} skills cast, ${Object.keys(SKILLS).length - cast.length} are instant`,
+    );
+    console.log(
+      `  ${Math.min(...cast.map(castMsFor))}ms to ${Math.max(...cast.map(castMsFor))}ms — ` +
+        cast.map((s) => s.id).join(", "),
+    );
+  }
+}
 
 console.log(failures === 0 ? "\nOK — all talent trees hold" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

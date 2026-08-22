@@ -750,6 +750,69 @@ export const MELEE_RING_STEP_PX = 46;
 // larger than this push apart by their own size instead (see `separationFor`).
 export const MONSTER_SEPARATION_PX = 34;
 
+// --- Casting ----------------------------------------------------------------
+// Every skill in this game has been INSTANT since skills existed. Press it, it
+// happens. That is a fine rhythm for a reactive melee kit and it is why a mage
+// has never once looked like a mage: a firebolt with no cast is a button, and
+// the whole reason spellcasting reads as spellcasting anywhere else is that it
+// COSTS something to start and can be taken away from you halfway through.
+//
+// A cast is the one commitment in this game that the player makes rather than
+// receives. Standing still is dangerous — that is the entire point of the
+// telegraph — so "is this the moment to plant my feet for three quarters of a
+// second" is a real question with a real wrong answer, and it pairs exactly
+// with the window a big creature leaves after it commits a swing.
+//
+// WHO GETS ONE IS DERIVED, NOT TYPED, for the reason every number in the item
+// catalogue is: a hundred hand-picked cast times are a hundred numbers that
+// drift, and a ranged skill added later would silently arrive instant.
+//
+//   * RANGED ONLY. Standing still in melee while a troll winds up is a death
+//     sentence with no counterplay, and the melee kit is the reactive half —
+//     Execute, Riposte and Follow Through are answers to something that just
+//     happened and an answer you have to stand still for is not one.
+//   * DAMAGE AND HEALS ONLY. A buff or a survival cooldown you must plant your
+//     feet for is a survival cooldown that gets you killed, and a dash with a
+//     wind-up is not a dash.
+//   * AND ONLY THE BIG ONES. Arcane Bolt and Power Shot are the cheap
+//     spammable ones that carry the moment-to-moment rhythm; giving them a
+//     cast would make the basic loop sluggish rather than deliberate.
+
+/** Below this cooldown a ranged skill is a rhythm skill and stays instant. */
+export const CAST_COOLDOWN_FLOOR_MS = 5000;
+/** Anything shorter than this is a hitch rather than a cast. */
+export const CAST_MIN_MS = 500;
+/** And past this the player has stopped playing and started waiting. */
+export const CAST_MAX_MS = 950;
+/** Ranged starts here. Below it the skill is swung rather than thrown. */
+export const CAST_RANGE_FLOOR_PX = 200;
+
+/**
+ * How long this skill takes to get out of your hands. Zero is instant.
+ *
+ * Scaled off the cooldown, because the cooldown is already this game's measure
+ * of how big a thing a skill is — so the two cannot disagree about which
+ * skills are the heavy ones, and a retuned cooldown drags its cast with it.
+ */
+export function castMsFor(skill: SkillDef): number {
+  if (skill.castMs !== undefined) return skill.castMs;
+  if (skill.kind !== "damage" && skill.kind !== "heal") return 0;
+  if (skill.rangePx < CAST_RANGE_FLOOR_PX) return 0;
+  if (skill.cooldownMs < CAST_COOLDOWN_FLOOR_MS) return 0;
+  return Math.round(
+    Math.max(CAST_MIN_MS, Math.min(CAST_MAX_MS, skill.cooldownMs * 0.06)),
+  );
+}
+
+/**
+ * How far you may drift before a cast is dropped.
+ *
+ * Not zero, and that is deliberate: bodies push each other apart, a monster
+ * walking into you nudges you, and a cast that died because something brushed
+ * past would read as the button being broken. Roughly a third of a body.
+ */
+export const CAST_CANCEL_PX = 14;
+
 // --- Turning your back ------------------------------------------------------
 // Reported from play: *"you attack while facing away or running away"*.
 //
@@ -1543,6 +1606,12 @@ export interface SkillDef {
   kind: SkillKind;
   manaCost: number;
   cooldownMs: number;
+  /**
+   * Overrides the derived cast time. Present only where a skill's feel is a
+   * judgement rather than a consequence of its size — the same shape as an
+   * item's `mods`, which exist for exactly the rows the formula gets wrong.
+   */
+  castMs?: number;
   // 0 means self-cast. Otherwise how far the target may be.
   rangePx: number;
   // 0 means single-target; otherwise everything within this of the impact.
@@ -1960,6 +2029,10 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     description: "Set the fire off all at once. Everything close enough shares it.",
   },
   wardoff: {
+    // Instant, against the derived rule, and the override is the point of the
+    // field existing: this is a CLEANSE. It is the answer to something that has
+    // just landed on you, and an answer you have to stand still for is not one.
+    castMs: 0,
     id: "wardoff", name: "Ward Off", icon: "wardoff", kind: "heal",
     manaCost: 14, cooldownMs: 16000, rangePx: 260, radiusPx: 0, power: 20,
     effect: "shield", sfx: "heal",
@@ -2619,6 +2692,25 @@ export function statusDamageTaken(active: readonly ActiveStatus[]): number {
 
 /** The player's own running statuses. Sent whole rather than as deltas, like
  *  every other small set in this protocol and for the same reason. */
+/**
+ * What the caster is in the middle of, so the client can draw a bar and hold a
+ * channelling pose.
+ *
+ * `skillId: null` means the cast ended — finished, cancelled or interrupted —
+ * and `reason` says which, because a bar that simply vanishes teaches the
+ * player nothing about what they did wrong. One message for all three, since
+ * from the client's side they are the same event: stop drawing the bar.
+ */
+export interface CastStateMessage {
+  type: "CAST_STATE";
+  payload: {
+    skillId: SkillId | null;
+    castMs: number;
+    /** Only on an ending: "moved", "cancelled", or absent when it completed. */
+    reason?: string;
+  };
+}
+
 export interface StatusUpdateMessage {
   type: "STATUS_UPDATE";
   payload: { statuses: ActiveStatus[] };
@@ -3942,6 +4034,7 @@ export type ServerToClientMessage =
   | InfoMessage
   | ManaUpdateMessage
   | StatusUpdateMessage
+  | CastStateMessage
   | StatusTickMessage
   | QuestStateMessage
   | SkillResultMessage;

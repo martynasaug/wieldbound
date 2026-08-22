@@ -42,6 +42,7 @@ export interface GameSocketHandlers {
   onSkillResult: (payload: Extract<ServerToClientMessage, { type: "SKILL_RESULT" }>["payload"]) => void;
   onManaUpdate: (payload: Extract<ServerToClientMessage, { type: "MANA_UPDATE" }>["payload"]) => void;
   onStatusUpdate: (payload: Extract<ServerToClientMessage, { type: "STATUS_UPDATE" }>["payload"]) => void;
+  onCastState: (payload: Extract<ServerToClientMessage, { type: "CAST_STATE" }>["payload"]) => void;
   onStatusTick: (payload: Extract<ServerToClientMessage, { type: "STATUS_TICK" }>["payload"]) => void;
   onAttackState: (payload: Extract<ServerToClientMessage, { type: "ATTACK_STATE" }>["payload"]) => void;
   onWeaponProgress: (payload: Extract<ServerToClientMessage, { type: "WEAPON_PROGRESS" }>["payload"]) => void;
@@ -119,6 +120,8 @@ export class GameSocket {
         this.handlers.onManaUpdate(msg.payload);
       } else if (msg.type === "STATUS_UPDATE") {
         this.handlers.onStatusUpdate(msg.payload);
+      } else if (msg.type === "CAST_STATE") {
+        this.handlers.onCastState(msg.payload);
       } else if (msg.type === "STATUS_TICK") {
         this.handlers.onStatusTick(msg.payload);
       } else if (msg.type === "ATTACK_STATE") {

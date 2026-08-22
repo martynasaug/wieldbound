@@ -489,6 +489,8 @@ export class Game {
   // what turns a click from a chore into an override.
   private lockedId: string | null = null;
   private engagedId: string | null = null;
+  /** What is being channelled, so the pose can be held for its whole length. */
+  private castingSkill: SkillId | null = null;
   /** Last selection actually sent, so auto-targeting does not spam the wire. */
   private sentTargetId: string | null = null;
   /** Cursor position, for the hover ring and forgiving clicks. */
@@ -762,6 +764,26 @@ export class Game {
         this.hud.setHp(this.hp, this.maxHp);
         this.hud.setMana(this.mana, this.maxMana);
         this.refreshStats();
+      },
+      // A cast is the one thing in this game the player is in the middle of
+      // rather than the owner of, so it gets a bar of its own and a pose to
+      // match — a caster who stands in their idle for three quarters of a
+      // second and then throws something has not cast anything, they have
+      // paused.
+      onCastState: (p) => {
+        if (p.skillId) {
+          this.castingSkill = p.skillId;
+          this.hud.startCast(SKILLS[p.skillId]?.name ?? "Casting", p.castMs);
+          this.localActor?.play("attack");
+          playSfx("cast", 0.55);
+        } else {
+          this.castingSkill = null;
+          this.hud.endCast(p.reason === "moved" ? "Interrupted" : p.reason ? "Interrupted" : undefined);
+          if (p.reason) {
+            this.combatLog.push(`Cast interrupted — you moved.`, "#c98d5e");
+            this.localActor?.play("idle");
+          }
+        }
       },
       onStatusUpdate: (p) => {
         this.statusBar.set(p.statuses);
@@ -1562,14 +1584,13 @@ export class Game {
     } else if (style.delivery === "beam") {
       this.projectiles.beam(from, to, style.tint);
     } else {
-      // A bolt is a travelling fx quad — the effects system already carries
-      // the schools and the travel, so this needs no new art.
-      this.effects.play(style.impact, to.x, to.y, to.z, {
-        scale: 1.5,
-        tint: style.tint,
-        from,
-        durationMs: flightMs,
-      });
+      // A bolt used to be a travelling fx quad from the 14-cell atlas, on the
+      // reasoning that the effects system already carried the schools and the
+      // travel so it needed no new art. True, and it made the mage's MAIN
+      // ATTACK the least visible thing in the game: a soft 1.5-unit smudge
+      // crossing three hundred pixels in a fifth of a second. It is real lit
+      // geometry now.
+      this.projectiles.bolt(from, to, flightMs, style.tint);
     }
   }
 
@@ -1823,36 +1844,84 @@ export class Game {
       if (!vis) continue;
       const at = vis.actor.position;
 
+      // A RANGED SKILL THROWS WHAT YOUR WEAPON THROWS.
+      //
+      // Every ranged skill used to be a travelling atlas quad — the same soft
+      // 1.9-unit smudge whether it was a firebolt, an arrow or a bolt of
+      // storm — and the three signature caster missiles (`arcanebolt`,
+      // `firebolt`, `frostbolt`) had `shape: "none"` in `skillfx`, so on top of
+      // that they threw nothing of their own at all. Reported as "you can
+      // barely see them", which was generous.
+      //
+      // It reads the SAME `ATTACK_STYLES` table the ordinary attack does, so a
+      // bow's Power Shot looses a real arrow and a staff's Firebolt throws a
+      // lit bolt, without a second per-skill table to keep true. That is the
+      // one rule this game is named for, one system across: what you are
+      // holding decides how the spell arrives.
+      //
+      // And the number waits for it. A projectile that lands after its own
+      // damage has already been counted is the exact defect the auto-attack
+      // was fixed for in Phase 47 — so the impact, the flash and the floater
+      // are all held back by the flight time.
+      // Tinted by the SCHOOL the blow actually landed as, not by the skill's
+      // own swatch: a Frostbrand-wielding warrior throwing a skill throws frost
+      // and it should look like it.
+      const tint = Number.parseInt(schoolDef(hit.school).color.slice(1), 16);
+      let impactDelay = 0;
       if (skill.rangePx > 0 && self) {
-        this.effects.play(school, at.x, at.y + 0.9, at.z, {
-          scale: 1.9,
-          from: new THREE.Vector3(self.position.x, self.position.y + 1.1, self.position.z),
-          durationMs: 380,
-        });
-      } else if (skill.radiusPx === 0) {
-        this.effects.play(school, at.x, at.y + 0.9, at.z, { scale: 1.9 });
+        const muzzle = self.muzzlePosition(new THREE.Vector3());
+        const strike = new THREE.Vector3(at.x, at.y + MONSTER_MODELS[vis.kind].height * 0.55, at.z);
+        const style = attackStyle(this.appearance.weaponType);
+        const gap = muzzle.distanceTo(strike) * PX_PER_UNIT;
+        impactDelay = impactDelayMs(style, gap);
+        if (style.delivery === "arrow") {
+          this.projectiles.arrow(muzzle, strike, impactDelay);
+        } else if (style.delivery === "beam") {
+          this.projectiles.beam(muzzle, strike, tint);
+        } else {
+          // Melee families get one too when they cast at range — a thrown
+          // skill is still something leaving your hands, and drawing nothing
+          // is what the old "none" shapes did.
+          this.projectiles.bolt(muzzle, strike, impactDelay, tint);
+        }
       }
 
-      if (!hit.hit) {
-        this.floatOnMonster(vis, { kind: "miss", text: "Miss" });
-        continue;
-      }
-      // A conditional the player cannot see is the failure this whole feature
-      // has to avoid: Execute against something bleeding just does a bigger
-      // number, and a bigger number is indistinguishable from a lucky roll. So
-      // an empowered hit gets its own flash colour and its own mark on the
-      // floater, and the log says which condition paid.
-      vis.actor.flash(hit.empowered ? 0xffa63d : hit.crit ? 0xffd85e : 0x9ad4ff, hit.empowered ? 220 : 150);
-      this.floatOnMonster(
-        vis,
-        {
-          kind: "skill",
-          text: hit.empowered ? `${hit.damage}!` : `${hit.damage}`,
-          crit: hit.crit,
-          color: hit.crit ? undefined : hit.empowered ? "#ffa63d" : schoolDef(hit.school).color,
-        },
-        hit.damage,
-      );
+      const landImpact = () => {
+        if (skill.rangePx > 0 || skill.radiusPx === 0) {
+          this.effects.play(school, at.x, at.y + 0.9, at.z, { scale: 1.9 });
+        }
+      };
+      if (impactDelay > 0) window.setTimeout(landImpact, impactDelay);
+      else landImpact();
+
+      // Held back by the flight time, so the number arrives with the thing
+      // that caused it rather than before it.
+      const land = () => {
+        if (!hit.hit) {
+          this.floatOnMonster(vis, { kind: "miss", text: "Miss" });
+          return;
+        }
+        // A conditional the player cannot see is the failure this whole
+        // feature has to avoid: Execute against something bleeding just does a
+        // bigger number, and a bigger number is indistinguishable from a lucky
+        // roll. So an empowered hit gets its own flash colour and its own mark
+        // on the floater, and the log says which condition paid.
+        vis.actor.flash(hit.empowered ? 0xffa63d : hit.crit ? 0xffd85e : 0x9ad4ff, hit.empowered ? 220 : 150);
+        this.floatOnMonster(
+          vis,
+          {
+            kind: "skill",
+            text: hit.empowered ? `${hit.damage}!` : `${hit.damage}`,
+            crit: hit.crit,
+            color: hit.crit ? undefined : hit.empowered ? "#ffa63d" : schoolDef(hit.school).color,
+          },
+          hit.damage,
+        );
+        playSfx(hit.crit ? "crit" : "hit", 0.8);
+      };
+      if (impactDelay > 0) window.setTimeout(land, impactDelay);
+      else land();
+      if (!hit.hit) continue;
       if (hit.empowered && !saidEmpowered) {
         saidEmpowered = true;
         const on = p.consumed ? STATUSES[p.consumed]?.name : null;
@@ -1874,7 +1943,6 @@ export class Game {
           schoolDef(hit.school).color,
         );
       }
-      playSfx(hit.crit ? "crit" : "hit", 0.8);
     }
 
     if (p.slowMs) this.combatLog.push("Chilled.", "#8fd4ff");

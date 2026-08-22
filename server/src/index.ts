@@ -98,6 +98,8 @@ import {
   regenAmountForVitality,
   resolveHit,
   isRetreating,
+  castMsFor,
+  CAST_CANCEL_PX,
   resistOf,
   applyResist,
   passiveResist,
@@ -1055,6 +1057,8 @@ function handlePlayerDeath(playerId: string, socket: WebSocket | undefined, now:
   // Dying cancels the attack order along with the swing clock: you come back
   // standing, not mid-fight with whatever killed you.
   clearCombatClocks(playerId);
+  // Dying drops whatever you were channelling, along with the swing clock.
+  cancelCast(playerId, "interrupted");
   sendAttackState(playerId);
   applyStatus(playerId, "weakened", "player", now);
   sendStatuses(socket, playerId, now);
@@ -1477,11 +1481,62 @@ function spendMana(playerId: string, cost: number, attrs: Attributes): void {
   sendManaUpdate(sockets.get(playerId), next, maxMana);
 }
 
-function useSkill(playerId: string, skillId: SkillId, now: number): void {
+/**
+ * Who is mid-cast, where they were standing when they started, and what they
+ * are casting.
+ *
+ * Server-side, because it decides whether the skill happens: a client-side
+ * wind-up is a delay somebody can delete. The position is stamped at the start
+ * so "did you move" is a question about the whole cast rather than about the
+ * last packet — a player who walks a slow circle back to where they began has
+ * still walked away.
+ */
+const casting = new Map<
+  string,
+  { skillId: SkillId; startedAt: number; until: number; x: number; y: number }
+>();
+
+function sendCastState(
+  playerId: string,
+  skillId: SkillId | null,
+  castMs: number,
+  reason?: string,
+): void {
+  const socket = sockets.get(playerId);
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(
+    JSON.stringify({
+      type: "CAST_STATE",
+      payload: { skillId, castMs, reason },
+    } satisfies ServerToClientMessage),
+  );
+}
+
+/** Drops whatever somebody was casting. Silent when they were casting nothing. */
+function cancelCast(playerId: string, reason: string): void {
+  const active = casting.get(playerId);
+  if (!active) return;
+  casting.delete(playerId);
+  sendCastState(playerId, null, 0, reason);
+}
+
+function useSkill(playerId: string, skillId: SkillId, now: number, fromCast = false): void {
   const socket = sockets.get(playerId);
   const player = players.get(playerId);
   const skill = SKILLS[skillId];
   if (!player || !skill) return;
+
+  // One cast at a time. Pressing a second thing mid-cast is refused rather
+  // than queued: a queue means the button you pressed and the thing that
+  // happens are two different decisions separated by a second, which is the
+  // opposite of the deliberateness a cast is for.
+  if (!fromCast && casting.has(playerId)) {
+    sendSkillResult(socket, {
+      skillId, ok: false, reason: "already casting",
+      cooldownRemainingMs: 0, globalCooldownMs: 0, hits: [],
+    });
+    return;
+  }
 
   const cooldowns = skillReadyAt.get(playerId) ?? new Map<SkillId, number>();
   skillReadyAt.set(playerId, cooldowns);
@@ -1503,7 +1558,13 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
     return;
   }
 
-  const gcdUntil = globalCooldownUntil.get(playerId) ?? 0;
+  // A CAST COMPLETING DOES NOT PAY THE GLOBAL COOLDOWN TWICE. It was charged
+  // when the cast STARTED — which is the honest moment, since that is when the
+  // player committed the press — and a 900ms GCD against a 500ms cast would
+  // otherwise refuse the spell at the exact instant it finished channelling.
+  // The symptom was perfect: the bar filled, the cast ended clean, and nothing
+  // came out.
+  const gcdUntil = fromCast ? 0 : globalCooldownUntil.get(playerId) ?? 0;
   if (now < gcdUntil) {
     sendSkillResult(socket, { skillId, ok: false, reason: "not ready", cooldownRemainingMs: 0, globalCooldownMs: gcdUntil - now, hits: [] });
     return;
@@ -1517,6 +1578,27 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
   const mana = manaBalances.get(playerId) ?? maxMana;
   if (mana < manaCost) {
     sendSkillResult(socket, { skillId, ok: false, reason: "not enough mana", cooldownRemainingMs: 0, globalCooldownMs: 0, hits: [] });
+    return;
+  }
+
+  // EVERYTHING ABOVE IS VALIDATION AND EVERYTHING BELOW COMMITS, which is why
+  // the cast starts exactly here. A cast that began before the mana check would
+  // let a player channel for a second and then be told they could not afford
+  // it, and one that began after the spend would charge them for something
+  // they can still walk out of.
+  const castMs = fromCast ? 0 : castMsFor(skill);
+  if (castMs > 0) {
+    casting.set(playerId, {
+      skillId,
+      startedAt: now,
+      until: now + castMs,
+      x: player.x,
+      y: player.y,
+    });
+    sendCastState(playerId, skillId, castMs);
+    // The global cooldown starts NOW rather than on completion, so a cast is
+    // not charged twice for the same second.
+    globalCooldownUntil.set(playerId, now + GLOBAL_COOLDOWN_MS);
     return;
   }
 
@@ -3287,6 +3369,8 @@ wss.on("connection", (socket) => {
       }
     }
     players.delete(id);
+    casting.delete(id);
+    headings.delete(id);
     sockets.delete(id);
     lastSavedAt.delete(id);
     clearCombatClocks(id);
@@ -3825,6 +3909,30 @@ setInterval(() => {
         damage: monsterAttack.damage,
         school: monsterSchool,
       });
+    }
+  }
+
+  // --- Casts finish, or they are walked out of ------------------------------
+  // Checked every tick rather than on a timer per cast, so a disconnect or a
+  // death cannot leave one pending — the map is the only record and this loop
+  // is the only thing that reads it.
+  for (const [playerId, active] of [...casting]) {
+    const player = players.get(playerId);
+    if (!player) {
+      casting.delete(playerId);
+      continue;
+    }
+    if (Math.hypot(player.x - active.x, player.y - active.y) > CAST_CANCEL_PX) {
+      cancelCast(playerId, "moved");
+      continue;
+    }
+    if (now >= active.until) {
+      casting.delete(playerId);
+      sendCastState(playerId, null, 0);
+      // Re-entered with the cast already served, so every check above runs
+      // again against the state as it is NOW: a player who ran out of mana or
+      // died mid-cast does not get the spell for free.
+      useSkill(playerId, active.skillId, now, true);
     }
   }
 

@@ -6381,6 +6381,130 @@ Eighteen offline suites, both workspaces, zero console errors.
 
 ---
 
+## Phase 64 — Spells you can see, and time to react to them
+User brief: *"Skills should be very good high quality animations and effects,
+with cast time, good cool looking visible projectiles (right now you can barely
+see them)."*
+
+### M64.1 — projectiles that are actually there
+Measured before anything was changed. The camera sits back far enough that a
+1.8-unit character is about twenty-eight pixels tall, so one world unit is
+roughly fifteen pixels:
+
+    an arrow        1.0 units long, 0.07 thick     ~15px long and ONE pixel wide
+    a beam          0.05 core inside a 0.16 glow   a one-pixel line in a two-pixel one
+    a staff's bolt  a 1.5-unit atlas quad          a soft smudge, travelling fast
+
+And worse than any of those: **`arcanebolt`, `firebolt` and `frostbolt` — the
+three signature caster missiles — were `shape: "none"` in `skillfx`.** They threw
+nothing whatsoever. A mage pressed Firebolt and the only thing that happened was
+a burst appearing on the target.
+
+- **A bolt is real lit geometry now**: a white-hot core inside a tinted glow,
+  a tapered cone trailing it, and a **real point light travelling with it**.
+  The light is half of what sells it — low-poly geometry at this distance
+  catches almost nothing, so a bolt that is only a mesh reads as a coloured
+  pebble, and at night this one lights the ground it passes over.
+- **The trail is a cone, not a box**, on both the bolt and the arrow: what a
+  fast thing leaves behind is wider where it has been.
+- **The beam trebled in width** and became cylinders rather than boxes.
+- **It brightens through the flight** and is spent by the time it lands, where
+  the impact burst takes over.
+
+### And a ranged skill throws what your WEAPON throws
+Rather than a `bolt` shape added to eleven rows of `SKILL_FX`, the per-hit
+travelling quad reads the same `ATTACK_STYLES` table the ordinary attack does.
+A bow's Power Shot looses a real arrow; a staff's Firebolt throws a lit bolt; a
+wand's skills zap. One rule, no second table, and it is the rule the game is
+named for one system across: **what you are holding decides how the spell
+arrives.** It is tinted by the school that actually landed, so a warrior casting
+with a Frostbrand throws frost.
+
+**And the number waits for it.** A projectile that lands after its own damage has
+already been counted is the exact defect the auto-attack was fixed for in Phase
+47; the impact, the flash and the floater are all held back by the flight time,
+using the same `impactDelayMs`.
+
+### M64.2 — a cast is something you commit to
+Every skill in this game has been INSTANT since skills existed. That is a fine
+rhythm for a reactive melee kit and it is why a mage has never looked like one:
+a firebolt with no cast is a button.
+
+A cast is the one commitment the player MAKES rather than receives. Standing
+still is dangerous — that is the entire point of the telegraph — so *is this the
+moment to plant my feet for half a second* is a real question with a real wrong
+answer, and it pairs exactly with M63.1's `recovering` window: the opening after
+a boss commits is when you can afford the big one.
+
+### Who gets one is DERIVED
+Eleven hand-picked cast times are eleven numbers that drift, and a ranged skill
+added later would silently arrive instant. Scaled off the cooldown, because the
+cooldown is already this game's measure of how big a thing a skill is:
+
+- **Ranged only.** Standing still in melee while a troll winds up is a death
+  sentence with no counterplay, and the melee kit is the reactive half — Execute
+  and Riposte are answers to something that just happened, and an answer you
+  have to stand still for is not one.
+- **Damage and heals only.** A survival cooldown you must plant your feet for is
+  a survival cooldown that gets you killed, and a dash with a wind-up is not a
+  dash.
+- **And only the big ones.** Arcane Bolt and Power Shot carry the
+  moment-to-moment rhythm; giving them a cast would make the basic loop sluggish
+  rather than deliberate.
+
+Ten of the forty-three, from 500ms to 900ms. `wardoff` overrides to instant
+against the rule, and the override field exists for exactly that: it is a
+CLEANSE, the answer to something that has just landed on you.
+
+### Where the cast starts is load-bearing
+Exactly between the last validation and the first commit. A cast that began
+before the mana check would let a player channel for half a second and then be
+told they could not afford it; one that began after the spend would charge them
+for something they can still walk out of.
+
+**Moving breaks it** — 14px of tolerance, because bodies push each other apart
+and a cast that died because something brushed past would read as the button
+being broken. The position is stamped at the START, so a player who walks a slow
+circle back to where they began has still walked away. **Pressing something else
+is refused rather than queued**: a queue means the button you pressed and the
+thing that happens are two decisions a second apart, which is the opposite of
+the deliberateness a cast is for.
+
+The completing cast **re-enters `useSkill` with the cast already served**, so
+every check runs again against the state as it is now — a player who ran dry or
+died mid-cast does not get the spell for free.
+
+### The bar
+Centred and low, above the action bar, because it is the one readout you must
+watch while also watching the fight. Driven by a CSS transition handed the
+duration rather than a rAF loop, so it cannot drift against the server's clock —
+a bar that lies about how much time is left is worse than no bar, because the
+player will plan around it. An interrupted cast goes red and **freezes where it
+got to**, which is the information the player actually wants: how close they
+were.
+
+### Verified
+`tools/test/talents.mjs` walks the derivation — melee, mobility and the two
+rhythm skills may never grow one — and two mutations fail it. `tools/test/
+casting.mjs` drives a real socket:
+
+    standing still: cast started, ended clean, skill resolved
+    resolved 602ms after the cast began (cast is 500ms)
+    walking away:   cast ended (moved), skill did not resolve
+    second press:   refused ("already casting")
+
+### And the first run found a bug in the feature itself
+*"standing still: cast started, ended clean, NEVER RESOLVED."* The global
+cooldown is charged when the cast STARTS — which is the honest moment, since
+that is when the player committed the press — and it is 900ms against a 500ms
+cast, so the re-entry was refused with "not ready" at the exact instant the
+channel finished. The bar filled, the cast ended clean, and nothing came out. A
+completing cast does not pay the global cooldown twice.
+
+Eighteen offline suites, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -6464,6 +6588,55 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- A PROJECTILE HAS TO BE SIZED IN PIXELS, not in units. One world unit is about
+  fifteen pixels at this camera, so a 0.07-unit arrow trail is ONE pixel and a
+  0.05-unit beam core is one pixel inside a two-pixel glow. Readability beats
+  proportion here, which the arrow's own comment already said and had not
+  followed far enough.
+- Half of a projectile is LIGHT. Low-poly geometry at this distance catches
+  almost nothing, so a bolt that is only a mesh reads as a coloured pebble; one
+  carrying a real point light reads as glowing, and at night it lights the
+  ground it passes over.
+- A trail is a CONE, not a box. What a fast thing leaves behind is wider where
+  it has been.
+- A ranged skill throws what your WEAPON throws, read off the same
+  `ATTACK_STYLES` the ordinary attack uses. The alternative was a `bolt` shape
+  added to eleven rows of `SKILL_FX` — a second table saying the same thing,
+  which would disagree the first time either moved. It is also the rule this
+  game is named for, one system across.
+- `shape: "none"` on a MISSILE is a missile that does not exist. `arcanebolt`,
+  `firebolt` and `frostbolt` — the three signature caster spells — threw
+  literally nothing for the life of the skill system, and the only thing that
+  happened was a burst appearing on the target.
+- The damage number waits for the projectile. A blow counted before its own
+  arrow arrives is the exact defect Phase 47 fixed for the auto-attack, and a
+  skill was free to reintroduce it because it drew its travel separately.
+- A CAST IS THE ONE COMMITMENT THE PLAYER MAKES rather than receives. Standing
+  still is dangerous — that is what the telegraph is for — so a cast turns "is
+  this the moment" into a real question, and it pairs with the window a big
+  creature leaves after it commits a swing.
+- Who casts is DERIVED from the cooldown, because that is already this game's
+  measure of how big a skill is. Ranged only (standing still in melee while a
+  troll winds up is a death sentence with no counterplay), damage and heals only
+  (a survival cooldown you must plant your feet for does not work, and a dash
+  with a wind-up is not a dash), and not the cheap spammable ones that carry the
+  rhythm.
+- The cast starts BETWEEN the last validation and the first commit. Earlier and
+  a player channels then learns they cannot afford it; later and they are
+  charged for something they can still walk out of.
+- A completing cast RE-ENTERS the whole check, so running dry or dying mid-cast
+  does not hand out the spell for free — and it must not pay the global cooldown
+  twice. The GCD is 900ms and the shortest cast is 500ms, so charging it again
+  on completion refused the spell at the exact instant it finished channelling:
+  the bar filled, the cast ended clean, and nothing came out.
+- A second press mid-cast is REFUSED, never queued. A queue makes the button you
+  pressed and the thing that happens two decisions a second apart, which is the
+  opposite of what a cast is for.
+- The cast bar is driven by a CSS transition handed the duration, not by a frame
+  loop. It cannot drift against the server's clock, and a bar that lies about
+  how much time is left is worse than no bar because the player plans around it.
+  An interrupted one freezes where it got to, which is the fact they want.
 
 - YOU DO NOT SWING AT SOMETHING BEHIND YOU, and "behind you" and "running away"
   are the same state in a game with no strafe animation and no separate facing
@@ -9189,7 +9362,28 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 63 complete (2026-08-21).
+Phase 0 through 64 complete (2026-08-21).
+
+**Phase 64 — spells you can see, and time to react to them.** *"Skills should be
+very good high quality animations and effects, with cast time, good cool looking
+visible projectiles (right now you can barely see them)."* Measured first: at
+this camera one world unit is about fifteen pixels, so an arrow's trail was ONE
+pixel wide, a beam was a one-pixel core in a two-pixel glow, and a staff's bolt
+was a soft atlas smudge — and the three signature caster missiles, `arcanebolt`,
+`firebolt` and `frostbolt`, were `shape: "none"` and threw nothing at all. A bolt
+is real lit geometry now, with a **travelling point light** that lights the
+ground it passes over, and a ranged skill throws **what your weapon throws**,
+read off the same table the ordinary attack uses rather than a second one. The
+damage number waits for the projectile to arrive. Then the other half of the
+brief: **a cast time**, on ten of the forty-three skills, derived from the
+cooldown rather than typed — ranged damage and heals only, because standing
+still in melee while a troll winds up is a death sentence with no counterplay,
+and never the two cheap skills that carry the rhythm. Moving breaks it, pressing
+something else is refused rather than queued, and the bar freezes where it got
+to so you can see how close you were. It pairs with M63.1's opening: the seconds
+after a boss commits are when you can afford the big one. The first live run
+found a bug in the feature itself — the global cooldown was charged twice, so a
+500ms cast was refused at the instant it completed.
 
 **Phase 63 M63.1 — a fight you can be good at.** Reported from play: *"you
 attack while facing away or running away"*. In a game with no strafe animation

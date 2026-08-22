@@ -295,6 +295,21 @@ unavailable.
   keyframes from midnight to dusk, with a star dome and a clock on your unit
   frame. The hour is derived from wall-clock time in `shared/`, so every client
   sees the same sky without the server sending anything.
+- **Spells that leave your hands** — a bolt is a white-hot core in a tinted
+  glow with a tapered trail and a real light travelling with it, so it lights the
+  ground it crosses at night; an arrow leaves a widening streak; a wand zaps. And
+  a ranged SKILL throws whatever your weapon throws, off the same table the
+  ordinary attack reads — a bow's Power Shot looses an arrow and a staff's Firebolt
+  throws a bolt — because what you are holding decides how the spell arrives, the
+  same rule the game is named for one system across. The damage number waits for
+  the projectile to land.
+- **And the big ones take time to cast** — ten of the forty-three, derived from
+  the cooldown rather than hand-picked: ranged damage and heals only, because
+  standing still in melee while a troll winds up is a death sentence with no
+  counterplay, and never the two cheap skills that carry the rhythm. Moving
+  breaks the cast and the bar freezes where it got to, so you can see how close
+  you were. It is the one commitment you make rather than receive, and the
+  seconds after a boss overcommits are when you can afford it.
 - **A shape per skill** — a nova rings outward, a poison pool lingers, a cleave
   sweeps a wedge, a heal throws light up from the feet, arrows fall as a volley
   and chain lightning hops target to target. Real geometry, sized from each

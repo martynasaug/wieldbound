@@ -85,9 +85,107 @@ interface LiveProjectile {
   to: THREE.Vector3;
   startedAt: number;
   durationMs: number;
-  /** Beams hold still and fade; arrows travel. */
-  kind: "arrow" | "beam";
+  /** Beams hold still and fade; arrows and bolts travel. */
+  kind: "arrow" | "beam" | "bolt";
   materials: THREE.Material[];
+  /** Bolts and arrows carry their own light, which has to be taken away too. */
+  light?: THREE.PointLight;
+  /** The spinning part of a bolt, so the core is not a static ball. */
+  spin?: THREE.Object3D;
+}
+
+// --- How big a projectile has to be to be seen -------------------------------
+//
+// Reported from play: *"you can barely see them"*. Measured rather than argued:
+// the camera sits back far enough that a 1.8-unit character is about
+// twenty-eight pixels tall, so one world unit is roughly fifteen pixels. At
+// that scale the projectiles were:
+//
+//     an arrow      1.0 units long, 0.07 thick   ~15px long and ONE pixel wide
+//     a bolt        a 1.5-unit atlas quad        a soft smudge, moving fast
+//     a beam        0.16 units across            ~2px
+//
+// A one-pixel streak crossing three hundred pixels in a fifth of a second is
+// not a thing anybody sees; it is a suggestion. These are the same trade the
+// arrow's own comment already made and did not make far enough — readability
+// beats proportion at this camera, and every game with this camera makes it.
+//
+// The other half is LIGHT. Low-poly geometry at this distance catches almost
+// nothing, so a bolt that is only a mesh reads as a coloured pebble. Each one
+// carries a real point light travelling with it, which is what makes it look
+// like it is glowing rather than painted — and at night it lights the ground it
+// passes over, which is most of what sells it.
+
+/** Shared, because a handful of these are in the air at once and each is two
+ *  spheres and a cone that never change shape. */
+const BOLT_CORE_GEO = new THREE.SphereGeometry(0.22, 12, 10);
+const BOLT_GLOW_GEO = new THREE.SphereGeometry(0.55, 12, 10);
+const BOLT_TRAIL_GEO = new THREE.ConeGeometry(0.3, 2.2, 10, 1, true);
+
+/**
+ * A travelling bolt: a hot core, a glow around it, a tapered trail behind, and
+ * a light that goes with the whole thing.
+ *
+ * The trail is a CONE opening backwards rather than a box, because a box is a
+ * stick and what a fast thing leaves behind is wider where it has been. Built
+ * pointing down -Z so the group can simply `lookAt` its destination, which is
+ * the same convention the beam uses.
+ */
+function boltMesh(tint: number): {
+  object: THREE.Object3D;
+  materials: THREE.Material[];
+  light: THREE.PointLight;
+  spin: THREE.Object3D;
+} {
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  });
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: tint,
+    transparent: true,
+    opacity: 0.55,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  });
+  const trailMat = new THREE.MeshBasicMaterial({
+    color: tint,
+    transparent: true,
+    opacity: 0.34,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    fog: false,
+  });
+
+  const core = new THREE.Mesh(BOLT_CORE_GEO, coreMat);
+  const glow = new THREE.Mesh(BOLT_GLOW_GEO, glowMat);
+  // The cone's point is +Y by default; tip it to lie along the path with the
+  // wide end trailing.
+  const trail = new THREE.Mesh(BOLT_TRAIL_GEO, trailMat);
+  trail.rotation.x = Math.PI / 2;
+  trail.position.z = -1.1;
+
+  // The core and glow turn together so the silhouette shifts as it flies — a
+  // perfectly still sphere reads as a decal stuck to the screen.
+  const spin = new THREE.Group();
+  spin.add(core, glow);
+
+  const light = new THREE.PointLight(tint, 7, 10, 2);
+
+  const group = new THREE.Group();
+  group.add(spin, trail, light);
+  group.renderOrder = 10;
+  return {
+    object: group,
+    materials: [coreMat, glowMat, trailMat],
+    light,
+    spin,
+  };
 }
 
 const ARROW_MODEL = "Ranger_Arrow";
@@ -135,17 +233,25 @@ function arrowPrototype(): Promise<THREE.Object3D> {
       // A warm streak trailing the shaft. Low-poly geometry catches almost no
       // light at this distance, so without it the arrow reads as a dark fleck
       // against grass rather than as something moving fast.
+      // WIDENED, because 0.07 units is one pixel at this camera and a
+      // one-pixel streak crossing the screen in a fifth of a second is not
+      // something anybody sees. A cone rather than a box, for the same reason
+      // the bolt's is: what a fast thing leaves behind is wider where it has
+      // been.
       const trail = new THREE.Mesh(
-        new THREE.BoxGeometry(0.07, 0.07, ARROW_LENGTH_UNITS * 1.5),
+        new THREE.ConeGeometry(0.17, ARROW_LENGTH_UNITS * 2.2, 8, 1, true),
         new THREE.MeshBasicMaterial({
           color: 0xffe6a8,
           transparent: true,
-          opacity: 0.5,
+          opacity: 0.42,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
+          side: THREE.DoubleSide,
+          fog: false,
         }),
       );
-      trail.position.z = -ARROW_LENGTH_UNITS * 0.85;
+      trail.rotation.x = Math.PI / 2;
+      trail.position.z = -ARROW_LENGTH_UNITS * 1.0;
 
       const wrapper = new THREE.Group();
       wrapper.add(scaled, trail);
@@ -158,25 +264,33 @@ function arrowPrototype(): Promise<THREE.Object3D> {
 function beamMesh(length: number, tint: number): { object: THREE.Object3D; materials: THREE.Material[] } {
   // Two nested boxes: a hot white core inside a wider tinted glow. One box on
   // its own reads as a coloured stick rather than as light.
+  // Both widened by about three times: at 0.05 and 0.16 units these were a
+  // one-pixel core inside a two-pixel glow, which is a hairline rather than a
+  // zap. Cylinders rather than boxes so the glow has no flat sides to catch
+  // the light wrong as the camera turns with the beam.
   const core = new THREE.Mesh(
-    new THREE.BoxGeometry(0.05, 0.05, length),
+    new THREE.CylinderGeometry(0.075, 0.075, length, 6),
     new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      fog: false,
     }),
   );
+  core.rotation.x = Math.PI / 2;
   const glow = new THREE.Mesh(
-    new THREE.BoxGeometry(0.16, 0.16, length),
+    new THREE.CylinderGeometry(0.26, 0.26, length, 8),
     new THREE.MeshBasicMaterial({
       color: tint,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.5,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      fog: false,
     }),
   );
+  glow.rotation.x = Math.PI / 2;
   const group = new THREE.Group();
   group.add(glow, core);
   group.renderOrder = 10;
@@ -213,6 +327,32 @@ export class Projectiles {
     });
   }
 
+  /**
+   * A staff's missile: a lit core that flies and lands when it arrives.
+   *
+   * This replaces a 1.5-unit camera-facing atlas quad, which was the mage's
+   * MAIN ATTACK and the least visible thing in the game — a soft smudge at
+   * twenty-odd pixels, travelling fast, over grass. It is real geometry with
+   * its own light now.
+   */
+  bolt(from: THREE.Vector3, to: THREE.Vector3, flightMs: number, tint: number): void {
+    const { object, materials, light, spin } = boltMesh(tint);
+    object.position.copy(from);
+    object.lookAt(to);
+    this.scene.add(object);
+    this.live.push({
+      object,
+      from: from.clone(),
+      to: to.clone(),
+      startedAt: performance.now(),
+      durationMs: Math.max(70, flightMs),
+      kind: "bolt",
+      materials,
+      light,
+      spin,
+    });
+  }
+
   /** A wand's zap: drawn once between the two points, then faded out. */
   beam(from: THREE.Vector3, to: THREE.Vector3, tint: number, durationMs = 150): void {
     const length = from.distanceTo(to);
@@ -241,12 +381,29 @@ export class Projectiles {
       const t = (now - p.startedAt) / p.durationMs;
       if (t >= 1) {
         this.scene.remove(p.object);
+        // A light left in the scene graph is a light three still evaluates for
+        // every fragment of every lit surface, for ever.
+        p.light?.dispose();
         for (const m of p.materials) m.dispose();
         this.live.splice(i, 1);
         continue;
       }
       if (p.kind === "arrow") {
         p.object.position.lerpVectors(p.from, p.to, t);
+      } else if (p.kind === "bolt") {
+        p.object.position.lerpVectors(p.from, p.to, t);
+        // Turning, so the silhouette moves. A still sphere travelling in a
+        // straight line reads as a decal sliding across the screen.
+        if (p.spin) {
+          p.spin.rotation.y += 0.35;
+          p.spin.rotation.x += 0.22;
+        }
+        // Brightest in the middle of the flight: it winds up out of the hand
+        // and is spent by the time it lands, where the impact burst takes over.
+        const swell = Math.sin(Math.min(1, t) * Math.PI);
+        if (p.light) p.light.intensity = 3 + swell * 6;
+        const glow = p.materials[1] as THREE.MeshBasicMaterial;
+        if (glow) glow.opacity = 0.4 + swell * 0.35;
       } else {
         // Beams flash and go: bright for the first third, then fade.
         const fade = t < 0.34 ? 1 : 1 - (t - 0.34) / 0.66;
@@ -261,6 +418,7 @@ export class Projectiles {
   dispose(): void {
     for (const p of this.live) {
       this.scene.remove(p.object);
+      p.light?.dispose();
       for (const m of p.materials) m.dispose();
     }
     this.live.length = 0;
