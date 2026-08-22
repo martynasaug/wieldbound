@@ -6719,6 +6719,55 @@ and `pickup` to `PickUp`.
 
 Nineteen suites, both workspaces, zero console errors.
 
+### M67.4 — the sweep, and the opening nobody could see
+Three milestones in a row had been the same shape — **a capability that already
+existed, wired to nothing.** `Roll` and `PickUp` harvested and never played,
+`Spell1` reachable only as a wand's ordinary attack, `shielded` unreachable for
+the life of the skill, three caster missiles with `shape: "none"`. Every one was
+found by accident. So the obvious move was to stop finding them by accident.
+
+### The sweep, and it came back clean
+`__wieldboundClips` is a new debug handle beside `__wieldbound`,
+`__wieldboundRules`, `__wieldboundLoad` and `__wieldboundAudio` — because what
+the clip library HOLDS is the one half of the question no static read can
+answer: the clips come out of five binary FBXs at runtime.
+
+    animation clips   24 of 25 reached
+    sound cues        12 of 12 reached
+    effect atlas      12 of 14 reached
+
+The three that are not reached are all correct. `Attacking_Idle` is the Rogue's
+near-duplicate of `Idle_Attacking`, and `clips.ts` explicitly warns against loose
+matching finding both. `shadow` and `holy` are atlas rows for schools this game
+deliberately does not have — *"inventing a shadow school to give a palette a job
+would be adding an element to fit a palette rather than the other way round"*.
+
+**A negative result worth having**, and it took three wrong rulers to get: a
+regex anchored on `playSfx("name"` cannot see `playSfx(crit ? "crit" : "hit")`,
+one anchored on `FX_ROW[^;]*;` cannot see a literal that ends `} as const;`, and
+a static grep for `"fire"` cannot see an effect chosen through a variable. All
+three reported working features as dead.
+
+### And then the thing the sweep could not see
+The `recovering` window from M63.1 — the one genuinely skill-based thing in the
+fight, two seconds at half again damage taken after a boss commits a swing — had
+its only feedback in a small pip on the nameplate.
+
+**A mechanic with no feedback is a mechanic nobody learns.** A player who has
+never been told will read the window as the boss randomly taking more damage
+sometimes, which teaches them nothing and is indistinguishable from a lucky roll.
+
+So the body glows, and it PULSES rather than sitting at one colour: the whole
+information content is *this is running out*, and a steady tint says a state
+while a pulse says a clock. Amber, because that is already this game's colour
+for "the condition paid" on an empowered hit — the same idea one system over, so
+a player who has learned one has learned the other. Read off the broadcast
+statuses rather than timed on the client, so what glows and what actually takes
+half again as much are one answer.
+
+And the log says it once, on the edge: *"The Troll overcommits — hit it now."*
+A window you have to infer from a larger number is a window nobody plays around.
+
 ### M67.3 — a skill is posed by what it IS, not by what you are holding
 One `play("attack")` served all forty-three skills. So a sword user pressing
 Mend did a sword swing, War Cry was a sword swing, and Shield Wall was a sword
@@ -6911,6 +6960,24 @@ rarities), multiple crafting stations. Not committing to order yet.
   by running deliberately — a planted swing pose while the character travels is
   the sliding that rule exists to stop — but a dash IS travel, so cancelling on
   the movement it causes plays the clip for one frame.
+- A MECHANIC WITH NO FEEDBACK IS A MECHANIC NOBODY LEARNS. The `recovering`
+  window is the one genuinely skill-based thing in the fight and its only signal
+  was a nameplate pip — so a player who had not been told would read it as the
+  boss randomly taking more damage sometimes, which is indistinguishable from a
+  lucky roll. It glows and the log says it once, on the edge.
+- A PULSE SAYS A CLOCK; a steady tint says a state. When the whole information
+  content is "this is running out", the signal has to be the one that conveys
+  time passing.
+- Sweep for capability wired to NOTHING, rather than finding it by accident three
+  milestones running. What a runtime library holds cannot be read statically —
+  the clips come out of five binary FBXs — so it needs a debug handle, which is
+  the same argument `__wieldboundAudio` was added under.
+- And a reachability grep is wrong in three specific ways, all of which reported
+  working features as dead: it cannot see a name reached through a TERNARY
+  (`playSfx(crit ? "crit" : "hit")`), it cannot see one reached through a
+  VARIABLE (an effect chosen by school), and a regex for a block that ends `};`
+  will not match one that ends `} as const;`. Over-count rather than under-count
+  when the question is "is this reachable at all".
 - A SKILL IS POSED BY WHAT IT IS, not by what is in your hand. One
   `play("attack")` served all forty-three, so a sword user pressing Mend did a
   sword swing while `Spell1` sat in the pooled library reachable only as a

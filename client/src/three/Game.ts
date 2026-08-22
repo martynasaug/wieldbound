@@ -296,6 +296,8 @@ interface MonsterVisual {
   windupStartedAt: number;
   /** Latched run/idle decision — see `isMoving`. */
   moving: boolean;
+  /** Previous opening flag, so the log line fires on the edge not every tick. */
+  recovering?: boolean;
 }
 
 // How far a snapshot-driven actor must travel between snapshots to count as
@@ -1181,11 +1183,27 @@ export class Game {
       // Chill is a gameplay signal (your Frost Nova is still working), so it
       // gets a colour rather than being inferred from the monster moving slower.
       vis.actor.setChilled(s.slowed);
+      // The window a big creature leaves after committing a swing. Read off the
+      // broadcast statuses rather than timed on the client, so what glows and
+      // what actually takes half again as much damage are one answer.
+      const opening = (s.statuses ?? []).some((x) => x.id === "recovering");
+      vis.actor.setRecovering(opening);
+      // SAID ONCE, ON THE EDGE. The window is the one genuinely skill-based
+      // thing in the fight and it is worth nothing if the player has to infer
+      // it from a damage number being larger than usual — so the first time
+      // they open one, the log says what they have done and what it is for.
+      // On the edge rather than every tick, because a line repeated sixty times
+      // a second is not a line anybody reads.
+      if (opening && !vis.recovering) {
+        this.combatLog.push(`The ${MONSTER_LABELS[vis.kind]} overcommits — hit it now.`, "#ffa63d");
+      }
+      vis.recovering = opening;
 
       const nowDead = s.status === "dead";
       if (nowDead && !vis.dead) {
         vis.actor.play("die");
         vis.actor.setChilled(false);
+        vis.actor.setRecovering(false);
         if (this.lockedId === s.id) this.setTarget(null);
       } else if (!nowDead && vis.dead) {
         vis.actor.revive();

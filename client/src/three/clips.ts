@@ -113,6 +113,24 @@ export function clipLibrary(): Map<string, THREE.AnimationClip> {
   return library ?? EMPTY;
 }
 
+// A debug handle, alongside `__wieldbound`, `__wieldboundRules`,
+// `__wieldboundLoad` and `__wieldboundAudio`.
+//
+// It exists because the last three milestones were all the same shape — a
+// capability that already existed, wired to nothing. `Roll` and `PickUp` were
+// harvested and never played, `Spell1` was reachable only as a wand's ordinary
+// attack, and each was found by accident rather than by looking. What the
+// library HOLDS is the one half of that question no static read can answer:
+// the clips come out of five binary FBXs at runtime, so the only way to know
+// what is in there is to ask something that has loaded them.
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__wieldboundClips = {
+    names: () => [...clipLibrary().keys()].sort(),
+    durations: () =>
+      Object.fromEntries([...clipLibrary()].map(([k, c]) => [k, +c.duration.toFixed(2)])),
+  };
+}
+
 const EMPTY = new Map<string, THREE.AnimationClip>();
 
 /**

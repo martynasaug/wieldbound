@@ -632,6 +632,7 @@ export class Actor {
   private flashUntil = 0;
   private flashColor = 0xffffff;
   private chilled = false;
+  private recovering = false;
   private emissiveApplied = -1;
   /** Every material this actor owns and must free. All of them are owned: see
    *  the clone in `buildBody`. */
@@ -1448,9 +1449,37 @@ export class Actor {
     this.chilled = chilled;
   }
 
+  /**
+   * Whether this body is in the window it leaves after committing a big swing.
+   *
+   * M63.1 made a telegraphed slam open a two-second window at half again damage
+   * taken, which is the one genuinely skill-based thing in the fight — bait it,
+   * step out, spend everything. Its only feedback was a small pip on the
+   * nameplate, and **a mechanic with no feedback is a mechanic nobody learns.**
+   * A player who has never been told will read the window as the boss randomly
+   * taking more damage sometimes.
+   *
+   * So it glows, and it PULSES rather than sitting at one colour: the whole
+   * information content is "this is running out", and a steady tint says a
+   * state while a pulse says a clock.
+   */
+  setRecovering(recovering: boolean): void {
+    this.recovering = recovering;
+  }
+
   private applyEmissive(): void {
     const flashing = performance.now() < this.flashUntil;
-    const want = flashing ? this.flashColor : this.chilled ? 0x2f6fa8 : -1;
+    // Ordered by urgency: a hit landing right now beats the window it landed
+    // in, and the window beats a chill, which is a condition rather than an
+    // opportunity.
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 90);
+    const opening = this.recovering
+      ? // Amber, which is the colour this game already uses for "the condition
+        // paid" on an empowered hit — the same idea one system over, so a player
+        // who has learned one has learned the other.
+        0x000000 | (Math.round(0x80 + pulse * 0x7f) << 16) | (Math.round(0x40 + pulse * 0x40) << 8)
+      : -1;
+    const want = flashing ? this.flashColor : opening !== -1 ? opening : this.chilled ? 0x2f6fa8 : -1;
     if (want === this.emissiveApplied) return;
     this.emissiveApplied = want;
     for (const { mat, base } of this.litMaterials) {
