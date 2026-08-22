@@ -21,6 +21,7 @@
 //
 //   node tools/test/statuses.mjs
 
+import { readFileSync } from "node:fs";
 import {
   DAMAGE_SCHOOLS,
   EMPTY_PASSIVES,
@@ -164,19 +165,47 @@ section("4. nothing stacks into a wall");
 // --- 5. every status has a source, and every source can land it -------------
 section("5. sources");
 {
-  // The four with no skill behind them. Named rather than derived, because
+  // The ones with no `applies` behind them. Named rather than derived, because
   // "unreferenced" is correct for exactly these and a bug for anything else.
+  //
+  // AND EVERY NAME HERE IS NOW VERIFIED AGAINST THE SERVER, which is the whole
+  // point of this rewrite. The old list carried `shielded: "Shield Wall"` and
+  // that claim was false for the entire life of the skill: `useSkill` reads
+  // `skill.applies ?? "enraged"`, Shield Wall declared no `applies`, and so the
+  // warrior's survival cooldown granted +35% damage DEALT while its own status
+  // row — `damageTakenMultiplier: 0.5`, blurb "Braced. Incoming damage is
+  // halved." — sat in the table with nothing on earth able to reach it.
+  //
+  // An allow-list entry is a CLAIM, and a claim with a plausible sentence next
+  // to it is exactly the shape of a thing nobody re-reads. Each one is checked
+  // against the real source now.
   const NON_SKILL = {
     weakened: "applied by dying",
-    enraged: "War Cry and the Wrathful Philtre",
-    chilled: "frost skills",
-    shielded: "Shield Wall",
+    enraged: "War Cry's default, and the Wrathful Philtre",
+    recovering: "put on a monster by the server when its telegraphed slam resolves",
   };
+  const server = readFileSync(new URL("../../server/src/index.ts", import.meta.url), "utf8");
   const applied = new Set(skills.map((s) => s.applies).filter(Boolean));
   for (const def of defs) {
+    const bySkill = applied.has(def.id);
+    // Either `applyStatus(..., "id", ...)` outright, or the `?? "id"` default.
+    const byServer =
+      new RegExp(`applyStatus\\([^)]*["']${def.id}["']`).test(server) ||
+      new RegExp(`\\?\\?\\s*["']${def.id}["']`).test(server);
     check(`${def.id} has something that applies it`,
-      applied.has(def.id) || def.id in NON_SKILL,
+      bySkill || byServer,
       "a status nothing can apply is a row nobody will ever see");
+    if (!bySkill) {
+      check(`${def.id} is on the non-skill list`, def.id in NON_SKILL,
+        "applied by the server but undocumented here");
+    }
+  }
+  for (const [id, why] of Object.entries(NON_SKILL)) {
+    const byServer =
+      new RegExp(`applyStatus\\([^)]*["']${id}["']`).test(server) ||
+      new RegExp(`\\?\\?\\s*["']${id}["']`).test(server);
+    check(`the exemption for ${id} is true — ${why}`, byServer,
+      "the server never applies it, so this entry is a claim nothing checks");
   }
 
   // A skill's status has to be able to sit on what the skill targets, or the
@@ -198,6 +227,37 @@ section("5. sources");
     }
   }
   console.log(`  ${applied.size} statuses come off skills, ${Object.keys(NON_SKILL).length} from elsewhere`);
+
+  // --- and everything that lands on a player has to go through one funnel ---
+  //
+  // A status can carry a `damageTakenMultiplier` and it is worth nothing unless
+  // every path that hurts somebody composes it. Four did not: the ordinary
+  // swing and the damage-over-time tick applied it, and the TELEGRAPHED SLAM
+  // and the DEATH BURST did not — which are the two biggest hits in the game
+  // and precisely what a brace is for. Nothing threw; Shield Wall was simply
+  // not there.
+  //
+  // Asserting on the source because the failure is a missing call, which is
+  // invisible in every other way. Any new path that hurts a player has to route
+  // through `incomingDamage` or this fails.
+  const mitigators = defs.filter((s) => s.damageTakenMultiplier !== undefined);
+  if (mitigators.length > 0) {
+    const hits = [...server.matchAll(/applyDamage\(/g)];
+    let unguarded = 0;
+    for (const m of hits) {
+      const before = server.slice(Math.max(0, m.index - 700), m.index);
+      if (!/incomingDamage\(/.test(before)) unguarded++;
+    }
+    check(
+      "every path that damages a player composes the damage-taken multipliers",
+      unguarded === 0,
+      `${unguarded} of ${hits.length} applyDamage call(s) do not go through incomingDamage`,
+    );
+    console.log(
+      `  ${hits.length} damage paths, all through one funnel; ` +
+        `${mitigators.length} status(es) can change what lands`,
+    );
+  }
 }
 
 // --- 6. every weapon got one ------------------------------------------------

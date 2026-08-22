@@ -97,6 +97,7 @@ import {
   playerMinHit,
   regenAmountForVitality,
   resolveHit,
+  isRetreating,
   resistOf,
   applyResist,
   passiveResist,
@@ -729,6 +730,52 @@ const nextAttackAt = new Map<string, number>();
 // close they happen to be standing to something — walking past a camp is not
 // an instruction to draw a weapon.
 const attackOrders = new Map<string, { since: number; lastInReachAt: number }>();
+
+/**
+ * Which way each player is travelling, smoothed, and when they last moved.
+ *
+ * The server does not receive a facing — movement is client-authoritative and
+ * `MOVE` carries a position — so the heading is derived from where somebody was
+ * against where they now are. Smoothed rather than taken from one packet,
+ * because a single step at fifty updates a second is a few pixels and its
+ * direction is mostly noise; and stamped, because a heading with nothing behind
+ * it is a stale opinion about somebody standing still.
+ */
+const headings = new Map<string, { x: number; y: number; hx: number; hy: number; at: number }>();
+
+/** Below this a step is jitter rather than travel, and the heading is kept. */
+const HEADING_MIN_STEP_PX = 3;
+/** Past this since the last real step, a player is standing rather than moving. */
+const HEADING_STALE_MS = 350;
+/** How much of the new step to believe. Low enough to ride out one bad packet. */
+const HEADING_SMOOTHING = 0.35;
+
+function noteMovement(playerId: string, x: number, y: number, now: number): void {
+  const prev = headings.get(playerId);
+  if (!prev) {
+    headings.set(playerId, { x, y, hx: 0, hy: 0, at: 0 });
+    return;
+  }
+  const dx = x - prev.x;
+  const dy = y - prev.y;
+  prev.x = x;
+  prev.y = y;
+  const step = Math.hypot(dx, dy);
+  if (step < HEADING_MIN_STEP_PX) return;
+  const ux = dx / step;
+  const uy = dy / step;
+  prev.hx += (ux - prev.hx) * HEADING_SMOOTHING;
+  prev.hy += (uy - prev.hy) * HEADING_SMOOTHING;
+  prev.at = now;
+}
+
+/** The heading, or null when they have been still long enough to count as still. */
+function headingOf(playerId: string, now: number): { x: number; y: number } | null {
+  const h = headings.get(playerId);
+  if (!h || now - h.at > HEADING_STALE_MS) return null;
+  if (Math.hypot(h.hx, h.hy) < 0.2) return null;
+  return { x: h.hx, y: h.hy };
+}
 const nextGatherAt = new Map<string, number>();
 // The monster a player has explicitly selected. Auto-attack prefers it, and
 // falls back to "whatever is nearest" when unset, so walking into a camp
@@ -959,8 +1006,7 @@ function applyDotTick(
   if (!player) return;
   const attrs = attributes.get(entityId) ?? EMPTY_ATTRS;
   const resist = playerResist(entityId, dot.school);
-  const taken = statusDamageTaken(statusesOf(entityId, now));
-  const damage = Math.max(1, Math.round(applyResist(dot.damage, resist) * taken));
+  const damage = incomingDamage(entityId, applyResist(dot.damage, resist), now);
   const maxHp = maxHpOf(entityId, attrs);
   markInCombat(entityId, now);
   const result = applyDamage(entityId, damage, maxHp);
@@ -1159,6 +1205,30 @@ function clearThreat(monsterId: string): void {
   alertedMonsters.delete(monsterId);
 }
 
+/**
+ * Everything that lands on a player goes through here.
+ *
+ * ONE FUNNEL, and it exists because four separate paths damaged a player and
+ * only two of them composed the damage-taken multipliers — so Shield Wall,
+ * whose entire job is halving what lands, did nothing at all against the two
+ * biggest hits in the game: a boss's telegraphed slam and a death burst. The
+ * ordinary-swing path even carries a comment saying "Shield Wall used to be a
+ * bespoke branch here", which is exactly right about why the branch was removed
+ * and exactly wrong about the branch having been replaced everywhere.
+ *
+ * This is the argument `gearArmor` and friends already won one system over:
+ * adding a slot silently required four separate edits, so it became one
+ * function per number. A fifth thing that hurts a player cannot forget this,
+ * because there is nothing left to forget.
+ *
+ * Takes the POST-ARMOUR figure and returns what actually comes off, because
+ * armour is a barrier in front of the blow and a multiplier scales whatever got
+ * through it — the same order `resolveHit` applies resistance and armour in.
+ */
+function incomingDamage(playerId: string, afterArmour: number, now: number): number {
+  return Math.max(1, Math.round(afterArmour * statusDamageTaken(statusesOf(playerId, now))));
+}
+
 // A dying monster's parting shot. Only the kinds with a burst have one, and
 // it fires from where the corpse fell — so wading into a swarm and cleaving
 // it down costs you something.
@@ -1172,7 +1242,7 @@ function resolveDeathBurst(monster: MonsterState, now: number): void {
     if (Math.hypot(player.x - monster.x, player.y - monster.y) > radius) continue;
     const attrs = attributes.get(playerId) ?? EMPTY_ATTRS;
     const equipped = equippedItems.get(playerId);
-    const mitigated = Math.max(1, damage - gearArmor(equipped));
+    const mitigated = incomingDamage(playerId, Math.max(1, damage - gearArmor(equipped)), now);
     const maxHp = maxHpOf(playerId, attrs);
     const socket = sockets.get(playerId);
     markInCombat(playerId, now);
@@ -1736,6 +1806,20 @@ function useSkill(playerId: string, skillId: SkillId, now: number): void {
 // which is the entire mechanic — the answer is your feet, not your stats.
 function resolveSlam(monster: MonsterState, radiusPx: number, damageMultiplier: number, now: number): void {
   const stats = MONSTER_STATS[monster.kind];
+
+  // THE OPENING, and it is applied whether the slam LANDED OR NOT.
+  //
+  // That is the whole design. A creature that only became vulnerable when it
+  // missed would be rewarding the player for something they already got paid
+  // for — not taking a large hit — and a creature that only became vulnerable
+  // when it connected would reward standing in it. It has swung a heavy thing
+  // either way, and getting the weight back costs the same.
+  //
+  // Applied before the damage below, so the window opens on the same tick the
+  // telegraph closes and a player who stepped out is already free to spend it.
+  if (applyStatus(monster.id, "recovering", "monster", now)) {
+    syncMonsterStatuses(monster.id, now);
+  }
   // The same school its ordinary swing is. A dragon that bites fire and slams
   // physical would make resistance worth exactly half against the one creature
   // it is most obviously for.
@@ -1764,6 +1848,10 @@ function resolveSlam(monster: MonsterState, radiusPx: number, damageMultiplier: 
     if (hit.hit) {
       const maxHp = maxHpOf(playerId, attrs);
       markInCombat(playerId, now);
+      // A slam is the single biggest thing that lands on a player and it was
+      // the one attack that ignored every damage-taken multiplier — which made
+      // Shield Wall useless against precisely the blow it exists for.
+      hit.damage = incomingDamage(playerId, hit.damage, now);
       const result = applyDamage(playerId, hit.damage, maxHp);
       hpBalances.set(playerId, result.hp);
       if (result.defeated) {
@@ -2537,6 +2625,10 @@ wss.on("connection", (socket) => {
         PLAYER_BODY_RADIUS_PX,
         aliveMonsterBodies(),
       );
+      // Heading is DERIVED from consecutive positions, because `MOVE` carries
+      // a place and never a facing. Noted before the write, so the delta is
+      // against where they actually were.
+      noteMovement(id, wanted.x, wanted.y, Date.now());
       p.x = wanted.x;
       p.y = wanted.y;
       noteLandmarkArrival(id, p.x, p.y);
@@ -3496,6 +3588,23 @@ setInterval(() => {
       }
     }
 
+    // YOU DO NOT SWING AT SOMETHING BEHIND YOU. Reported from play: a character
+    // sprinting one way while damage numbers came off something the other way.
+    // The order stands — turning back resumes it instantly, and it still lapses
+    // on its own once nothing has been in reach for a while — but no blow lands
+    // while you are running away from the thing you are fighting.
+    //
+    // The predicate lives in `shared/` because the client points the body with
+    // the same one: two thresholds would give you a character facing its target
+    // and not attacking, or attacking and not facing.
+    if (order && target) {
+      const heading = headingOf(playerId, now);
+      if (heading && isRetreating(heading.x, heading.y, target.x - player.x, target.y - player.y)) {
+        order.lastInReachAt = now;
+        continue;
+      }
+    }
+
     if (order && target) {
       order.lastInReachAt = now;
       nextGatherAt.delete(playerId);
@@ -3680,9 +3789,10 @@ setInterval(() => {
       markInCombat(victimId, now);
       // Every damage-taken multiplier on the victim, composed. Shield Wall
       // used to be a bespoke branch here, which is why nothing else could
-      // ever raise or lower incoming damage without a second one beside it.
-      const taken = statusDamageTaken(statusesOf(victimId, now));
-      const incoming = Math.max(1, Math.round(monsterAttack.damage * taken));
+      // ever raise or lower incoming damage without a second one beside it —
+      // and it is now the same funnel the other three paths use, because
+      // "generalised here" turned out not to mean "generalised everywhere".
+      const incoming = incomingDamage(victimId, monsterAttack.damage, now);
       const result = applyDamage(victimId, incoming, maxHp);
       hpBalances.set(victimId, result.hp);
       // What the blow leaves behind. Only on a hit, and only sometimes —
@@ -3723,13 +3833,19 @@ setInterval(() => {
     const maxHp = maxHpForLevel(playerLevels.get(playerId) ?? 1, attrs?.vitality ?? 0);
     const hp = hpBalances.get(playerId) ?? maxHp;
 
-    if (hp >= maxHp) {
-      lastRegenAt.set(playerId, now);
-      continue;
-    }
-    // Mana comes back on its own clock and, unlike health, keeps ticking
-    // during a fight — otherwise a caster runs dry mid-pull and has nothing
-    // to do but auto-attack, which is the opposite of playing a mage.
+    // MANA FIRST, AND OUTSIDE THE HEALTH GATE.
+    //
+    // This block used to sit BELOW an `if (hp >= maxHp) continue`, which meant
+    // the one thing it says about itself — that mana comes back on its own
+    // clock, unlike health — was the one thing it did not do. A player at full
+    // health never regenerated a point of mana, so the only way to get any back
+    // was to be injured, and a caster who won a fight cleanly was dry until
+    // something hit them. It cost nothing to notice and nothing threw: the bar
+    // simply sat where it was.
+    //
+    // Unlike health it also keeps ticking during a fight, deliberately —
+    // otherwise a caster runs dry mid-pull and has nothing to do but
+    // auto-attack, which is the opposite of playing a mage.
     const manaAttrs = attributes.get(playerId) ?? EMPTY_ATTRS;
     const maxMana = maxManaOf(playerId, manaAttrs);
     const currentMana = manaBalances.get(playerId) ?? maxMana;
@@ -3740,6 +3856,11 @@ setInterval(() => {
       setMana(playerId, nextMana);
       lastManaRegenAt.set(playerId, now);
       sendManaUpdate(sockets.get(playerId), nextMana, maxMana);
+    }
+
+    if (hp >= maxHp) {
+      lastRegenAt.set(playerId, now);
+      continue;
     }
 
     // Out-of-combat only. Regenerating mid-fight meant retreating to

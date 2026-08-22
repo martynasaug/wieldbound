@@ -6292,6 +6292,95 @@ Nineteen suites, smoke, both workspaces, zero console errors.
 
 ---
 
+## Phase 63 — A fight you can be good at
+User brief: *"fix the combat thing where you attack while facing away or running
+away"*, then *"improve the combat animations and system, so it's a smooth and
+logical MMORPG fight. I would like more skill-based combat."*
+
+The first half is a bug. The second is the reason the bug mattered: a fight you
+can win by holding a direction is not a fight you can be GOOD at.
+
+### M63.1 — you fight what you are facing, and a big swing is an opening
+
+### One: you do not swing at something behind you
+This game has no strafe animation and no separate facing input — a character
+faces the way it is travelling — so *running away* and *facing away* are one
+state, and the auto-attack kept swinging straight through it. What that looks
+like is a character sprinting north while damage numbers come off something to
+the south.
+
+The rule is stated ONCE, in `shared/`, because two people have to agree about
+it: the server decides whether the swing happens and the client decides which
+way the body points. Two thresholds would give you a character facing its target
+and not attacking, or attacking and not facing.
+
+`RETREAT_DOT` is **-0.35** rather than 0, and the number is the design. At
+exactly sideways the smallest wobble in a heading would switch it on and off,
+and a swing timer that stutters while you strafe is worse than either behaviour
+on its own. At -0.35 you may circle a monster, close on it at an angle and
+sidestep a telegraph without ever dropping the fight — all things a player does
+on purpose — and you stop swinging once you are running more than about 110
+degrees away, which is not a manoeuvre, it is leaving.
+
+**The order does not lapse.** Turning back resumes it instantly; it still lapses
+on its own once nothing has been in reach for a while, which is what walking
+away already meant.
+
+The server has no facing, because `MOVE` carries a place. The heading is DERIVED
+from consecutive positions — smoothed, because one step at fifty updates a
+second is a few pixels whose direction is mostly noise, and stamped, because a
+heading with nothing behind it is a stale opinion about somebody standing still.
+
+### Two: the body faces what it is fighting
+One line in the movement loop set facing from input every frame, so the moment
+you moved at all your body turned away from the thing your weapon was landing
+on — and `onBattleResult`'s `faceToward` was overwritten before it could be
+seen. Circling, closing at an angle and sidestepping a telegraph all keep you
+pointed at the target now.
+
+**Running away is the exception, and it is not an exception at all**: the same
+`isRetreating` the server refuses to swing on says you have left, so the body
+turns and goes. Fleeing should look like fleeing, and a character moonwalking
+away from a wolf while staring at it is a worse picture than the one being fixed.
+
+### Three: a telegraphed slam is an OPENING
+This is the skill-based half, and nothing new had to be invented for it.
+
+The telegraph has existed since Phase 42 — a wind-up you answer by stepping out
+of it — and until now the entire reward for reading one correctly was not being
+hit. That is a punishment avoided rather than a play made. A fight whose only
+expressed skill is *do not stand in the bad circle* is one you can lose but not
+one you can be good at.
+
+A creature that has just committed a heavy swing is **`recovering`** for 2.2
+seconds and takes **half again as much damage**. So the same two seconds are now
+the best two seconds you will get on that thing, and a boss becomes a rhythm:
+bait it, step out, spend everything while it gets its weight back.
+
+**Applied whether the slam landed or not**, and that is the whole design. A
+creature that only became vulnerable when it MISSED would pay the player twice
+for the same dodge; one that only became vulnerable when it CONNECTED would
+reward standing in it. It has swung a heavy thing either way.
+
+Short and strong rather than long and mild: the window has to close while you
+are still thinking about it, or it is not a window, it is a debuff.
+
+The telegraph, the status table, the nameplate pips and the damage-taken
+multiplier were all already here. None of them were pointed at each other.
+
+### Verified
+`tools/test/fighting.mjs`, over a real socket, because both rules fail silently —
+a swing that should not have happened looks exactly like a swing:
+
+    engaging a spikyblob at 32px
+      standing still: 469 damage dealt
+      running away:     0 damage dealt
+      saw `recovering` land — x1.5 for 2200ms
+
+Eighteen offline suites, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -6375,6 +6464,54 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- YOU DO NOT SWING AT SOMETHING BEHIND YOU, and "behind you" and "running away"
+  are the same state in a game with no strafe animation and no separate facing
+  input. The threshold is a dot product of -0.35 rather than 0: at exactly
+  sideways a heading's own wobble switches it on and off, and a swing timer that
+  stutters while you strafe is worse than either behaviour. Circling, closing at
+  an angle and sidestepping a telegraph all keep the fight; running more than
+  110 degrees away drops it.
+- The rule is stated ONCE in `shared/`, because the server decides whether the
+  swing lands and the client decides which way the body points. Two thresholds
+  give you a character facing its target and not attacking, or attacking and not
+  facing — the two halves of the reported bug, one each.
+- Derive a heading from consecutive POSITIONS, smoothed and stamped. `MOVE`
+  carries a place and never a facing, one step at fifty updates a second is a
+  few pixels of mostly-noise, and a heading with no recent step behind it is a
+  stale opinion about somebody standing still.
+- A DODGE HAS TO PAY, not merely spare you. The telegraph has existed since
+  Phase 42 and the whole reward for reading one was not being hit, which is a
+  punishment avoided rather than a play made — a fight whose only skill is "do
+  not stand in the bad circle" is one you can lose but not one you can be good
+  at. `recovering` makes the two seconds after a big swing the best two seconds
+  you will get on that creature.
+- The opening lands whether the slam HIT OR MISSED. Only-on-miss pays the player
+  twice for one dodge; only-on-hit rewards standing in it. It threw its weight
+  either way.
+- A window has to close while you are still thinking about it. 2.2 seconds at
+  x1.5, not ten seconds at x1.1 — short and strong is a decision to play around,
+  long and mild is a debuff you never notice.
+- An ALLOW-LIST ENTRY IS A CLAIM, and a claim with a plausible sentence beside it
+  is exactly the shape of a thing nobody re-reads. `statuses.mjs` carried
+  `shielded: "Shield Wall"` on its list of rows applied from outside the skill
+  table, and it was false for the entire life of the skill. Every entry is
+  checked against the real server source now.
+- `applies` defaulting to something is how one skill silently becomes another.
+  `useSkill` reads `skill.applies ?? "enraged"` — right for War Cry, wrong for
+  everything else — so Shield Wall granted +35% damage DEALT while its own row,
+  `damageTakenMultiplier: 0.5`, sat in the table unreachable. The description,
+  the blurb and the icon all described a brace; the only thing that did not was
+  the effect.
+- ONE FUNNEL for everything that hurts a player. Four paths did it and only two
+  composed the damage-taken multipliers, so a brace did nothing against the two
+  biggest hits in the game — a telegraphed slam and a death burst. The
+  ordinary-swing path even carried a comment saying the bespoke branch had been
+  generalised, which was true there and nowhere else.
+- Mana regen must not sit behind a HEALTH gate. It did — below an
+  `if (hp >= maxHp) continue` — so a player at full health never regained a
+  point, and the only way to get mana back was to be injured. Two lines below
+  it, the comment said mana "comes back on its own clock, unlike health".
 
 - EVERY WEAPON FAMILY GETS AN OPINION ABOUT WHAT THINGS ARE MADE OF. Measured:
   an axe could not deal a single element by any route — no weapon at any band,
@@ -9052,7 +9189,26 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 62 complete (2026-08-21).
+Phase 0 through 63 complete (2026-08-21).
+
+**Phase 63 M63.1 — a fight you can be good at.** Reported from play: *"you
+attack while facing away or running away"*. In a game with no strafe animation
+those are one state, and the auto-attack swung straight through it — a character
+sprinting one way while damage numbers came off something the other way. You do
+not swing at what is behind you now, the body faces what it is fighting instead
+of where its feet are going, and the predicate deciding both lives in `shared/`
+because two thresholds would give you a character facing its target and not
+attacking. Then the larger half of the brief — *more skill-based* — which needed
+nothing invented: a telegraphed slam leaves the creature **`recovering`** for
+2.2 seconds at half again damage taken, whether it hit or missed, so reading a
+wind-up stops being a punishment avoided and becomes the best two seconds you
+will get on that boss. Measured live at 469 damage standing against 0 running
+away. **And hunting for that turned up three bugs nobody had reported**: Shield
+Wall granted `enraged` — +35% damage DEALT — instead of halving damage taken,
+its own status row unreachable for the life of the skill; two of the four paths
+that damage a player ignored every damage-taken multiplier, including the slam a
+brace most obviously exists for; and mana never regenerated at full health,
+because the whole block sat behind an early-return for uninjured players.
 
 **Phase 62 M62.1 — an axe has no opinions.** The damage schools have been the
 deepest system in this game since Phase 48 and nobody had ever asked who can

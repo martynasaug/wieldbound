@@ -750,6 +750,54 @@ export const MELEE_RING_STEP_PX = 46;
 // larger than this push apart by their own size instead (see `separationFor`).
 export const MONSTER_SEPARATION_PX = 34;
 
+// --- Turning your back ------------------------------------------------------
+// Reported from play: *"you attack while facing away or running away"*.
+//
+// Both halves are the same fact. This game has no strafe animation and no
+// separate facing input — a character faces the way it is travelling — so
+// "running away" and "facing away" are one state, and the auto-attack happily
+// kept swinging through it. What that looks like is a character sprinting north
+// while damage numbers come off something to the south.
+//
+// The rule is stated ONCE, here, because two people have to agree about it: the
+// server decides whether the swing happens and the client decides which way the
+// body points, and if those two used different thresholds you would get a
+// character facing its target and not attacking, or attacking and not facing.
+
+/**
+ * How far past sideways counts as turning your back.
+ *
+ * A dot product, so -1 is straight away and 0 is exactly sideways. At -0.35
+ * you may circle a monster, close on it at an angle, or sidestep a telegraph
+ * without ever dropping the fight — all of which are things a player does on
+ * purpose — and you stop swinging once you are running more than about 110
+ * degrees away from it, which is not a manoeuvre, it is leaving.
+ *
+ * Deliberately not 0: at exactly sideways the smallest wobble in a movement
+ * heading would switch it on and off, and a swing timer that stutters while you
+ * strafe is worse than either behaviour on its own.
+ */
+export const RETREAT_DOT = -0.35;
+
+/**
+ * Whether a body moving along `heading` is running away from `toTarget`.
+ *
+ * Both vectors are taken unnormalised for the caller's convenience. A zero
+ * heading — standing still — is never retreating, which is the case that
+ * matters most: a player who stops to fight is fighting.
+ */
+export function isRetreating(
+  headingX: number,
+  headingY: number,
+  toTargetX: number,
+  toTargetY: number,
+): boolean {
+  const hl = Math.hypot(headingX, headingY);
+  const tl = Math.hypot(toTargetX, toTargetY);
+  if (hl < 1e-6 || tl < 1e-6) return false;
+  return (headingX / hl) * (toTargetX / tl) + (headingY / hl) * (toTargetY / tl) < RETREAT_DOT;
+}
+
 // --- Bodies occupy space -------------------------------------------------
 // Every creature is a circle on the ground. Until this existed you could walk
 // into the middle of a troll and stand there, which made positioning — the
@@ -1629,6 +1677,14 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     effect: "buff", sfx: "levelup", description: "Strike harder for a while. Targets an ally if you have one selected.",
   },
   shieldwall: {
+    // `applies` IS LOAD-BEARING HERE and its absence was a silent bug for as
+    // long as this skill has existed. `useSkill` reads `skill.applies ?? "enraged"`
+    // — a default that is right for War Cry and wrong for everything else — so
+    // Shield Wall granted +35% damage DEALT instead of halving damage TAKEN,
+    // while its own status row sat in the table with nothing able to reach it.
+    // The description, the status blurb and the icon all described a brace; the
+    // only thing that did not was the effect.
+    applies: "shielded",
     id: "shieldwall", name: "Shield Wall", icon: "shieldwall", kind: "buff",
     manaCost: 16, cooldownMs: 22000, rangePx: 0, radiusPx: 0, power: 0,
     effect: "shield", sfx: "hit", description: "Brace. Halves incoming damage briefly.",
@@ -2254,6 +2310,7 @@ export type StatusKind = "buff" | "debuff";
 export type StatusId =
   // buffs
   | "enraged" | "shielded" | "focused" | "rallied" | "bloodlust"
+  | "recovering"
   // debuffs
   | "weakened" | "chilled" | "poisoned" | "burning" | "bleeding"
   | "staggered" | "exposed" | "marked" | "shocked";
@@ -2360,6 +2417,38 @@ export const STATUSES: Record<StatusId, StatusDef> = {
     durationMs: 5000, on: "any",
     blurb: "Off balance. Slower, and its own blows have nothing behind them.",
     moveMultiplier: 0.5, modifiers: { damagePercent: -20 },
+  },
+  /**
+   * THE OPENING. What a big creature is for a moment after it has swung a
+   * telegraphed attack and has to get its weight back.
+   *
+   * This is the row that turns a dodge into a DECISION rather than a chore. The
+   * telegraph has existed since Phase 42 — a wind-up you answer by stepping out
+   * of it — and until now the entire reward for reading one correctly was not
+   * being hit, which is a punishment avoided rather than a play made. A fight
+   * where the only skill expressed is "do not stand in the bad circle" is a
+   * fight you can lose but not one you can be good at.
+   *
+   * Now the same two seconds are the best two seconds you will get on that
+   * creature, so a boss becomes a rhythm: bait it, step out, and spend
+   * everything while it recovers. Nothing new had to be invented for it — the
+   * telegraph, the status table, the nameplate pips and the damage-taken
+   * multiplier were all already here and none of them were pointed at each
+   * other.
+   *
+   * It is applied by the SERVER when a slam resolves rather than by a skill,
+   * which is why it is on the short list in `tools/test/statuses.mjs` of rows
+   * nothing casts — and that list now verifies its own claims against the
+   * source, because the last entry on it was false for a year.
+   *
+   * Short and strong rather than long and mild: the window has to close while
+   * you are still thinking about it, or it is not a window, it is a debuff.
+   */
+  recovering: {
+    id: "recovering", name: "Recovering", icon: "status-recovering", kind: "debuff",
+    durationMs: 2200, on: "monster",
+    blurb: "Overcommitted. Everything lands harder until it has its weight back.",
+    damageTakenMultiplier: 1.5,
   },
   exposed: {
     id: "exposed", name: "Exposed", icon: "status-exposed", kind: "debuff",

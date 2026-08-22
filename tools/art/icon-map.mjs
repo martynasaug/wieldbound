@@ -104,6 +104,9 @@ export const ICON_MAP = {
   "status-burning": "carl-olsen/flame",
   "status-bleeding": "lorc/bleeding-wound",
   "status-staggered": "skoll/knockout",
+  // The window after a big creature has committed a telegraphed swing. A body
+  // that has thrown its weight and has not got it back yet.
+  "status-recovering": "delapouite/unbalanced",
   "status-exposed": "lorc/cracked-shield",
   "status-marked": "skoll/bullseye",
   "status-shocked": "lorc/lightning-storm",

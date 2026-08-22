@@ -34,6 +34,7 @@ import {
   defaultAttackFor,
   doubleAttackChance,
   equippedBySlot,
+  isRetreating,
   bandAt,
   gatherDurationForLevel,
   gatherYieldFor,
@@ -3266,9 +3267,33 @@ export class Game {
       this.playerX = clamp(this.playerX + (dx / len) * speed * dt, 0, WORLD_WIDTH);
       this.playerY = clamp(this.playerY + (dy / len) * speed * dt, 0, WORLD_HEIGHT);
       actor.play("run");
+      // YOU FACE WHAT YOU ARE FIGHTING, not the way your feet are going.
+      //
+      // Reported from play: "you attack while facing away". This line was the
+      // whole of it — facing was set from movement input every frame, so the
+      // moment you moved at all your body turned away from the thing your
+      // weapon was landing on, and `onBattleResult`'s `faceToward` was
+      // overwritten before it could be seen.
+      //
+      // Circling a monster, closing on it at an angle and sidestepping a
+      // telegraph all keep you pointed at it now, which is what a fight looks
+      // like. RUNNING AWAY is the exception and it is not an exception at all:
+      // the same `isRetreating` the server refuses to swing on says you have
+      // left, so the body turns and goes — because fleeing should look like
+      // fleeing, and because a character moonwalking away from a wolf while
+      // staring at it is a worse picture than the one being fixed.
+      //
       // Screen-space input maps straight to world axes: +x is east, +y is south
       // in server space, which is +z here.
-      actor.faceDirection(dx / len, dy / len);
+      const engaged = this.engagedId ? this.monsters.get(this.engagedId) : null;
+      const facingTarget =
+        engaged &&
+        !isRetreating(dx, dy, engaged.state.x - this.playerX, engaged.state.y - this.playerY);
+      if (facingTarget && engaged) {
+        actor.faceToward(engaged.actor.position.x, engaged.actor.position.z);
+      } else {
+        actor.faceDirection(dx / len, dy / len);
+      }
     }
 
     this.resolvePlayerCollision();

@@ -1,7 +1,7 @@
 Interface icons
 ===============
 
-200 icons from game-icons.net, baked into client/src/ui/icons.ts by
+201 icons from game-icons.net, baked into client/src/ui/icons.ts by
 tools/art/icons.mjs. Licensed CC BY 3.0 (some contributors release CC0); see
 https://github.com/game-icons/icons/blob/master/license.txt for the per-author
 terms.
@@ -93,6 +93,7 @@ Icon key -> source file:
   status-burning         carl-olsen/flame.svg
   status-bleeding        lorc/bleeding-wound.svg
   status-staggered       skoll/knockout.svg
+  status-recovering      delapouite/unbalanced.svg
   status-exposed         lorc/cracked-shield.svg
   status-marked          skoll/bullseye.svg
   status-shocked         lorc/lightning-storm.svg

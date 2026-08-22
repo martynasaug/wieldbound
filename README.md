@@ -60,7 +60,13 @@ unavailable.
   room, so squaring up to something means standing next to it, not in it.
   You never have to click a monster: the game marks whatever you are actually
   fighting, and a click is an override that locks your choice rather than a
-  step you owe it. Skills fire whenever *you* can afford them — off cooldown,
+  step you owe it. **You fight what you are facing** — your body turns to the
+  thing you are hitting rather than to wherever your feet are going, and turning
+  your back stops the swings until you turn round, so running away is leaving
+  rather than a free way to kite. **And a big swing is an opening**: anything
+  that commits a telegraphed attack is left overcommitted for two seconds
+  afterwards and takes half again as much, hit or miss — so reading a wind-up is
+  no longer just a hit you avoided, it is the best two seconds you will get. Skills fire whenever *you* can afford them — off cooldown,
   enough mana, right class — never gated on something being in range.
 - **Class from your weapon** — there is no class selection. `classForWeapon`
   derives it from whatever you have equipped, so swapping weapons swaps your
