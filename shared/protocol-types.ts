@@ -1287,7 +1287,20 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // not out-healing it.
     windupMs: 900,
     slamRadiusPx: 120,
-    slamDamageMultiplier: 1.7,
+    // SOLVED, not picked. `tools/test/balance.mjs` swept the multiplier against a
+    // level-15 character in band-4 gear and reported what standing in every slam
+    // costs: x1.7 was SEVEN PER CENT of a health bar. The oldest skill
+    // expression in this game — a wind-up you answer by walking out of it — was
+    // worth seven points of health, which is decoration.
+    //
+    // The cause is that armour subtracts AFTER the multiplier, so a big
+    // multiplier on a small base is mostly eaten: 8-16 at x1.7 is 14-27, and a
+    // band-4 character wears 14 armour. A creature that hits hard to begin with
+    // needs far less compensation, which is why the dragon's number is lower
+    // than this one rather than higher.
+    //
+    //     x1.7  7%    x2.2 14%    x2.8 21%    x3.4 28%    x4.0 36%
+    slamDamageMultiplier: 3.4,
     // Hide like bark and it knits itself back together — unless you burn it,
     // which is the one thing everyone has always known about trolls.
     resist: { physical: 25, nature: 25, fire: -45 },
@@ -1529,7 +1542,11 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     bodyRadiusPx: 28,
     windupMs: 1100,
     slamRadiusPx: 140,
-    slamDamageMultiplier: 1.8,
+    // Same sweep, same reason — x1.8 cost eleven per cent of a level-20
+    // character's health for ignoring the telegraph entirely.
+    //
+    //     x1.7 10%    x2.2 16%    x2.8 24%    x3.4 31%    x4.0 39%
+    slamDamageMultiplier: 3.4,
     // Stone: it does not care about blades and it does not care about heat.
     // Lightning is the seam, and it is the only creature in the world that
     // gives Chain Lightning a reason to exist.
@@ -1576,7 +1593,13 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     bodyRadiusPx: 32,
     windupMs: 950,
     slamRadiusPx: 165,
-    slamDamageMultiplier: 1.9,
+    // The apex, and the one that was already dangerous: it hits 15-25 before the
+    // multiplier, so armour eats proportionally far less of it. Nudged up rather
+    // than tripled, and it stays the worst thing in the world to stand in front
+    // of — which is what being the apex means.
+    //
+    //     x1.7 30%    x1.9 35%    x2.2 43%    x2.8 59%
+    slamDamageMultiplier: 2.2,
     leapRangePx: 320,
     leapSpeedMultiplier: 2.8,
     leapDurationMs: 500,

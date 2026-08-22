@@ -136,8 +136,27 @@ function character(level, band, weaponBaseId) {
 // Both sides on their own clocks, stepped in milliseconds, exactly as the server
 // runs them. Averaged over many runs, because a single fight is a dice roll.
 
-function fight(pc, kind, random) {
+/**
+ * `dodge` is the fraction of telegraphed slams the player walks out of.
+ *
+ * A TELEGRAPHING MONSTER HAS NO ORDINARY ATTACK. The server's tick reads
+ * `if (windupMs !== undefined && slamRadius !== undefined) { ... continue; }`,
+ * so a troll, a golem and a dragon never make a normal swing at all — every
+ * blow they land is a wind-up followed by a slam. The first version of this
+ * model had them doing precisely the opposite: ordinary swings only, slams
+ * ignored, which is why it reported a dragon leaving the player on 87% health
+ * and a troll on 98%. Those were not weak bosses, they were absent attacks.
+ *
+ * The slam costs them the wind-up, so their real cadence is
+ * `attackIntervalMs + windupMs` — and the whole design is that the wind-up is
+ * long enough to walk out of. At 220px/s a player covers 198px in a troll's
+ * 900ms against a 120px radius, so a dodge is always physically available and
+ * the question is only whether they take it.
+ */
+function fight(pc, kind, random, dodge = 0) {
   const m = MONSTER_STATS[kind];
+  const telegraphs = m.windupMs !== undefined && m.slamRadiusPx !== undefined;
+  const slamEvery = (m.attackIntervalMs ?? 2000) + (m.windupMs ?? 0);
   let mhp = m.maxHp;
   let php = pc.maxHp;
   const band = hitBandOf(pc.weapon, pc.power, 0, 0);
@@ -172,7 +191,7 @@ function fight(pc, kind, random) {
     : BASE_MOVE_SPEED_PX_PER_SEC + m.speedPxPerSec;
   const approachMs = gap > 0 && closingSpeed > 0 ? (gap / closingSpeed) * 1000 : 0;
 
-  let mNext = m.attackIntervalMs;
+  let mNext = telegraphs ? slamEvery : m.attackIntervalMs;
   let pNext = approachMs + pc.swingMs;
   let freeHits = 0;
 
@@ -187,11 +206,19 @@ function fight(pc, kind, random) {
     t = Math.min(mNext, pNext);
     if (t >= LIMIT) break;
     if (mNext <= pNext) {
+      // A slam that was walked out of costs the monster its whole cycle and the
+      // player nothing — which is the entire point of a telegraph, and is the
+      // one thing in this fight the player's skill decides.
+      if (telegraphs && random() < dodge) {
+        mNext += slamEvery;
+        continue;
+      }
+      const swing = telegraphs ? (m.slamDamageMultiplier ?? 1) : 1;
       const hit = resolveHit(
         {
           attackerAccuracy: m.accuracy,
-          attackerMinHit: m.minHit,
-          attackerMaxHit: m.maxHit,
+          attackerMinHit: Math.round(m.minHit * swing),
+          attackerMaxHit: Math.round(m.maxHit * swing),
           attackerCritChance: m.critChance,
           attackerCritMultiplier: m.critMultiplier,
           defenderEvasion: pc.evasion,
@@ -205,7 +232,7 @@ function fight(pc, kind, random) {
         php -= hit.damage;
         if (t < approachMs) freeHits++;
       }
-      mNext += m.attackIntervalMs;
+      mNext += telegraphs ? slamEvery : m.attackIntervalMs;
     } else {
       const hit = resolveHit(
         {
@@ -235,11 +262,11 @@ function fight(pc, kind, random) {
   return { won: mhp <= 0 && php > 0, ms: t, hpLeft: Math.max(0, php), freeHits, approachMs };
 }
 
-function average(pc, kind, runs = 400) {
+function average(pc, kind, runs = 400, dodge = 0) {
   const random = seeded(kind.length * 104729 + pc.level * 31);
   let wins = 0, ms = 0, left = 0, free = 0;
   for (let i = 0; i < runs; i++) {
-    const r = fight(pc, kind, random);
+    const r = fight(pc, kind, random, dodge);
     if (r.won) wins++;
     ms += r.ms;
     left += r.hpLeft;
@@ -381,6 +408,60 @@ for (const [kind, s] of Object.entries(MONSTER_STATS)) {
       `a ${MONSTER_LABELS[kind]} costs ${(loss * 100).toFixed(0)}% of your health against ` +
         `${(peerLoss * 100).toFixed(0)}% for its melee neighbours — closing the gap is not a ` +
         `change of pace, it is a different game`,
+    );
+  }
+}
+
+// --- What is a dodge worth? -------------------------------------------------
+//
+// The telegraph is the oldest skill expression in this game — a wind-up you
+// answer by walking out of it, since Phase 42 — and its value has never been a
+// number. It is one now, because a telegraphing creature has NO ordinary attack:
+// every blow it lands is a slam, so a player who reads all of them takes
+// nothing at all from it, and a player who reads none takes everything.
+//
+// That is a far stronger statement than it looks, and it is what the mechanic is
+// for: against the three biggest things in the world, **the entire fight is
+// whether you move.**
+
+console.log("\n== what a dodge is worth ==");
+console.log("  kind      band  standing in it   dodging it   the difference");
+for (const [kind, s] of Object.entries(MONSTER_STATS)) {
+  if (s.windupMs === undefined || s.slamRadiusPx === undefined) continue;
+  const level = bandLevel[s.band];
+  // The worst family against it, so this is a floor rather than a best case.
+  let stood = null;
+  let moved = null;
+  for (const id of familiesFor(s.band)) {
+    const pc = character(level, s.band, id);
+    const a = average(pc, kind, 400, 0);
+    const b = average(pc, kind, 400, 1);
+    if (!stood || a.left / a.maxHp < stood.left / stood.maxHp) stood = a;
+    if (!moved || b.left / b.maxHp < moved.left / moved.maxHp) moved = b;
+  }
+  const stoodLoss = 1 - stood.left / stood.maxHp;
+  const movedLoss = 1 - moved.left / moved.maxHp;
+  console.log(
+    "  " + MONSTER_LABELS[kind].padEnd(10) + String(s.band).padStart(3) +
+      ((stoodLoss * 100).toFixed(0) + "% of your health").padStart(19) +
+      ((movedLoss * 100).toFixed(0) + "%").padStart(13) +
+      ((stoodLoss - movedLoss > 0 ? "+" : "") + ((stoodLoss - movedLoss) * 100).toFixed(0) + " points").padStart(17),
+  );
+
+  // A TELEGRAPH THAT COSTS NOTHING TO IGNORE IS DECORATION. If standing in
+  // every slam a boss throws is survivable without noticing, the wind-up, the
+  // danger circle and the whole opening that follows it are theatre.
+  if (stoodLoss < 0.15) {
+    fail(
+      `standing in every slam a ${MONSTER_LABELS[kind]} throws costs ` +
+        `${(stoodLoss * 100).toFixed(0)}% of your health — the telegraph is decoration`,
+    );
+  }
+  // And reading it has to pay, or the skill expression is worthless.
+  if (stoodLoss - movedLoss < 0.1) {
+    fail(
+      `dodging a ${MONSTER_LABELS[kind]} saves only ` +
+        `${((stoodLoss - movedLoss) * 100).toFixed(0)} points of health — reading it is not worth doing`,
     );
   }
 }

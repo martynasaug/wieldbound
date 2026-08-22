@@ -6945,6 +6945,59 @@ full health — is a simulation reporting on itself.
 
 Twenty suites, both workspaces, zero console errors.
 
+### M68.2 — the telegraph was decoration, and the suite proved it
+The first report had the dragon leaving a player on 87% health and the troll on
+98%, which read as bosses being harmless. It was the model: **a telegraphing
+creature has no ordinary attack.** The server's tick reads
+
+    if (windupMs !== undefined && slamRadius !== undefined) { ... continue; }
+
+so a troll, a golem and a dragon never make a normal swing at all — every blow
+they land is a wind-up followed by a slam, and the model had them doing exactly
+the opposite. Slams modelled and their real cadence used
+(`attackIntervalMs + windupMs`), the picture changed and then said something
+worth knowing.
+
+### What a dodge is worth, as a number
+Because the slam is their ONLY attack, a player who reads every one takes
+**nothing at all** from the three biggest things in the world. Against them the
+entire fight is whether you move. So the value of the mechanic is exactly the
+cost of ignoring it — and that cost was:
+
+    troll    8% of a health bar
+    golem   11%
+    dragon  35%
+
+Standing in every slam a troll throws cost eight points of health. **The oldest
+skill expression in this game — a wind-up you answer by walking out of it, since
+Phase 42 — was decoration on two of its three users.**
+
+### The cause, and why the fix is not one number
+Armour subtracts AFTER the multiplier, so a large multiplier on a small base is
+mostly eaten: a troll's 8-16 at x1.7 is 14-27, and a band-4 character wears 14
+armour. A creature that already hits hard needs far less compensation — which is
+why the dragon's new multiplier is LOWER than the troll's rather than higher,
+and that inversion is the finding rather than an inconsistency.
+
+Solved by sweeping the multiplier through the simulator rather than picked:
+
+    troll   x1.7  7%   x2.2 14%   x2.8 21%   x3.4 28%   x4.0 36%
+    golem   x1.7 10%   x2.2 16%   x2.8 24%   x3.4 31%   x4.0 39%
+    dragon  x1.7 30%   x1.9 35%   x2.2 43%   x2.8 59%
+
+Troll and golem to x3.4, dragon to x2.2. Standing in every slam now costs 30%,
+30% and 43% — dangerous, survivable, and unmistakably worth avoiding. Dodging
+them all still costs nothing, which is the point.
+
+### And two rules the suite keeps
+- **A telegraph that costs nothing to ignore is decoration.** If standing in
+  every slam a boss throws is survivable without noticing, the wind-up, the
+  danger circle and the opening that follows are all theatre.
+- **Reading it has to pay.** A dodge that saves single digits of health is a
+  skill expression nobody will express.
+
+Twenty suites, both workspaces, zero console errors.
+
 ---
 
 ## Seeding a character for testing
@@ -7031,6 +7084,23 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A TELEGRAPHING CREATURE HAS NO ORDINARY ATTACK. The tick winds up, lands the
+  slam and `continue`s, so a troll, a golem and a dragon land nothing else — and
+  therefore a player who reads every telegraph takes NOTHING from the three
+  biggest things in the world. Against them the whole fight is whether you move.
+- WHICH MAKES THE MECHANIC'S VALUE EXACTLY THE COST OF IGNORING IT, and that was
+  8% of a health bar on a troll. The oldest skill expression in the game was
+  decoration on two of its three users, and nothing said so because a fight you
+  win is not a fight anybody investigates.
+- ARMOUR SUBTRACTS AFTER THE MULTIPLIER, so a big multiplier on a small base is
+  mostly eaten — 8-16 at x1.7 is 14-27 against 14 armour. This is why the fix is
+  three different numbers and why the DRAGON'S is lower than the troll's: a
+  creature that already hits hard needs less compensation. The inversion is the
+  finding, not an inconsistency.
+- SOLVE A BALANCE NUMBER, do not pick one. The simulator sweeps the multiplier
+  and prints what each costs; choosing from a measured curve is a different act
+  from choosing a number that sounds right, and the curve stays in the file so
+  the next person can choose differently for a stated reason.
 - THE ONE RULE THIS WORLD IS LAID OUT BY IS TESTABLE. "Distance from spawn is
   difficulty" had been tuned entirely by argument for sixty-odd phases and never
   once checked, and it did not need to be played through to check: `resolveHit`
@@ -9973,6 +10043,15 @@ game: two guessed signatures returning NaN (one reported every creature winning
 scratch script with the stat points in the wrong attribute, and one expression
 serving two situations — which had an armabee walking away from somebody it was
 charging at and failed the creature for a 51-second fight it never had.
+**M68.2** then found the real one. A telegraphing creature has NO ordinary
+attack — every blow a troll, golem or dragon lands is a wind-up followed by a
+slam — so a player who reads them takes nothing at all, and the mechanic's worth
+is exactly the cost of ignoring it. That cost was **8% of a health bar on a
+troll**: the oldest skill expression in the game was decoration on two of its
+three users. Armour subtracts after the multiplier, so a big multiplier on a
+small base is eaten — which is why the fix is three different numbers and why the
+dragon's is LOWER than the troll's. Solved off a swept curve rather than picked;
+standing in every slam now costs 30%, 30% and 43%.
 
 **Phase 67 M67.1 — the body reacts.** M55.1 pooled twenty-five clips off five
 rigs and the game bound six. `Roll` and `PickUp` had been in the library for ten
