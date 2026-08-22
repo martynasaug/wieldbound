@@ -722,6 +722,20 @@ export const ENGAGE_RANGE_PX = 62;
 export const AGGRO_RANGE_PX = 260;
 export const MONSTER_LEASH_PX = 520;
 
+// How far a monster will chase someone who is ALREADY FIGHTING IT — a
+// different question from how far it notices a stranger, and for a long time
+// the same number answered both. Noticing is a perception radius and 260 is
+// generous for that; forgetting is what happens to someone actively shooting
+// you, and reusing the perception radius meant a bow at 300px was invisible to
+// the thing it was hitting.
+//
+// Set beyond ANY player's reach on purpose, so nothing can be killed from a
+// standing position the target is not allowed to walk to. What actually bounds
+// a chase is MONSTER_LEASH_PX, measured from home — that is the check that
+// stops a pack being towed across the map, and it does the job this number was
+// wrongly doing.
+export const MONSTER_FORGET_PX = 700;
+
 // Status effects. One timed-modifier mechanism serves both the player-side
 // buff and the monster-side slow, rather than two bespoke systems.
 export const SLOW_MULTIPLIER = 0.4;

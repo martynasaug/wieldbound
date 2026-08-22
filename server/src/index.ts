@@ -20,6 +20,7 @@ import {
   playerAttackIntervalMs,
   ENGAGE_RANGE_PX,
   AGGRO_RANGE_PX,
+  MONSTER_FORGET_PX,
   MONSTER_LEASH_PX,
   SKILLS,
   CLASSES,
@@ -1176,6 +1177,22 @@ function addThreat(
   }
   table.set(playerId, (table.get(playerId) ?? 0) + amount);
   if (school) addSchoolDamage(monsterId, playerId, school, amount);
+
+  // BEING HIT IS THE STRONGEST REASON TO FIGHT SOMEONE. This is the whole of
+  // it, and it was missing: the loop below woke every PACKMATE of the thing
+  // you shot and skipped the thing itself, so a creature's friends charged
+  // while the creature you were actually hitting stood there. Aggro reached it
+  // only by walking inside its perception radius, which is why anything struck
+  // from beyond 260px never fought back.
+  //
+  // Placed above the shout guard deliberately. Everything below runs once per
+  // monster, and a solitary creature with no alertRadiusPx returns before it —
+  // so a lone target would have kept ignoring you for a second reason.
+  const victim = monsterAi.get(monsterId);
+  if (victim && victim.state !== "chase") {
+    victim.state = "chase";
+    victim.targetId = playerId;
+  }
 
   // Social aggro: the first time this monster is hurt, it shouts, and every
   // packmate of the same kind nearby inherits a token amount of threat on
@@ -3486,7 +3503,7 @@ setInterval(() => {
         for (const [pid, damage] of threatTable) {
           const candidate = players.get(pid);
           if (!candidate || (hpBalances.get(pid) ?? 1) <= 0) continue;
-          if (Math.hypot(candidate.x - monster.x, candidate.y - monster.y) > AGGRO_RANGE_PX * 1.4) continue;
+          if (Math.hypot(candidate.x - monster.x, candidate.y - monster.y) > MONSTER_FORGET_PX) continue;
           if (damage > topDamage) {
             topDamage = damage;
             topId = pid;
@@ -3497,9 +3514,12 @@ setInterval(() => {
 
       const target = ai.targetId ? players.get(ai.targetId) : undefined;
       const targetDead = ai.targetId ? (hpBalances.get(ai.targetId) ?? 1) <= 0 : true;
-      // Give up if the target vanished, died, or has outrun the aggro radius
-      // (with slack, so walking the boundary doesn't blink aggro on and off).
-      if (!target || targetDead || Math.hypot(target.x - monster.x, target.y - monster.y) > AGGRO_RANGE_PX * 1.4) {
+      // Give up if the target vanished, died, or has genuinely broken away.
+      // NOT the aggro radius: that is how far this thing notices a stranger,
+      // and a target who is shooting it is not a stranger. Using it here meant
+      // a monster dropped a fight on the same tick a long-ranged hit started
+      // one. The leash above is what bounds a chase.
+      if (!target || targetDead || Math.hypot(target.x - monster.x, target.y - monster.y) > MONSTER_FORGET_PX) {
         ai.state = "return";
         ai.targetId = null;
         clearThreat(monster.id);

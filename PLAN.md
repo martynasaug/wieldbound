@@ -7062,6 +7062,55 @@ And the only way to play it was to REMEMBER which skill wanted which condition,
 notice it on a nameplate mid-fight, and press in time. Press early and a 2.4x
 multiplier resolves as a 1x, with nothing to tell you that is what happened.
 
+### M69.3 — a monster that ignores the thing shooting it
+Reported: *"when attacking monsters from long range they don't attack you"*. One
+symptom, and underneath it two separate mistakes that had been propping each
+other up.
+
+**Damage did not aggro its own victim.** `addThreat` ends in a social-aggro
+loop: the first time something is hurt it shouts, and every packmate of the same
+kind nearby inherits a token point of threat on the attacker. That loop opens
+with `if (other.id === monsterId) continue;` — and nothing else in the function
+ever touched the monster it was called for. So a creature's FRIENDS charged
+while the creature you were actually hitting stood still. Aggro reached it by
+exactly one route, walking inside its perception radius, which is why anything
+struck from beyond 260px never fought back.
+
+The wake has to sit ABOVE the shout guard, not below it. Everything past
+`if (alertedMonsters.has(monsterId)) return;` runs once per monster, and a
+solitary creature with no `alertRadiusPx` returns before reaching it — so a lone
+target would have kept ignoring you for a second, independent reason.
+
+**And the forget radius was the perception radius.** The chase branch gave up on
+anyone further than `AGGRO_RANGE_PX * 1.4` = 364px. But *how far does this thing
+notice a stranger* and *how far does it chase someone who is shooting it* are
+two different questions, and one number was answering both. Power Shot reaches
+340px, and five ranks of the longbow talent (+8% reach each) stretch that to
+476 — comfortably outside the radius at which the monster drops the fight on the
+same tick a hit starts it.
+
+`MONSTER_FORGET_PX = 700`, deliberately beyond any reach in the game, so nothing
+can be killed from a position its target is not allowed to walk to. What
+actually bounds a chase is `MONSTER_LEASH_PX` measured from home — that is the
+check that stops a pack being towed across the map, it was already there, and it
+was doing the job the perception radius was wrongly doing.
+
+### The probe measured moving when it meant closing
+`tools/test/aggro.mjs` first asked whether the monster had LEFT ITS POST while
+the attacker held station at 532px. A monster that gives up still leaves its
+post — it follows during the retreat and only turns round once the gap opens —
+so the mutation that put the give-up test back on the perception radius sailed
+through at a closest approach of 575px, which is a goblin walking home. What is
+asserted now is arrival: it has to close to within 80% of the hold distance.
+
+Four mutations, each caught: shrink the forget radius, put the give-up test back
+on the aggro radius, delete the victim wake, and move the victim wake below the
+shout guard.
+
+And once on the harness rather than the game — mutation-testing an UNCOMMITTED
+fix by reverting with `git checkout` reverts the fix along with the mutation.
+Copy the file aside first.
+
 ### M69.2 — six skills that looked exactly like a swing
 Every skill draws the school's impact burst on whatever it lands on. **So does an
 ordinary auto-attack.** Which means a skill whose only visual is that burst is
@@ -7253,6 +7302,24 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- BEING HIT IS THE STRONGEST REASON TO FIGHT SOMEONE, AND IT WAS THE ONE REASON
+  THE AI DID NOT HAVE. Damage woke every packmate of the creature you shot and
+  skipped the creature itself; aggro reached your actual target only by walking
+  inside its perception radius. Whenever a rule wakes BYSTANDERS, check that it
+  wakes the subject first.
+- HOW FAR SOMETHING NOTICES A STRANGER IS NOT HOW FAR IT CHASES SOMEONE SHOOTING
+  IT. One constant answered both questions for a long time, and the answer to
+  the first is smaller than a bow's reach. Two questions, two numbers. And no
+  reach in the game may exceed the distance the target is allowed to follow, or
+  the fight is decided by a range chart rather than by play.
+- WHAT BOUNDS A CHASE IS THE LEASH FROM HOME, NOT THE GAP TO THE PLAYER. The
+  leash already existed and already worked; the give-up radius was a second,
+  wrong answer to a question that was not being asked.
+- A PROBE THAT ASKS "DID IT MOVE" PASSES ON A MONSTER WALKING AWAY. Moving is
+  what both the right and the wrong behaviour look like for the first two
+  seconds. Measure the thing you actually want — that it ARRIVES.
+- MUTATION-TESTING AN UNCOMMITTED FIX CANNOT REVERT WITH `git checkout`, because
+  the fix is the working tree. Copy the file aside and restore from that.
 - A SKILL MUST DRAW SOMETHING AN AUTO-ATTACK DOES NOT. Every skill paints the
   school's impact burst on what it hits, and so does an ordinary swing — so six
   melee skills with `shape: "none"` were things the player could not tell they
@@ -10240,6 +10307,8 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-21).
+
+**Phase 69 — a conditional you can see, skills that look like skills, and a monster that fights back.** M69.3 answered a report that monsters attacked from long range never retaliate, and found two mistakes propping each other up: damage aggroed every PACKMATE of the thing you hit and skipped the thing itself, so aggro reached your actual target only by walking inside its 260px perception radius; and the chase then gave up on anyone past 364px, which is inside the reach of a bow. Perception and pursuit are two questions and had one number between them. `MONSTER_FORGET_PX = 700` now sits beyond every reach in the game, and the leash from home — which was always the right bound on a chase — does the work.
 
 **Phase 69 — a conditional you can see, and skills that look like skills.** M69.2 gave six melee skills a look of their own: every skill paints the school impact burst and so does an ordinary swing, so Gut Punch, Concuss, Stagger, Expose, Backstab and Exploit were things you could not tell you had pressed — including the two that set up the multipliers M69.1 lit the bar for. A mark closes INWARD onto a body, the exact opposite of a nova, meaning "something is being done to this"; a strike is one heavy blow landing. The rule that no melee skill may draw nothing over-reached twice, sweeping in Frost Nova and Rend, which are AREA skills whose shape says where rather than what — a shared signature is asserted as a vocabulary now, not a uniform.
 
