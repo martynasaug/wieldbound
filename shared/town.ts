@@ -1077,10 +1077,33 @@ export const TOWN_NPCS: TownNpc[] = [
       // out to be wrong and the cheap answer is to leave the wedge empty.
       { radiusPx: 378, angleDeg: 292, facingDeg: 96, dwellMs: 5000 },
     ],
+    // "I take all four" is what this said before the counter could take
+    // anything at all, and it was wrong twice over once it could: he trades the
+    // three you dig up, and ESSENCE IS NOT ONE OF THEM. Essence comes only off
+    // kills, which is the rule holding the top of the reforge ladder together —
+    // a shopkeeper who sold it for wood would be a way to buy the best gear in
+    // the game by standing at a tree.
     greeting:
-      "Wood, ore, herb, essence — I take all four, and I part with rather less than I take. " +
-      "Have a look.",
+      "Wood, ore and herb — I take all three, I give any of them for any other, and I part " +
+      "with rather less than I take. Have a look.",
     topics: [
+      {
+        q: "You'll trade one for another?",
+        a:
+          "Four for one, and do not haggle: I have to cart it, store it and find somebody who " +
+          "wants it. It is a bad rate on purpose. If you are short a dozen ore to finish " +
+          "something, walk in and I will fix it. If you were planning to fund a whole kit by " +
+          "chopping wood, do the arithmetic first — the rock is out past the second ring and " +
+          "that is where it will stay.",
+      },
+      {
+        q: "Will you take essence?",
+        a:
+          "No, and nobody will. Essence comes off things that were alive and objected to " +
+          "stopping. You cannot dig it, I cannot cart it, and if I could sell it to you then " +
+          "every smith in the world would buy their way to the top of the ladder without ever " +
+          "drawing a blade. Go and earn it.",
+      },
       {
         q: "Why don't you take coin?",
         a:

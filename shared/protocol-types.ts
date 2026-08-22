@@ -3771,6 +3771,7 @@ export type ClientToServerMessage =
   | LearnTalentMessage
   | ResetTalentsMessage
   | BuyFromVendorMessage
+  | ExchangeMaterialMessage
   | AcceptQuestMessage
   | TurnInQuestMessage
   | SetHotbarMessage;
@@ -3781,6 +3782,19 @@ export type ClientToServerMessage =
 // way it does for items: town imports protocol-types, never the reverse.
 
 /** Buying a line of Oswyn's stock. Paid in materials; there is no currency. */
+/**
+ * Trading raw material across at the Provisioner's counter.
+ *
+ * Carries the OFFER'S ID and nothing else — not the two materials and not an
+ * amount — so the rate and the batch size are things only `shared/shop.ts`
+ * decides. A message carrying `{ from, to, give, get }` would be a message a
+ * client could write its own exchange rate into.
+ */
+export interface ExchangeMaterialMessage {
+  type: "EXCHANGE_MATERIAL";
+  payload: { npcId: string; offerId: string };
+}
+
 export interface BuyFromVendorMessage {
   type: "BUY_FROM_VENDOR";
   payload: { npcId: string; entryId: string };

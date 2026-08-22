@@ -141,7 +141,7 @@ import { Town } from "./town";
 import { buildNpcs, updateNpcs, type NpcVisual } from "./npcs";
 import { DialoguePanel, type DialogueAction } from "../ui/DialoguePanel";
 import { QuestTracker } from "../ui/QuestTracker";
-import { SHOP_STOCK } from "../../../shared/shop";
+import { EXCHANGE_OFFERS, EXCHANGE_RATE, SHOP_STOCK } from "../../../shared/shop";
 import {
   QUESTS,
   objectiveLabel,
@@ -2455,6 +2455,54 @@ export class Game {
     const actions: DialogueAction[] = [];
 
     if (npc.def.role === "vendor") {
+      // The counter, which is a SUB-MENU and not six more rows.
+      //
+      // The stock is nine lines and every ordered pair of three materials is
+      // six more; fifteen rows in a dialogue box is the shop window this file
+      // deliberately does not have. So the exchange is one row that swaps the
+      // list, exactly as taking a quest already does — the mechanism was
+      // already here and it only had to be pointed at something else.
+      actions.push({
+        label: "Trade materials",
+        note: `${EXCHANGE_RATE} for 1, any of the three`,
+        onPick: () => {
+          this.dialogue.say(
+            "Wood, ore or herb — I will take any of it and give you any other. " +
+              `Four for one, and before you pull a face: I have to carry it.`,
+          );
+          this.dialogue.setActions([
+            ...EXCHANGE_OFFERS.map((offer) => {
+              const held = this.wallet[offer.from] ?? 0;
+              const afford = held >= offer.give;
+              return {
+                label: `${offer.give} ${offer.from} → ${offer.get} ${offer.to}`,
+                note: afford ? `you have ${held}` : `you have ${held}, need ${offer.give}`,
+                primary: afford,
+                disabled: !afford,
+                onPick: () => {
+                  this.socket.sendExchangeMaterial(npc.def.id, offer.id);
+                  // Redrawn after the reply lands, for the reason the stock is:
+                  // rebuilding from a wallet the server has not changed yet
+                  // shows the old balances and the old greying.
+                  window.setTimeout(() => {
+                    if (this.dialogue.openNpcId === npc.def.id) {
+                      this.dialogue.setActions(this.dialogueActionsFor(npc));
+                    }
+                  }, 260);
+                },
+              };
+            }),
+            {
+              label: "Never mind.",
+              onPick: () => {
+                this.dialogue.say(npc.def.greeting);
+                this.dialogue.setActions(this.dialogueActionsFor(npc));
+              },
+            },
+          ]);
+        },
+      });
+
       // The stock, priced and greyed out when it cannot be afforded. Shown
       // inline rather than in a shop window: nine lines is not a panel, and a
       // second overlay for it would cover the conversation that opened it.

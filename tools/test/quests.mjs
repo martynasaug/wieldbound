@@ -24,7 +24,14 @@ import {
   xpToNextLevel,
 } from "../../shared/protocol-types.ts";
 import { ITEM_BASES, CONSUMABLES, MATERIALS, baseSchool } from "../../shared/items.ts";
-import { SHOP_STOCK, SHOP_OUTPUT_RARITY } from "../../shared/shop.ts";
+import {
+  SHOP_STOCK,
+  SHOP_OUTPUT_RARITY,
+  EXCHANGE_OFFERS,
+  EXCHANGE_RATE,
+  EXCHANGEABLE,
+  exchangeById,
+} from "../../shared/shop.ts";
 import { forgeCost } from "../../shared/items.ts";
 import {
   QUESTS,
@@ -114,6 +121,65 @@ const cheapest = Math.min(
 // Band-1 ground yields 2 per gather. Forty gathers is a long but real session.
 if (cheapest > 2 * 40) fail(`the cheapest weapon is ${cheapest} materials — too far for a first session`);
 console.log(`  cheapest weapon costs ${cheapest} materials (~${Math.ceil(cheapest / 2)} band-1 gathers)`);
+
+// --- The counter ------------------------------------------------------------
+// Oswyn takes raw material across and gives back another kind of it. Every way
+// that can go wrong is a way of quietly deleting something the world is built
+// on, and none of them throws.
+
+section("the counter");
+{
+  // Essence is RAW and is not gathered — it only comes off kills, which is the
+  // rule that stops the top of the reforge ladder being reachable by standing
+  // at a tree. A counter that traded for it would be a way to buy the best gear
+  // in the game with wood, and it would look exactly like a fourth row.
+  if (EXCHANGEABLE.includes("essence")) {
+    fail("the counter trades essence, which is supposed to come only off kills");
+  }
+  for (const o of EXCHANGE_OFFERS) {
+    if (o.from === o.to) fail(`${o.id} trades ${o.from} for itself`);
+    if (!["wood", "ore", "herb"].includes(o.from) || !["wood", "ore", "herb"].includes(o.to)) {
+      fail(`${o.id} trades something that is not gathered`);
+    }
+    if (exchangeById(o.id) !== o) fail(`${o.id} cannot be looked up by its own id`);
+    // THE RATE MUST BE A LOSS, and a real one. At anything near par the
+    // exchange stops being a safety valve and becomes the supply line — and
+    // the ore shortage it answers is the reason to walk out to the far rings
+    // where the rock is, which is the whole shape of this world.
+    if (o.give <= o.get) fail(`${o.id} gives ${o.give} for ${o.get} — that is not a loss`);
+    if (o.give / o.get < 3) fail(`${o.id} trades at ${(o.give / o.get).toFixed(1)}:1 — too generous`);
+  }
+  // Every ordered pair, so a gatherable cannot arrive with half its trades
+  // missing — which would read as "the shop is broken for herb".
+  const want = EXCHANGEABLE.length * (EXCHANGEABLE.length - 1);
+  if (EXCHANGE_OFFERS.length !== want) {
+    fail(`${EXCHANGE_OFFERS.length} offers for ${EXCHANGEABLE.length} materials — expected ${want}`);
+  }
+  for (const a of EXCHANGEABLE) {
+    for (const b of EXCHANGEABLE) {
+      if (a === b) continue;
+      if (!EXCHANGE_OFFERS.some((o) => o.from === a && o.to === b)) fail(`no way to turn ${a} into ${b}`);
+    }
+  }
+
+  // AND IT MUST NOT UNDERCUT THE ANVIL. Everything Oswyn sells already has to
+  // cost more than forging it; the exchange opens a second route to the same
+  // place — pay for a shop item in a material you converted — and that route
+  // has to be dearer still, or the markup this file already checks is a markup
+  // you can trade your way around.
+  const RAW = ["wood", "ore", "herb"];
+  for (const entry of SHOP_STOCK) {
+    const direct = RAW.reduce((n, m) => n + (entry.cost[m] ?? 0), 0);
+    if (direct === 0) continue;
+    // The cheapest way to pay for it entirely in one other material.
+    const converted = direct * EXCHANGE_RATE;
+    if (converted <= direct) fail(`${entry.id} is cheaper paid for in converted material`);
+  }
+  console.log(
+    `  ${EXCHANGE_OFFERS.length} trades, all ${EXCHANGE_RATE}:1 against you, none of them essence`,
+  );
+  console.log(`  ${EXCHANGE_OFFERS[0].give} ${EXCHANGE_OFFERS[0].from} buys ${EXCHANGE_OFFERS[0].get} ${EXCHANGE_OFFERS[0].to}`);
+}
 
 // --- The quests -------------------------------------------------------------
 

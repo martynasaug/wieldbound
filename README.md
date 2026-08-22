@@ -122,7 +122,14 @@ unavailable.
   rules the game has never said out loud, and now hands out the work that proves
   the deepest of them; Oswyn Thale the Provisioner runs a
   shop priced in wood, ore and herb, because there is no currency and is not
-  going to be one; Warden Cabel and Marda Quill hand out work; Tobin Ash at the
+  going to be one — **and a counter that takes material back**, four for one and
+  any of the three for any other, because ore is the thing everything is made of
+  and wood is the thing everybody has too much of. He will not buy your *items*,
+  and that is deliberate rather than missing: the anvil already turns a sword you
+  do not want into materials *and teaches you to make it*, and a counter that did
+  the first half without the second would be a way past the best loop in the
+  game. He will not touch essence either, for the same reason nothing else does.
+  Warden Cabel and Marda Quill hand out work; Tobin Ash at the
   anvil explains the bench's five verbs. One dialogue box serves all of them —
   what the options *do* is supplied by whoever opened it, which is why a vendor
   and a quest giver need no second panel between them. **And they walk their own

@@ -6102,6 +6102,93 @@ Eighteen suites, smoke, both workspaces, zero console errors.
 
 ---
 
+## Phase 61 — The Provisioner takes something in
+*"The Provisioner only sells, never buys"* has been on the list a while, and the
+obvious reading of it is the wrong one.
+
+### M61.1 — a counter that takes raw material, and not items
+**A vendor who buys ITEMS is a second salvage, and a worse one.** Taking a thing
+apart at the anvil gives you its materials *and teaches you to make it*, which is
+the best loop in the item system and the one nobody finds on their own — there is
+a whole quest about saying it out loud. A counter that did the first half without
+the second would be a shortcut past the lesson, so Oswyn still does not buy a
+sword and is not going to.
+
+What he takes is **raw material**, and the shortage that answers is real. Summed
+over all 115 items in the catalogue, against what one sweep of every node in the
+world yields:
+
+                supply share    demand share    ratio
+    wood           49.8%          35.1%         1.42
+    ore            38.3%          56.0%         0.68
+    herb           11.9%           8.9%         1.33
+
+**Ore is the bottleneck by about a factor of two against wood.** Every player
+ends up with a pile of wood and herb they cannot spend and short of the one thing
+everything is made of. That is the trade, and it touches no part of the item
+system at all.
+
+### The rate is steep on purpose, and that is the decision
+Four to one. At anything near par the exchange would **delete the bottleneck** —
+and the bottleneck is the reason to walk out to the far rings where the rock is,
+which is the shape of this entire world. Four to one turns *"I am twelve ore
+short of finishing this"* into a walk to the shop, and turns *"I will fund my
+smithing by chopping wood"* into obviously bad arithmetic. Oswyn says so himself
+when asked.
+
+One rate in every direction rather than six weighted by scarcity: six numbers to
+keep true against a catalogue that moves, buying nothing, because nobody trades
+toward the thing they already have too much of.
+
+### Essence is not on the counter, and his greeting used to say it was
+The greeting read *"Wood, ore, herb, essence — I take all four"*, written when
+the counter could take nothing at all. It is wrong twice over now that it can:
+essence comes **only off kills**, which is the rule holding the top of the reforge
+ladder together, and a shopkeeper who sold it for wood would be a way to buy the
+best gear in the game by standing at a tree. The greeting names the three you dig
+up, there is a topic explaining the refusal, and `tools/test/quests.mjs` fails if
+essence ever appears in the offers.
+
+### Six trades, one row
+The stock is nine lines and every ordered pair of three materials is six more;
+fifteen rows in a dialogue box is the shop window this project deliberately does
+not have. So the exchange is **one row that swaps the list**, exactly as taking a
+quest already does — the mechanism was there and only had to be pointed at
+something else. Measured in the browser: the list is `overflow-y: auto` and
+nothing is unreachable, and the sub-menu holds the vendor at fifteen rows instead
+of twenty-one.
+
+The message carries the OFFER'S ID and nothing else — not the two materials, not
+an amount — so the rate and the batch are things only `shared/shop.ts` decides. A
+packet carrying `{ from, to, give, get }` is a packet a client writes its own
+exchange rate into.
+
+### Checked offline for the rules, and over a socket for the plumbing
+`tools/test/quests.mjs` walks the table: every ordered pair present (so a fourth
+gatherable cannot arrive with half its trades missing), no trade of a thing for
+itself, nothing that is not gathered, the rate a genuine loss of at least 3:1,
+and — the one that matters most — **the exchange must not undercut the anvil**,
+since a markup you can trade your way around is not a markup.
+
+`tools/test/counter.mjs` is a nineteenth suite and it needs a live server,
+because every failure of the server half is silent: a spend without a credit just
+looks like misreading a number. It checks the refusals — out of range, too poor,
+an invented offer id, essence — and then the trade itself. Mutating the server to
+drop the `spendMaterials` guard makes it hand out free ore to a character with
+five wood, and the suite catches it.
+
+### The probe assumed a precondition instead of asserting it
+The range check passed on a fresh character and failed on a seeded one, against a
+working game: **a character's position is persisted**, so the second run started
+standing exactly where the first left it — at the counter — and "nothing may
+happen at range" had quietly become "nothing may happen". It walks away and
+confirms the distance first now. Same lesson as projecting a subject before
+measuring it, one system across.
+
+Nineteen suites, smoke, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -6185,6 +6272,38 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- THE PROVISIONER TAKES MATERIAL AND NEVER ITEMS. "He only sells, never buys"
+  reads as a missing feature and the obvious version of it is a downgrade: a
+  counter that turns an unwanted sword into materials is salvage without the
+  half that teaches you the recipe, which is the best loop in the item system
+  and the one nobody finds unaided. Raw material is a different trade and it
+  answers a shortage that can be measured.
+- The shortage is REAL and it was measured before anything was built: across the
+  whole catalogue, demand runs wood 35% / ore 56% / herb 9% while a full sweep of
+  every node yields 50 / 38 / 12. Ore is the bottleneck by a factor of two, so
+  everyone ends up holding wood and herb they cannot spend.
+- The rate is 4:1 and STEEP ON PURPOSE. Near par the exchange deletes the
+  bottleneck, and the bottleneck is the reason to walk to the far rings where the
+  rock is — which is the whole shape of this world. It is a safety valve for
+  being twelve ore short, not a supply line.
+- One rate in every direction, not six weighted by scarcity. Six numbers to keep
+  true against a catalogue that moves, buying nothing, because nobody trades
+  toward the thing they already have a pile of.
+- ESSENCE IS NOT TRADEABLE, and the greeting that said it was is now wrong twice
+  over. Essence comes only off kills, which is what stops the top of the reforge
+  ladder being reachable by standing at a tree; a counter that sold it for wood
+  would be that exact back door wearing a fourth row.
+- A trade message carries an OFFER ID and nothing else. `{ from, to, give, get }`
+  is a packet the client writes its own exchange rate into; the id means the rate
+  and the batch are only ever decided in `shared/shop.ts`.
+- Six new options is a SUB-MENU, not six more rows. The vendor list is already
+  nine lines and this file has an argument on record about not becoming a shop
+  window — and the swap-the-list mechanism already existed for taking a quest.
+- A test must assert its PRECONDITION, not assume it. The counter's range check
+  passed on a fresh character and failed on a seeded one against a working game,
+  because position is persisted and the second run began standing at the counter:
+  "nothing may happen at range" had become "nothing may happen".
 
 - HALF THE BACK YARDS IN EMBERHOLD CANNOT BE SEEN, and that is a fact about the
   camera rather than about the town. This game has one bearing, so "behind" is
@@ -8801,7 +8920,23 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 60 complete (2026-08-21).
+Phase 0 through 61 complete (2026-08-21).
+
+**Phase 61 M61.1 — the Provisioner takes something in.** *"He only sells, never
+buys"* — and the obvious version of that is a downgrade, because a counter that
+turns an unwanted sword into materials is salvage without the half that teaches
+you the recipe. So he takes RAW MATERIAL instead, and the shortage that answers
+was measured first: across the catalogue, demand runs wood 35% / ore 56% / herb
+9% against a supply of 50 / 38 / 12, so **ore is the bottleneck by a factor of
+two** and everyone ends up holding wood and herb they cannot spend. Four to one
+in every direction, steep on purpose — near par the exchange would delete the
+bottleneck, and the bottleneck is the reason to walk to the far rings where the
+rock is. Essence is refused, and the greeting that had promised "all four" since
+before the counter could take anything is corrected, because essence off kills is
+what keeps the reforge ladder honest. Six trades behind one row rather than six
+more rows in a list that is already nine. A nineteenth suite drives it over a
+real socket, since every failure of the server half is silent — mutating away the
+spend guard hands free ore to a character with five wood, and it is caught.
 
 **Phase 60 M60.1 — a back yard says what the building is.** Reported from play:
 *"the chapel's back yard is still the emptiest of the six"* — and the first two

@@ -208,6 +208,10 @@ export class GameSocket {
     this.send({ type: "BUY_FROM_VENDOR", payload: { npcId, entryId } });
   }
 
+  sendExchangeMaterial(npcId: string, offerId: string): void {
+    this.send({ type: "EXCHANGE_MATERIAL", payload: { npcId, offerId } });
+  }
+
   sendAcceptQuest(npcId: string, questId: string): void {
     this.send({ type: "ACCEPT_QUEST", payload: { npcId, questId } });
   }

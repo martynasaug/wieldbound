@@ -390,6 +390,20 @@ quietly re-burying the slam telegraph.
 node tools/test/ground.mjs
 ```
 
+`counter.mjs` — NEEDS A LIVE SERVER, like `smoke.mjs` and `slaying.mjs`. The
+Provisioner's material exchange: the table is walked offline by `quests.mjs`, but
+every failure of the server half is silent — a spend without a credit just looks
+like misreading a number. It checks the refusals (out of range, too poor, an
+invented offer id, essence) and then the trade itself.
+
+```powershell
+npm run dev:server
+node tools/test/counter.mjs [name]
+```
+
+Seed the character first if you want the positive case; without enough material
+it still proves every refusal, which is the half that can cost you something.
+
 `rng.mjs` — no server needed, and the most important twenty lines in this
 directory. The seeded generator was the textbook C LCG copy-pasted into six
 files, and in JavaScript `s * 1103515245` overflows a double before the mask

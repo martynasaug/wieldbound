@@ -221,7 +221,7 @@ import {
   propById,
   propPosition,
 } from "../../shared/town.ts";
-import { SHOP_OUTPUT_RARITY, shopEntry } from "../../shared/shop.ts";
+import { SHOP_OUTPUT_RARITY, exchangeById, shopEntry } from "../../shared/shop.ts";
 import { landmarkAt } from "../../shared/landmarks.ts";
 import {
   offerStateFor,
@@ -2822,6 +2822,38 @@ wss.on("connection", (socket) => {
       sendConsumables(socket, addConsumable(id, def.id));
       sendMaterials(socket, id);
       sendInfo(socket, `Bought ${def.name}.`, "#9fe0a8");
+      return;
+    }
+
+    // Trading raw material across the counter. Deliberately NOT buying items:
+    // salvage already turns a thing you do not want into materials, and it
+    // teaches you to make it as well, so a counter that did the first half
+    // without the second would be a shortcut past the best loop in the item
+    // system. See the note in `shared/shop.ts` for the shortage this answers
+    // instead, and why the rate is as steep as it is.
+    if (msg.type === "EXCHANGE_MATERIAL" && id) {
+      const npc = npcById(msg.payload.npcId);
+      if (!npc || npc.role !== "vendor") return;
+      if (!nearNpc(id, npc.id)) {
+        sendInfo(socket, `You are too far from ${npc.name}.`, "#c98d5e");
+        return;
+      }
+      // The offer is looked up by id rather than reconstructed from the
+      // message, so the rate and the batch are the server's and a hand-written
+      // packet cannot name its own terms.
+      const offer = exchangeById(msg.payload.offerId);
+      if (!offer) return;
+
+      // One spend, and it is the spend that gates: `spendMaterials` is atomic
+      // and returns false when the wallet does not cover it, so two clicks
+      // arriving together cannot both go through on one pile of wood.
+      if (!spendMaterials(id, { [offer.from]: offer.give })) {
+        sendInfo(socket, `Not enough — that is ${offer.give} ${offer.from}.`, "#c98d5e");
+        return;
+      }
+      addMaterial(id, offer.to, offer.get);
+      sendMaterials(socket, id);
+      sendInfo(socket, `Traded ${offer.give} ${offer.from} for ${offer.get} ${offer.to}.`, "#9fe0a8");
       return;
     }
 

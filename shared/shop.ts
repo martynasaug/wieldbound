@@ -18,7 +18,108 @@
 // Deliberately nothing past band 2. A vendor with good items in him is a vendor
 // who replaces the world.
 
-import type { ConsumableId, MaterialCost } from "./items.ts";
+import { RAW_MATERIALS, type ConsumableId, type MaterialCost } from "./items.ts";
+import type { GatherableResource } from "./protocol-types.ts";
+
+// --- And he takes things in, which he did not before ------------------------
+//
+// "The Provisioner only sells, never buys" has been on the list for a while,
+// and the obvious reading of it is wrong: a vendor who BUYS ITEMS is a second
+// salvage, and a worse one. Taking a thing apart at the anvil gives you its
+// materials AND teaches you to make it, which is the best loop in the item
+// system and the one nobody finds on their own — so a counter that turns an
+// unwanted sword into materials without the lesson is a shortcut past the
+// lesson. There is a whole quest about this.
+//
+// What he takes is RAW MATERIAL, and that is a different trade entirely,
+// because the shortage it answers is real and measurable. Summed over all 115
+// items in the catalogue, and against what one sweep of every node in the world
+// yields:
+//
+//                supply share    demand share    ratio
+//     wood           49.8%          35.1%         1.42
+//     ore            38.3%          56.0%         0.68
+//     herb           11.9%           8.9%         1.33
+//
+// Ore is the bottleneck by about a factor of two against wood, and every
+// player ends up with a pile of wood and herb they cannot spend and a shortage
+// of the one thing everything is made of. That is the trade Oswyn is for.
+//
+// THE RATE IS STEEP ON PURPOSE, and this is the decision worth keeping. At
+// anything near par the exchange would DELETE the bottleneck — and the
+// bottleneck is the reason to walk out to the far rings where the rock is,
+// which is the same reason the whole world is laid out as difficulty radiating
+// from spawn. Four to one is a safety valve, not a strategy: it turns "I am
+// twelve ore short of finishing this" into a walk to the shop, and turns
+// "I will fund my smithing by chopping wood" into obviously bad arithmetic.
+//
+// One rate in one direction and the same rate in every other, because a table
+// of six rates weighted by scarcity is six numbers to keep true against a
+// catalogue that moves, and it buys nothing: nobody trades toward the thing
+// they already have too much of, so the rate only ever runs one way in practice.
+export const EXCHANGE_RATE = 4;
+
+/** How much you must hand over to get `want` of something else. */
+export function exchangeCost(want: number): number {
+  return want * EXCHANGE_RATE;
+}
+
+/**
+ * A batch, rather than a slider.
+ *
+ * The dialogue box is a list of rows and every other thing in it is one press
+ * for one outcome. Ten is small enough that a level-1 character can afford one
+ * and large enough that somebody finishing a band-5 reforge is not pressing it
+ * fifty times.
+ */
+export const EXCHANGE_BATCH = 10;
+
+export interface ExchangeOffer {
+  /** Stable id, which is what the message carries. */
+  id: string;
+  from: GatherableResource;
+  to: GatherableResource;
+  give: number;
+  get: number;
+}
+
+/**
+ * The three you can pick up off the ground.
+ *
+ * Derived out of `RAW_MATERIALS` by dropping essence, because essence is raw
+ * and is NOT gathered — it only comes off kills, which is the one rule holding
+ * the top of the reforge ladder together. Typing the three out here instead
+ * would be a fourth place that has to be told when a gatherable is added.
+ */
+export const EXCHANGEABLE = RAW_MATERIALS.filter(
+  (m): m is GatherableResource => m !== "essence",
+);
+
+/**
+ * Every ordered pair of the three gatherables. DERIVED rather than typed, so a
+ * fourth gatherable cannot arrive with two of its six trades missing — which is
+ * exactly the kind of gap that reads as "the shop is broken for herb".
+ */
+export const EXCHANGE_OFFERS: ExchangeOffer[] = ((): ExchangeOffer[] => {
+  const out: ExchangeOffer[] = [];
+  for (const from of EXCHANGEABLE) {
+    for (const to of EXCHANGEABLE) {
+      if (from === to) continue;
+      out.push({
+        id: `${from}-${to}`,
+        from,
+        to,
+        give: exchangeCost(EXCHANGE_BATCH),
+        get: EXCHANGE_BATCH,
+      });
+    }
+  }
+  return out;
+})();
+
+export function exchangeById(id: string): ExchangeOffer | null {
+  return EXCHANGE_OFFERS.find((e) => e.id === id) ?? null;
+}
 
 export interface ShopEntry {
   /** Stable id, which is what the buy message carries. */
