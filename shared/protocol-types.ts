@@ -1048,6 +1048,32 @@ export interface MonsterStats {
   // enough to outrun but hits from much further away, and a slime has to
   // physically touch you. Kiting works or doesn't per monster, by design.
   attackRangePx: number;
+  /**
+   * How close it will let you get before it gives ground.
+   *
+   * Present only on the creatures that THROW something. Twelve of the thirteen
+   * kinds walked into contact and swung, so every fight in the game had the
+   * same shape — it runs at you and you stand there — and four of them dealt
+   * fire, lightning, nature or arcane damage from arm's length while this very
+   * table's comments said they threw it. "A demon is made of the fire it
+   * throws" and "a golem throws it back at you" were both written about
+   * creatures with a sixty-pixel reach.
+   *
+   * A thrower holds this distance: closer and it backs off, further and it
+   * closes. It is what makes the player's own positioning matter DEFENSIVELY
+   * for the first time — until now the only reason to move was to step out of
+   * a telegraph.
+   */
+  keepAwayPx?: number;
+  /**
+   * How fast it gives ground, as a fraction of its chase speed.
+   *
+   * NEVER 1, and this is the number that decides whether it is a fight or a
+   * chore: a creature that backpedals as fast as you advance is one you can
+   * never reach. Closing has to work; the cost of closing is what you take on
+   * the way in.
+   */
+  backpedalPace?: number;
   speedPxPerSec: number;
   // Ground footprint. Nothing may stand inside this, player or monster, so
   // it is what stops a fight collapsing to everyone occupying one pixel.
@@ -1324,7 +1350,9 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     respawnMultiplier: 1,
     guaranteedDrop: false,
     attackIntervalMs: 2000,
-    attackRangePx: 52,
+    attackRangePx: 185,
+    keepAwayPx: 150,
+    backpedalPace: 0.55,
     speedPxPerSec: 112,
     bodyRadiusPx: 20,
     deathBurstRadiusPx: 90,
@@ -1334,7 +1362,9 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     resist: { nature: 45, fire: -45, physical: -25 },
     attackSchool: "nature",
     // Spines with something on them. The first thing in the world that puts
-    // a debuff on the player rather than the other way round.
+    // a debuff on the player rather than the other way round — and it FIRES
+    // them. A cactus that waits for you to walk into it is a shrub; one that
+    // puts a spine in you from twenty feet is a reason to close the gap.
     inflicts: { status: "poisoned", chance: 0.3 },
   },
   // The goblin's shout, with a much wider radius and a body behind it. Pulling
@@ -1410,7 +1440,12 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     respawnMultiplier: 1.6,
     guaranteedDrop: false,
     attackIntervalMs: 1800,
-    attackRangePx: 64,
+    // It THROWS the fire, which the comment below has always said and the
+    // numbers never did — a 64px reach is a punch. It gives ground as you
+    // close, so the fight is about crossing the gap rather than standing in it.
+    attackRangePx: 210,
+    keepAwayPx: 165,
+    backpedalPace: 0.5,
     speedPxPerSec: 152,
     bodyRadiusPx: 26,
     // It is made of the fire it throws, and cold is the opposite of it. Spells
@@ -1440,7 +1475,14 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     respawnMultiplier: 3,
     guaranteedDrop: true,
     attackIntervalMs: 3200,
-    attackRangePx: 78,
+    // And it really does throw it, rather than dealing lightning from arm's
+    // length. A golem is the slowest thing in the game, so a long reach and a
+    // grudging backpedal turn it into a turret you have to walk into rather
+    // than a statue you can stand beside — which is the whole point of it
+    // being the one creature with a seam.
+    attackRangePx: 200,
+    keepAwayPx: 150,
+    backpedalPace: 0.4,
     speedPxPerSec: 70,
     bodyRadiusPx: 28,
     windupMs: 1100,
@@ -1458,6 +1500,12 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // worth wearing rather than a line in a set bonus with nothing to answer,
     // and it means a Stormbound kit is exactly the kit for the golem fight in
     // both directions at once.
+    //
+    // And it really does throw it now, rather than dealing lightning from arm's
+    // length. A golem is the slowest thing in the game, so a long reach and a
+    // grudging backpedal turn it into a turret you have to walk into rather
+    // than a statue you can stand beside — which is the whole point of it being
+    // the one creature with a seam.
     attackSchool: "lightning",
     // A discharge that big leaves you unable to aim for a few seconds — which
     // is the worst thing to happen against the one creature with 14 armour,

@@ -345,6 +345,13 @@ unavailable.
   produce, so the pair is learnable without a second player standing next to
   you. An empowered hit flashes amber and says which condition paid — a
   conditional you cannot see is one you will not play around.
+- **And three of them throw** — a cactoro fires its spines, a demon throws the
+  fire it is made of and a golem throws the lightning it folds to, all of which
+  the bestiary already said about them while they punched you from arm’s length.
+  They give ground as you close, so crossing the gap IS the fight — and never as
+  fast as you advance, because a thing you can never reach is a chore rather than
+  an enemy. Most of the world still walks in and swings, which is what keeps
+  closing a change of pace.
 - **And a camp is a place with animals in it** — creatures drift about their
   posts at a grazing pace instead of standing on the pixel they spawned on, each
   on its own clock so a camp does not step off together, and the back rank of a

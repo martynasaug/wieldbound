@@ -18,6 +18,8 @@
 //   node tools/test/bodies.mjs
 
 import {
+  AGGRO_RANGE_PX,
+  BASE_MOVE_SPEED_PX_PER_SEC,
   MONSTER_STATS,
   PLAYER_BODY_RADIUS_PX,
   WEAPON_TYPES,
@@ -108,6 +110,57 @@ console.log("\n3. resolveBodyCollision always separates");
       console.log(`  ${label.padEnd(28)} -> (${out.x.toFixed(1)}, ${out.y.toFixed(1)})  clear`);
     }
   }
+}
+
+// --- Things that throw ------------------------------------------------------
+// Twelve of the thirteen kinds walked into contact and swung, so every fight in
+// the game had the same shape. Three of them fight at a distance now, and every
+// way that goes wrong makes the game WORSE than the melee-only version it
+// replaced — so the rules are worth stating out loud.
+
+console.log("\n== things that throw ==");
+{
+  const throwers = Object.entries(MONSTER_STATS).filter(([, s]) => s.keepAwayPx !== undefined);
+  if (throwers.length === 0) fail("nothing in the bestiary fights at a distance");
+
+  for (const [kind, s] of throwers) {
+    // THE ONE THAT MATTERS. A creature that backpedals as fast as you advance
+    // is a creature you can never reach, and that is not a fight, it is a
+    // chore. Closing the gap has to work; what it costs is the hits on the way.
+    const backpedal = s.speedPxPerSec * (s.backpedalPace ?? 0.5);
+    if (backpedal >= BASE_MOVE_SPEED_PX_PER_SEC) {
+      fail(
+        `a ${kind} gives ground at ${backpedal.toFixed(0)}px/s against a player's ` +
+          `${BASE_MOVE_SPEED_PX_PER_SEC} — you could never catch it`,
+      );
+    }
+    if ((s.backpedalPace ?? 0.5) >= 1) fail(`${kind} backpedals as fast as it chases`);
+
+    // It has to be able to reach you from where it chooses to stand, or it
+    // holds a distance it cannot shoot from and the fight simply stops.
+    if (s.attackRangePx <= s.keepAwayPx) {
+      fail(`${kind} holds at ${s.keepAwayPx}px but only reaches ${s.attackRangePx}px`);
+    }
+
+    // And it must not out-range its own aggro, or it shoots people who have no
+    // idea it has noticed them.
+    if (s.attackRangePx > AGGRO_RANGE_PX) {
+      fail(`${kind} reaches ${s.attackRangePx}px but only notices you at ${AGGRO_RANGE_PX}px`);
+    }
+
+    console.log(
+      `  ${kind.padEnd(9)} reaches ${String(s.attackRangePx).padStart(3)}px, holds ${String(s.keepAwayPx).padStart(3)}px, ` +
+        `gives ground at ${backpedal.toFixed(0)}px/s against your ${BASE_MOVE_SPEED_PX_PER_SEC}`,
+    );
+  }
+
+  // And most of the bestiary must stay melee. A world where everything kites is
+  // a world with one fight in it, which is this complaint inverted.
+  const total = Object.keys(MONSTER_STATS).length;
+  if (throwers.length > total / 2) {
+    fail(`${throwers.length} of ${total} kinds fight at range — closing the gap has stopped being a change of pace`);
+  }
+  console.log(`  ${throwers.length} throw, ${total - throwers.length} still walk in and swing`);
 }
 
 console.log(failures === 0 ? "\nOK — all body rules hold" : `\n${failures} FAILURE(S)`);

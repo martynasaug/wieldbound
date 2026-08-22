@@ -6573,6 +6573,91 @@ than a paragraph.
 
 ---
 
+## Phase 66 — Something that throws it
+Flagged at the end of M65.1 and taken next: **twelve of the thirteen kinds were
+melee.** Only the dragon reached past arm's length, so every fight in the game
+had exactly one shape — it runs at you, and you stand there.
+
+### M66.1 — three creatures that fight at a distance
+
+### The table already said they threw
+Four kinds deal a non-physical school, and all four did it from contact range.
+The comments beside them are unambiguous:
+
+- *"a demon is made of the fire it throws"* — reach 64px.
+- *"the thing you bring lightning to is the thing that throws it back at you"* —
+  the golem, reach 78px.
+- *"spines with something on them"* — the cactoro, reach 52px.
+
+None of them threw anything. They walked up and punched you, and the damage
+happened to be typed. That is the same defect as `shape: "none"` on a missile
+one phase earlier: **the prose describes a thing the numbers do not do.**
+
+The ghost is deliberately left alone, and the discrimination is the point — its
+own line says *"a cold TOUCH that stays with you"*. A creature is promoted only
+where its own text says it throws.
+
+### What a thrower does
+Two new fields, and the second is the one that matters.
+
+    kind      reaches  holds at  gives ground at   your speed
+    cactoro     185       150         62px/s          220
+    demon       210       165         76px/s          220
+    golem       200       150         28px/s          220
+
+**`keepAwayPx`** — closer than this and it backs off; further and it closes. It
+is the first thing in the game that makes the player's own positioning matter
+DEFENSIVELY, rather than only for stepping out of a telegraph.
+
+**`backpedalPace`, and it may never be 1.** A creature that gives ground as fast
+as you advance is a creature you can never reach, and that is not a fight, it is
+a chore. Closing has to work; what it costs you is the hits you take on the way
+in. The golem is the sharpest version of it — the slowest thing in the game,
+backing off at 28px/s, which turns it into a turret you walk into rather than a
+statue you stand beside.
+
+Only the FRONT RANK gives ground. An overflow monster is already holding a wider
+ring and circling it, and backing off from there would walk the whole queue out
+of the fight.
+
+### And you can see what it threw
+Without a projectile the player takes fire damage from something standing across
+the clearing with nothing in between — which is worse than the melee-only world
+it replaced, because at least a thing that touches you is visibly touching you.
+Monster attacks throw the same lit bolt the player's do, tinted by the school
+they deal, and the damage number waits for it to arrive over the real gap.
+
+### Verified, and both rulers were wrong first
+`tools/test/bodies.mjs` holds the fairness rules: nothing may backpedal at or
+above the player's own speed, nothing may hold a distance it cannot shoot from,
+nothing may out-range its own aggro, and **no more than half the bestiary may
+throw** — a world where everything kites is a world with one fight in it, which
+is this complaint inverted. Two mutations fail it.
+
+`tools/test/throwers.mjs` drives a real socket, and it took two corrections:
+
+- **The first version walked at the creature the whole time** and then failed
+  because the gap reached contact. Of course it did: the player advances at
+  220px/s and a cactoro gives ground at 62, so running one down is exactly what
+  is supposed to happen. What a thrower promises is where it stands when you are
+  NOT chasing it, which is a different measurement — so it stands still now and
+  lets the creature choose.
+- **The second version measured a settled gap of 448px** and blamed the AI for
+  fleeing. What it had actually measured was the cactoro dying to an attack
+  order left standing by the previous run, and its replacement snapping back to
+  a spawn point four hundred pixels away. The probe walks away and lets the
+  order lapse first, and abandons the run rather than averaging a teleport into
+  the answer.
+
+With both fixed:
+
+    standing still, it settled at a mean of 148px   (its reach x 0.8, exactly)
+    chasing it: 43px -> 34px at your 220px/s
+
+Eighteen offline suites, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -6656,6 +6741,35 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- A CREATURE IS PROMOTED TO RANGED ONLY WHERE ITS OWN TEXT SAYS IT THROWS. Four
+  kinds dealt a non-physical school from contact range while the comments beside
+  them said "a demon is made of the fire it throws" and "the thing that throws it
+  back at you". The ghost stays melee because its line says a cold TOUCH — the
+  discrimination is what keeps this a fix rather than a redesign.
+- A BACKPEDAL MAY NEVER MATCH THE PLAYER'S SPEED. A creature that gives ground as
+  fast as you advance is one you can never reach, and that is not a fight, it is
+  a chore. Closing always has to work; what it costs is the hits on the way in.
+- Only the FRONT RANK gives ground. An overflow monster is already holding a
+  wider ring and circling it, and backing off from there walks the whole queue
+  out of the fight.
+- No more than half the bestiary may throw. A world where everything kites is a
+  world with one fight in it, which is the complaint this answers inverted —
+  closing the gap is only a change of pace while most things still walk in.
+- A ranged attacker WITHOUT A VISIBLE PROJECTILE is worse than a melee one. Fire
+  damage arriving from something across the clearing with nothing in between is
+  less legible than a thing that touches you, which at least is visibly touching
+  you.
+- Measure where a creature CHOOSES to stand by standing still, not by walking at
+  it. A probe that chased the whole time reported the gap reaching contact and
+  called it a failure — but the player moves at 220px/s and a cactoro gives
+  ground at 62, so running one down is the intended outcome. The two questions
+  are separate and need separate measurements.
+- A dead monster keeps its ID and its replacement snaps home, which from a probe
+  reads as an enormous instant retreat. A settled gap of 448px was a cactoro
+  being killed by an attack order left standing from the previous run. Let orders
+  lapse before measuring, and abandon a run rather than averaging a teleport into
+  the answer.
 
 - IDLE IS NOT STILL. Every creature in the game stood on its spawn pixel for the
   life of the world, which is the same defect as grass that never moved and
@@ -9451,7 +9565,25 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 65 complete (2026-08-21).
+Phase 0 through 66 complete (2026-08-21).
+
+**Phase 66 M66.1 — something that throws it.** Twelve of the thirteen kinds were
+melee, so every fight in the game had one shape: it runs at you and you stand
+there. And the table already said otherwise — *"a demon is made of the fire it
+throws"*, *"the thing that throws it back at you"*, *"spines with something on
+them"* — all written beside creatures with a sixty-pixel reach, which is the same
+defect as `shape: "none"` on a missile one phase earlier. The cactoro, the demon
+and the golem fight at range now and give ground as you close; the ghost stays
+melee because its own line says a cold TOUCH, and that discrimination is what
+keeps it a fix rather than a redesign. **A backpedal may never match the player's
+speed** — the golem gives ground at 28px/s against your 220, which makes it a
+turret you walk into rather than a statue you stand beside. They throw the same
+lit bolt the player does, tinted by their school, because fire arriving from
+across a clearing with nothing in between is less legible than being punched.
+Measured live at exactly its reach × 0.8 while standing still, and catchable when
+chased. Both rulers were wrong first: one chased the whole time and called the
+intended outcome a failure, the other measured a monster dying to a leftover
+attack order and blamed the AI for fleeing.
 
 **Phase 65 M65.1 — a camp is a place with animals in it.** The monster AI had
 more in it than it looked — threat retargeting, leashing, melee slots, leaps,

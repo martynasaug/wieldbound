@@ -1609,6 +1609,31 @@ export class Game {
     }
     const label = vis ? MONSTER_LABELS[vis.kind] : "enemy";
 
+    // WHAT IT THREW, IF IT THREW ANYTHING.
+    //
+    // A creature with a `keepAwayPx` fights from two hundred pixels off, and
+    // without this the player takes fire damage from something standing across
+    // the clearing with nothing whatsoever in between — which is worse than the
+    // melee-only world it replaced, because at least a thing that touches you
+    // is visibly touching you.
+    //
+    // Tinted by the school it deals, off the same table the player's own bolts
+    // read, so a demon throws fire-coloured fire and a golem throws lightning.
+    let flight = IMPACT_DELAY_MS;
+    if (vis && this.localActor && MONSTER_STATS[vis.kind].keepAwayPx !== undefined) {
+      const from = vis.actor.position.clone();
+      from.y += MONSTER_MODELS[vis.kind].height * 0.6;
+      const to = this.localActor.position.clone();
+      to.y += 1.0;
+      const gapPx = from.distanceTo(to) * PX_PER_UNIT;
+      // Its own flight time over the real gap, the same rule the player's
+      // arrows follow, so the damage number cannot beat the thing that caused
+      // it to the target.
+      flight = Math.round(Math.max(120, Math.min(700, (gapPx / 900) * 1000)));
+      const tint = Number.parseInt(schoolDef(p.school).color.slice(1), 16);
+      this.projectiles.bolt(from, to, flight, tint);
+    }
+
     window.setTimeout(() => {
       if (!p.hit) {
         this.combatLog.push(`The ${label} misses you.`, "#9a8d76");
@@ -1635,7 +1660,7 @@ export class Game {
         });
       }
       if (p.crit) this.effects.shake(0.11, 170);
-    }, IMPACT_DELAY_MS);
+    }, flight);
   }
 
   /**

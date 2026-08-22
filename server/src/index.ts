@@ -3556,6 +3556,31 @@ setInterval(() => {
           const step = Math.min(speed, d - stopAt);
           monster.x += ((target.x - monster.x) / d) * step;
           monster.y += ((target.y - monster.y) / d) * step;
+        } else if (stats.keepAwayPx !== undefined && d < stats.keepAwayPx && overflow === 0) {
+          // IT THROWS THINGS, SO IT KEEPS ITS DISTANCE.
+          //
+          // Twelve of the thirteen kinds walk into contact and swing, which
+          // gave every fight in the game the same shape: it runs at you and you
+          // stand there. A creature that gives ground as you close turns the
+          // approach itself into the fight, and it is the first thing that
+          // makes the player's own positioning matter DEFENSIVELY rather than
+          // only for stepping out of a telegraph.
+          //
+          // THE BACKPEDAL IS ALWAYS SLOWER THAN THE CHASE, which is the number
+          // that decides whether this is a fight or a chore: a thing that
+          // retreats as fast as you advance is a thing you can never reach.
+          // Closing has to work; what it costs you is the hits you take on the
+          // way in.
+          //
+          // Only the front rank gives ground. An overflow monster is already
+          // holding a wider ring and circling it, and backing off from there
+          // would walk the whole queue out of the fight.
+          const away = Math.min(
+            stepPx * (stats.backpedalPace ?? 0.5),
+            stats.keepAwayPx - d,
+          );
+          monster.x -= ((target.x - monster.x) / d) * away;
+          monster.y -= ((target.y - monster.y) / d) * away;
         } else if (overflow > 0) {
           // WAITING ITS TURN, AND IT LOOKS LIKE IT.
           //
