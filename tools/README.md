@@ -404,6 +404,16 @@ node tools/test/counter.mjs [name]
 Seed the character first if you want the positive case; without enough material
 it still proves every refusal, which is the half that can cost you something.
 
+`animation.mjs` — no server needed. Every state the body can be in has to bind
+for players AND for monsters, and something somewhere has to PLAY it. A state
+nobody plays is not a bug, it is an absence — and an absence is
+indistinguishable from a decision not to have the feature, which is how a rig
+that could roll went ten phases without a dash that rolled.
+
+```powershell
+node tools/test/animation.mjs
+```
+
 `rng.mjs` — no server needed, and the most important twenty lines in this
 directory. The seeded generator was the textbook C LCG copy-pasted into six
 files, and in JavaScript `s * 1103515245` overflows a double before the mask

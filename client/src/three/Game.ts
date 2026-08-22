@@ -274,6 +274,16 @@ const TARGET_STICKINESS_PX = 26;
 // because this runs on pointer move as well as on click.
 const PICK_CANDIDATE_PX = 90;
 
+/**
+ * How big a hit has to be, as a share of the creature's own health, before it
+ * rocks back. Same measure the floating damage numbers size themselves by, so
+ * "a hit worth reacting to" means one thing in this file.
+ */
+const FLINCH_SHARE = 0.07;
+/** And how long before it can be rocked again, so a dagger cannot stun-lock it
+ *  out of the fight with an animation. */
+const FLINCH_COOLDOWN_MS = 900;
+
 interface MonsterVisual {
   actor: Actor;
   kind: MonsterKind;
@@ -285,6 +295,8 @@ interface MonsterVisual {
   windupStartedAt: number;
   /** Latched run/idle decision — see `isMoving`. */
   moving: boolean;
+  /** When it may rock back again. See `maybeFlinch`. */
+  flinchReadyAt?: number;
 }
 
 // How far a snapshot-driven actor must travel between snapshots to count as
@@ -719,6 +731,10 @@ export class Game {
         // one line the player reads at the moment something drops.
         const colour = RARITIES[p.item.rarity]?.color ?? "#c9b47a";
         this.combatLog.push(`Found ${itemName(p.item)}.`, colour);
+        // And the character bends down for it. `PickUp` is the other clip M55.1
+        // harvested and nothing ever played: taking a thing off the ground was
+        // walking over it and a line appearing in the log.
+        this.localActor?.play("pickup");
         // Over the character, where they are looking, rather than only in a
         // corner. Picking something up is now a thing that happens in the
         // world — you walked to it — so the acknowledgement belongs there too.
@@ -1506,6 +1522,7 @@ export class Game {
       playSfx(p.playerCrit ? "crit" : "hit");
 
       if (target) {
+        this.maybeFlinch(target, p.playerDamage, p.playerCrit);
         const at = target.actor.position;
         // Land the effect at the monster's middle, not a fixed height — a slime
         // is 0.8 units tall and a dragon 3.4, and a constant offset puts the
@@ -1797,6 +1814,10 @@ export class Game {
       // and the server's job was only to own the cooldown. Without this the
       // mobility skills consumed a cooldown and did nothing at all.
       this.performDash(skill.power, skill.id === "disengage");
+      // A dash was a character sliding sideways in its running pose. The rig
+      // has shipped a roll since M55.1 pooled the clips and nothing had ever
+      // played it.
+      self?.play("roll", true);
       playSfx("swing");
       if (self) {
         this.effects.play(school, self.position.x, self.position.y + 0.8, self.position.z, {
@@ -1931,6 +1952,7 @@ export class Game {
         // bigger number, and a bigger number is indistinguishable from a lucky
         // roll. So an empowered hit gets its own flash colour and its own mark
         // on the floater, and the log says which condition paid.
+        this.maybeFlinch(vis, hit.damage, hit.crit || !!hit.empowered);
         vis.actor.flash(hit.empowered ? 0xffa63d : hit.crit ? 0xffd85e : 0x9ad4ff, hit.empowered ? 220 : 150);
         this.floatOnMonster(
           vis,
@@ -1978,6 +2000,34 @@ export class Game {
    * enemy (Disengage); everything else surges the way you are moving, falling
    * back to your facing when standing still.
    */
+  /**
+   * A monster rocks back when something lands hard enough to rock it.
+   *
+   * The rigs have carried a hit reaction all along and nothing had ever played
+   * it on a monster — they flashed white and went on swinging, which is why
+   * even a critical hit read as a number rather than as an event.
+   *
+   * TWO GATES, and both are load-bearing. A dagger lands three blows a second,
+   * so flinching on every hit would leave anything fast-attacked permanently
+   * mid-stagger and never attacking back — the animation would eat the fight.
+   * So it takes a hit worth a real share of the creature's health, which is
+   * the same measure the floating numbers already size themselves by, and it
+   * cannot fire again for a beat afterwards.
+   *
+   * A crit always shows, whatever it was worth. That is the one moment the
+   * player most wants the world to acknowledge, and it is rare enough to be
+   * safe.
+   */
+  private maybeFlinch(vis: MonsterVisual, damage: number, crit: boolean): void {
+    if (vis.dead) return;
+    const now = performance.now();
+    if (now < (vis.flinchReadyAt ?? 0)) return;
+    const share = damage / Math.max(1, vis.state.maxHp);
+    if (!crit && share < FLINCH_SHARE) return;
+    vis.flinchReadyAt = now + FLINCH_COOLDOWN_MS;
+    vis.actor.play("hit");
+  }
+
   private performDash(distancePx: number, away: boolean): void {
     let dx = this.moveInputX;
     let dz = this.moveInputY;

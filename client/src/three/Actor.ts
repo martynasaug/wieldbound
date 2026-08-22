@@ -31,7 +31,25 @@ import { BUILTIN_WEAPON_MESHES, PLAYER_BODY, buildArmour, buildHeldItem } from "
 import { pickClip, loadClipLibrary } from "./clips";
 import type { WeaponType } from "../../../shared/protocol-types";
 
-export type ActorAnim = "idle" | "walk" | "run" | "attack" | "hit" | "die";
+/**
+ * The states a body can be in.
+ *
+ * `roll` and `pickup` are the two the clip library has always carried and
+ * nothing has ever played. M55.1 pooled twenty-five animations off five rigs —
+ * "every attack, cast, draw, punch, roll, pickup, death, hit reaction, idle,
+ * walk and run a person in this world can perform" — and the game bound six of
+ * them. A dash was a character sliding sideways in its run, and picking
+ * something up off the ground was walking over it.
+ */
+export type ActorAnim =
+  | "idle"
+  | "walk"
+  | "run"
+  | "attack"
+  | "hit"
+  | "die"
+  | "roll"
+  | "pickup";
 
 /**
  * How each weapon family MOVES, now that it no longer decides who is holding it.
@@ -108,6 +126,11 @@ const CLIP_PREFERENCES: Record<ActorAnim, string[]> = {
   ],
   hit: ["RecieveHit", "HitReact", "ReceiveHit", "Hit", "Damage"],
   die: ["Death", "Die"],
+  // Monsters have neither, and the empty list is the honest way to say so: a
+  // slime does not roll and a dragon does not pick things up. `buildActions`
+  // simply binds nothing, and `play` refuses a state it has no action for.
+  roll: [],
+  pickup: [],
 };
 
 const FADE_MS = 180;
@@ -678,7 +701,7 @@ export class Actor {
         : findClip(this.instance.animations, ...CLIP_PREFERENCES[anim]);
       if (!clip) continue;
       const action = this.mixer.clipAction(clip);
-      if (anim === "attack" || anim === "hit" || anim === "die") {
+      if (anim === "attack" || anim === "hit" || anim === "die" || anim === "roll" || anim === "pickup") {
         action.setLoop(THREE.LoopOnce, 1);
         action.clampWhenFinished = true;
       }
@@ -717,6 +740,11 @@ export class Actor {
           : ["RecieveHit", "RecieveHit_Attacking"];
       case "die":
         return ["Death"];
+      // Both harvested in M55.1 and never once played until now.
+      case "roll":
+        return ["Roll"];
+      case "pickup":
+        return ["PickUp", "Pickup"];
     }
   }
 
@@ -1490,6 +1518,12 @@ export class Actor {
       const busy = performance.now() < this.oneShotUntil;
       if (busy && anim === "idle") return;
       if (busy && this.currentAnim === "die") return;
+      // A ROLL IS NOT CANCELLED BY MOVING, and it is the one one-shot that must
+      // not be. Every other is interrupted by running on purpose — a planted
+      // swing pose while the character travels is the sliding this rule exists
+      // to stop — but a dash IS travel, so cancelling the roll on the movement
+      // it causes would mean the clip never plays for more than a frame.
+      if (busy && this.currentAnim === "roll") return;
       if (busy) this.oneShotUntil = 0;
     }
     if (this.currentAnim === anim && !immediate) return;

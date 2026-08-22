@@ -295,6 +295,14 @@ unavailable.
   keyframes from midnight to dusk, with a star dome and a clock on your unit
   frame. The hour is derived from wall-clock time in `shared/`, so every client
   sees the same sky without the server sending anything.
+- **And the body reacts** — a dash is a real roll rather than a character
+  sliding sideways in its running pose, you bend down for what you pick up, and
+  a monster rocks back when something lands hard enough to rock it. All three
+  clips were harvested off the old rigs ten phases ago and nothing had ever
+  played them. The flinch is gated on a hit worth a real share of the
+  creature’s health, because a dagger lands three blows a second and reacting
+  to each would leave anything fast permanently mid-stagger — but a critical
+  hit always shows.
 - **Spells that leave your hands** — a bolt is a white-hot core in a tinted
   glow with a tapered trail and a real light travelling with it, so it lights the
   ground it crosses at night; an arrow leaves a widening streak; a wand zaps. And

@@ -6658,6 +6658,69 @@ Eighteen offline suites, both workspaces, zero console errors.
 
 ---
 
+## Phase 67 — The body reacts
+The last piece of the combat brief. M55.1 pooled **twenty-five clips** off five
+rigs — *"every attack, cast, draw, punch, roll, pickup, death, hit reaction,
+idle, walk and run a person in this world can perform"* — and the game bound
+**six**.
+
+### M67.1 — three animations that were harvested and never played
+
+### One: a dash was a slide
+`Roll` has been in the library since M55.1 and nothing had ever asked for it, so
+Charge and Disengage moved the character several metres sideways in its running
+pose. It rolls now.
+
+**And a roll is the one one-shot that movement may not cancel.** Every other is
+interrupted by running on purpose — a planted swing pose while the character
+travels is the sliding that rule exists to stop — but a dash IS travel, so
+cancelling the roll on the movement it causes would play the clip for a single
+frame and leave the dash looking exactly as it did before.
+
+### Two: picking something up was walking over it
+`PickUp` likewise. Taking a thing off the ground was a line in the log and a
+floater; the character now bends down for it.
+
+### Three: monsters never flinched
+The player has played a hit reaction since the port. A monster flashed white and
+went on swinging — which is why even a critical hit read as a number rather than
+as an event, and the rigs had been carrying `RecieveHit` the whole time.
+
+**Two gates, and both are load-bearing.** A dagger lands three blows a second,
+so flinching on every hit would leave anything fast-attacked permanently
+mid-stagger and never attacking back: the animation would eat the fight. So it
+takes a hit worth **7% of the creature's own health** — the same measure the
+floating damage numbers already size themselves by, so "a hit worth reacting to"
+means one thing in the file — and it cannot fire again for 900ms.
+
+A **crit always shows**, whatever it was worth. That is the moment the player
+most wants acknowledged, and it is rare enough to be safe.
+
+### A nineteenth suite, for a failure that looks like a decision
+`tools/test/animation.mjs`. A state nobody plays is not a bug, it is an
+ABSENCE — and an absence is indistinguishable from somebody having chosen not to
+have the feature. Ten phases of a rig that could roll and a game that never asked
+is the proof.
+
+It parses the `ActorAnim` union and checks each state three ways: that it binds
+for monsters and townspeople (`CLIP_PREFERENCES`), that it binds for a player
+(`playerClipsFor`, which is separate because a player is the only actor whose
+animation set changes without its model doing so), and — the rule this exists
+for — that **something, somewhere, actually plays it.** Plus the roll's
+protection from its own movement, by name, because a regression there is a
+silent return to sliding.
+
+A source test, because the binding happens behind three.js and an FBX loader
+that Node cannot load, and because what actually went wrong is visible in the
+text: a name in a type union with no call site. Both mutations fail it.
+
+Verified in the browser too — all eight states bind, `roll` resolving to `Roll`
+and `pickup` to `PickUp`.
+
+Nineteen suites, both workspaces, zero console errors.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -6741,6 +6804,22 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- A STATE NOBODY PLAYS IS AN ABSENCE, and an absence is indistinguishable from a
+  decision not to have the feature. `Roll` and `PickUp` were harvested, bindable
+  and unreachable for ten phases, so a dash was a character sliding sideways in
+  its running pose and picking something up was walking over it. Binding a clip
+  is not using it; the test checks for a CALL SITE.
+- A ROLL IS THE ONE ONE-SHOT MOVEMENT MAY NOT CANCEL. Every other is interrupted
+  by running deliberately — a planted swing pose while the character travels is
+  the sliding that rule exists to stop — but a dash IS travel, so cancelling on
+  the movement it causes plays the clip for one frame.
+- A flinch needs a THRESHOLD and a COOLDOWN or the animation eats the fight. A
+  dagger lands three blows a second; reacting to each would leave anything
+  fast-attacked permanently mid-stagger and never swinging back. Seven per cent
+  of the creature's own health, which is the same measure the floating numbers
+  size by, plus 900ms — and a crit always shows, because that is the moment the
+  player most wants acknowledged and it is rare enough to be safe.
 
 - A CREATURE IS PROMOTED TO RANGED ONLY WHERE ITS OWN TEXT SAYS IT THROWS. Four
   kinds dealt a non-physical school from contact range while the comments beside
@@ -9565,7 +9644,22 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 66 complete (2026-08-21).
+Phase 0 through 67 complete (2026-08-21).
+
+**Phase 67 M67.1 — the body reacts.** M55.1 pooled twenty-five clips off five
+rigs and the game bound six. `Roll` and `PickUp` had been in the library for ten
+phases with nothing asking for them, so a dash was a character sliding sideways
+in its running pose and taking a thing off the ground was a line in the log. Both
+play now — and a roll is the one one-shot that movement may NOT cancel, because a
+dash is travel and cancelling on the movement it causes shows the clip for a
+single frame. Monsters flinch too: they flashed white and went on swinging, which
+is why even a crit read as a number rather than an event. Gated on a hit worth
+seven per cent of the creature's own health and a 900ms cooldown, because a
+dagger lands three blows a second and reacting to each would leave anything
+fast-attacked permanently mid-stagger — with crits always shown. A nineteenth
+suite checks that every state in the union binds for players AND for everything
+else, and that something actually PLAYS it: a state nobody plays is an absence,
+and an absence looks exactly like a decision.
 
 **Phase 66 M66.1 — something that throws it.** Twelve of the thirteen kinds were
 melee, so every fight in the game had one shape: it runs at you and you stand
