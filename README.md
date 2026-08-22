@@ -345,6 +345,12 @@ unavailable.
   produce, so the pair is learnable without a second player standing next to
   you. An empowered hit flashes amber and says which condition paid — a
   conditional you cannot see is one you will not play around.
+- **And a camp is a place with animals in it** — creatures drift about their
+  posts at a grazing pace instead of standing on the pixel they spawned on, each
+  on its own clock so a camp does not step off together, and the back rank of a
+  pack circles while it waits its turn rather than holding station in a polite
+  semicircle. Bosses are the exception and hold their ground: a thing you walk a
+  long way to find is worth more standing sentinel than milling about.
 - **13 monster kinds** in five difficulty bands radiating from spawn, so
   walking further from the town *is* the progression — the first camp stands
   well outside the palisade, and nothing spawns within the walls. Each kind has a

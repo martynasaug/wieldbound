@@ -6505,6 +6505,74 @@ Eighteen offline suites, both workspaces, zero console errors.
 
 ---
 
+## Phase 65 — A camp is a place with animals in it
+The monster AI already had more in it than it looked: threat retargeting that
+makes tanking possible, leashing, melee slots with a queue, leaps, separation
+and telegraphed slams. What it had none of is anything a creature does when it
+is not fighting you, and anything a creature does other than walk at you.
+
+### M65.1 — idle is not still, and waiting looks like waiting
+
+### One: every creature in the game was a statue
+Thirteen kinds, standing on the exact pixel they spawned on, facing one way, for
+the life of the world — until a player crossed the aggro radius, and then
+running at them in a straight line.
+
+That is the same complaint Phase 54 answered for the grass and Phase 51 for the
+townspeople, one system over: **what reads as alive is not detail, it is motion
+with intent.** A wolf pack milling about its clearing is a wolf pack; four
+wolves at attention is furniture. And it is invisible as a defect, because
+nothing is wrong — there is simply nothing happening.
+
+So an idle monster drifts about its post at a grazing pace, pausing between
+legs, with the leg and the dwell jittered per creature out of its own id — the
+same reason every idle animation in this game is phase-seeded, so a camp does
+not step off together.
+
+**A BOSS DOES NOT WANDER**, and that is the exception worth recording. The three
+things with a guaranteed drop are what a player walks a long way to find, and a
+creature standing sentinel exactly where the stories put it is doing more work
+than one milling about.
+
+Nothing on the client had to change: it already derives a monster's walk from
+its position deltas, so the moment the server moved them they walked.
+
+### Two: the back rank stood in a polite semicircle
+The melee cap has held the overflow at a wider ring since Phase 42 — and they
+stood in it perfectly still, which reads as the pack being broken rather than as
+a queue. They circle now, slowly, each in a direction fixed for the life of the
+world out of its own id: one picking a way each tick would jitter on the spot,
+and a whole ring turning together is a carousel.
+
+Circling says *waiting*, which is exactly what they are doing, and it is the
+clearest way a pack tells the player it is a pack rather than a crowd.
+
+### Verified
+`tools/test/camps.mjs` stands at spawn and touches nothing for twenty-two
+seconds, because walking out to watch would put creatures in aggro and measure a
+chase instead:
+
+    80 creatures in view, 71 of them moved
+    71/71 ordinary creatures drifted (100%)
+    furthest anything got from where it started: 168px, leash is 90
+    9 bosses in view, all holding station
+
+It checks all three ways this fails silently — a camp that does not move, a
+wander with no leash (which walks a camp out of its own difficulty band over an
+afternoon, and the band is the whole way this world is laid out), and a boss
+that strolls off. Turning the wander off takes it from 100% to 0% and the suite
+says so.
+
+### What is still not there, and is worth its own milestone
+**Twelve of the thirteen kinds are melee.** Only the dragon attacks from beyond
+contact range, so every fight in the game has the same shape: it runs at you and
+you stand there. A ranged attacker is the thing that would make the player's own
+positioning matter defensively — but it needs a monster projectile drawn, a
+line-of-sight question answered, and a balance pass, so it is a milestone rather
+than a paragraph.
+
+---
+
 ## Seeding a character for testing
 
 PLAN has referred to "the seeding recipe" since Phase 50 without one existing —
@@ -6588,6 +6656,27 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
+
+- IDLE IS NOT STILL. Every creature in the game stood on its spawn pixel for the
+  life of the world, which is the same defect as grass that never moved and
+  townspeople who never walked: what reads as alive is motion with intent, and
+  the absence of it throws nothing and looks like nothing being wrong.
+- A BOSS DOES NOT WANDER. The three things with a guaranteed drop are what a
+  player walks a long way to find, and one standing sentinel where the stories
+  put it is worth more than one milling about. Keyed off `guaranteedDrop`, so it
+  is the same flag that already means "this one is special".
+- A WANDER NEEDS A LEASH, and the test checks it rather than the code asserting
+  it. Distance from spawn IS difficulty here, so a camp that drifts without a
+  bound walks out of its own band over an afternoon — and nothing would ever say
+  so, because each individual step is tiny and legitimate.
+- The back rank CIRCLES rather than standing. A semicircle of monsters holding
+  station at a polite distance reads as the pack being broken; circling reads as
+  waiting, which is exactly what the melee cap has them doing. Direction is fixed
+  per creature from its id — picking one per tick jitters on the spot, and a
+  whole ring turning the same way is a carousel.
+- Measure a camp from SPAWN, touching nothing. Walking out to watch puts
+  creatures in aggro and measures a chase, which is the one behaviour the probe
+  is not asking about.
 
 - A PROJECTILE HAS TO BE SIZED IN PIXELS, not in units. One world unit is about
   fifteen pixels at this camera, so a 0.07-unit arrow trail is ONE pixel and a
@@ -9362,7 +9451,22 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 64 complete (2026-08-21).
+Phase 0 through 65 complete (2026-08-21).
+
+**Phase 65 M65.1 — a camp is a place with animals in it.** The monster AI had
+more in it than it looked — threat retargeting, leashing, melee slots, leaps,
+separation, telegraphs — and nothing at all for what a creature does when it is
+not fighting you. Thirteen kinds stood on their spawn pixel, facing one way, for
+the life of the world. They drift about their posts now at a grazing pace, jittered
+per creature so a camp does not step off together, and **a boss holds station**,
+because a thing you walk a long way to find is worth more standing sentinel than
+milling about. The back rank of a pack circles instead of standing in a polite
+semicircle: the melee cap has had them waiting since Phase 42 and they looked
+broken rather than queued. Measured from spawn without touching anything —
+71 of 71 ordinary creatures drift, all nine bosses hold, and nothing escapes its
+leash; turning the wander off takes it to 0% and the suite says so. Still open,
+and flagged as its own milestone: **twelve of the thirteen kinds are melee**, so
+every fight has the same shape.
 
 **Phase 64 — spells you can see, and time to react to them.** *"Skills should be
 very good high quality animations and effects, with cast time, good cool looking

@@ -100,6 +100,10 @@ import {
   isRetreating,
   castMsFor,
   CAST_CANCEL_PX,
+  MONSTER_WANDER_RADIUS_PX,
+  MONSTER_WANDER_PACE,
+  MONSTER_WANDER_DWELL_MS,
+  MONSTER_ORBIT_PACE,
   resistOf,
   applyResist,
   passiveResist,
@@ -1368,8 +1372,22 @@ interface MonsterAi {
   state: MonsterAiState;
   targetId: string | null;
   home: { x: number; y: number };
+  /** Where it is currently drifting to while idle, and when to pick another. */
+  wanderTo?: { x: number; y: number };
+  wanderAt?: number;
 }
 const monsterAi = new Map<string, MonsterAi>();
+
+/** A stable number per monster id, so every jitter derived from it is the same
+ *  one for the life of the world rather than a new one each tick. */
+function hashOf(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 for (const monster of monsters) {
   monsterAi.set(monster.id, { state: "idle", targetId: null, home: { x: monster.x, y: monster.y } });
 }
@@ -3538,6 +3556,61 @@ setInterval(() => {
           const step = Math.min(speed, d - stopAt);
           monster.x += ((target.x - monster.x) / d) * step;
           monster.y += ((target.y - monster.y) / d) * step;
+        } else if (overflow > 0) {
+          // WAITING ITS TURN, AND IT LOOKS LIKE IT.
+          //
+          // The melee cap has held the back ranks at a wider ring since Phase
+          // 42, and they stood in it perfectly still — a semicircle of statues
+          // at a polite distance, which reads as the pack being broken rather
+          // than as a queue. Circling says "waiting", which is exactly what
+          // they are doing, and it is the clearest way a pack tells the player
+          // it is a pack rather than a crowd.
+          //
+          // The direction is fixed per monster for the life of the world, from
+          // its id: one that picked a way each tick would jitter on the spot,
+          // and a whole ring turning the same way is a carousel.
+          const way = hashOf(monster.id) % 2 === 0 ? 1 : -1;
+          const arc = (stepPx * MONSTER_ORBIT_PACE * way) / Math.max(1, d);
+          const cos = Math.cos(arc);
+          const sin = Math.sin(arc);
+          const rx = monster.x - target.x;
+          const ry = monster.y - target.y;
+          monster.x = target.x + rx * cos - ry * sin;
+          monster.y = target.y + rx * sin + ry * cos;
+        }
+      }
+    } else if (ai.state === "idle") {
+      // IDLE IS NOT STILL. Drift about the post at a grazing pace, pausing
+      // between legs — which is what makes a camp read as animals in a place
+      // rather than as props on a shelf.
+      //
+      // A BOSS DOES NOT WANDER, and that is the one exception worth writing
+      // down: the three things with a guaranteed drop are the things a player
+      // walks a long way to find, and a creature standing sentinel exactly
+      // where the stories put it is doing more work than one milling about.
+      if (!stats.guaranteedDrop) {
+        const due = ai.wanderAt ?? 0;
+        if (!ai.wanderTo || now >= due) {
+          // Jittered per monster, so a camp does not step off together — the
+          // same reason every idle animation in this game is phase-seeded.
+          const jitter = (hashOf(monster.id) % 1000) / 1000;
+          const angle = jitter * Math.PI * 2 + now / 9000;
+          const reach = MONSTER_WANDER_RADIUS_PX * (0.35 + jitter * 0.65);
+          ai.wanderTo = {
+            x: ai.home.x + Math.cos(angle) * reach,
+            y: ai.home.y + Math.sin(angle) * reach,
+          };
+          ai.wanderAt = now + MONSTER_WANDER_DWELL_MS * (0.6 + jitter * 0.9);
+        }
+        const dx = ai.wanderTo.x - monster.x;
+        const dy = ai.wanderTo.y - monster.y;
+        const d = Math.hypot(dx, dy);
+        // Stop short rather than landing exactly, so it stands for the rest of
+        // its dwell instead of twitching on the spot.
+        if (d > 4) {
+          const step = Math.min(stepPx * MONSTER_WANDER_PACE, d);
+          monster.x += (dx / d) * step;
+          monster.y += (dy / d) * step;
         }
       }
     } else if (ai.state === "return") {

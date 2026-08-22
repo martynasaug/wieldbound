@@ -740,6 +740,36 @@ export const THREAT_FALLBACK_TO_NEAREST = true;
 // The floor stops a large contribution rounding a small one down to zero.
 export const MIN_XP_SHARE = 0.15;
 
+// --- What a monster does when nobody is looking ------------------------------
+// A camp was thirteen kinds of statue. Every creature in the game stood on the
+// exact pixel it spawned on, facing one way, for the life of the world, until a
+// player crossed its aggro radius — and then ran at them in a straight line.
+//
+// That is the same complaint Phase 54 answered for the grass and Phase 51 for
+// the townspeople, one system over: the thing that reads as alive is not detail,
+// it is MOTION WITH INTENT. A wolf pack that mills about its clearing is a wolf
+// pack; four wolves at attention is furniture.
+
+/** How far from its post a creature will drift while nothing is happening. */
+export const MONSTER_WANDER_RADIUS_PX = 90;
+/** A grazing pace, well under a chase. Wandering must never read as chasing. */
+export const MONSTER_WANDER_PACE = 0.32;
+/** Roughly how long between one drift and the next, before jitter. */
+export const MONSTER_WANDER_DWELL_MS = 4200;
+
+/**
+ * How fast a monster waiting its turn circles the thing it is fighting.
+ *
+ * The melee cap has always held the back ranks at a wider ring, and they stood
+ * in it perfectly still — which reads as a bug rather than as a queue. Circling
+ * says "waiting", which is what they are doing, and it is the single clearest
+ * way a pack tells the player it is a pack rather than a crowd.
+ *
+ * Deliberately slower than a chase: a ring of monsters orbiting at running
+ * speed is a carousel, and the player has to be able to watch the front rank.
+ */
+export const MONSTER_ORBIT_PACE = 0.45;
+
 // Melee crowding: only this many monsters may press into contact at once;
 // the rest hold at a wider ring and rotate in. Without a cap an entire pack
 // occupies the same pixel and every one of them hits you simultaneously.
