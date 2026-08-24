@@ -914,10 +914,14 @@ export class Game {
         // `chilled`/`burning` have been monster-only calls since either
         // existed — the HUD status bar told a player they were slowed or
         // burning, but the character they were looking at never did. Same
-        // two states, same priority chain, now read off the player's own
-        // statuses instead of only a monster's.
+        // states, same priority chain, now read off the player's own
+        // statuses instead of only a monster's. `poisoned`/`bleeding` join
+        // them here rather than being left to share chill's steady tint —
+        // see `Actor.setPoisoned`.
         this.localActor?.setChilled(p.statuses.some((x) => x.id === "chilled"));
         this.localActor?.setBurning(p.statuses.some((x) => x.id === "burning"));
+        this.localActor?.setPoisoned(p.statuses.some((x) => x.id === "poisoned"));
+        this.localActor?.setBleeding(p.statuses.some((x) => x.id === "bleeding"));
       },
       onStatusTick: (p) => this.onStatusTick(p),
       onBattleResult: (p) => this.onBattleResult(p),
@@ -1322,9 +1326,17 @@ export class Game {
       if (moving) vis.actor.faceDirection(s.x - vis.state.x, s.y - vis.state.y);
 
       // Chill is a gameplay signal (your Frost Nova is still working), so it
-      // gets a colour rather than being inferred from the monster moving slower.
-      vis.actor.setChilled(s.slowed);
-      vis.actor.setBurning((s.statuses ?? []).some((x) => x.id === "burning"));
+      // gets a colour rather than being inferred from the monster moving
+      // slower. Read off the STATUS ITSELF now, not `s.slowed` — that flag is
+      // true for anything with a moveMultiplier under 1 (poisoned, staggered
+      // and chilled alike), so a poisoned or staggered monster used to glow
+      // the exact blue meant to say "your Frost Nova worked," which taught
+      // the wrong lesson about what had actually landed.
+      const monsterStatuses = s.statuses ?? [];
+      vis.actor.setChilled(monsterStatuses.some((x) => x.id === "chilled"));
+      vis.actor.setBurning(monsterStatuses.some((x) => x.id === "burning"));
+      vis.actor.setPoisoned(monsterStatuses.some((x) => x.id === "poisoned"));
+      vis.actor.setBleeding(monsterStatuses.some((x) => x.id === "bleeding"));
       // THE BURST IS THE WHOLE MECHANIC, and until now it was invisible: the
       // server has moved this body at several times its own speed and the run
       // cycle kept playing at its ordinary rate, legs cycling as if nothing had

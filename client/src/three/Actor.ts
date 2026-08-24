@@ -639,6 +639,8 @@ export class Actor {
   private flashColor = 0xffffff;
   private chilled = false;
   private burning = false;
+  private poisoned = false;
+  private bleeding = false;
   private recovering = false;
   private emissiveApplied = -1;
   /** Every material this actor owns and must free. All of them are owned: see
@@ -1451,9 +1453,35 @@ export class Actor {
     this.flashUntil = performance.now() + ms;
   }
 
-  /** Frost Nova and Poison Arrow both slow; the blue is what says it worked. */
+  /**
+   * Frost Nova's own slow, and nothing else's — see `setPoisoned` for why
+   * this used to be wired off a generic "is something slowing me" flag and
+   * why that was wrong. A steady tint, because a plain slow is a condition
+   * rather than an event: nothing about it is happening again right now.
+   */
   setChilled(chilled: boolean): void {
     this.chilled = chilled;
+  }
+
+  /**
+   * Venom ticking on this body.
+   *
+   * This body used to go the SAME blue chill uses, because the only signal
+   * ever wired up was `slowed` — a generic "something with `moveMultiplier`
+   * under 1 is running" flag true for chilled, poisoned AND staggered alike.
+   * A poisoned or staggered target read as frozen, which taught the wrong
+   * lesson about what Frost Nova had actually landed. Poison is a DOT, the
+   * same shape as `burning`, so it earns the same pulse rather than sharing
+   * chill's steady tint — the rule `setBurning` already wrote down.
+   */
+  setPoisoned(poisoned: boolean): void {
+    this.poisoned = poisoned;
+  }
+
+  /** A cut still bleeding. Same DOT-pulse rule as `setPoisoned`, its own
+   *  colour so the two do not read as the same wound. */
+  setBleeding(bleeding: boolean): void {
+    this.bleeding = bleeding;
   }
 
   /**
@@ -1495,7 +1523,8 @@ export class Actor {
     // Ordered by urgency: a hit landing right now beats the window it landed
     // in, the window beats an active DOT (something happening on its own
     // clock), and a DOT beats a plain slow, which is a condition rather than
-    // an event.
+    // an event. Among DOTs, order is arbitrary — stacking more than one is
+    // rare enough that which wins the pixel is not worth its own rule.
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 90);
     const opening = this.recovering
       ? // Amber, which is the colour this game already uses for "the condition
@@ -1507,10 +1536,19 @@ export class Actor {
     // of the signal is "this is still ticking", and a steady tint says a
     // state rather than a clock.
     const burn = this.burning ? 0x000000 | (Math.round(0xa0 + pulse * 0x5f) << 16) : -1;
+    // Venom, on the green channel rather than red — the same pulse, a
+    // different school's colour, so a burning body and a poisoned one are
+    // never mistaken for each other at a glance.
+    const poison = this.poisoned ? 0x000000 | (Math.round(0xa0 + pulse * 0x5f) << 8) : -1;
+    // A darker, slower-feeling red than burn's — physical rather than fire,
+    // and a cut is not a flame.
+    const bleed = this.bleeding ? 0x000000 | (Math.round(0x70 + pulse * 0x40) << 16) : -1;
     const want =
       flashing ? this.flashColor
       : opening !== -1 ? opening
       : burn !== -1 ? burn
+      : poison !== -1 ? poison
+      : bleed !== -1 ? bleed
       : this.chilled ? 0x2f6fa8
       : -1;
     if (want === this.emissiveApplied) return;

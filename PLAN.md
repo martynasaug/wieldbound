@@ -7302,6 +7302,17 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A CODE COMMENT CAN BE THE BUG, not just miss one. `setChilled`'s own doc
+  comment claimed Poison Arrow's slow was ALSO supposed to show blue — it
+  wasn't a stale comment describing removed behaviour, it was the original
+  design intent, and it was wrong the day it was written: the monster call
+  site (`s.slowed`, true for any `moveMultiplier`-under-1 status) faithfully
+  implemented exactly what the comment said and produced a poisoned or
+  staggered creature glowing Frost Nova's colour. Grepping for what a
+  comment claims and diffing it against what the code actually does is a
+  real way to find a bug a "does this feature exist" search would miss
+  entirely, because the feature DOES exist — it is just wired to the wrong
+  status.
 - A RESEARCH REPORT'S SUGGESTIONS ARE A STARTING POINT, NOT A SHORTLIST TO
   APPROVE. Asked where the next monster-AI gap was, the research came back
   with three candidates for a low-HP flee mechanic — goblin, wolf and
@@ -10716,6 +10727,40 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.9 — a poisoned body was wearing Frost Nova's colour.** Not
+a missing feature this time but an actively wrong one: `setChilled`'s own
+comment said "Frost Nova AND Poison Arrow both slow; the blue is what says
+it worked" — and the monster call site backed that up, driven off
+`s.slowed`, a generic flag true for anything with `moveMultiplier` under 1
+(chilled, poisoned, staggered, all three). A poisoned cactoro victim, and
+even a staggered troll mid-recovery-window, glowed the exact blue meant to
+tell a player their Frost Nova had landed — the wrong lesson, every time
+one of the other two statuses was actually the one running. `setBurning`
+already wrote down the fix for the general case back in M69.16: "a
+damage-over-time effect is the one kind of condition where 'something is
+actively happening to me right now' is worth its own pulse rather than
+sharing the steady tint a plain slow gets" — poison is a DOT (`dot: {
+damage: 4, school: "nature" }`) exactly like burning is, and bleeding
+(`dot: { damage: 5, school: "physical" }`, applied by Rend) turned out to
+be a second DOT with no visual at all, caught by the same pass. Added
+`setPoisoned`/`setBleeding` to `Actor.ts`, same pulse shape as `setBurning`
+with their own channel (green for poison, a duller red than burn's for
+bleeding, so a burning body and a bleeding one are never mistaken), and
+fixed the monster call site to read the real `chilled` status id instead
+of the borrowed `slowed` flag — chill now means chill, and nothing else
+gets to wear its colour. Both directions wired: a player's own poison/
+bleed now shows on their own body (mirroring M69.16's player-side burn/
+chill extension), and every kind that can inflict either — cactoro's
+poison, Rend's bleed on a monster — reads correctly. Verified live:
+sampled the actual `MeshStandardMaterial.emissive` hex under each of the
+four states in isolation and confirmed chilled held its original
+`0x2f6fa8`, and burning/poisoned/bleeding each produced a distinct,
+non-zero colour rather than collapsing onto chill's blue or each other.
+`animation.mjs`, `smoke.mjs`, `statuses.mjs` and `fighting.mjs` all green
+(one `fighting.mjs` run failed on pure accuracy-roll variance against a
+mushnub, passed clean on immediate re-run — this change touches only
+client-side emissive colour, nothing in combat resolution).
 
 **Phase 70 M70.8 — cowardice, made literal.** Back to monster AI after the
 lag detour. A goblin was never written as a solo threat: its whole answer
