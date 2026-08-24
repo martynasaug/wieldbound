@@ -10787,6 +10787,34 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.15 — a mark for whoever has work.** The last of the three
+candidates the broader research pass found, the one flagged as weaker
+justification and worth a second look before committing — it survived the
+look. `dialogueActionsFor` already derives, every time the dialogue box
+opens, exactly which quests an NPC has and whether each is offerable,
+in-progress, ready to turn in, locked or done; nothing said any of that
+before the box was open, so the only way to learn a quest-giver had
+something for you was to walk up and ask, every single time, giver after
+giver. The precedent this generalizes is the attribute panel's own dock
+badge — an unspent stat point gets a passive nudge on the relevant menu
+icon rather than making a player open the panel to notice — applied to
+its most natural sibling, a quest giver's own head. `PlateSpec` gains
+`hasQuest?: boolean`, computed once per NPC per frame from the exact same
+`questsFrom`/`offerStateFor` pair `dialogueActionsFor` already calls, true
+only for "offer" or "ready" (a new quest to take, or a finished one
+waiting on a reward) — never "locked" (nothing to do yet) or "in-progress"
+(already showing on the tracker). A small gold "!" on the nameplate, gold
+rather than the "hunting" marker's red from M70.10, since this is an
+invitation and not a threat — the same gold this game already uses for
+quest rewards and the level-up toast. Verified live: intercepted the real
+per-frame `drawPlates()` call to `hud.plate()` for every NPC on a fresh
+level-1 character and confirmed Warden Cabel (gives "Thin Them Out",
+level-1 kill quest) and Marda Quill (gives "The Fire Wants Feeding", a
+level-1 gathering quest with no combat objective, so not the one that
+would have been guessed first) both read `hasQuest: true`, while the
+other three NPCs correctly read `false`. `animation.mjs`, `smoke.mjs` and
+`quests.mjs` green; `fighting.mjs` clean.
+
 **Phase 70 M70.14 — a stride that kept restarting.** Reported directly
 and bluntly: running while attacking sometimes slides — "doing Michael
 Jackson." The comment already sitting on this exact code path had solved

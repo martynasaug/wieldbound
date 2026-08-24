@@ -267,6 +267,16 @@ const STYLE = `
   color: #ff5a4a;
   text-shadow: 0 0 4px #ff5a4a88;
 }
+/* Gold rather than red: this is an invitation, not a threat, and gold is
+   already what this game uses for quest reward text and the level-up
+   toast — the same colour a player has already learned to want. */
+#hud3d .plate-npc.has-quest .pn::after {
+  content: "!";
+  margin-left: 4px;
+  color: #ffd873;
+  font-weight: bold;
+  text-shadow: 0 0 5px #ffd87399;
+}
 #hud3d .plate.locked .pn::before,
 #hud3d .plate.locked .pn::after {
   color: #fff0c8; font-weight: bold; opacity: .95;
@@ -436,6 +446,17 @@ export interface PlateSpec {
    * coming for you; this is the plate's answer to that specific question.
    */
   targetingMe?: boolean;
+  /**
+   * An NPC with something worth walking up for right now — a quest to
+   * offer or one already finished and waiting to be turned in.
+   *
+   * The same nudge the attribute panel's own dock icon already gives for
+   * unspent stat points, one surface over: a passive sign that something
+   * is available rather than a fact a player only learns by opening the
+   * dialogue box on the offchance. `role` still decides the icon Elsbet
+   * wears — a guide stays a guide — this only ever adds a mark on top.
+   */
+  hasQuest?: boolean;
 }
 
 /**
@@ -749,6 +770,7 @@ export class Hud {
       (spec.engaged ? " engaged" : "") +
       (spec.locked ? " locked" : "") +
       (spec.targetingMe ? " hunting" : "") +
+      (spec.hasQuest ? " has-quest" : "") +
       (spec.dim ? " dim" : "") +
       (spec.windup !== undefined ? " casting" : "");
     if (cls !== st.cls) {

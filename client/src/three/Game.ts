@@ -4202,12 +4202,22 @@ export class Game {
       const inRange = Math.hypot(this.playerX - npc.x, this.playerY - npc.y) <= NPC_TALK_RANGE_PX;
       const wx = toWorldX(npc.x);
       const wz = toWorldZ(npc.y);
+      // Same fact `dialogueActionsFor` already derives when the box opens —
+      // read here too so the nameplate can say it before the box does.
+      // Only "offer" and "ready" are worth a walk over; "locked" has
+      // nothing to do yet and "done"/"in-progress" already show nowhere
+      // else, so a badge for either would be a mark with nothing behind it.
+      const hasQuest = questsFrom(npc.def.id).some((def) => {
+        const state = offerStateFor(def, this.level, this.questTracker.activeQuests, this.questTracker.completedQuests);
+        return state === "offer" || state === "ready";
+      });
       this.hud.plate(`npc-${id}`, this.world.project(wx, 2.05, wz, 46), {
         kind: "npc",
         name: npc.def.name,
         subtitle: npc.def.title,
         icon: npc.def.icon,
         engaged: inRange,
+        hasQuest,
         distance: rangeTo(wx, wz),
       });
     }
