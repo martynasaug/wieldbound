@@ -7302,6 +7302,19 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A FIELD CAN BE RIGHT FOR THE GAMEPLAY THAT READS IT AND WRONG FOR THE
+  BROADCAST THAT RENDERS IT. Resetting a dead monster's position to home
+  immediately cost nothing gameplay-side — every AI and collision pass
+  already skips anything not `"alive"` — but the same field is also what
+  the client draws the corpse at, and THAT consumer needed the real death
+  spot for a beat it was never given. One field, two audiences, only one of
+  which the original write actually served.
+- MOVE A RESET TO THE MOMENT ITS OWN REASON STARTS BEING TRUE, not the
+  moment that is merely convenient to write it at. The position only needs
+  to be "home" once something is standing there again to see it — the
+  respawn tick — not from the instant of death, which is simply the last
+  point before then that anyone happened to be touching the code.
+
 - THE OLDEST REWARD IN THE LOOP IS NOT AUTOMATICALLY THE BEST-SIGNALLED ONE.
   Essence, runes and recipes all got a "+N" floater and a sound this
   session; wood, ore and herb — the gathering that predates every one of
@@ -10602,6 +10615,32 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.2 — a corpse dies where it fell, not where it will respawn.**
+Reported from play: killing a monster teleported the corpse to its spawn
+point and only THEN played the death animation. `killMonster` set
+`monster.x/y = ai.home` in the same tick it set `status: "dead"`, so the
+very next snapshot carried the dead flag alongside a position already
+reset — the client's death-edge handler had nothing but the wrong place to
+play `die` in. The reset was never wrong as GAMEPLAY bookkeeping — nothing
+about a dead monster's position matters while it is dead, since every AI
+and collision pass already skips non-alive monsters — it was wrong as a
+RENDER instruction, conflating "where the next spawn should stand" with
+"where the client should draw the corpse right now." Moved to the respawn
+tick, the one moment the position actually starts mattering again: a corpse
+now sits at the real kill spot for the whole dead interval and only jumps
+home in the same tick `status` flips back to `"alive"`, arriving already
+in place the instant something is there to see. `resolveDeathBurst` already
+read the death-spot position correctly (M69.6's own comment noted it fires
+"before the body is sent back to its spawn point below") — only the
+position broadcast itself was late to the same insight. Verified live: drug
+a monster 374px from its post before finishing it off, and the first
+snapshot carrying `status: "dead"` placed it 374px from home and 34px from
+the actual kill spot — previously that same snapshot would have shown it
+already at home. Two existing offline suites (`throwers.mjs`, `camps.mjs`)
+were checked and confirmed unaffected: both already discard any monster
+observation that isn't `"alive"`, so neither ever measured the moment this
+bug lived in.
 
 **Phase 70 M70.1 — the reward with no acknowledgement was the one every
 player pulls first.** Combat's own version of this had been worked

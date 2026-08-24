@@ -1365,8 +1365,7 @@ function awardKill(monster: MonsterState, now: number): void {
 // Everything that happens when a monster's HP reaches zero, in one place so
 // auto-attacks and skills cannot drift apart on respawn/credit handling.
 function killMonster(monster: MonsterState, now: number): void {
-  // Burst first: it fires from where the corpse fell, before the body is
-  // sent back to its spawn point below.
+  // Burst first: it fires from where the corpse fell.
   resolveDeathBurst(monster, now);
   monster.status = "dead";
   monster.windingUp = false;
@@ -1377,10 +1376,18 @@ function killMonster(monster: MonsterState, now: number): void {
   clearStatuses(monster.id);
   monster.slowed = false;
   monster.statuses = [];
+  // POSITION STAYS PUT. This used to snap `monster.x/y` to its home right
+  // here, on the reasoning that the respawn tick reads no fields of its own
+  // and the body needed to already be staged there — which pre-staged the
+  // GAMEPLAY position correctly and broke the VISUAL one: the very next
+  // snapshot carried `status: "dead"` alongside a position already at home,
+  // so a corpse killed three rings from its post teleported there before
+  // the client's death animation ever played. The respawn tick below moves
+  // it now, in the same tick `status` actually flips back to "alive" — a
+  // dead body has no AI reading its position, so nothing needs it moved
+  // any earlier than the moment something is standing there again.
   const ai = monsterAi.get(monster.id);
   if (ai) {
-    monster.x = ai.home.x;
-    monster.y = ai.home.y;
     ai.state = "idle";
     ai.targetId = null;
   }
@@ -3471,6 +3478,14 @@ setInterval(() => {
       monster.status = "alive";
       monster.hp = monster.maxHp;
       monsterRespawnAt.delete(monster.id);
+      // Back to its post, in the same tick it comes back to life — see the
+      // comment in `killMonster` on why this moved here from the moment of
+      // death.
+      const ai = monsterAi.get(monster.id);
+      if (ai) {
+        monster.x = ai.home.x;
+        monster.y = ai.home.y;
+      }
     }
   }
 
