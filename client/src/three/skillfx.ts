@@ -19,6 +19,7 @@
 import * as THREE from "three";
 import type { SkillId } from "../../../shared/protocol-types";
 import { particleTexture } from "./attacks";
+import type { LightPool } from "./lightPool";
 
 /** How a skill's effect is delivered, beyond the atlas flash it already plays. */
 export type FxShape =
@@ -174,6 +175,16 @@ interface LiveLight {
   peak: number;
 }
 
+interface PendingFlash {
+  x: number;
+  y: number;
+  z: number;
+  color: number;
+  startedAt: number;
+  durationMs: number;
+  peak: number;
+}
+
 /**
  * Owns the geometry-based skill effects and their lifetimes.
  *
@@ -185,6 +196,11 @@ interface LiveLight {
 export class SkillFx {
   private readonly live: Live[] = [];
   private readonly lights: LiveLight[] = [];
+  // A flash that couldn't get a light this frame (pool exhausted) waits here
+  // rather than being dropped, so a very busy fight loses light priority to
+  // whichever flashes started first instead of randomly to whichever call
+  // happened to lose the race.
+  private readonly pendingFlashes: PendingFlash[] = [];
 
   // One geometry per shape, shared by every instance — the per-effect state is
   // all in the transform and the material.
@@ -193,7 +209,10 @@ export class SkillFx {
   private readonly streak = new THREE.PlaneGeometry(0.07, 1.7);
   private readonly wedge: THREE.BufferGeometry;
 
-  constructor(private readonly scene: THREE.Scene) {
+  constructor(
+    private readonly scene: THREE.Scene,
+    private readonly lightPool: LightPool,
+  ) {
     // A 90-degree wedge lying flat, pointing down +Z, so it can be dropped in
     // front of a caster by setting its Y rotation to their facing.
     const shape = new THREE.Shape();
@@ -375,9 +394,14 @@ export class SkillFx {
    * night to cast it in.
    */
   flash(x: number, y: number, z: number, color: number, peak = 9, durationMs = 260): void {
-    const light = new THREE.PointLight(color, 0, 14, 2);
+    // Pulled from a fixed pool rather than `new THREE.PointLight()` — see
+    // lightPool.ts for why creating one per flash caused stutters.
+    const light = this.lightPool.acquire(color, 0, 14, 2);
+    if (!light) {
+      this.pendingFlashes.push({ x, y, z, color, startedAt: performance.now(), durationMs, peak });
+      return;
+    }
     light.position.set(x, y + 1, z);
-    this.scene.add(light);
     this.lights.push({ light, startedAt: performance.now(), durationMs, peak });
   }
 
@@ -417,13 +441,21 @@ export class SkillFx {
       const l = this.lights[i];
       const k = (now - l.startedAt) / l.durationMs;
       if (k >= 1) {
-        this.scene.remove(l.light);
-        l.light.dispose();
+        this.lightPool.release(l.light);
         this.lights.splice(i, 1);
         continue;
       }
       // Snap on, fall away — the shape of a real flash.
       l.light.intensity = l.peak * Math.pow(1 - k, 2);
+    }
+
+    for (let i = this.pendingFlashes.length - 1; i >= 0; i--) {
+      const p = this.pendingFlashes[i];
+      const light = this.lightPool.acquire(p.color, 0, 14, 2);
+      if (!light) continue;
+      light.position.set(p.x, p.y + 1, p.z);
+      this.lights.push({ light, startedAt: p.startedAt, durationMs: p.durationMs, peak: p.peak });
+      this.pendingFlashes.splice(i, 1);
     }
   }
 
@@ -433,8 +465,7 @@ export class SkillFx {
       fx.material.dispose();
     }
     for (const l of this.lights) {
-      this.scene.remove(l.light);
-      l.light.dispose();
+      this.lightPool.release(l.light);
     }
     this.live.length = 0;
     this.lights.length = 0;

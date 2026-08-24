@@ -104,6 +104,7 @@ import { isUpgrade } from "../ui/items";
 import { Effects, isEffectName, type EffectName } from "./effects";
 import { Indicators } from "./indicators";
 import { ATTACK_STYLES, Projectiles, attackStyle, impactDelayMs } from "./attacks";
+import { LightPool } from "./lightPool";
 import { playSfx, preloadSfx, toggleMuted } from "./sfx";
 import { unlockAudio } from "./audio";
 import { Soundscape } from "./soundscape";
@@ -603,8 +604,11 @@ export class Game {
     this.minimap = new Minimap(container);
     this.effects = new Effects(this.world.scene);
     this.indicators = new Indicators(this.world.scene);
-    this.projectiles = new Projectiles(this.world.scene);
-    this.skillFx = new SkillFx(this.world.scene);
+    // Shared by both, so combat's bolts and skill flashes draw from one fixed
+    // set of lights rather than each churning its own — see lightPool.ts.
+    const lightPool = new LightPool(this.world.scene);
+    this.projectiles = new Projectiles(this.world.scene, lightPool);
+    this.skillFx = new SkillFx(this.world.scene, lightPool);
 
     this.characterPanel = new CharacterPanel(
       (stat) => this.socket.sendAllocateStat(stat),

@@ -21,6 +21,7 @@ import * as THREE from "three";
 import type { WeaponType } from "../../../shared/protocol-types";
 import { loadModel } from "./assets";
 import type { EffectName } from "./effects";
+import type { LightPool } from "./lightPool";
 import type { SfxName } from "./sfx";
 
 // --- Particle textures -------------------------------------------------------
@@ -125,8 +126,9 @@ interface LiveProjectile {
   /** Beams and wisps hold still and fade; arrows and bolts travel. */
   kind: "arrow" | "beam" | "bolt" | "wisp";
   materials: THREE.Material[];
-  /** Bolts and arrows carry their own light, which has to be taken away too. */
-  light?: THREE.PointLight;
+  /** Bolts and arrows carry their own light, which has to be taken away too.
+   *  `null` when the pool was exhausted and this one drew no light at all. */
+  light?: THREE.PointLight | null;
   /** The bolt's spark and glow sprites, spun in-plane each frame so the core
    *  is not a static ball even though a sprite always faces the camera. */
   spinMats?: THREE.SpriteMaterial[];
@@ -172,10 +174,10 @@ const BOLT_TRAIL_GEO = new THREE.ConeGeometry(0.3, 2.2, 10, 1, true);
  * down -Z so the group can simply `lookAt` its destination, which is the same
  * convention the beam uses.
  */
-function boltMesh(tint: number): {
+function boltMesh(tint: number, pool: LightPool): {
   object: THREE.Object3D;
   materials: THREE.Material[];
-  light: THREE.PointLight;
+  light: THREE.PointLight | null;
   spinMats: THREE.SpriteMaterial[];
 } {
   const sparkMat = new THREE.SpriteMaterial({
@@ -223,10 +225,13 @@ function boltMesh(tint: number): {
   trail.rotation.x = Math.PI / 2;
   trail.position.z = -1.1;
 
-  const light = new THREE.PointLight(tint, 7, 10, 2);
+  // Pulled from a fixed pool rather than `new THREE.PointLight()` — see
+  // lightPool.ts for why creating one per bolt caused stutters.
+  const light = pool.acquire(tint, 7, 10, 2);
 
   const group = new THREE.Group();
-  group.add(glow, spark, trail, light);
+  group.add(glow, spark, trail);
+  if (light) group.add(light);
   group.renderOrder = 10;
   return {
     object: group,
@@ -355,7 +360,10 @@ function beamMesh(length: number, tint: number): { object: THREE.Object3D; mater
 export class Projectiles {
   private readonly live: LiveProjectile[] = [];
 
-  constructor(private readonly scene: THREE.Scene) {}
+  constructor(
+    private readonly scene: THREE.Scene,
+    private readonly lightPool: LightPool,
+  ) {}
 
   /** An arrow that reaches `to` in `flightMs`, nocked pointing along its path. */
   arrow(from: THREE.Vector3, to: THREE.Vector3, flightMs: number): void {
@@ -385,7 +393,7 @@ export class Projectiles {
    * its own light now.
    */
   bolt(from: THREE.Vector3, to: THREE.Vector3, flightMs: number, tint: number): void {
-    const { object, materials, light, spinMats } = boltMesh(tint);
+    const { object, materials, light, spinMats } = boltMesh(tint, this.lightPool);
     object.position.copy(from);
     object.lookAt(to);
     this.scene.add(object);
@@ -471,9 +479,8 @@ export class Projectiles {
       const t = (now - p.startedAt) / p.durationMs;
       if (t >= 1) {
         this.scene.remove(p.object);
-        // A light left in the scene graph is a light three still evaluates for
-        // every fragment of every lit surface, for ever.
-        p.light?.dispose();
+        // Handed back to the pool rather than disposed — see lightPool.ts.
+        if (p.light) this.lightPool.release(p.light);
         for (const m of p.materials) m.dispose();
         this.live.splice(i, 1);
         continue;
@@ -512,7 +519,7 @@ export class Projectiles {
   dispose(): void {
     for (const p of this.live) {
       this.scene.remove(p.object);
-      p.light?.dispose();
+      if (p.light) this.lightPool.release(p.light);
       for (const m of p.materials) m.dispose();
     }
     this.live.length = 0;

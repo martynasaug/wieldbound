@@ -7302,6 +7302,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A LIGHT ADDED OR REMOVED FROM THE SCENE IS NOT A LOCAL COST — it changes
+  the light count baked into every OTHER lit material's shader at compile
+  time, so churning one light per bolt/beam/flash was stalling every
+  character and building in view, not just the projectile. Fixed with a
+  fixed-size `LightPool` (client/src/three/lightPool.ts) whose lights stay
+  in the scene permanently and are borrowed/returned rather than
+  created/destroyed, so the count the renderer sees never changes after
+  the first frame.
+- A POOL'S "RETURNED" ITEM HAS TO BE VERIFIED STILL ATTACHED TO WHAT OWNS
+  IT, not just present in the free list. `LightPool.release()` originally
+  only pushed the light back into the free array — but callers parent an
+  acquired light under a short-lived effect `Group`, and removing that
+  group from the scene on expiry took the light with it even though its
+  reference was "returned." The pool silently shrank by one every time a
+  bolt or flash finished, converging toward zero lights working at all.
+  Fixed by re-parenting onto the scene root inside `release()` itself, so
+  the invariant ("every pooled light is always a direct child of the
+  scene") is enforced at the one place that could break it, not left as
+  something every caller has to remember.
+- A LIVE TEST'S PASS THRESHOLD HAS TO BE DERIVED FROM WHAT THE SCENE
+  ACTUALLY CONTAINS, not guessed. A first version of the light-pool
+  verification counted every `THREE.PointLight` in the scene and compared
+  it to the pool size (16) — but the town alone has dozens of torch/forge/
+  square-glow lights, so the "baseline" was 45, not 0, and a hardcoded `<=
+  16` failed even a correctly-working pool. Fixed by tagging pooled lights
+  (`light.userData.pooled = true`) so the test — and any future scene
+  inspector — can isolate exactly the lights it's supposed to be checking.
 - A DEFENSIVE FIX AND A ROOT-CAUSE FIX ARE DIFFERENT DELIVERABLES, and
   shipping the first is not a substitute for the second when a user calls
   a bug urgent. The freeze report ("game freezes completely" during combat)
@@ -10659,6 +10686,43 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.6 — a light that never left.** Reported right after M70.5:
+the game still lags sometimes, on stepping out of the beginner town and on
+attacking. This one was GPU-side rather than JS-side, and much less
+visible from the code than a missing catch block — every bolt, wand beam
+and elemental skill flash carried its own `new THREE.PointLight()`, added
+to the scene when it fired and removed when it expired. Adding or removing
+a light changes the light count the renderer bakes into every lit
+material's shader program at compile time, and any material that has
+never been compiled for that exact count before pays a real GPU stall on
+its next frame — for every lit character, monster and building in view,
+not just the light's own. With several players and monsters able to be
+mid-attack at once, that count was different on practically every frame,
+so the stall never really stopped happening, and combat is exactly when a
+light is most likely to appear or disappear. Fixed with a `LightPool`
+(new `client/src/three/lightPool.ts`): sixteen `PointLight`s added to the
+scene once at startup, "off" is intensity 0 rather than removed, and
+`bolt()`/`beam()`/`flash()` now borrow and return one instead of creating
+their own — the light count the renderer sees never changes again after
+the first frame. A pool that's briefly exhausted degrades to "no light on
+this one" for a bolt, or a short queue for a skill flash, rather than ever
+falling back to `new THREE.PointLight()`. Caught one real bug building
+this: a released light stayed parented under the per-effect Group it
+arrived in, so once that group was removed from the scene on expiry the
+light went with it even though only its reference came back to the
+free list — the pool silently shrank by one every time a bolt or flash
+finished, which a naive test masked by only checking the total light
+count against a guess rather than the pool's own tagged lights. Fixed by
+re-parenting onto the scene root in `release()`. Verified live: fired 36
+simultaneous bolts, beams and flashes and confirmed via the pool's own
+tagged lights that the in-scene count never exceeded 16 during the burst
+and returned to exactly 16 afterward, with zero console/page errors.
+`animation.mjs` and `smoke.mjs` still green; `fighting.mjs` failed once
+against a ghost with the standing-still Fighter dealing 0 damage — a
+pre-existing matchup flake documented back in M69.11 (this test is a pure
+raw-socket server test with no dependency on any client file), not a
+regression from this change.
 
 **Phase 70 M70.5 — one bad frame, not the rest of the session.** Reported:
 the game sometimes freezes completely mid-fight, and it was happening
