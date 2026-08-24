@@ -496,6 +496,20 @@ export class Game {
   private walletSeen = false;
   /** The same, for the recipe list. */
   private recipesSeen = false;
+  /** The same again, for wood, ore and herb — the gathering paths that
+   *  predate essence and never got essence's own "+N" acknowledgement. Three
+   *  flags rather than one: the three messages do not all arrive in the same
+   *  breath on connect, so a shared flag would already read true by the time
+   *  a later one lands and congratulate a returning gatherer on a balance
+   *  they walked in with. */
+  private woodSeen = false;
+  private oreSeen = false;
+  private herbSeen = false;
+  /** Quest ids completed as of the last `QUEST_STATE`, so a fresh id in the
+   *  next one is a hand-in that just happened rather than the opening list a
+   *  returning character always arrives with. */
+  private completedQuests: string[] = [];
+  private questsSeen = false;
 
   // Targeting has two halves, and keeping them apart is the whole design.
   //
@@ -627,6 +641,19 @@ export class Game {
       onWelcome: (p) => this.onWelcome(p),
       onSnapshot: (p) => this.onSnapshot(p),
       onInventoryUpdate: (p) => {
+        // Wood, ore and herb are the gathering loop this whole game opens with,
+        // and the one reward in it with no acknowledgement at all — "gather"
+        // has been a real, mixed, preloaded sound cue since Phase 39 with no
+        // caller anywhere, and essence/runes/recipes all got a "+N" floater
+        // long before the material that started the loop did.
+        const gained = this.woodSeen ? p.wood - this.wallet.wood : 0;
+        this.woodSeen = true;
+        if (gained > 0 && this.localActor) {
+          this.floaters.spawn(this.localActor.position, {
+            kind: "loot", text: `+${gained} wood`, color: "#c9a26a", headY: 3.2, weight: 0.15,
+          });
+          playSfx("gather", 0.6);
+        }
         this.wallet.wood = p.wood;
         this.gatherLevel = p.gatherLevel;
         this.syncMaterials();
@@ -661,6 +688,27 @@ export class Game {
         this.inventoryPanel.setConsumables(p.counts);
       },
       onQuestState: (p) => {
+        // Handing a quest in is arguably the biggest single moment this loop
+        // has — a story beat and a reward at once — and it was the one with
+        // no acknowledgement beyond the tracker panel quietly losing a row.
+        // Essence, runes and recipes all got a floater or a sound for far
+        // smaller moments than this one long before it did.
+        if (this.questsSeen) {
+          const justDone = p.completed.filter((id) => !this.completedQuests.includes(id));
+          for (const id of justDone) {
+            const def = QUESTS.find((q) => q.id === id);
+            const label = def ? def.name : "Quest";
+            if (this.localActor) {
+              this.floaters.spawn(this.localActor.position, {
+                kind: "loot", text: `Quest complete: ${label}`, color: "#ffd873", headY: 3.2, weight: 0.2,
+              });
+            }
+            this.hud.toast(label, "#ffd873");
+            playSfx("levelup", 0.6);
+          }
+        }
+        this.questsSeen = true;
+        this.completedQuests = p.completed;
         this.questTracker.setState(p.active, p.completed);
         // A conversation open on the giver is redrawn in place, so accepting or
         // handing in changes the list you are looking at rather than leaving a
@@ -706,10 +754,29 @@ export class Game {
         this.craftPanel.setRecipes(this.recipes);
       },
       onHerbUpdate: (p) => {
+        const gained = this.herbSeen ? p.herb - this.wallet.herb : 0;
+        this.herbSeen = true;
+        if (gained > 0 && this.localActor) {
+          this.floaters.spawn(this.localActor.position, {
+            kind: "loot", text: `+${gained} herb`, color: "#8fd15a", headY: 3.2, weight: 0.15,
+          });
+          playSfx("gather", 0.6);
+        }
         this.wallet.herb = p.herb;
         this.syncMaterials();
       },
       onOreUpdate: (p) => {
+        const gained = this.oreSeen ? p.ore - this.wallet.ore : 0;
+        this.oreSeen = true;
+        if (gained > 0 && this.localActor) {
+          this.floaters.spawn(this.localActor.position, {
+            kind: "loot", text: `+${gained} ore`, color: "#9fa8b3", headY: 3.2, weight: 0.15,
+          });
+          playSfx("gather", 0.6);
+        }
+        // Ore's own message resends wood alongside it (a rock-gathering tick
+        // touches the same wallet snapshot the tree path does), so this is
+        // not a second gain — the diff above is keyed to `ore` alone.
         this.wallet.wood = p.wood;
         this.wallet.ore = p.ore;
         this.battlePowerLevel = p.battlePowerLevel;

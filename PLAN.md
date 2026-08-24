@@ -7302,6 +7302,26 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- THE OLDEST REWARD IN THE LOOP IS NOT AUTOMATICALLY THE BEST-SIGNALLED ONE.
+  Essence, runes and recipes all got a "+N" floater and a sound this
+  session; wood, ore and herb — the gathering that predates every one of
+  them and is what a fresh character does first — had neither. Age in the
+  codebase is not evidence of completeness; it can just as easily mean a
+  system shipped before the convention existed and nobody went back.
+- A REWARD'S SIZE IN THE FICTION AND ITS SIZE IN THE FEEDBACK SHOULD AGREE.
+  A rune draw and a learned recipe both got a floater and a sound; a
+  completed quest — a story beat AND a reward, the biggest single moment
+  the quest system produces — got neither. The smaller rewards being
+  better-signalled than the larger one is itself the tell that the gap is
+  an oversight, not a deliberate restraint.
+- THREE FLAGS, NOT ONE SHARED ONE, WHEN THREE MESSAGES DO NOT ARRIVE
+  TOGETHER. Wood/ore/herb's own messages land at different points after
+  connect rather than in the same breath the wallet/runes/recipes trio
+  does, so a single "seen" flag would already read true by the time a
+  later one lands and congratulate a returning gatherer on a balance they
+  walked in with — the same reasoning `recipesSeen` was already kept
+  separate from `walletSeen` for.
+
 - A FLEX NOBODY ELSE CAN SEE IS NOT MUCH OF A FLEX. The obvious reading of
   "cool for an MMORPG" gear glow is showing it to OTHER PLAYERS, not only to
   the person wearing it — the whole reason a rarity ladder exists in a
@@ -10581,7 +10601,31 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 69 complete (2026-08-24).
+Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.1 — the reward with no acknowledgement was the one every
+player pulls first.** Combat's own version of this had been worked
+milestone by milestone through Phase 69 (a hit, a crit, a kill all say so
+now); the same gap sat one system over, in the loop that predates all of
+it. Wood, ore and herb — the gathering that opens the game before a
+character has fought anything — updated the wallet and nothing else: no
+floater, no sound, while essence, runes and recipes all earned a "+N"
+acknowledgement earlier this session. `"gather"` has been a real,
+mixed, preloaded sound cue since Phase 39 with no caller anywhere in the
+client — the same shape as `fx.png`'s dead rows, this time in audio. Three
+"seen" flags (one per message, since wood/ore/herb do not all land in the
+same breath on connect) gate a diff against the wallet's own previous
+value, reusing the exact floater/sfx call the essence fix already proved.
+Quest completion got the same treatment and needed it more: turning a quest
+in is a story beat and a reward at once, and it was the one moment in this
+whole loop with NO acknowledgement beyond the tracker panel quietly losing
+a row — smaller rewards (a rune, a recipe) already had one. A newly-appeared
+id in `QUEST_STATE`'s resent `completed` list now gets the quest's own name
+in a floater and a toast, plus the same sound the level-up banner uses.
+Verified: typecheck and both the animation and quests offline suites pass;
+live checks confirm `gather.wav` actually serves and that `QUEST_STATE`
+always sends a real array, never undefined, so the new diff logic cannot
+throw on a fresh connection.
 
 **Phase 69 — everyone's legendary gear glows, not only your own.** M69.19
 answered "do that for other players?" — asked one message after M69.18
