@@ -7302,6 +7302,28 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- WHEN A MESSAGE LISTS THREE POSSIBILITIES, THAT IS THE BUG IN THE
+  INSTRUMENT. "Not the render loop. Network decode, a model finishing
+  loading, or garbage collection." was written as a helpful hint and became
+  three rounds of guessing: each fix targeted one of the three, each was a
+  genuine cause of genuine stalls, and the report came back identical every
+  time because the message could not distinguish which one it had been. A
+  diagnostic that enumerates candidates is admitting it does not know. The
+  work to make it name one is almost always smaller than one wrong fix.
+- SYNCHRONOUS WORK IN A PROMISE CONTINUATION IS INVISIBLE TO EVERY FRAME
+  TIMER, and this codebase is full of it: cloning a skinned rig, dressing a
+  loaded model, rebinding actions, building a silhouette. All of it runs
+  after an await, which means between two animation frames, which means
+  outside `frameBegin`/`frameEnd` entirely. It does not lengthen any frame
+  and it stops the picture for exactly as long as it takes. Anything doing
+  real work after an await needs its own timer or it cannot be found.
+- A LABEL SHOULD CARRY THE INSTANCE, NOT JUST THE CATEGORY. `clone` tells
+  you rig cloning is slow; `clone:Dragon_Evolved.gltf` tells you which
+  model, which tells you where in the world and under what circumstances. It
+  costs a string concatenation on a path that only runs when a model is
+  built, and it is the difference between knowing the shape of a problem and
+  being able to reproduce it.
+
 - A MEASUREMENT CONTAMINATED BY THE THING IT CONTROLS WILL LOCK ITSELF IN.
   The pacer measured the display refresh from the gaps between animation
   frames — but a frame that overruns a refresh boundary is called again at
@@ -11250,6 +11272,46 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.39 — instrumenting the gap instead of guessing at it a
+third time.** M70.38's probe worked: the overlay reads `145Hz display`
+again, so the pacer is finally choosing against the real refresh rate
+rather than a halved measurement of its own slowness. What is left is
+unchanged in character and now clearly the whole problem: `render` spiking
+to 50-103ms a dozen times a window, and BETWEEN-frame stalls of 3447ms and
+1220ms.
+Those between-frame stalls have now survived three fixes aimed at them —
+preloading the thirteen monster models (M70.36), background-warming the
+gear catalogue (M70.37), and bounding rig builds to two in flight
+(M70.38). Every one of those was a real cause of real stalls and none of
+them was THIS one, and the reason the search keeps missing is that the
+report has always been the same sentence: "not the render loop. Network
+decode, a model finishing loading, or garbage collection." Three
+possibilities, printed because the profiler could not tell them apart.
+So this round adds no optimisation at all. It makes the gap NAME itself.
+Sections have been timed unconditionally since M70.32, so anything using a
+`begin`/`end` pair between two frames has already accumulated into
+`frameMs` by the time `frameBegin` runs — reading that before the reset is
+the only chance to see it, and a moment later it is zeroed and the gap is
+anonymous again. And crucially, nothing having accumulated is itself an
+answer, and the useful one: it means the pause was not our code at all,
+but a collection or a file being parsed inside a loader callback we do not
+own.
+Then the three things most likely to be in that gap were given names, all
+of them synchronous work running in a promise continuation where no frame
+timer could ever see it: `clone:<model>` around `cloneSkinned`, which
+walks a whole skeleton and rebuilds every bone binding and is the most
+expensive thing the client does that is not a draw call; `parse:<model>`
+around the dressing that runs inside the loader callback; and
+`rig:<model>` around everything `buildBody` does after its awaits — six
+action bindings, a material clone per mesh, the lift measurements, the
+silhouette and rim passes, and a full re-dress. Each label carries the
+model name, so a stall names the creature that caused it rather than its
+category.
+Recorded honestly: this is the third round in a row where the fix shipped
+for the between-frame stalls was correct and did not fix them. That is a
+signal to stop generating hypotheses and go and look, which is what this
+is. Full suite green.
 
 **Phase 70 M70.38 — the pacer had convinced itself the monitor was half
 its real speed.** The overlay read `72Hz display, 1 frame per 2 refreshes

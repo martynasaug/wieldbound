@@ -72,6 +72,7 @@ export class Profiler {
   private frameEnded = 0;
   private betweenMs = 0;
   private betweenWorst = 0;
+  private betweenWorst_ = "";
 
   constructor() {
     window.addEventListener("keydown", (e) => {
@@ -127,6 +128,27 @@ export class Profiler {
     // handler between two frames does not lengthen either of them.
     this.betweenMs = this.frameEnded > 0 ? now - this.frameEnded : 0;
     this.frameStart = now;
+
+    // WHAT RAN IN THE GAP, named. Sections are timed unconditionally now, so
+    // anything that used a `begin`/`end` pair between two frames — a websocket
+    // dispatch, a model being cloned, a loaded file being dressed — has already
+    // accumulated into `frameMs` by the time this runs. Reading it BEFORE the
+    // reset is the only chance to see it: a moment later it is zeroed and the
+    // gap becomes anonymous again, which is what "not the render loop, network
+    // decode or a model finishing loading or garbage collection" was reduced to
+    // guessing at.
+    //
+    // Nothing at all having accumulated is itself the answer, and the useful
+    // one: it means the pause was not our code — a garbage collection, or the
+    // browser parsing a file inside a loader callback we do not own.
+    this.betweenWorst_ = "";
+    let worst = 0;
+    for (const [label, sec] of this.sections) {
+      if (sec.frameMs > worst) {
+        worst = sec.frameMs;
+        this.betweenWorst_ = `${label} ${sec.frameMs.toFixed(0)}ms`;
+      }
+    }
     for (const s of this.sections.values()) s.frameMs = 0;
   }
 
@@ -190,8 +212,11 @@ export class Profiler {
     if (this.betweenMs >= HITCH_MS) {
       this.hitches.push(now);
       console.warn(
-        `[hitch] ${this.betweenMs.toFixed(0)}ms BETWEEN frames — not the render loop. ` +
-          `Network decode, a model finishing loading, or garbage collection.`,
+        `[hitch] ${this.betweenMs.toFixed(0)}ms BETWEEN frames — ` +
+          (this.betweenWorst_
+            ? `worst: ${this.betweenWorst_}`
+            : "nothing of ours ran in it: a garbage collection, or a file " +
+              "being parsed inside a loader callback."),
       );
     }
     if (ms >= HITCH_MS) {

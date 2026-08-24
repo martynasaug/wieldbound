@@ -1,3 +1,4 @@
+import { profiler } from "./profiler";
 // One animated character in the world — the local player, a remote player, or
 // a monster. Wraps a loaded model with an animation state machine, smoothed
 // movement, a weapon socket and a set of gear attachments.
@@ -794,6 +795,21 @@ export class Actor {
     if (this.usesClipLibrary) await loadClipLibrary();
     const instance = await instantiate(model, this.options.height);
     if (request !== this.bodyRequest) return; // a later swap overtook this one
+
+    // Everything from here to the end of this method is synchronous, and it
+    // runs in a promise continuation — between two animation frames, invisible
+    // to any frame timer. It rebinds six actions, clones a material per mesh,
+    // measures the lifts, builds a silhouette and a rim pass and then re-dresses
+    // the whole rig. Timed so a stall can say so.
+    profiler.begin("rig:" + model);
+    try {
+      this.finishBody(instance, model);
+    } finally {
+      profiler.end("rig:" + model);
+    }
+  }
+
+  private finishBody(instance: Instance, model: string): void {
 
     if (this.instance) {
       this.clearGear();

@@ -1,3 +1,4 @@
+import { profiler } from "./profiler";
 // Model loading, caching and instancing for the 3D client.
 //
 // Two things here are not optional and are easy to get wrong:
@@ -193,6 +194,7 @@ function texture(name: string): THREE.Texture {
 /** Shadow flags only. glTF already arrives with correct PBR materials and its
  *  texture embedded, so touching the materials would only lose the map. */
 function dressGltf(root: THREE.Object3D): void {
+  // Runs inside the loader callback, between frames. See `instantiate`.
   root.traverse((child) => {
     const mesh = child as THREE.Mesh;
     if (!mesh.isMesh) return;
@@ -264,7 +266,9 @@ export function loadModel(name: string): Promise<THREE.Group> {
             // three keeps animations on the parsed result, not the scene graph,
             // so they have to be carried across or instantiate() finds none.
             group.animations = gltf.animations;
+            profiler.begin("parse:" + name);
             dressGltf(group);
+            profiler.end("parse:" + name);
             endLoad();
             resolve(group);
           },
@@ -278,7 +282,9 @@ export function loadModel(name: string): Promise<THREE.Group> {
             // Dressed before the load is counted off, because dressing is what
             // discovers the textures — counting first would let the total
             // momentarily equal the done count and settle the loader early.
+            profiler.begin("parse:" + name);
             dressFbx(group);
+            profiler.end("parse:" + name);
             endLoad();
             resolve(group);
           },
@@ -305,6 +311,21 @@ export interface Instance {
  */
 export async function instantiate(name: string, height: number): Promise<Instance> {
   const proto = await loadModel(name);
+  // TIMED, because everything below this line runs SYNCHRONOUSLY in a promise
+  // continuation — i.e. between two animation frames, where no frame timer can
+  // see it. Cloning a skinned rig walks the whole skeleton and rebuilds every
+  // bone binding, and it is the single most expensive thing the client does
+  // that is not a draw call. The label carries the model name so a stall names
+  // the creature that caused it rather than just its own category.
+  profiler.begin("clone:" + name);
+  try {
+    return instantiateNow(proto, name, height);
+  } finally {
+    profiler.end("clone:" + name);
+  }
+}
+
+function instantiateNow(proto: THREE.Group, name: string, height: number): Instance {
   const object = cloneSkinned(proto) as THREE.Group;
   const animations = proto.animations ?? [];
 
