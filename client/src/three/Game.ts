@@ -560,6 +560,15 @@ export class Game {
    *  motion rather than from the interpolated model — see `isMoving`. */
   private readonly playerMotion = new Map<string, { x: number; y: number; moving: boolean }>();
   private readonly monsters = new Map<string, MonsterVisual>();
+  // Walking past the town gate can bring an entire camp into spawn radius on
+  // the very same tick — a dozen-plus monsters whose models are already
+  // cached, so `actor.load()` resolves in the same microtask flush and pays
+  // its clone-the-skeleton-and-rebind-the-mixer cost for all of them back to
+  // back, in one JS turn, before the browser gets to paint. Queuing new
+  // spawns and building only a few per rendered frame spreads that same
+  // total cost across enough frames that no single one of them is late.
+  private readonly monsterSpawnQueue: string[] = [];
+  private readonly pendingMonsterSpawns = new Map<string, MonsterState>();
   private readonly nodes = new Map<string, THREE.Object3D>();
   private readonly nodeStates = new Map<string, ResourceNodeState>();
   private readonly stations = new Map<string, THREE.Object3D>();
@@ -1238,6 +1247,45 @@ export class Game {
     }
   }
 
+  /**
+   * Builds a few queued monster spawns, so a whole camp coming into range on
+   * one snapshot does not pay every one of their skeleton-clone costs in a
+   * single frame. See `monsterSpawnQueue` for why this exists.
+   */
+  private processMonsterSpawnQueue(): void {
+    const MAX_SPAWNS_PER_FRAME = 3;
+    for (let i = 0; i < MAX_SPAWNS_PER_FRAME; i++) {
+      const id = this.monsterSpawnQueue.shift();
+      if (id === undefined) return;
+      const s = this.pendingMonsterSpawns.get(id);
+      this.pendingMonsterSpawns.delete(id);
+      // Already built by the time its turn came (should not happen, but a
+      // stale queue entry must never overwrite a live actor), or the player
+      // has since wandered far enough away that it is not worth building.
+      if (!s || this.monsters.has(id)) continue;
+      const distance = Math.hypot(s.x - this.playerX, s.y - this.playerY);
+      if (distance > MONSTER_DESPAWN_RADIUS_PX) continue;
+      const spec = MONSTER_MODELS[s.kind];
+      // Seeded from the server id, so every client sees this particular
+      // mushnub breathing at the same point in its loop as every other client
+      // does — and so a camp of four is four creatures rather than one
+      // animation played four times.
+      const actor = new Actor({
+        model: spec.model,
+        height: spec.height,
+        variance: (hashString(id) % 1000) / 1000,
+        idleGlance: true,
+      });
+      const vis: MonsterVisual = { actor, kind: s.kind, state: s, dead: false, windingUp: false, windupStartedAt: 0, moving: false, alerted: false };
+      // Placed immediately, same as the old inline path did — otherwise the
+      // model pops in at the scene origin for a frame before the next
+      // snapshot ever reaches it.
+      actor.setTargetPosition(...onGround(toWorldX(s.x), toWorldZ(s.y)));
+      this.monsters.set(id, vis);
+      void actor.load().then(() => this.world.scene.add(actor.root));
+    }
+  }
+
   private syncMonsters(states: MonsterState[]): void {
     for (const s of states) {
       const distance = Math.hypot(s.x - this.playerX, s.y - this.playerY);
@@ -1246,20 +1294,13 @@ export class Game {
       if (!vis) {
         // Far camps cost nothing at all — no model, no skeleton, no update.
         if (distance > MONSTER_SPAWN_RADIUS_PX) continue;
-        const spec = MONSTER_MODELS[s.kind];
-        // Seeded from the server id, so every client sees this particular
-        // mushnub breathing at the same point in its loop as every other client
-        // does — and so a camp of four is four creatures rather than one
-        // animation played four times.
-        const actor = new Actor({
-          model: spec.model,
-          height: spec.height,
-          variance: (hashString(s.id) % 1000) / 1000,
-          idleGlance: true,
-        });
-        vis = { actor, kind: s.kind, state: s, dead: false, windingUp: false, windupStartedAt: 0, moving: false, alerted: false };
-        this.monsters.set(s.id, vis);
-        void actor.load().then(() => this.world.scene.add(actor.root));
+        // Queued rather than built here — see monsterSpawnQueue above. A
+        // monster already waiting in the queue just gets its latest state
+        // refreshed so `processMonsterSpawnQueue` places it correctly
+        // whenever its turn comes.
+        if (!this.pendingMonsterSpawns.has(s.id)) this.monsterSpawnQueue.push(s.id);
+        this.pendingMonsterSpawns.set(s.id, s);
+        continue;
       } else if (distance > MONSTER_DESPAWN_RADIUS_PX) {
         vis.actor.dispose();
         this.monsters.delete(s.id);
@@ -3453,6 +3494,7 @@ export class Game {
     this.localActor?.update(dt);
     for (const a of this.players.values()) a.update(dt);
     for (const v of this.monsters.values()) v.actor.update(dt);
+    this.processMonsterSpawnQueue();
     // Nobody sends the townspeople anything, so these two lines are the only
     // thing that moves them at all — drop either and Emberhold is five statues.
     // `updateNpcs` places them off the shared clock and must run BEFORE the

@@ -7302,6 +7302,16 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- "MODEL ALREADY CACHED" DOES NOT MEAN "CHEAP" — it means the expensive
+  part (the network fetch) is gone, not the expensive part that matters
+  here (cloning a skeleton, rebuilding a mixer, rebinding clips), which
+  still runs in full for every instance. A cached model resolving its
+  `load()` promise instantly is exactly what let a whole camp's worth of
+  monster builds land in the same microtask flush — the caching that makes
+  repeat spawns feel free is the same thing that let them all become due
+  at once. Fixed by queuing spawns and building only a few per frame
+  (`processMonsterSpawnQueue` in Game.ts), not by trying to make the build
+  itself cheaper.
 - A LIGHT ADDED OR REMOVED FROM THE SCENE IS NOT A LOCAL COST — it changes
   the light count baked into every OTHER lit material's shader at compile
   time, so churning one light per bolt/beam/flash was stalling every
@@ -10686,6 +10696,29 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.7 — a camp is not one monster.** M70.6 fixed the GPU-side
+half of the reported lag; this is the CPU-side half, the other symptom
+from the same report — stepping out of the beginner town. Every monster's
+`Actor` was built the instant it entered `MONSTER_SPAWN_RADIUS_PX`
+(1150px), synchronously, inline in `syncMonsters` — fine for one monster
+wandering into range, but walking past the town gate can bring an entire
+camp into range on the very same server snapshot, and if those models are
+already cached (they usually are — the same few kinds repeat across
+camps), every one of those `actor.load()` promises resolves in the same
+microtask flush, paying its clone-the-skeleton, rebuild-the-mixer,
+rebind-six-clips cost for a dozen-plus monsters back to back in one JS
+turn before the browser gets to paint. Fixed with a spawn queue: a newly
+in-range monster is queued rather than built immediately, and
+`processMonsterSpawnQueue` — called once per rendered frame — builds at
+most 3 of them, so the same total cost lands across several frames
+instead of one. Position is still set the instant the actor is built
+(`setTargetPosition` snaps on its first call, no glide), so nothing pops
+in at the scene origin waiting for its first snapshot. Verified live:
+queued 24 fake monsters as one batch and confirmed via `requestAnimationFrame`
+sampling that exactly 3 built per frame, all 24 were eventually built with
+none left stuck at the origin, and the queue fully drained — with zero
+console errors. `animation.mjs`, `smoke.mjs` and `fighting.mjs` all green.
 
 **Phase 70 M70.6 — a light that never left.** Reported right after M70.5:
 the game still lags sometimes, on stepping out of the beginner town and on
