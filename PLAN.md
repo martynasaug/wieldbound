@@ -7302,6 +7302,21 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- NOT EVERY "GAME FREEZES" REPORT HAS A JS-LEVEL CAUSE, and the tell is
+  when a targeted reproduction attempt finds nothing wrong in application
+  logic despite genuinely exercising the reported path (real movement,
+  real combat, real interruption/resume cycles, extended real time,
+  through an actual kill). M70.22's freeze fit the EXACT shape of the
+  earlier M70.5/M70.14 bugs — position updates, animation stalls — but
+  three separate targeted repro attempts covering that class of cause
+  found nothing. It surfaced by accident, as a raw console line
+  (`CONTEXT_LOST_WEBGL`) during an unrelated synthetic test, not from
+  reasoning about the JS call graph — because the actual cause was a
+  layer below JS entirely (the GPU context), which a codebase can go its
+  whole life never once triggering in a JS-only test harness. When
+  in-logic hypotheses keep failing to reproduce a symptom that LOOKS like
+  every earlier fix's symptom, that is itself a signal to widen the
+  search rather than narrow it further.
 - `fighting.mjs` FAILING AGAINST CACTORO SPECIFICALLY IS A KNOWN, ACCEPTED
   TEST-BOT LIMITATION, not a regression to chase every time it recurs
   (hit in M70.16, M70.17, M70.18). The bot walks straight at whatever is
@@ -10795,6 +10810,39 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.22 — a lost GPU context nobody ever told to come back.**
+Reported directly, and it was serious: attacked a monster, a few seconds
+of lag, the walking animation vanished, and the character just slid
+across the ground forever. Every earlier freeze/slide bug this session
+found had a JS-level cause with a JS-level fix (M70.5's loop try/catch,
+M70.14's animation reset). This one did not, and the difference showed up
+by accident: reproducing it via a synthetic monster-death transition
+surfaced a genuine `CONTEXT_LOST_WEBGL` event in the console — a real GPU-
+level event, not application logic — and a repo-wide grep confirmed this
+codebase had never once listened for `webglcontextlost` or
+`webglcontextrestored`, anywhere. That gap explains every detail of the
+report at once: losing the GPU context does not throw anywhere JS would
+notice, so movement, network sync and every other piece of game logic
+keep running completely normally and independently of it — only drawing
+stops meaning anything, silently. And per the WebGL spec, a browser is
+free to treat a lost context as PERMANENTLY gone unless the page calls
+`event.preventDefault()` on the loss event — without that one call
+(missing here entirely), what should have been a momentary GPU hiccup
+(a driver reset, a background tab losing its GPU slot, resource pressure
+under this game's own heavy instancing — "ground cover: 82287 plants...
+584 instanced meshes" is not a light GPU footprint) had no path back at
+all. Added the standard pair of listeners to `World`'s renderer:
+`preventDefault()` on loss so the browser actually attempts restoration,
+and a forced resize on restore as a cheap nudge against any stale
+internal viewport state surviving past it. Verified live with the real
+mechanism, not a simulation: forced an actual context loss and restore
+through the spec's own `WEBGL_lose_context` test extension and confirmed
+three things directly — `preventDefault()` was genuinely called (checked
+via `event.defaultPrevented`, not inferred), the render frame counter
+resumed climbing after restoration rather than staying stalled, and no
+exception went uncaught anywhere in the cycle. `animation.mjs` and
+`smoke.mjs` green; `fighting.mjs` clean.
 
 **Phase 70 M70.21 — the leaderboard sorted on a number it never showed.**
 Smaller companion to M70.20 from the same sweep. The server's own query

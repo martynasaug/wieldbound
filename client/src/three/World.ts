@@ -214,6 +214,43 @@ export class World {
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
 
+    // A LOST WEBGL CONTEXT DOES NOT THROW ANYWHERE THE GAME WOULD NOTICE.
+    // Every game-logic update — position, movement, network sync — keeps
+    // running exactly as before, completely independent of the GPU, while
+    // rendering silently stops meaning anything. Reported from play:
+    // attacked something, a few seconds of stutter, then the walking
+    // animation vanished and the character just slid across the ground
+    // forever — which is exactly what an UNHANDLED context loss looks
+    // like, and nothing anywhere in this codebase listened for one.
+    //
+    // `preventDefault()` on the loss event is the one call every serious
+    // three.js app is supposed to make and this one never did: without
+    // it, a browser is free to treat the context as permanently gone
+    // rather than attempting to restore it — so what should have been a
+    // momentary GPU hiccup (a driver reset, a tab losing and regaining a
+    // background GPU slot, a resource limit under this game's own heavy
+    // instancing) became forever.
+    this.renderer.domElement.addEventListener(
+      "webglcontextlost",
+      (e) => {
+        e.preventDefault();
+        console.error("[world] WebGL context lost — waiting for the browser to restore it.");
+      },
+      false,
+    );
+    this.renderer.domElement.addEventListener(
+      "webglcontextrestored",
+      () => {
+        console.warn("[world] WebGL context restored.");
+        // three.js reuploads most GPU resources on its own once the context
+        // returns, but a restored context starts from a cleared render
+        // state — one resize is a cheap, reliable nudge that no stale
+        // internal viewport/state cache quietly lingers past it.
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+      },
+      false,
+    );
+
     this.camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 400);
     this.camera.position.copy(this.cameraDir).multiplyScalar(this.distance);
 
