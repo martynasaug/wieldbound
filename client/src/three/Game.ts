@@ -1551,7 +1551,15 @@ export class Game {
   }): void {
     const vis = this.monsters.get(p.monsterId);
     this.lastCombatAt = performance.now();
-    this.localActor?.play("attack");
+    // FORCED, because Agility's double-attack lands as two of these messages
+    // back to back — two independent rolls, two log lines, two floating
+    // numbers — and `play`'s own guard (`currentAnim === anim` is a no-op
+    // without this) swallowed the second swing outright: the pose was still
+    // mid-clip from the first, so the body swung once for two hits that read
+    // as one oddly generous number. Forcing it restarts the clip from frame
+    // zero on every BATTLE_RESULT, which costs nothing on an ordinary single
+    // swing — the guard only ever mattered for two arriving this close.
+    this.localActor?.play("attack", true);
     if (vis) this.localActor?.faceToward(vis.actor.position.x, vis.actor.position.z);
 
     // What the weapon actually does, and — for anything that flies — how long

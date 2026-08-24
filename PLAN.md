@@ -7302,6 +7302,22 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A REPEAT ANIMATION REQUEST IS NOT ALWAYS A NO-OP. `play`'s guard against
+  re-triggering a state that is already current is right for a snapshot
+  loop calling `play("idle")` sixty times a second — but Agility's double
+  attack sends two genuinely independent `BATTLE_RESULT`s back to back, and
+  the same guard silently ate the second swing's pose because the clip was
+  still mid-flight from the first. The fix is not a new mechanism, it is the
+  `immediate` flag `play` already had for exactly this: a hard restart,
+  which costs nothing on an ordinary single swing because that transition
+  never shares the guard's branch in the first place.
+- WHEN A GUARD MIGHT BE WRONG, CHECK WHAT IT ACTUALLY COSTS TO BYPASS IT
+  RATHER THAN GUESS. `play("attack", true)` looked like it could reintroduce
+  whatever the no-op guard was protecting against — but tracing the two
+  branches showed the guard only ever fires when `prev === next`, which an
+  ordinary idle-to-attack transition never is. Forcing it everywhere is free
+  everywhere it wasn't load-bearing and correct exactly where it was.
+
 - A COORDINATED EVENT WITH NO SIGNAL READS AS SEVERAL ACCIDENTS. Social aggro
   has flipped a whole camp into `chase` on one hit since the shout guard was
   written, and a player watching four bodies start moving on the same tick had
@@ -10373,6 +10389,20 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — the second swing.** M69.8: Agility's double-attack has resolved
+as two fully independent hits since it existed — its own hit/miss/crit roll,
+its own combat-log line, its own floating number — and the player's own body
+swung once for both of them. `Actor.play`'s own no-op guard, `currentAnim ===
+anim`, is exactly what a second `BATTLE_RESULT` arriving mid-clip ran into:
+the pose was already `"attack"`, so the clip never reset and a 25%-chance
+bonus hit read as an oddly generous number rather than a second swing. Forced
+to restart with `play("attack", true)`, which costs nothing on an ordinary
+single swing — the transition into `attack` from `idle`/`run` never shared
+that guard's branch to begin with, so the fix is free everywhere it isn't
+needed and load-bearing exactly where it was silently eating a proc. Verified
+live: two `BATTLE_RESULT`s landed 4ms apart, the wire signature of a proc
+firing, over a 40-agility character built for it.
 
 **Phase 69 — a shout you can hear.** M69.7: social aggro has flipped every
 same-kind packmate within `alertRadiusPx` into `chase` on one hit since the
