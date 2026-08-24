@@ -638,6 +638,7 @@ export class Actor {
   private flashUntil = 0;
   private flashColor = 0xffffff;
   private chilled = false;
+  private burning = false;
   private recovering = false;
   private emissiveApplied = -1;
   /** Every material this actor owns and must free. All of them are owned: see
@@ -1456,6 +1457,22 @@ export class Actor {
   }
 
   /**
+   * A burn ticking on this body.
+   *
+   * `chilled` and `recovering` have been monster-only calls since either
+   * existed — nothing ever told a PLAYER's own actor it was slowed or
+   * burning, so the only place a player ever saw their own conditions was
+   * the HUD status bar, never the character they are looking at. This is
+   * the one new state rather than wiring `chilled` alone, because a damage-
+   * over-time effect is the one kind of condition where "something is
+   * actively happening to me right now" is worth its own pulse rather than
+   * sharing the steady tint a plain slow gets.
+   */
+  setBurning(burning: boolean): void {
+    this.burning = burning;
+  }
+
+  /**
    * Whether this body is in the window it leaves after committing a big swing.
    *
    * M63.1 made a telegraphed slam open a two-second window at half again damage
@@ -1476,8 +1493,9 @@ export class Actor {
   private applyEmissive(): void {
     const flashing = performance.now() < this.flashUntil;
     // Ordered by urgency: a hit landing right now beats the window it landed
-    // in, and the window beats a chill, which is a condition rather than an
-    // opportunity.
+    // in, the window beats an active DOT (something happening on its own
+    // clock), and a DOT beats a plain slow, which is a condition rather than
+    // an event.
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 90);
     const opening = this.recovering
       ? // Amber, which is the colour this game already uses for "the condition
@@ -1485,7 +1503,16 @@ export class Actor {
         // who has learned one has learned the other.
         0x000000 | (Math.round(0x80 + pulse * 0x7f) << 16) | (Math.round(0x40 + pulse * 0x40) << 8)
       : -1;
-    const want = flashing ? this.flashColor : opening !== -1 ? opening : this.chilled ? 0x2f6fa8 : -1;
+    // A burn PULSES for the same reason `recovering` does: the whole content
+    // of the signal is "this is still ticking", and a steady tint says a
+    // state rather than a clock.
+    const burn = this.burning ? 0x000000 | (Math.round(0xa0 + pulse * 0x5f) << 16) : -1;
+    const want =
+      flashing ? this.flashColor
+      : opening !== -1 ? opening
+      : burn !== -1 ? burn
+      : this.chilled ? 0x2f6fa8
+      : -1;
     if (want === this.emissiveApplied) return;
     this.emissiveApplied = want;
     for (const { mat, base } of this.litMaterials) {

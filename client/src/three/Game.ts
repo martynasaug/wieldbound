@@ -820,6 +820,13 @@ export class Game {
         // change — otherwise Rallied moves the armour the server resolves with
         // and the character window goes on showing the old figure.
         this.refreshStats();
+        // `chilled`/`burning` have been monster-only calls since either
+        // existed — the HUD status bar told a player they were slowed or
+        // burning, but the character they were looking at never did. Same
+        // two states, same priority chain, now read off the player's own
+        // statuses instead of only a monster's.
+        this.localActor?.setChilled(p.statuses.some((x) => x.id === "chilled"));
+        this.localActor?.setBurning(p.statuses.some((x) => x.id === "burning"));
       },
       onStatusTick: (p) => this.onStatusTick(p),
       onBattleResult: (p) => this.onBattleResult(p),
@@ -1191,6 +1198,7 @@ export class Game {
       // Chill is a gameplay signal (your Frost Nova is still working), so it
       // gets a colour rather than being inferred from the monster moving slower.
       vis.actor.setChilled(s.slowed);
+      vis.actor.setBurning((s.statuses ?? []).some((x) => x.id === "burning"));
       // THE BURST IS THE WHOLE MECHANIC, and until now it was invisible: the
       // server has moved this body at several times its own speed and the run
       // cycle kept playing at its ordinary rate, legs cycling as if nothing had

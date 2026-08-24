@@ -7302,6 +7302,17 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A METHOD NAMED FOR WHAT IT DOES, NOT WHO IT IS CALLED ON, WILL GET CALLED
+  ON ONLY HALF THE ACTORS. `setChilled`/`setRecovering` live on `Actor`, the
+  shared class both players and monsters use, and yet every call site was
+  `vis.actor.___` for eleven milestones running — nobody had ever written
+  `this.localActor.___`. The method being generic did not make its call
+  sites generic; every caller has to be checked, not just the method.
+- A DOT PULSES; A PLAIN CONDITION STAYS STEADY — the same rule `recovering`
+  already established, applied one state over. `burning` ticks on its own
+  clock and the signal has to say so; `chilled` is a state with no clock
+  attached to it, and pulsing it would claim a rhythm that is not there.
+
 - A PROJECTILE METHOD DOES NOT HAVE TO TRAVEL. `bolt()`'s spark-glow-light
   combination is what makes a magic missile read as hot; nothing about that
   combination requires the `from` and `to` it lerps between to be far apart.
@@ -10510,6 +10521,21 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — the body you are looking at never told you it was burning.**
+M69.16: `setChilled` and `setRecovering` have been MONSTER-ONLY calls since
+either existed — Frost Nova has tinted a slowed monster blue since Phase 64,
+and nothing ever told the PLAYER's own actor it was chilled, let alone
+burning. The only place a player ever saw their own conditions was the HUD
+status bar; the character on screen looked identical whether they were
+clean or three ticks into a burn. A new `setBurning` extends the same
+priority chain `recovering`'s amber pulse already established — a DOT
+pulses, because the whole content of the signal is "still ticking", a plain
+slow stays steady — and both `chilled` and `burning` now read off the
+player's own `STATUS_UPDATE` the same way the HUD bar already does, plus a
+one-line addition giving monsters the same burn pulse `slowed` already gave
+them for chill. Verified live: a burning character glows visibly hot red
+across their whole body.
 
 **Phase 69 — the moment a crit is worth gets a real sparkle.** M69.15: every
 hit already paints its `fx.png` atlas burst; a crit only ever scaled that
