@@ -7302,6 +7302,15 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- `fighting.mjs` FAILING AGAINST CACTORO SPECIFICALLY IS A KNOWN, ACCEPTED
+  TEST-BOT LIMITATION, not a regression to chase every time it recurs
+  (hit in M70.16, M70.17, M70.18). The bot walks straight at whatever is
+  nearest and stands there; cactoro's `keepAwayPx` backs off exactly as
+  designed, so a bot with no pursuit logic can spend its whole 9s window
+  never in melee range. Re-running once (nearest monster varies run to
+  run) is the correct response, not investigating the change under test —
+  every recurrence so far has been a client-only or wire-protocol change
+  with zero path into combat resolution.
 - A HEADLESS-BROWSER REPRODUCTION ATTEMPT THAT COMES BACK EMPTY IS NOT THE
   SAME AS "NOT A BUG" — it can just mean the harness cannot exercise the
   timing the bug depends on. A first attempt to reproduce the run/attack
@@ -10786,6 +10795,37 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.18 — the last two places an ally still read like a
+stranger.** Two direct, one-hop extensions of M70.13 and M70.17's own
+stated purpose, closing out the two surfaces they didn't reach.
+`Hud.plate()` has always drawn an HP bar off nothing but whether `hp`/
+`maxHp` are present on the spec it's handed — no gating by `kind` — and
+the monster call right next to the player one has passed real numbers
+since the target frame existed; the player call, one line up, passed
+neither. So a remote party-mate's PASSIVE nameplate — visible without
+selecting them, exactly the case M70.13 built `playerHp` to answer —
+still hid its health bar unconditionally, even though the data to draw
+one has lived in that map since M70.13 shipped. Separately, M70.17 wired
+a remote player's status straight onto their body but never kept a
+`playerStatuses` map to go with `playerHp`'s — so an ally's War Cry or a
+landed poison showed on their model (M70.17) but the ally target frame's
+own status-pip row, the one panel built to summarise a selected target's
+condition, stayed empty; the monster branch two cases up gets a full pip
+row from the identical `STATUSES[id]` lookup. Added `playerStatuses`
+(same shape and lifecycle as `playerHp`), passed `hp`/`maxHp` into the
+player nameplate call, passed `statuses` into the ally branch's `look`.
+Verified live: synced a synthetic remote player with `hp: 27, maxHp: 50`
+and a burning status in one uninterrupted call (spread across an awaited
+gap, the live server's own real sync would purge a synthetic id not in
+its player list before the check ran — same class of race M70.9/M70.10's
+tests already learned to avoid), and confirmed `playerHp`/
+`playerStatuses` held the real values, the ally frame read "27 / 50",
+and its status row showed exactly one pip titled "Burning — Alight, and
+it will go on burning without you." `animation.mjs` and `smoke.mjs`
+green; `fighting.mjs` failed twice more against cactoro (same
+keepAway-kiter limitation noted in M70.16/M70.17) and passed clean on a
+third run against mushnub.
 
 **Phase 70 M70.17 — an ally's burn was invisible to everyone but them.**
 The bigger of the two candidates the same research pass found, one hop

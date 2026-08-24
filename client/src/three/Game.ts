@@ -609,6 +609,9 @@ export class Game {
   /** Last-seen HP for every remote player — see `PlayerState.hp`'s own
    *  comment for why this exists now. */
   private readonly playerHp = new Map<string, { hp: number; maxHp: number }>();
+  /** Last-seen statuses for every remote player, same shape and reason as
+   *  `playerHp` — see `PlayerState.statuses`'s own comment (M70.17). */
+  private readonly playerStatuses = new Map<string, { id: StatusId; endsAt: number }[]>();
 
   constructor(container: HTMLElement, characterName: string) {
     this.name = characterName;
@@ -1242,6 +1245,7 @@ export class Game {
       this.playerNames.set(s.id, s.name);
       this.playerClasses.set(s.id, appearanceClass(s.appearance));
       this.playerHp.set(s.id, { hp: s.hp, maxHp: s.maxHp });
+      this.playerStatuses.set(s.id, s.statuses ?? []);
       let actor = this.players.get(s.id);
       if (!actor) {
         // Other players get one too, weaker: they are people rather than
@@ -1291,6 +1295,7 @@ export class Game {
       this.playerAppearances.delete(id);
       this.nextGearAuraAt.delete(id);
       this.playerHp.delete(id);
+      this.playerStatuses.delete(id);
     }
   }
 
@@ -4093,10 +4098,17 @@ export class Game {
     for (const [id, actor] of this.players) {
       if (!actor.loaded) continue;
       const p = actor.position;
+      // hp/maxHp have been tracked since M70.13 (the ally target frame's own
+      // fix), but the passive nameplate — visible without selecting anyone —
+      // never read them: Hud.plate() already draws a bar off any hp/maxHp it
+      // is handed, gated on nothing but their presence.
+      const hp = this.playerHp.get(id);
       this.hud.plate(id, this.world.project(p.x, p.y + 2.05, p.z), {
         kind: "player",
         name: this.playerNames.get(id) ?? "player",
         icon: `class-${this.playerClasses.get(id) ?? "adventurer"}`,
+        hp: hp?.hp,
+        maxHp: hp?.maxHp,
         distance: rangeTo(p.x, p.z),
       });
     }
@@ -4326,12 +4338,20 @@ export class Game {
       // snapshot actually landing in `playerHp`.
       if (ally) {
         const hp = this.playerHp.get(this.allyTargetId);
+        // Same treatment the monster branch already gives its own statuses
+        // (see the comment there) — an ally's War Cry or a poison landing on
+        // them was visible on their body (M70.17) but not on the one panel
+        // built to summarise a selected target's condition.
+        const statuses = (this.playerStatuses.get(this.allyTargetId) ?? [])
+          .map((st) => STATUSES[st.id])
+          .filter(Boolean)
+          .map((d) => ({ id: d.id, name: d.name, icon: d.icon, kind: d.kind, blurb: d.blurb }));
         this.targetFrame.show(
           this.playerNames.get(this.allyTargetId) ?? "Ally",
           hp?.hp ?? 0,
           hp?.maxHp ?? 0,
           "ally",
-          { icon: `class-${this.playerClasses.get(this.allyTargetId) ?? "adventurer"}` },
+          { icon: `class-${this.playerClasses.get(this.allyTargetId) ?? "adventurer"}`, statuses },
         );
       }
       else this.targetFrame.hide();
