@@ -468,6 +468,8 @@ export class Game {
   private gatherLevel = 0;
   private battlePowerLevel = 0;
   private weaponRarity: ItemRarity | null = null;
+  /** Next tick of a glowing-gear ambient particle wisp — see `updateWeaponAura`. */
+  private nextWeaponAuraAt = 0;
   private armorRarity: ItemRarity | null = null;
   private bootsRarity: ItemRarity | null = null;
   private items: ItemInstance[] = [];
@@ -3238,6 +3240,72 @@ export class Game {
 
   // ------------------------------------------------------------------- loop
 
+  /** Roughly where each slot sits on the body, for a wisp with no bone of
+   *  its own to ride — a ring or a cape has no socket the way a weapon's
+   *  hand does, so this is a body-relative height rather than a bone. */
+  private static readonly WISP_SLOT_HEIGHT: Record<ItemSlot, number> = {
+    helm: 1.7,
+    boots: 0.15,
+    armor: 1.0,
+    cape: 0.95,
+    weapon: 1.1,
+    offhand: 1.1,
+    ring: 1.05,
+  };
+
+  /**
+   * A wisp trailing EVERY piece of runed or enchanted gear worn, not only
+   * the weapon.
+   *
+   * The top two rarities already get an emissive lift on the mesh itself
+   * (see gear.ts), which says "this is special" while standing still — every
+   * MMORPG with a rarity ladder gives its best drops a look that keeps
+   * paying off once you are actually moving and fighting in them, and this
+   * game never did. Reads `this.items` directly rather than the three
+   * per-slot rarity fields the server also sends (`weaponRarity`,
+   * `armorRarity`, `bootsRarity`) — those exist for their own gameplay
+   * bonuses (crit damage, XP, move speed) and were never meant to be a
+   * complete answer to "what is glowing"; a ring or a cape has no bonus
+   * riding on its rarity and so no field of its own, but it is glowing on
+   * the mesh exactly the same as a weapon is.
+   *
+   * More glowing pieces means more frequent wisps, cycling between whichever
+   * of them are actually worn — a character in a full glowing set should
+   * read as more radiant than someone wearing one glowing ring, the same way
+   * the mesh's own emissive lift already stacks visually piece by piece.
+   *
+   * Reuses `wisp`, the ambient-weight sibling of `bolt`, rather than the
+   * full spark/glow/light combo a real hit gets: gear that flashed like a
+   * crit every third of a second would stop reading as ambient and start
+   * reading as broken.
+   */
+  private updateWeaponAura(): void {
+    if (!this.localActor) return;
+    const glowing = this.items.filter((i) => i.equipped && RARITIES[i.rarity]?.glow);
+    if (glowing.length === 0) return;
+    const now = performance.now();
+    if (now < this.nextWeaponAuraAt) return;
+    // Staggered rather than a fixed beat, so it never reads as a metronome —
+    // and faster with more glowing pieces worn, floored so a fully-enchanted
+    // character does not become a strobe.
+    this.nextWeaponAuraAt = now + Math.max(140, 300 - glowing.length * 35) + Math.random() * 180;
+    const piece = glowing[Math.floor(Math.random() * glowing.length)];
+    const tint = Number.parseInt(RARITIES[piece.rarity].color.slice(1), 16);
+    const at =
+      piece.slot === "weapon"
+        ? this.localActor.muzzlePosition(new THREE.Vector3())
+        : this.localActor.position
+            .clone()
+            .add(
+              new THREE.Vector3(
+                (Math.random() - 0.5) * 0.4,
+                Game.WISP_SLOT_HEIGHT[piece.slot],
+                (Math.random() - 0.5) * 0.4,
+              ),
+            );
+    this.projectiles.wisp(at, tint);
+  }
+
   private loop = (): void => {
     if (!this.running) return;
     const dt = Math.min(0.05, this.clock.getDelta());
@@ -3274,6 +3342,7 @@ export class Game {
     // whatever it was when mana last changed.
     this.hotbar.update(this.mana);
     this.effects.update(this.world.camera);
+    this.updateWeaponAura();
     this.projectiles.update();
     this.skillFx.update();
     this.drops.update(performance.now());

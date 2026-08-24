@@ -7302,6 +7302,27 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A FIELD THAT EXISTS FOR A GAMEPLAY BONUS IS NOT A GENERAL ANSWER TO THE
+  SAME QUESTION A VISUAL SYSTEM ASKS. `weaponRarity`/`armorRarity`/
+  `bootsRarity` exist because those three slots' rarity feeds a stat
+  formula (crit damage, XP, move speed); reading them for "what is glowing"
+  would have silently limited a visual feature to three of seven slots for
+  a reason that had nothing to do with the visual feature. The full,
+  correct source for "what is glowing" was already sitting in `this.items`
+  — every equipped piece, every slot, no extra wire field needed.
+- A LIGHTER SIBLING METHOD BEATS REUSING THE HEAVY ONE AT A REDUCED SCALE.
+  `bolt()`'s spark/glow/light/trail combo is right for one hit; calling it
+  every 200-400ms for an ambient effect would mean a real point light
+  strobing that often, which reads as broken rather than ambient regardless
+  of how small the sprites are scaled. `wisp()` is a new, minimal method
+  built for the cadence rather than the existing one stretched to fit it.
+- MORE GLOWING GEAR SHOULD VISIBLY MEAN MORE, not just multiply which slot a
+  fixed-rate wisp happens to pick from. Spawn rate scales with how many
+  glowing pieces are worn (floored so it cannot become a strobe), so a
+  character in a full glowing set reads as more radiant than someone with
+  one glowing ring — the same relationship the mesh's own emissive lift
+  already has, extended to the ambient effect riding on top of it.
+
 - A VALUE ALREADY ON THE WIRE CAN STILL BE UNREACHED BY MOST OF WHAT COULD
   READ IT. `p.school` was never missing — it has coloured the floating
   number and chosen the log's verb since the school system existed — but
@@ -10535,6 +10556,37 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — a legendary set keeps saying so once you're wearing it.** M69.18,
+the second half of "what would be cool for an MMORPG": `RarityDef.glow` has
+tinted the top two rarities' equipped mesh with an emissive lift since the
+field existed, which says "this is special" while standing still and stops
+saying anything the moment you start fighting in it. Every glowing piece
+worn — not only the weapon — now sheds a slow ambient wisp, cycling between
+whichever glowing slots are actually filled. The obvious first cut read only
+`weaponRarity`, and asking "the same for all the items?" mid-build was the
+right catch: `weaponRarity`/`armorRarity`/`bootsRarity` are three fields the
+server sends for their own GAMEPLAY bonuses (crit damage, XP, move speed),
+never a complete answer to "what is glowing" — a ring or a cape carries no
+bonus off its rarity and so has no field of its own, but glows on the mesh
+exactly the same as a weapon does. Reading `this.items` directly instead
+covers all seven slots for free, and a fully-enchanted character now sparkles
+FASTER than someone wearing one glowing ring, the same way the emissive lift
+already stacks piece by piece.
+Deliberately NOT the same machinery a real hit uses: `Projectiles.wisp` is a
+new, lighter sibling of `bolt` — one small drifting sprite, no point light,
+no trail cone — because gear flashing like a crit every third of a second
+would read as broken rather than ambient. Staggered on a random beat (faster
+with more glowing pieces, floored so a full set never becomes a strobe),
+tinted per-piece from the same `RarityDef.color` the item's own name and
+nameplate already use. Local player only for now — extending it to other
+players' gear is a small follow-up (their per-slot rarity isn't tracked
+client-side) rather than something this milestone needed to solve. Verified
+live twice: an oversized single-piece test rendered as a clean glow in the
+item's own colour, and a three-slot rig (weapon/helm/boots glowing, armor
+deliberately not) held a small steady live-projectile count across many
+spawn cycles with the non-glowing piece correctly excluded — cleanup keeps
+pace with the spawn rate rather than leaking.
 
 **Phase 69 — a Frostbrand swings the same white arc a plain sword does.**
 M69.17, improvised rather than reported: Phase 62 gave every weapon family a

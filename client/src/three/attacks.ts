@@ -122,8 +122,8 @@ interface LiveProjectile {
   to: THREE.Vector3;
   startedAt: number;
   durationMs: number;
-  /** Beams hold still and fade; arrows and bolts travel. */
-  kind: "arrow" | "beam" | "bolt";
+  /** Beams and wisps hold still and fade; arrows and bolts travel. */
+  kind: "arrow" | "beam" | "bolt" | "wisp";
   materials: THREE.Material[];
   /** Bolts and arrows carry their own light, which has to be taken away too. */
   light?: THREE.PointLight;
@@ -402,6 +402,40 @@ export class Projectiles {
     });
   }
 
+  /**
+   * A small drifting spark with no light and no trail — the ambient version
+   * of `bolt`'s core, for anything meant to fire every few hundred
+   * milliseconds rather than once per swing. A real point light on that
+   * cadence would be a strobe, not a glow, and a full bolt's trail cone
+   * would read as a volley rather than a wisp.
+   */
+  wisp(at: THREE.Vector3, tint: number, durationMs = 650): void {
+    const mat = new THREE.SpriteMaterial({
+      map: particleTexture("spark"),
+      color: tint,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.setScalar(0.22 + Math.random() * 0.1);
+    sprite.position.copy(at);
+    sprite.renderOrder = 10;
+    this.scene.add(sprite);
+    this.live.push({
+      object: sprite,
+      from: at.clone(),
+      // Drifts gently upward rather than sitting still — the difference
+      // between a mote of light and a decal.
+      to: at.clone().add(new THREE.Vector3(0, 0.35 + Math.random() * 0.25, 0)),
+      startedAt: performance.now(),
+      durationMs,
+      kind: "wisp",
+      materials: [mat],
+    });
+  }
+
   /** A wand's zap: drawn once between the two points, then faded out. */
   beam(from: THREE.Vector3, to: THREE.Vector3, tint: number, durationMs = 150): void {
     const length = from.distanceTo(to);
@@ -459,6 +493,11 @@ export class Projectiles {
         if (p.light) p.light.intensity = 3 + swell * 6;
         const glow = p.materials[1] as THREE.SpriteMaterial;
         if (glow) glow.opacity = 0.4 + swell * 0.35;
+      } else if (p.kind === "wisp") {
+        p.object.position.lerpVectors(p.from, p.to, t);
+        // A slow rise then a fade, rather than a flash — this is meant to
+        // read as ambient, so it must never compete with an actual hit.
+        (p.materials[0] as THREE.SpriteMaterial).opacity = 1 - t;
       } else {
         // Beams flash and go: bright for the first third, then fade.
         const fade = t < 0.34 ? 1 : 1 - (t - 0.34) / 0.66;
