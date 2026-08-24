@@ -7,7 +7,14 @@ import { createTerrainMaterial } from "./terrain";
 import { buildGroundCover } from "./scatter";
 import { buildForests } from "./forest";
 import { COVER_CULL_UNITS, DistanceCuller, TREE_CULL_UNITS } from "./culling";
-import { QUALITY, loadQuality, nextQuality, saveQuality, type QualityLevel } from "./quality";
+import {
+  QUALITY,
+  loadQuality,
+  nextQuality,
+  saveQuality,
+  shadowSchedule,
+  type QualityLevel,
+} from "./quality";
 import { windyGeometry } from "./wind";
 import { seededRandom } from "../../../shared/rng";
 import { DayNight } from "./daynight";
@@ -663,7 +670,9 @@ export class World {
 
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pixelRatioCap));
     this.renderer.shadowMap.enabled = q.shadows;
-    this.renderer.shadowMap.type = q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    // Always PCF. PCFSoft is deprecated in this three.js and downgrades to
+    // exactly this on the first frame anyway, warning to the console each time.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.sun.castShadow = q.shadows;
     // Disposing the map is the part that is easy to miss: three.js will let
     // `mapSize` change and go on rendering into the texture it already
@@ -686,7 +695,7 @@ export class World {
     // does need every program rebuilt — but that rebuild is a stall of a second
     // or more, and pixel ratio and cull scale need none of it. Without the
     // guard, nudging the pixel ratio would recompile the entire world.
-    if (before.shadows !== q.shadows || before.softShadows !== q.softShadows) {
+    if (before.shadows !== q.shadows) {
       this.scene.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.material) return;
@@ -846,8 +855,12 @@ export class World {
     // one. `autoUpdate` is left ON at interval 1 rather than setting the flag
     // manually every frame, so the default path is exactly what it always was.
     if (this.shadowInterval > 1) {
-      this.shadowTick = (this.shadowTick + 1) % this.shadowInterval;
-      this.renderer.shadowMap.needsUpdate = this.shadowTick === 0;
+      // The schedule lives in quality.ts as a pure function so it can be
+      // tested: it encodes a three.js behaviour that is invisible here and
+      // that produced a real GL error the first time it was written inline.
+      const next = shadowSchedule(this.sun.shadow.map !== null, this.shadowTick, this.shadowInterval);
+      this.shadowTick = next.tick;
+      this.renderer.shadowMap.needsUpdate = next.needsUpdate;
     }
     this.renderer.render(this.scene, this.camera);
   }

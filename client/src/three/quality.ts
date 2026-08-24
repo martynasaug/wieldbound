@@ -25,9 +25,11 @@
 //   texture and softens contact shadows; turning it off entirely is a large
 //   win and a large loss, so it is only at the bottom level.
 //
-//   SHADOW FILTER: PCFSoft samples the map many more times per fragment than
-//   PCF. It is the cheapest quality to give up — the shadows stay in the same
-//   places, their edges just get crisper.
+//   SHADOW FILTER is deliberately NOT a knob here, and the reason is worth
+//   keeping: PCFSoftShadowMap is DEPRECATED in this version of three.js —
+//   WebGLShadowMap.render warns and reassigns itself to PCFShadowMap on the
+//   first frame. A setting for it would read correctly, apply silently, and
+//   change nothing, which is the same reason antialias is absent.
 //
 //   CULL SCALE multiplies M70.28's distance radii. Below 1 the world closes in
 //   around the player; it is last because it is the only one that changes what
@@ -41,8 +43,6 @@ export interface QualitySettings {
   pixelRatioCap: number;
   shadows: boolean;
   shadowMapSize: number;
-  /** True for PCFSoft, false for plain PCF. */
-  softShadows: boolean;
   /** Multiplies the ground-cover and tree cull radii. */
   cullScale: number;
   /**
@@ -66,7 +66,6 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     pixelRatioCap: 2,
     shadows: true,
     shadowMapSize: 2048,
-    softShadows: true,
     cullScale: 1,
     shadowEveryNFrames: 1,
   },
@@ -77,7 +76,6 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     pixelRatioCap: 1.5,
     shadows: true,
     shadowMapSize: 1024,
-    softShadows: false,
     cullScale: 0.8,
     shadowEveryNFrames: 2,
   },
@@ -89,7 +87,6 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     pixelRatioCap: 1,
     shadows: false,
     shadowMapSize: 512,
-    softShadows: false,
     cullScale: 0.62,
     shadowEveryNFrames: 0,
   },
@@ -129,4 +126,35 @@ export function saveQuality(level: QualityLevel): void {
 
 export function nextQuality(level: QualityLevel): QualityLevel {
   return QUALITY_ORDER[(QUALITY_ORDER.indexOf(level) + 1) % QUALITY_ORDER.length];
+}
+
+/**
+ * Whether the shadow map should be re-rendered this frame.
+ *
+ * Pulled out as a pure function purely so it can be tested: it encodes a
+ * three.js behaviour that is invisible from the call site and produced a real
+ * GPU error the first time it was written by hand.
+ *
+ * `WebGLShadowMap.render` bails on `autoUpdate === false && needsUpdate ===
+ * false` BEFORE it allocates `light.shadow.map`. Every material in the scene
+ * compiles against `shadowMap.enabled`, so they all carry a `sampler2DShadow`
+ * — and with no map to bind they draw against the renderer's default empty
+ * texture, which is a GL_INVALID_OPERATION per draw call:
+ *
+ *   Mismatch between texture format and sampler type (signed/unsigned/float/shadow)
+ *
+ * So `hasMap` is not an optimisation, it is the correctness condition: the
+ * schedule may only start skipping frames once there is a map worth keeping.
+ */
+export function shadowSchedule(
+  hasMap: boolean,
+  tick: number,
+  interval: number,
+): { tick: number; needsUpdate: boolean } {
+  // Interval 0 means shadows are off entirely and 1 means every frame, which
+  // three.js does on its own through `autoUpdate`. Neither skips anything.
+  if (interval <= 1) return { tick: 0, needsUpdate: true };
+  if (!hasMap) return { tick: 0, needsUpdate: true };
+  const next = (tick + 1) % interval;
+  return { tick: next, needsUpdate: next === 0 };
 }

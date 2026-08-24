@@ -7302,6 +7302,31 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- OPEN THE CONSOLE BEFORE OPTIMISING, not after. Three rounds of profiling
+  went past a GPU error that was firing hundreds of times a frame, because
+  the instrument being watched was a frame-time overlay and the evidence was
+  in a different window. `GL_INVALID_OPERATION` does not throw, does not
+  reach any JavaScript error handler, and does not stop the picture from
+  rendering — the game looks and behaves exactly as if nothing is wrong. It
+  took asking the player to screenshot F12 for a completely different reason
+  (chasing stutters) to surface it at all.
+- AN EARLY RETURN IN A LIBRARY CAN SKIP THE ALLOCATION, NOT JUST THE WORK.
+  `WebGLShadowMap.render` bails on `autoUpdate === false && needsUpdate ===
+  false` — and that bail is BEFORE `shadow.map` is created, not after. So a
+  frame-skipping schedule that looks like it is only declining to redraw is
+  also declining to ever build the thing being drawn into, and every material
+  compiled with a shadow sampler then binds nothing. When rate-limiting a
+  library's internal pass, read what its guard clause is standing in front
+  of, because "skip the work" and "skip the setup" are the same line.
+- THE SAME MISTAKE, ONE ENTRY APART. The decisions log gained "a knob that
+  cannot change on a live renderer must not be in the settings object"
+  (about `antialias`) in M70.29 — and M70.29 also shipped a `softShadows`
+  knob that three.js ignores, because `PCFSoftShadowMap` is deprecated and
+  reassigns itself to `PCFShadowMap` on the first frame. Writing the rule
+  down did not prevent breaking it in the same commit. What actually caught
+  it was reading the library's source for an unrelated reason. A principle
+  in a log is not a check; the test that asserts no such knob exists is.
+
 - JUST MISSING THE REFRESH RATE IS WORSE THAN MISSING IT BY A LOT, and it
   changes what "fast enough" means. At 16.96ms on a 60Hz display, frames
   alternate between one refresh and two — a visible, rhythmic judder that
@@ -11015,6 +11040,60 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.31 — the console said `shadow` and it was my fault.** The
+fourth reading came with the console open, and it changed the subject
+entirely. Steady state was FIXED: 60.3fps, 14.73ms average — under the
+16.67ms line a 60Hz display gives you, which is what M70.28-30 were for —
+853 draw calls, 2.72M triangles, cover down to 308 chunks. But the console
+was full of a real GPU error, hundreds at a time:
+`GL_INVALID_OPERATION: glDrawElementsInstanced: Mismatch between texture
+format and sampler type (signed/unsigned/float/shadow)`.
+That word `shadow` pointed straight at M70.30's own change, and reading
+three.js's source settled it in one line. `WebGLShadowMap.render` begins
+`if (autoUpdate === false && needsUpdate === false) return;` — and it
+returns BEFORE allocating `light.shadow.map`. Every material in the scene
+is compiled against `shadowMap.enabled`, so they all carry a
+`sampler2DShadow`; with no map to bind, each one draws against the
+renderer's default empty texture. One GL error PER DRAW CALL, which is
+exactly why they arrived in hundreds — there are hundreds of draw calls in
+the frame that produced them. And M70.30's `render()` set `needsUpdate`
+from its own tick counter every frame, overwriting the `true` that
+`applyQuality` had just set after disposing the map. Nothing threw, the
+picture still rendered, and the only evidence was in a console nobody had
+been asked to open until now.
+The schedule moved into `quality.ts` as a pure function, `shadowSchedule`,
+purely so it can be tested — it encodes a three.js behaviour that is
+invisible from the call site and got written wrong the first time it was
+done by hand. `hasMap` is not an optimisation in it, it is the correctness
+condition: frames may only start being skipped once there is a map worth
+keeping. `tools/test/shadows.mjs` asserts that on any frame without a map
+the pass runs, at every interval and every tick; that once there is one,
+interval 2 halves the pass and never skips twice in a row; and that no
+level skips shadows it has not enabled. Mutation-tested by deleting the
+`hasMap` line: 11 failures.
+Reading that same source turned up a second thing. `PCFSoftShadowMap` is
+DEPRECATED in this three.js — `WebGLShadowMap.render` warns and reassigns
+itself to `PCFShadowMap` on the first frame — so M70.29's `softShadows`
+knob read correctly, applied silently and changed nothing, which is the
+exact anti-pattern the decisions log had just recorded about `antialias`
+one entry earlier. Removed, with the reason written where somebody would
+go to add it back, and `shadows.mjs` now guards both: no setting may be
+offered for a filter three.js ignores, and none for a flag fixed at
+context creation.
+What is left, honestly stated. The frame budget is met and the stutters
+are not: `worst /10s` 81.7ms with 3 stutters in ten seconds, and the
+console showed far worse ones during load — 437ms, 258ms, 918ms — all
+reported as "sections not timed", i.e. outside the loop entirely. That is
+the signature M70.30's hitch line was built to produce and it points at
+asset decode, texture upload or shader compile rather than at anything in
+the render loop. Whether fixing this GL error also fixes them is genuinely
+unknown: a driver taking an error path hundreds of times a frame is not
+free, but it is not obviously worth 900ms either. Also unresolved and
+deliberately not chased yet: two `THREE.Material: parameter 'map' has
+value of undefined` warnings, which are cosmetic. And the profiler's new
+per-tier split immediately earned itself — TREE chunks (395) now outnumber
+cover chunks (308), inverting which of the two is worth attacking next.
 
 **Phase 70 M70.30 — the stutter nobody could measure, and a second render
 nobody asked for.** Third F3 reading, on Balanced: 54fps (from 32.5),
