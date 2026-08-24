@@ -1270,6 +1270,16 @@ export class Game {
       if (moving) actor.faceDirection(s.x - motion.x, s.y - motion.y);
       actor.play(moving ? "run" : "idle");
       this.playerMotion.set(s.id, { x: s.x, y: s.y, moving });
+      // Same four calls the local player's own body and every monster
+      // already get (M70.9) — a remote party-mate's status was landing on
+      // the wire (see `PlayerState.statuses`'s own comment) with nowhere
+      // to go until now, so a burning or chilled ally read as untouched to
+      // everyone standing next to them.
+      const remoteStatuses = s.statuses ?? [];
+      actor.setChilled(remoteStatuses.some((x) => x.id === "chilled"));
+      actor.setBurning(remoteStatuses.some((x) => x.id === "burning"));
+      actor.setPoisoned(remoteStatuses.some((x) => x.id === "poisoned"));
+      actor.setBleeding(remoteStatuses.some((x) => x.id === "bleeding"));
     }
     for (const [id, actor] of this.players) {
       if (seen.has(id)) continue;

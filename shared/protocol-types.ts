@@ -3728,6 +3728,18 @@ export interface PlayerState {
    */
   hp: number;
   maxHp: number;
+  /**
+   * Same shape and same reason as `MonsterState.statuses` — ids and end
+   * times only, no modifiers, since the client already has the table.
+   *
+   * Before this, a status only ever reached the player it was running on
+   * (`STATUS_UPDATE` is sent to one socket, see `sendStatuses`), so a War
+   * Cry cast on a party-mate was invisible to everyone but them — the
+   * caster who just buffed an ally had no way to see it land, and
+   * `Actor.setChilled`/`setBurning`/`setPoisoned`/`setBleeding` (M70.9)
+   * had no data to draw with even if a remote body had asked for it.
+   */
+  statuses: { id: StatusId; endsAt: number }[];
 }
 
 export type ResourceNodeStatus = "available" | "depleted";

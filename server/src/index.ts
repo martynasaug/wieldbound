@@ -254,7 +254,7 @@ function clamp(value: number, min: number, max: number): number {
 // below (weaponRarities/armorRarities, hpBalances) and are merged in at
 // broadcast time, so there is no second copy of a player's weapon rarity
 // or health that could drift out of sync with the source of truth.
-type LivePlayer = Omit<PlayerState, "weaponRarity" | "armorRarity" | "hp" | "maxHp">;
+type LivePlayer = Omit<PlayerState, "weaponRarity" | "armorRarity" | "hp" | "maxHp" | "statuses">;
 const players = new Map<string, LivePlayer>();
 const sockets = new Map<string, WebSocket>();
 const lastSavedAt = new Map<string, number>();
@@ -4184,6 +4184,7 @@ setInterval(() => {
     armorRarity: armorRarities.get(p.id) ?? null,
     hp: hpBalances.get(p.id) ?? 0,
     maxHp: maxHpOf(p.id, attributes.get(p.id) ?? EMPTY_ATTRS),
+    statuses: statusesOf(p.id, now).map((s) => ({ id: s.id, endsAt: s.endsAt })),
   }));
   const snapshot: ServerToClientMessage = {
     type: "STATE_SNAPSHOT",

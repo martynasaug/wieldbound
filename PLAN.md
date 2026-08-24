@@ -10787,6 +10787,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.17 — an ally's burn was invisible to everyone but them.**
+The bigger of the two candidates the same research pass found, one hop
+past M70.9 and M70.13. M70.9 gave burning/poisoned/bleeding/chilled a
+real pulse on `Actor.ts` and wired it for the local player's own body and
+for every monster — but `STATUS_UPDATE`, the message that carries a
+status, is sent to exactly one socket (`sendStatuses`), the entity it is
+running on. A War Cry cast on a party-mate, or a monster's poison landing
+on them, was invisible to everyone standing next to them: the caster who
+just buffed an ally had no way to see it take, and the four setters M70.9
+built had no data to draw with even if a remote body had asked for it —
+the identical shape of gap M70.13 already found and fixed once for HP.
+`PlayerState` gains `statuses`, same `{ id, endsAt }[]` shape
+`MonsterState` has carried since the target frame existed, merged in at
+broadcast time from the same `statusesOf()` the player's own
+`STATUS_UPDATE` already reads — not a new source of truth, just the
+existing one finally reaching everyone else's screen. Client's
+`syncPlayers` gained the exact four calls monsters and the local player
+already get. Verified live: drove the real `syncPlayers()` path with a
+synthetic `PlayerState` carrying a poisoned status and confirmed the
+resulting remote `Actor`'s `poisoned` flag set correctly while the other
+three stayed false; separately confirmed over a raw socket that
+`statuses` is now a real (well-typed, currently-empty) array on every
+`PlayerState` in the broadcast. `animation.mjs`, `smoke.mjs` and
+`statuses.mjs` green; `fighting.mjs` failed against cactoro again (the
+same keepAway-kiter test-bot limitation from M70.16, unrelated) and
+passed clean against mushnub.
+
 **Phase 70 M70.16 — the badge that was already named after itself.** A
 fresh research pass into areas untouched this session (leaderboard, day/
 night, talents, crafting beyond materials) found `SkillPanel.ts`'s own
