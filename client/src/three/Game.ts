@@ -1960,10 +1960,19 @@ export class Game {
       // player mid-fight than what it was made of, and that is the one thing
       // the log's colours have always separated — so the school is in the WORD
       // ("burns you") and never in the colour.
-      this.combatLog.push(
-        `The ${label} ${p.crit ? "CRITs" : p.school && p.school !== "physical" ? schoolDef(p.school).verb : "hits"} you for ${p.damage}.`,
-        p.crit ? "#ff8f5e" : "#ff9d9d",
-      );
+      const verb = p.crit ? "CRITs" : p.school && p.school !== "physical" ? schoolDef(p.school).verb : "hits";
+      if (p.crit) {
+        // A crit stays its own line always — see `CombatLog.pushHit`'s own
+        // comment for why merging it into a running count would bury it.
+        this.combatLog.push(`The ${label} ${verb} you for ${p.damage}.`, "#ff8f5e");
+      } else {
+        // One shared key rather than `p.monsterId` — the whole point is
+        // catching several DIFFERENT monsters landing hits close together,
+        // which a per-attacker key would never merge at all (each kind's
+        // own `attackIntervalMs` is seconds, not the couple hundred
+        // milliseconds a merge window needs to be to mean "at once").
+        this.combatLog.pushHit("monster-hit", label, verb, p.damage, "#ff9d9d");
+      }
       playSfx("hurt");
       if (this.localActor) {
         const at = this.localActor.position;
@@ -4069,6 +4078,7 @@ export class Game {
         elite: stats.guaranteedDrop,
         engaged: id === this.engagedId,
         locked: id === this.lockedId,
+        targetingMe: vis.state.targetId === this.playerId,
         windup,
         distance: rangeTo(p.x, p.z),
       });

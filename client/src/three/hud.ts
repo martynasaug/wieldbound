@@ -255,6 +255,18 @@ const STYLE = `
 #hud3d .plate.engaged .pn { color: #fff3cf; }
 #hud3d .plate.engaged .ph { box-shadow: 0 0 7px #ffb04a88, 0 1px 2px #0009; }
 #hud3d .plate.engaged .ph i.fill { background: linear-gradient(180deg, #ff8a5c, #c2361f); }
+/* A small warning glyph ahead of the name, for anything whose AI has
+   picked the local player as its target — distinct from .engaged's gold
+   (the player's own choice) because this is the monster's choice, and the
+   two can disagree: an ally's attacker reads as ordinary, yours reads as a
+   threat, and a monster you are fighting that has moved on to someone else
+   loses the mark the instant it does. */
+#hud3d .plate.hunting .pn::before {
+  content: "\\26A0";
+  margin-right: 3px;
+  color: #ff5a4a;
+  text-shadow: 0 0 4px #ff5a4a88;
+}
 #hud3d .plate.locked .pn::before,
 #hud3d .plate.locked .pn::after {
   color: #fff0c8; font-weight: bold; opacity: .95;
@@ -416,6 +428,14 @@ export interface PlateSpec {
   /** Overrides the name's colour. Drops use it to carry their quality, which is
    *  the one fact a player needs to read about loot from across a field. */
   tint?: string;
+  /**
+   * True when THIS monster's AI has the local player as its target — not
+   * to be confused with `engaged`/`locked`, which are the player's own
+   * choice of who to fight. In a pack, or standing near an ally, several
+   * monsters can look identical while only some of them are actually
+   * coming for you; this is the plate's answer to that specific question.
+   */
+  targetingMe?: boolean;
 }
 
 /**
@@ -728,6 +748,7 @@ export class Hud {
       (spec.elite ? " plate-elite" : "") +
       (spec.engaged ? " engaged" : "") +
       (spec.locked ? " locked" : "") +
+      (spec.targetingMe ? " hunting" : "") +
       (spec.dim ? " dim" : "") +
       (spec.windup !== undefined ? " casting" : "");
     if (cls !== st.cls) {

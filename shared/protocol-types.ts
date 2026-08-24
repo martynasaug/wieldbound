@@ -3800,6 +3800,21 @@ export interface MonsterState {
    * survive a death or a walk home stuck `true`.
    */
   fleeing: boolean;
+  /**
+   * Which player, if any, this monster's AI is currently chasing —
+   * `ai.targetId` on the server, said out loud.
+   *
+   * The server has always known this (it is how the whole `chase` state
+   * works), and until now nothing outside the AI's own tick loop ever read
+   * it back. In a fight with several monsters and several players, "which
+   * of these is actually coming for ME" was a question only the server
+   * could answer — every nearby monster looked exactly the same regardless
+   * of who it was hunting, so a pack fight next to an ally was a guess
+   * about which body was your problem. A raw id rather than a boolean
+   * (unlike `windingUp`/`fleeing`) because it is genuinely per-monster
+   * information, not a flag any one client's own state can derive alone.
+   */
+  targetId: string | null;
 }
 
 // --- Loot on the ground -----------------------------------------------------

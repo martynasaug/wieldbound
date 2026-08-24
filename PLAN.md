@@ -7302,6 +7302,28 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- AN AGGREGATION KEY HAS TO MATCH WHERE THE OVERLAP ACTUALLY COMES FROM. A
+  first version of the combat-log merge keyed grouped hits by monster id,
+  reasoning that repeated swings from the same attacker should collapse —
+  but every kind's own `attackIntervalMs` is 1.4-3 seconds, far longer than
+  any sane merge window, so a per-monster key would almost never trigger.
+  The actual overlap a pack fight produces is BETWEEN different monsters'
+  independent timers landing close together, which only a shared key
+  catches. Re-derive what two events actually have in common before
+  picking what to key a merge on — "the same thing happened twice" and "two
+  different things happened at once" call for opposite keys.
+- HEADLESS CHROMIUM'S TIMER THROTTLING BREAKS setTimeout AS A TEST PACING
+  TOOL, not just as a game-loop concern. A live test for the combat-log
+  merge used `setTimeout(60)` between calls to simulate hits arriving a
+  beat apart, and failed — not because the merge was broken (a zero-gap
+  version of the same test passed cleanly), but because the backgrounded
+  headless tab can delay a nominal 60ms `setTimeout` well past the merge
+  window while `performance.now()` — what the feature itself times against
+  — keeps accurate wall-clock time regardless, so the two drift apart. Same
+  throttling class as the rAF issue in M70.5's freeze-fix verification.
+  Fixed by dropping the artificial delay rather than lengthening it: real
+  `MONSTER_ATTACK` messages arrive back-to-back through one handler, so a
+  synchronous test is the more faithful simulation, not a workaround.
 - A CODE COMMENT CAN BE THE BUG, not just miss one. `setChilled`'s own doc
   comment claimed Poison Arrow's slow was ALSO supposed to show blue — it
   wasn't a stale comment describing removed behaviour, it was the original
@@ -10727,6 +10749,51 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.10 — which of these is coming for ME.** Requested directly:
+multi-monster combat, and continued monster AI. The melee ring queue
+(Phase 42) already made a pack of attackers spatially readable — only
+`MAX_MELEE_ATTACKERS` press to contact, the rest orbit a wider ring waiting
+their turn — but nothing ever answered the question a pack fight next to
+an ally actually asks: which of these bodies is hunting me, and which is
+hunting them? The server's AI has known the answer since the state machine
+was written (`ai.targetId`, read every tick to decide who a monster is
+chasing) and never said so. `MonsterState` gains `targetId: string | null`
+— a raw id rather than a boolean like `windingUp`/`fleeing`, because this
+is genuinely per-monster information neither client can derive alone — and
+the client turns it into a small warning glyph on a monster's own
+nameplate the instant `targetId` matches the local player, distinct from
+`engaged`/`locked` (the player's own choice of who to fight) because this
+is the monster's choice, and the two can disagree. Paired with a
+readability fix on the other side of the same problem: the combat log
+printed one raw "The X hits you for N" per swing, and since each monster
+runs its own independent `attackIntervalMs` (no shared clock), a real pack
+scrolled itself out of the visible window before a player could read any
+one line — the exact problem `floaters.ts` already solved for the floating
+numbers, never given to the log. `CombatLog.pushHit` now collapses hits
+landing within 400ms into one growing line, keyed generically rather than
+per-attacker (a per-monster key would almost never merge anything, since
+attack intervals run 1.4-3s — the actual overlap is BETWEEN different
+monsters' independent timers landing close together, not one monster
+hitting twice fast) and dropping the attacker's name past the first hit,
+since attributing a merged group to whichever one started it would
+misattribute every hit after it. Crits stay their own line always,
+un-mergeable, so a genuinely notable hit is never buried inside a count.
+Verified live: sampled the AI's real `targetId` over a socket and confirmed
+it flips to the approaching player's own id the instant the monster picks
+them up; drove `pushHit` with three different monster labels back-to-back
+and confirmed they collapsed into one "Hit 3 times for 9" line while a
+crit and an unrelated log line each still got their own. (First attempt at
+the log test used artificial `setTimeout` gaps between calls and failed —
+not a bug, headless Chromium's timer throttling in this session's
+background tab makes a nominal `setTimeout(60)` an unreliable stand-in for
+a real 60ms gap even though `performance.now()` keeps accurate wall-clock
+time regardless, the same throttling class documented back in the M70.5
+freeze-fix verification. Fixed by removing the artificial delay entirely —
+back-to-back calls are the more faithful simulation anyway, since real
+`MONSTER_ATTACK` messages arrive through the same handler in quick
+succession, not deliberately paced.) `animation.mjs`, `smoke.mjs` and
+`fighting.mjs` all green.
 
 **Phase 70 M70.9 — a poisoned body was wearing Frost Nova's colour.** Not
 a missing feature this time but an actively wrong one: `setChilled`'s own

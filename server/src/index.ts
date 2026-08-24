@@ -601,7 +601,7 @@ const nodeRespawnAt = new Map<string, number>();
 
 function spawnMonster(id: string, kind: MonsterState["kind"], x: number, y: number): MonsterState {
   const maxHp = MONSTER_STATS[kind].maxHp;
-  return { id, kind, x, y, status: "alive", hp: maxHp, maxHp, slowed: false, windingUp: false, leaping: false, alerted: false, fleeing: false, statuses: [] };
+  return { id, kind, x, y, status: "alive", hp: maxHp, maxHp, slowed: false, windingUp: false, leaping: false, alerted: false, fleeing: false, targetId: null, statuses: [] };
 }
 
 // Monsters live in tight packs, not scattered individually, so clearing a
@@ -3515,6 +3515,9 @@ setInterval(() => {
     // running is entirely a function of `ai.state`, so it is read back off
     // the state machine rather than kept as its own flag anywhere.
     monster.fleeing = ai.state === "flee";
+    // Said out loud for the same reason: the AI has always had an opinion
+    // about who it is hunting, and nothing outside this loop could ever ask.
+    monster.targetId = ai.state === "chase" || ai.state === "flee" ? ai.targetId : null;
 
     if (monster.status !== "alive") {
       ai.state = "idle";
