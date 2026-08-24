@@ -7302,6 +7302,21 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- "SLOWER" HAS TWO COMPLETELY DIFFERENT MEANINGS IN THIS COMBAT SYSTEM, AND
+  ONLY ONE IS SAFE TO GUESS. `swingMs`/`speedPxPerSec` decide when a blow's
+  FX and number appear; `swingIntervalFor`/`attackIntervalMs` decide how
+  often a swing can happen at all, and the second is the number the entire
+  Phase 68 balance sweep solved against. Asked which one before touching
+  either — a wrong guess here would have silently invalidated a balance pass
+  that took three re-solves to get right the first time.
+- A RAW-SOCKET TEST FAILING DURING A CLIENT-ONLY CHANGE IS A CLUE ABOUT THE
+  TEST, NOT THE CHANGE. `fighting.mjs` imports nothing from `client/src/` —
+  it drives the server over `ws` directly — so a client-only edit to
+  `attacks.ts`/`Game.ts` cannot be its cause by construction. Traced the
+  actual failure (a low-accuracy persisted character standing next to a
+  38-evasion ghost) rather than either shipping past a red suite or chasing a
+  regression that could not exist in the files just touched.
+
 - CHECK A GEOMETRY'S UV CONVENTION BEFORE ASSUMING IT WILL GARBLE A TEXTURE.
   The instinct was that `RingGeometry` maps radially (angle/radius) and would
   need new UVs to take a texture authored for a flat square stamp — checked
@@ -10448,6 +10463,25 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — slower, on request, and not the number that matters.** M69.11
+answered "all attacks in general need to be a little slower" by touching
+exactly one kind of number: how long the beat between a swing or shot
+starting and its damage landing takes to read — `swingMs` per melee weapon,
+`speedPxPerSec` for a bow's arrow and a staff's bolt, and the matching
+constants on the monster side (`IMPACT_DELAY_MS`, a thrower's own flight
+speed). Every one of these was already visual-only before this milestone —
+`impactDelayMs` decides when the impact FX and the number appear, never how
+often a swing can happen — so slowing them by roughly a fifth to a quarter
+across the board makes combat read with more follow-through without moving a
+single DPS number the Phase 68 balance sweep solved for. Confirmed by reading
+the live constants back out of the built source rather than trusting the
+diff. A live suite (`fighting.mjs`) failed during verification in a way
+traced to a pre-existing, unrelated cause: it is a raw-socket test with no
+dependency on any file this milestone touched, and the specific persisted
+test character it re-used happened to have a low hit chance against the
+high-evasion ghost it was standing next to — reproducible, but structurally
+incapable of being caused by a client-only visual-timing change.
 
 **Phase 69 — the mark is a rune circle now, not a plain ring.** M69.10 spent
 the fourth particle frame M69.9 downloaded but left reserved: `ring.png`, a

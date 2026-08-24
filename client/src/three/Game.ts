@@ -245,10 +245,15 @@ const MONSTER_DESPAWN_RADIUS_PX = 1550;
 // How long after a monster's swing starts its hit is considered to land.
 // Without a beat the damage number appears on the same frame as the wind-up,
 // which reads as a number popping out of nowhere rather than as a blow
-// connecting. Every monster in the roster fights at contact range, so one
-// constant covers them; the PLAYER's beat comes from the weapon instead — see
-// `impactDelayMs` in attacks.ts, where a flying attack lands when it arrives.
-const IMPACT_DELAY_MS = 170;
+// connecting. Used for every melee monster; a thrower overrides this with its
+// own real flight time below, and the PLAYER's beat comes from the weapon
+// instead — see `impactDelayMs` in attacks.ts, where a flying attack lands
+// when it arrives.
+//
+// Slowed alongside the player's own beats, on request — visual pacing only,
+// same as attacks.ts: this does not touch `attackIntervalMs`, which is what
+// actually governs how often a monster gets to swing.
+const IMPACT_DELAY_MS = 210;
 
 // The reach ring fades out once combat traffic stops, so it is not permanently
 // drawn under a player who is just walking around.
@@ -1733,8 +1738,8 @@ export class Game {
       const gapPx = from.distanceTo(to) * PX_PER_UNIT;
       // Its own flight time over the real gap, the same rule the player's
       // arrows follow, so the damage number cannot beat the thing that caused
-      // it to the target.
-      flight = Math.round(Math.max(120, Math.min(700, (gapPx / 900) * 1000)));
+      // it to the target. Slowed alongside the player's own bolt, same reason.
+      flight = Math.round(Math.max(140, Math.min(780, (gapPx / 680) * 1000)));
       const tint = Number.parseInt(schoolDef(p.school).color.slice(1), 16);
       this.projectiles.bolt(from, to, flight, tint);
     }

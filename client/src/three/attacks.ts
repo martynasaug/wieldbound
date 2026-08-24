@@ -65,23 +65,32 @@ export interface AttackStyle {
   impactScale: number;
 }
 
+// SLOWED ACROSS THE BOARD, on request — reported as "all attacks in general"
+// reading too fast to land as weighty. Every number below is VISUAL PACING
+// ONLY: `swingMs`/`speedPxPerSec` decide when the impact FX and damage number
+// appear relative to the swing or shot starting, never how often a swing can
+// actually happen — that cadence is `swingIntervalFor` in the shared combat
+// formulas, tuned against the Phase 68 balance sweep, and untouched here. A
+// fast weapon can still be interrupted into its next swing by a new one
+// before this beat finishes; it just reads with more follow-through when it
+// is not.
 export const ATTACK_STYLES: Record<WeaponType, AttackStyle> = {
   // Bare hands: quick, small, and unmistakably not a weapon.
-  fist: { delivery: "melee", releaseSfx: "swing", impact: "impact", tint: 0xffe6cc, swingMs: 130, speedPxPerSec: 0, impactScale: 0.75 },
-  sword: { delivery: "melee", releaseSfx: "swing", impact: "slash", tint: 0xffffff, swingMs: 170, speedPxPerSec: 0, impactScale: 1.0 },
+  fist: { delivery: "melee", releaseSfx: "swing", impact: "impact", tint: 0xffe6cc, swingMs: 165, speedPxPerSec: 0, impactScale: 0.75 },
+  sword: { delivery: "melee", releaseSfx: "swing", impact: "slash", tint: 0xffffff, swingMs: 215, speedPxPerSec: 0, impactScale: 1.0 },
   // Slow and heavy — the beat is longer because the swing is.
-  axe: { delivery: "melee", releaseSfx: "swing", impact: "slash", tint: 0xffd2a6, swingMs: 235, speedPxPerSec: 0, impactScale: 1.4 },
-  mace: { delivery: "melee", releaseSfx: "swing", impact: "quake", tint: 0xffdfa0, swingMs: 215, speedPxPerSec: 0, impactScale: 1.25 },
+  axe: { delivery: "melee", releaseSfx: "swing", impact: "slash", tint: 0xffd2a6, swingMs: 295, speedPxPerSec: 0, impactScale: 1.4 },
+  mace: { delivery: "melee", releaseSfx: "swing", impact: "quake", tint: 0xffdfa0, swingMs: 270, speedPxPerSec: 0, impactScale: 1.25 },
   // Fast and light, and the shortest reach in the ranger's kit.
-  dagger: { delivery: "melee", releaseSfx: "swing", impact: "slash", tint: 0xd8f0ff, swingMs: 105, speedPxPerSec: 0, impactScale: 0.7 },
+  dagger: { delivery: "melee", releaseSfx: "swing", impact: "slash", tint: 0xd8f0ff, swingMs: 135, speedPxPerSec: 0, impactScale: 0.7 },
   // A real arrow, drawn from the pack's own model and flown to the target.
-  bow: { delivery: "arrow", releaseSfx: "bow", impact: "arrow", tint: 0xfff0d0, swingMs: 0, speedPxPerSec: 1500, impactScale: 0.95 },
+  bow: { delivery: "arrow", releaseSfx: "bow", impact: "arrow", tint: 0xfff0d0, swingMs: 0, speedPxPerSec: 1150, impactScale: 0.95 },
   // A travelling bolt of force: the mage's main-hand missile.
-  staff: { delivery: "bolt", releaseSfx: "cast", impact: "arcane", tint: 0x9ad4ff, swingMs: 0, speedPxPerSec: 1050, impactScale: 1.0 },
+  staff: { delivery: "bolt", releaseSfx: "cast", impact: "arcane", tint: 0x9ad4ff, swingMs: 0, speedPxPerSec: 800, impactScale: 1.0 },
   // A beam rather than a missile — instant, thin and bright, the way a wand
   // reads in every game that has one. It is what makes the wand feel like a
   // sidearm next to the staff instead of a shorter copy of it.
-  wand: { delivery: "beam", releaseSfx: "beam", impact: "arcane", tint: 0xc9a4ff, swingMs: 95, speedPxPerSec: 0, impactScale: 0.7 },
+  wand: { delivery: "beam", releaseSfx: "beam", impact: "arcane", tint: 0xc9a4ff, swingMs: 120, speedPxPerSec: 0, impactScale: 0.7 },
 };
 
 export function attackStyle(weapon: WeaponType | undefined): AttackStyle {
@@ -99,7 +108,10 @@ export function attackStyle(weapon: WeaponType | undefined): AttackStyle {
 export function impactDelayMs(style: AttackStyle, gapPx: number): number {
   if (style.delivery === "melee" || style.delivery === "beam") return style.swingMs;
   const flight = (gapPx / style.speedPxPerSec) * 1000;
-  return Math.round(Math.max(90, Math.min(650, flight)));
+  // Ceiling raised alongside the slower base speeds, so a long shot still
+  // reads as travelling further than a short one instead of both landing on
+  // the same clamped cap.
+  return Math.round(Math.max(90, Math.min(760, flight)));
 }
 
 // --- Projectiles ----------------------------------------------------------
