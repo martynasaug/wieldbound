@@ -49,3 +49,17 @@ fx.png       Drawn for this project. Effect library: 8 effects x 4 frames
 sfx/*.wav    Synthesised for this project (16-bit mono, 22050Hz):
              swing, hit, crit, miss, hurt, die, gather, levelup,
              plus cast and heal reserved for spells.
+
+particles/*.png  Downscaled to 128x128 from Kenney "Particle Pack" (CC0)
+             https://kenney.nl/assets/particle-pack
+             Billboarded onto the existing procedural projectile geometry
+             (see attacks.ts) rather than replacing it — the sphere/cone
+             meshes and the point lights that travel with them are what
+             solved M64.1's "reads as a smudge" problem; these textures give
+             that geometry a soft gradient instead of a flat additive fill.
+               glow.png  <- light_01.png   a bolt's hot core, a pillar's base
+               spark.png <- star_04.png    crit accents, a hot four-point pop
+               trail.png <- trace_07.png   the streak a fast thing leaves
+               ring.png  <- magic_02.png   a rune circle - no caller yet;
+                            picked for skillfx.ts's mark/nova rings, same
+                            situation fx.png's own unused rows document

@@ -7302,6 +7302,45 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A GLOW IS A PROPERTY OF SOMETHING FLAT FACING THE VIEWER, NOT OF A SHAPE. A
+  radial-gradient texture wrapped onto a sphere's UVs tiles around it instead
+  of reading as light — spheres and cones are the wrong geometry for a 2D
+  glow no matter how good the texture is. A sprite (or any camera-facing
+  quad) is the only shape a soft gradient reads correctly on, which is the
+  same reason `fx.png`'s impact bursts have always been camera-facing quads.
+- TEXTURE THE GEOMETRY THAT ALREADY SOLVED THE REAL PROBLEM; DO NOT REPLACE
+  IT. M64.1 moved projectiles OFF flat atlas quads specifically because they
+  read as smudges at this camera's distance — real geometry plus a travelling
+  point light was the fix. Downloaded particle textures are billboarded onto
+  that same geometry/light/motion system rather than reverting to quads,
+  which would re-open the exact problem M64.1 closed.
+- A SPRITE'S OWN ROTATION IS A DIFFERENT KNOB FROM ITS PARENT'S. Spinning the
+  old sphere's transform varied its silhouette as it flew; a sprite always
+  faces the camera regardless of parent rotation, so that trick does nothing
+  to one. `SpriteMaterial.rotation` — an in-plane spin — is what still gives
+  a billboarded glow the same "turning as it flies" life without breaking the
+  camera-facing property that makes it read as light in the first place.
+- A TEXTURE'S GRADIENT AXIS HAS TO MATCH THE GEOMETRY'S UV AXIS, OR BAKE IT SO
+  IT DOES. A cone's V runs along its length, U wraps its circumference; the
+  source trail frame varied along U (image X), which would have painted one
+  side of the trail bright and the other dark instead of fading it toward the
+  tail. Rotated 90° once at bake time rather than fought with `texture.rotation`
+  at runtime — the same "bake the geometry, don't reach for Euler angles at
+  the last second" call this file already has on record.
+- WHEN A VISUAL CHANGE SHOWS NOTHING, SUSPECT THE TEST RIG BEFORE THE CODE —
+  the same rule this file already recorded about headless Chromium throttling
+  rAF to about a frame a second. Here it was TWO rig problems stacked: a close
+  third-person angle put the new sprite behind the character's own head, and
+  the test scene happened to be a torch-lit wall bright enough that additive
+  white-on-white produced almost no visible delta. A plain opaque test sprite
+  at the same spot rendered instantly, which is what proved sprites worked at
+  all and pointed at framing rather than the material.
+- AN UNUSED DOWNLOADED ASSET NEEDS THE SAME DISCLOSURE A DEAD CODE PATH DOES.
+  `ring.png` was picked for a follow-up (texturing `skillfx.ts`'s mark/nova
+  rings) that did not make it into this pass — credited as reserved rather
+  than as used, the same way `fx.png`'s own unused rows are documented rather
+  than left to imply a caller that does not exist.
+
 - A REPEAT ANIMATION REQUEST IS NOT ALWAYS A NO-OP. `play`'s guard against
   re-triggering a state that is already current is right for a snapshot
   loop calling `play("idle")` sixty times a second — but Agility's double
@@ -10389,6 +10428,30 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — a bolt that glows instead of a ball that is lit.** M69.9,
+reported from play: *"the projectile animations and effects are very
+poor."* A bolt's core and glow were spheres, its trail a flat-shaded cone —
+real geometry with a real light, which was the right fix for M64.1's "reads
+as a smudge" problem, but a radial gradient wrapped onto a sphere's UVs tiles
+around it rather than reading as a glow, because a flat gradient only ever
+looks like light on something flat facing the viewer. The core and glow are
+billboarded sprites now, textured from Kenney's CC0 Particle Pack — a soft
+radial burst and a four-point sparkle, four frames kept out of eighty and
+downscaled to 128px — layered onto the SAME geometry, light and motion system
+rather than replacing them; the arrow's trail took the same texture, rotated
+90° at bake time so its gradient runs along the cone's length instead of
+around it. A sprite always faces the camera, which is what makes it read as a
+glow at every angle, and also means the old trick of spinning the mesh to
+vary the silhouette does nothing to it — `SpriteMaterial.rotation` is the
+sprite equivalent, an in-plane spin that keeps the camera-facing property
+while still visibly turning as it flies. Confirmed live via a headless
+Playwright pass: the first several framings showed nothing at all, which
+turned out to be the harness (occlusion from a close third-person angle
+behind the character's own head, plus additive white glow washing out against
+an already torch-lit wall) rather than the code — a top-down camera override
+well clear of both settled it, and the bolt reads exactly as intended: a soft
+blue glow with a bright core, casting real light on the ground under it.
 
 **Phase 69 — the second swing.** M69.8: Agility's double-attack has resolved
 as two fully independent hits since it existed — its own hit/miss/crit roll,

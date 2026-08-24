@@ -23,6 +23,29 @@ import { loadModel } from "./assets";
 import type { EffectName } from "./effects";
 import type { SfxName } from "./sfx";
 
+// --- Particle textures -------------------------------------------------------
+// The bolt, the arrow's trail and the beam were pure procedural geometry with
+// a flat additive fill — a sphere, a cone, a cylinder. That solved a real
+// problem (see the note below on size) but traded it for a different one: a
+// lit sphere is a faceted ball of colour, not a glow, and nothing about a flat
+// cylinder says "magic" rather than "polygon." These textures are billboarded
+// or mapped ONTO that same geometry rather than replacing it — the motion, the
+// light and the positioning system stay exactly as they were.
+//
+// Downscaled from Kenney's CC0 "Particle Pack" (see ASSET_CREDITS.txt); four
+// frames out of eighty, at a fraction of their native resolution.
+const PARTICLE_TEX_LOADER = new THREE.TextureLoader();
+const particleTextures = new Map<string, THREE.Texture>();
+function particleTexture(name: "glow" | "spark" | "trail" | "ring"): THREE.Texture {
+  let tex = particleTextures.get(name);
+  if (!tex) {
+    tex = PARTICLE_TEX_LOADER.load(`/assets/particles/${name}.png`);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    particleTextures.set(name, tex);
+  }
+  return tex;
+}
+
 export type Delivery = "melee" | "arrow" | "bolt" | "beam";
 
 export interface AttackStyle {
@@ -90,8 +113,9 @@ interface LiveProjectile {
   materials: THREE.Material[];
   /** Bolts and arrows carry their own light, which has to be taken away too. */
   light?: THREE.PointLight;
-  /** The spinning part of a bolt, so the core is not a static ball. */
-  spin?: THREE.Object3D;
+  /** The bolt's spark and glow sprites, spun in-plane each frame so the core
+   *  is not a static ball even though a sprite always faces the camera. */
+  spinMats?: THREE.SpriteMaterial[];
 }
 
 // --- How big a projectile has to be to be seen -------------------------------
@@ -116,35 +140,40 @@ interface LiveProjectile {
 // like it is glowing rather than painted — and at night it lights the ground it
 // passes over, which is most of what sells it.
 
-/** Shared, because a handful of these are in the air at once and each is two
- *  spheres and a cone that never change shape. */
-const BOLT_CORE_GEO = new THREE.SphereGeometry(0.22, 12, 10);
-const BOLT_GLOW_GEO = new THREE.SphereGeometry(0.55, 12, 10);
+/** Shared, because a handful of these are in the air at once and the trail's
+ *  shape never changes — only the core and glow did, and both are billboarded
+ *  sprites now rather than geometry, so there is nothing to share for them. */
 const BOLT_TRAIL_GEO = new THREE.ConeGeometry(0.3, 2.2, 10, 1, true);
 
 /**
  * A travelling bolt: a hot core, a glow around it, a tapered trail behind, and
  * a light that goes with the whole thing.
  *
- * The trail is a CONE opening backwards rather than a box, because a box is a
- * stick and what a fast thing leaves behind is wider where it has been. Built
- * pointing down -Z so the group can simply `lookAt` its destination, which is
- * the same convention the beam uses.
+ * The core and glow are SPRITES now, not spheres. A radial-gradient texture
+ * wrapped onto a sphere's UVs tiles around it rather than reading as a single
+ * glow — a flat gradient only ever looks like a glow on something flat facing
+ * the viewer, which is exactly what a sprite is. The trail stays a real mesh:
+ * a CONE opening backwards rather than a box, because a box is a stick and
+ * what a fast thing leaves behind is wider where it has been. Built pointing
+ * down -Z so the group can simply `lookAt` its destination, which is the same
+ * convention the beam uses.
  */
 function boltMesh(tint: number): {
   object: THREE.Object3D;
   materials: THREE.Material[];
   light: THREE.PointLight;
-  spin: THREE.Object3D;
+  spinMats: THREE.SpriteMaterial[];
 } {
-  const coreMat = new THREE.MeshBasicMaterial({
+  const sparkMat = new THREE.SpriteMaterial({
+    map: particleTexture("spark"),
     color: 0xffffff,
     transparent: true,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     fog: false,
   });
-  const glowMat = new THREE.MeshBasicMaterial({
+  const glowMat = new THREE.SpriteMaterial({
+    map: particleTexture("glow"),
     color: tint,
     transparent: true,
     opacity: 0.55,
@@ -153,38 +182,43 @@ function boltMesh(tint: number): {
     fog: false,
   });
   const trailMat = new THREE.MeshBasicMaterial({
+    map: particleTexture("trail"),
     color: tint,
     transparent: true,
-    opacity: 0.34,
+    opacity: 0.6,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
     fog: false,
   });
 
-  const core = new THREE.Mesh(BOLT_CORE_GEO, coreMat);
-  const glow = new THREE.Mesh(BOLT_GLOW_GEO, glowMat);
+  // A sprite always faces the camera by construction, which is what makes it
+  // read as a glow rather than a decal at any viewing angle — but it also
+  // means the old trick of spinning the geometry to vary the silhouette does
+  // nothing to it. `SpriteMaterial.rotation` is the equivalent for a sprite:
+  // an in-plane spin that keeps it facing the camera while still visibly
+  // turning as it flies.
+  const spark = new THREE.Sprite(sparkMat);
+  spark.scale.setScalar(0.5);
+  const glow = new THREE.Sprite(glowMat);
+  glow.scale.setScalar(1.25);
+
   // The cone's point is +Y by default; tip it to lie along the path with the
   // wide end trailing.
   const trail = new THREE.Mesh(BOLT_TRAIL_GEO, trailMat);
   trail.rotation.x = Math.PI / 2;
   trail.position.z = -1.1;
 
-  // The core and glow turn together so the silhouette shifts as it flies — a
-  // perfectly still sphere reads as a decal stuck to the screen.
-  const spin = new THREE.Group();
-  spin.add(core, glow);
-
   const light = new THREE.PointLight(tint, 7, 10, 2);
 
   const group = new THREE.Group();
-  group.add(spin, trail, light);
+  group.add(glow, spark, trail, light);
   group.renderOrder = 10;
   return {
     object: group,
-    materials: [coreMat, glowMat, trailMat],
+    materials: [sparkMat, glowMat, trailMat],
     light,
-    spin,
+    spinMats: [sparkMat, glowMat],
   };
 }
 
@@ -241,9 +275,10 @@ function arrowPrototype(): Promise<THREE.Object3D> {
       const trail = new THREE.Mesh(
         new THREE.ConeGeometry(0.17, ARROW_LENGTH_UNITS * 2.2, 8, 1, true),
         new THREE.MeshBasicMaterial({
+          map: particleTexture("trail"),
           color: 0xffe6a8,
           transparent: true,
-          opacity: 0.42,
+          opacity: 0.65,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
           side: THREE.DoubleSide,
@@ -336,7 +371,7 @@ export class Projectiles {
    * its own light now.
    */
   bolt(from: THREE.Vector3, to: THREE.Vector3, flightMs: number, tint: number): void {
-    const { object, materials, light, spin } = boltMesh(tint);
+    const { object, materials, light, spinMats } = boltMesh(tint);
     object.position.copy(from);
     object.lookAt(to);
     this.scene.add(object);
@@ -349,7 +384,7 @@ export class Projectiles {
       kind: "bolt",
       materials,
       light,
-      spin,
+      spinMats,
     });
   }
 
@@ -392,17 +427,16 @@ export class Projectiles {
         p.object.position.lerpVectors(p.from, p.to, t);
       } else if (p.kind === "bolt") {
         p.object.position.lerpVectors(p.from, p.to, t);
-        // Turning, so the silhouette moves. A still sphere travelling in a
-        // straight line reads as a decal sliding across the screen.
-        if (p.spin) {
-          p.spin.rotation.y += 0.35;
-          p.spin.rotation.x += 0.22;
+        // Turning, so the silhouette moves — a still sprite reads as a decal
+        // riding along rather than as something spinning through the air.
+        if (p.spinMats) {
+          for (const mat of p.spinMats) mat.rotation += 0.05;
         }
         // Brightest in the middle of the flight: it winds up out of the hand
         // and is spent by the time it lands, where the impact burst takes over.
         const swell = Math.sin(Math.min(1, t) * Math.PI);
         if (p.light) p.light.intensity = 3 + swell * 6;
-        const glow = p.materials[1] as THREE.MeshBasicMaterial;
+        const glow = p.materials[1] as THREE.SpriteMaterial;
         if (glow) glow.opacity = 0.4 + swell * 0.35;
       } else {
         // Beams flash and go: bright for the first third, then fade.
