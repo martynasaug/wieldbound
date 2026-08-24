@@ -2472,10 +2472,18 @@ function maybeDropEssence(playerId: string, socket: WebSocket, monster: MonsterS
   sendInfo(socket, `+${amount} essence`, "#c0a6ff");
 }
 
-/** Every consumable stack the character holds. */
-function sendConsumables(socket: WebSocket, counts: Record<string, number>): void {
+/**
+ * Every consumable stack the character holds, plus the shared `gated`
+ * cooldown — always both, so the client can resync the cooldown state from
+ * any consumables message rather than only the one that just started it.
+ */
+function sendConsumables(socket: WebSocket, playerId: string, counts: Record<string, number>): void {
   if (socket.readyState !== WebSocket.OPEN) return;
-  const update: ServerToClientMessage = { type: "CONSUMABLES_UPDATE", payload: { counts } };
+  const cooldownRemainingMs = Math.max(0, (potionReadyAt.get(playerId) ?? 0) - Date.now());
+  const update: ServerToClientMessage = {
+    type: "CONSUMABLES_UPDATE",
+    payload: { counts, cooldownRemainingMs },
+  };
   socket.send(JSON.stringify(update));
 }
 
@@ -2733,7 +2741,7 @@ wss.on("connection", (socket) => {
       // is better than a fifth field that only some paths remember to set.
       sendMaterials(socket, id);
       sendRecipes(socket, id);
-      sendConsumables(socket, consumablesOf(id));
+      sendConsumables(socket, id, consumablesOf(id));
       sendRunes(socket, runesOf(id));
       // Work in hand, so the tracker is populated on the first frame rather
       // than only after the next kill.
@@ -3048,7 +3056,7 @@ wss.on("connection", (socket) => {
         sendInfo(socket, `Not enough — ${def.name} costs ${describeCost(entry.cost)}.`, "#c98d5e");
         return;
       }
-      sendConsumables(socket, addConsumable(id, def.id));
+      sendConsumables(socket, id, addConsumable(id, def.id));
       sendMaterials(socket, id);
       sendInfo(socket, `Bought ${def.name}.`, "#9fe0a8");
       return;
@@ -3132,7 +3140,7 @@ wss.on("connection", (socket) => {
         sendMaterials(socket, id);
       }
       if (def.reward.consumable) {
-        sendConsumables(socket, addConsumable(id, def.reward.consumable.id, def.reward.consumable.count));
+        sendConsumables(socket, id, addConsumable(id, def.reward.consumable.id, def.reward.consumable.count));
       }
       const attrs = attributes.get(id);
       const { xp, level, leveledUp, statPoints } = addXp(id, def.reward.xp);
@@ -3346,7 +3354,7 @@ wss.on("connection", (socket) => {
       }
       const counts = addConsumable(id, def.id);
       sendMaterials(socket, id);
-      sendConsumables(socket, counts);
+      sendConsumables(socket, id, counts);
       return;
     }
 
@@ -3370,7 +3378,7 @@ wss.on("connection", (socket) => {
       const counts = spendConsumable(id, def.id);
       if (!counts) return;
       if (def.gated) potionReadyAt.set(id, nowMs + POTION_COOLDOWN_MS);
-      sendConsumables(socket, counts);
+      sendConsumables(socket, id, counts);
 
       const attrs = attributes.get(id) ?? EMPTY_ATTRS;
       if (def.effect.heal) {

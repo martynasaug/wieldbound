@@ -67,6 +67,12 @@ export class InventoryPanel {
   private consumables: Record<string, number> = {};
   private potions = 0;
   private tonics = 0;
+  // The shared `gated` cooldown (see `ConsumableDef.gated`), enforced
+  // server-side since it existed but never shown here — a potion button
+  // that had just gone on cooldown looked exactly like one that was ready,
+  // and the only feedback was a toast AFTER clicking it too early.
+  private gatedReadyAt = 0;
+  private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
   /** Player-chosen order, applied on top of arrival order. Not persisted: it is
    *  a way of tidying up, not a setting. */
   private sorted = false;
@@ -111,9 +117,28 @@ export class InventoryPanel {
     this.renderFooter();
   }
 
-  setConsumables(counts: Record<string, number>): void {
+  setConsumables(counts: Record<string, number>, cooldownRemainingMs = 0): void {
     this.consumables = counts;
+    this.gatedReadyAt = performance.now() + cooldownRemainingMs;
     this.renderFooter();
+    this.scheduleCooldownTick();
+  }
+
+  /**
+   * Re-renders the footer once a second while a gated cooldown is running,
+   * so the countdown on the button actually counts down rather than only
+   * updating on the next unrelated server message — and stops on its own
+   * the moment the cooldown clears, rather than ticking forever.
+   */
+  private scheduleCooldownTick(): void {
+    if (this.cooldownTimer !== null) return;
+    const remaining = this.gatedReadyAt - performance.now();
+    if (remaining <= 0) return;
+    this.cooldownTimer = setTimeout(() => {
+      this.cooldownTimer = null;
+      this.renderFooter();
+      this.scheduleCooldownTick();
+    }, Math.min(1000, Math.max(100, remaining)));
   }
 
   setPotions(potions: number): void {
@@ -272,17 +297,31 @@ export class InventoryPanel {
           this.consumables[id] ?? 0,
           `${def.name} — ${consumableSummary(def)}. ${def.blurb}`,
           () => this.onUseConsumable(id),
+          def.gated ? Math.max(0, this.gatedReadyAt - performance.now()) : 0,
         ),
       );
     }
   }
 
-  private useButton(icon: string, count: number, title: string, onUse: () => void): HTMLElement {
+  private useButton(
+    icon: string,
+    count: number,
+    title: string,
+    onUse: () => void,
+    cooldownRemainingMs = 0,
+  ): HTMLElement {
     const button = document.createElement("button");
     button.className = "use-btn";
-    button.innerHTML = `<span class="use-icon">${iconSvg(icon)}</span><b>${count}</b>`;
-    button.title = count > 0 ? `${title} Click to use.` : `${title} You have none.`;
-    button.disabled = count <= 0;
+    const onCooldown = cooldownRemainingMs > 0;
+    // The count becomes the countdown while it's running — no new element
+    // or style needed, and the existing `:disabled` dimming already says
+    // "not usable" the same way an empty stack does.
+    const badge = onCooldown ? `${Math.ceil(cooldownRemainingMs / 1000)}s` : String(count);
+    button.innerHTML = `<span class="use-icon">${iconSvg(icon)}</span><b>${badge}</b>`;
+    button.title = onCooldown
+      ? `${title} Ready in ${Math.ceil(cooldownRemainingMs / 1000)}s.`
+      : count > 0 ? `${title} Click to use.` : `${title} You have none.`;
+    button.disabled = onCooldown || count <= 0;
     button.addEventListener("click", onUse);
     return button;
   }

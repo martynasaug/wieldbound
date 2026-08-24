@@ -732,7 +732,7 @@ export class Game {
         this.syncMaterials();
       },
       onConsumables: (p) => {
-        this.inventoryPanel.setConsumables(p.counts);
+        this.inventoryPanel.setConsumables(p.counts, p.cooldownRemainingMs);
       },
       onQuestState: (p) => {
         // Handing a quest in is arguably the biggest single moment this loop

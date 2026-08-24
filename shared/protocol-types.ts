@@ -3431,7 +3431,18 @@ export interface UseConsumableMessage {
  *  reason: the set is tiny and a missed increment is silently wrong. */
 export interface ConsumablesUpdateMessage {
   type: "CONSUMABLES_UPDATE";
-  payload: { counts: Record<string, number> };
+  /**
+   * `cooldownRemainingMs` is the shared `gated` cooldown (see
+   * `ConsumableDef.gated`), sent on every message rather than only the one
+   * that started it — the same reason a skill's own cooldown is read back
+   * off the hotbar's own `readyAt` rather than tracked separately: one
+   * source of truth the client can always resync from, including on
+   * login, rather than a value that only ever arrives at the instant it
+   * changes. Before this it was enforced server-side but never said, so a
+   * potion button that had just gone on cooldown looked exactly like one
+   * that was ready.
+   */
+  payload: { counts: Record<string, number>; cooldownRemainingMs: number };
 }
 
 /**

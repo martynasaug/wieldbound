@@ -10796,6 +10796,36 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.20 — a potion that looked ready when it was not.**
+Broadened past the ally-visibility vein into a fresh sweep (day/night,
+weather, waystones, salvage/runes and item tooltips all came back
+genuinely clean — no gap worth forcing) and landed on the one system that
+wasn't: the shared "gated" cooldown every healing consumable sits on
+(`ConsumableDef.gated`, enforced server-side via `potionReadyAt`) had
+existed with zero client expression since it was written. The only
+feedback was a toast AFTER clicking too early — "Not ready (Xs)" — which
+means the button itself lied in the meantime: full colour, fully
+clickable, indistinguishable from a potion actually off cooldown. The
+hotbar solved the identical shape of problem for skills a long time ago
+(a curtain that sweeps as `readyAt`/`windowMs` count down) and the potion
+button never got the sibling treatment. `CONSUMABLES_UPDATE` gains
+`cooldownRemainingMs`, sent on every message rather than only the one
+that started a cooldown — the same "one source of truth the client can
+always resync from" reasoning the hotbar's own cooldown state already
+follows, rather than a value that only ever arrives at the instant it
+changes. The button itself needed no new element or style: while cooling,
+its own count doubles as the countdown ("4s" instead of "3"), and the
+`:disabled` styling that already dims an empty stack does the same work
+for a stack that is merely resting. A self-rescheduling `setTimeout`
+(not a bare interval) ticks the display down once a second and stops
+itself the moment the cooldown clears. Verified live: drove the real
+`onConsumables` dispatch path with a synthetic 6-second cooldown and
+sampled the button's own text once a second — watched it count down 5s,
+4s, 2s, 1s (headless timer jitter skipped one exact tick, never showed a
+stale or wrong number) before correctly clearing back to the real count
+and re-enabling. `animation.mjs`, `smoke.mjs` and `items.mjs` green;
+`fighting.mjs` clean.
+
 **Phase 70 M70.19 — a threat off the edge of the plate.** The third,
 smaller candidate from the same research pass as M70.18 — weaker payoff
 (a hunting monster is usually close enough to be plate-visible soon
