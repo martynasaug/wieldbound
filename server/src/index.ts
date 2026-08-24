@@ -250,10 +250,11 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-// Position/identity only. Equipment lives in its own maps below and is
-// merged in at broadcast time, so there is no second copy of a player's
-// weapon rarity that could drift out of sync with `weaponRarities`.
-type LivePlayer = Omit<PlayerState, "weaponRarity" | "armorRarity">;
+// Position/identity only. Equipment and HP each live in their own maps
+// below (weaponRarities/armorRarities, hpBalances) and are merged in at
+// broadcast time, so there is no second copy of a player's weapon rarity
+// or health that could drift out of sync with the source of truth.
+type LivePlayer = Omit<PlayerState, "weaponRarity" | "armorRarity" | "hp" | "maxHp">;
 const players = new Map<string, LivePlayer>();
 const sockets = new Map<string, WebSocket>();
 const lastSavedAt = new Map<string, number>();
@@ -4181,6 +4182,8 @@ setInterval(() => {
     ...p,
     weaponRarity: weaponRarities.get(p.id) ?? null,
     armorRarity: armorRarities.get(p.id) ?? null,
+    hp: hpBalances.get(p.id) ?? 0,
+    maxHp: maxHpOf(p.id, attributes.get(p.id) ?? EMPTY_ATTRS),
   }));
   const snapshot: ServerToClientMessage = {
     type: "STATE_SNAPSHOT",

@@ -606,6 +606,9 @@ export class Game {
   private weaponProgress: WeaponProgressView | null = null;
   /** Ally selection is a separate slot from the enemy one, mirroring the server. */
   private allyTargetId: string | null = null;
+  /** Last-seen HP for every remote player — see `PlayerState.hp`'s own
+   *  comment for why this exists now. */
+  private readonly playerHp = new Map<string, { hp: number; maxHp: number }>();
 
   constructor(container: HTMLElement, characterName: string) {
     this.name = characterName;
@@ -1238,6 +1241,7 @@ export class Game {
       if (s.id === this.playerId) continue; // local player is predicted, not snapped
       this.playerNames.set(s.id, s.name);
       this.playerClasses.set(s.id, appearanceClass(s.appearance));
+      this.playerHp.set(s.id, { hp: s.hp, maxHp: s.maxHp });
       let actor = this.players.get(s.id);
       if (!actor) {
         // Other players get one too, weaker: they are people rather than
@@ -1276,6 +1280,7 @@ export class Game {
       this.playerMotion.delete(id);
       this.playerAppearances.delete(id);
       this.nextGearAuraAt.delete(id);
+      this.playerHp.delete(id);
     }
   }
 
@@ -4295,12 +4300,19 @@ export class Game {
       );
     } else if (this.allyTargetId) {
       const ally = this.players.get(this.allyTargetId);
-      // Remote players' HP is not on the wire, so the frame shows the name and
-      // says what the selection is for, rather than inventing a health bar.
+      // Real numbers now — see `PlayerState.hp`'s own comment. Falls back to
+      // 0/0 (TargetFrame's own "unknown, hide the bar" case) only for the
+      // one tick between an ally appearing in `this.players` and their first
+      // snapshot actually landing in `playerHp`.
       if (ally) {
-        this.targetFrame.show(this.playerNames.get(this.allyTargetId) ?? "Ally", 0, 0, "ally", {
-          icon: `class-${this.playerClasses.get(this.allyTargetId) ?? "adventurer"}`,
-        });
+        const hp = this.playerHp.get(this.allyTargetId);
+        this.targetFrame.show(
+          this.playerNames.get(this.allyTargetId) ?? "Ally",
+          hp?.hp ?? 0,
+          hp?.maxHp ?? 0,
+          "ally",
+          { icon: `class-${this.playerClasses.get(this.allyTargetId) ?? "adventurer"}` },
+        );
       }
       else this.targetFrame.hide();
     } else {

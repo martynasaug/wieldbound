@@ -7302,6 +7302,19 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A TYPE ERROR CAN POINT AT AN EXISTING INTENDED PATTERN INSTEAD OF A NEW
+  DECISION TO MAKE. Adding `hp`/`maxHp` to `PlayerState` broke the
+  server's live-player record (`LivePlayer = Omit<PlayerState,
+  "weaponRarity" | "armorRarity">`) because the login handler's object
+  literal never supplied them. The fix was not to make the fields
+  optional or invent a new pattern — `LivePlayer`'s own `Omit` line was
+  already reaching for exactly this shape, just with two keys
+  (`weaponRarity`/`armorRarity`) that did not actually exist on
+  `PlayerState` yet, making that part of it a no-op. Adding `hp`/`maxHp`
+  to the same `Omit` completed a pattern that was clearly already the
+  intent — equipment rarity and HP both live in their own source-of-truth
+  maps and get merged in only at broadcast time — rather than adding a
+  second, different way of handling the same kind of field.
 - SETTING A TARGET VALUE AND READING THE EASED RESULT IN THE SAME TICK IS A
   RACE, even when both lines are right next to each other and look
   synchronous. `onBattleResult` called `faceToward` and then immediately
@@ -10761,6 +10774,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.13 — an ally was harder to read than a monster.** The
+larger of the two remaining research candidates. The target frame's own
+code admitted the gap in a comment: "remote players' HP is not on the
+wire, so the frame shows the name and says what the selection is for,
+rather than inventing a health bar." `MonsterState` has carried real
+`hp`/`maxHp` since the target frame existed; a party-mate being harder to
+read than a monster was never a design choice, just the one broadcast
+that never reached them — and the game already has skills built
+specifically to aim at an ally (Mend, War Cry) with no way to tell whether
+one needed the heal or whether it landed. `PlayerState` gains `hp`/`maxHp`,
+merged in at broadcast time from `hpBalances`/`maxHpOf` — the exact same
+pattern already used for `weaponRarity`/`armorRarity`, which `LivePlayer`'s
+own `Omit<PlayerState, ...>` line was clearly written to generalize to
+(it already listed keys that did not exist on `PlayerState` yet). Client
+gained a `playerHp` map, same shape as the existing `playerNames`/
+`playerClasses` per-remote-player maps, fed from `syncPlayers` and read by
+the one call site that used to hardcode `0, 0` — `TargetFrame.show`
+already handled real numbers correctly the moment they arrived, since
+`maxHp > 0` was always its own "known" check. Verified live over two real
+browser sessions: logged in two characters, walked one next to the other,
+selected the second as an ally target on the first, and confirmed the
+target frame showed a real, visible "60 / 60" health bar rather than the
+old hidden/hardcoded state. `animation.mjs` and `smoke.mjs` green;
+`fighting.mjs` flaked on its usual unrelated accuracy-roll noise (this
+time against armabee) and passed clean on re-run — this change adds a
+wire field and never touches combat resolution.
 
 **Phase 70 M70.12 — the forge's other output got no acknowledgement
 either.** Broadened back out from monster AI/combat after two dedicated

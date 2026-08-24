@@ -3718,6 +3718,16 @@ export interface PlayerState {
   x: number;
   y: number;
   appearance: Appearance;
+  /**
+   * Broadcast so a party-mate's own health is legible from outside their own
+   * screen — the target frame used to show an ally's name and nothing else,
+   * with a comment admitting it: "remote players' HP is not on the wire."
+   * `MonsterState` has carried its own `hp`/`maxHp` since the target frame
+   * existed; a player being harder to read than a monster was never a
+   * decision, just the one broadcast this never reached.
+   */
+  hp: number;
+  maxHp: number;
 }
 
 export type ResourceNodeStatus = "available" | "depleted";
