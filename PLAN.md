@@ -7302,6 +7302,26 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A DEFENSIVE FIX AND A ROOT-CAUSE FIX ARE DIFFERENT DELIVERABLES, and
+  shipping the first is not a substitute for the second when a user calls
+  a bug urgent. The freeze report ("game freezes completely" during combat)
+  got a real structural fix — `loop()`/`loopBody()` split with
+  `try`/`catch`/`finally` so a thrown exception costs one frame instead of
+  the whole session — but the specific exception that was actually firing
+  in the field was never identified, because the mitigation makes it stop
+  mattering which one it was. Documented as a mitigation, not a diagnosis,
+  rather than implying the original trigger is understood.
+- A TEST'S "AFTER" SIGNAL HAS TO BE INDEPENDENT OF WHAT IT'S PROVING. A
+  first attempt at proving the freeze fix sampled player position before
+  and after an injected exception — but no movement input was being
+  simulated at all, so position was static in the baseline too, and the
+  test failed for a reason that had nothing to do with the fix. Switched to
+  three.js's own `renderer.info.render.frame` counter, which increments on
+  every successful render regardless of whether the character moves, and
+  to a threshold measured against that same run's own baseline framerate
+  rather than a guessed constant — headless Chromium throttles rAF hard
+  enough (~2fps observed) that a fixed threshold either passes vacuously or
+  fails a healthy loop.
 - A CONSISTENT PATTERN IS NOT THE SAME AS A DOCUMENTED RULE, and both have to
   be checked before touching it. Telegraphs being boss-only (exactly the
   three `guaranteedDrop` kinds) held for three creatures running, which
@@ -10639,6 +10659,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.5 — one bad frame, not the rest of the session.** Reported:
+the game sometimes freezes completely mid-fight, and it was happening
+before this session's own recent work, which ruled out any single recent
+change as the cause. The real bug was structural and much older: `loop()`
+was a ~150-line `requestAnimationFrame` callback that reaches into a couple
+dozen subsystems and iterates Maps combat is constantly mutating underneath
+it — a monster dying and being removed mid-frame, an actor whose model
+hasn't finished loading — and its own `requestAnimationFrame(this.loop)`
+reschedule was its very last statement, with nothing catching what came
+before it. One uncaught exception anywhere in that function, on any frame,
+and the reschedule never ran: rendering stopped forever, with no crash and
+no error a player could see. Combat is exactly when the most state changes
+under the loop's feet, which is why it always looked like an attacking
+freeze. Fixed by splitting the callback into a thin `loop()` that wraps a
+call to the unchanged logic (now `loopBody()`) in `try`/`catch`/`finally`,
+so `requestAnimationFrame(this.loop)` always fires no matter what throws
+inside. This doesn't diagnose which specific exception was the original
+trigger — it guarantees that whichever one it was (or the next one, from
+code not yet written) costs exactly one skipped frame instead of the rest
+of the session. Verified live: a Playwright session injected a real
+exception into a frame-loop call and confirmed via three.js's own
+`renderer.info.render.frame` counter (movement-independent, unlike an
+earlier attempt that mistakenly used player position) that frames kept
+advancing at the same rate before and after, with the console showing the
+exception caught and logged exactly once. Full offline suite
+(`animation.mjs`, `smoke.mjs`, `fighting.mjs`) still green.
 
 **Phase 70 M70.4 — a body behind it, made literal.** The orc brute's own
 line has read "a body behind it" since it was written, and until now that

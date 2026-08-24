@@ -3419,6 +3419,29 @@ export class Game {
 
   private loop = (): void => {
     if (!this.running) return;
+    // EVERY FRAME MUST RESCHEDULE ITSELF, WHATEVER HAPPENS INSIDE IT. This
+    // function reaches into a couple dozen subsystems and iterates Maps that
+    // combat is constantly mutating underneath it (a monster dying and being
+    // removed mid-frame, an actor whose model has not finished loading yet) —
+    // and it used to call `requestAnimationFrame(this.loop)` as its very last
+    // statement, with nothing catching what came before it. One uncaught
+    // exception anywhere in a 150-line function, and the reschedule never
+    // happened: the whole game stopped rendering, forever, with no crash and
+    // no error the player could see — reported as "the game freezes
+    // completely", worst during a fight because that is when the most state
+    // is changing under the loop's feet. The `try`/`finally` below cannot
+    // fix whatever throws, but it guarantees a bad frame costs exactly one
+    // bad frame rather than the rest of the session.
+    try {
+      this.loopBody();
+    } catch (err) {
+      console.error("[loop] frame threw and was skipped:", err);
+    } finally {
+      requestAnimationFrame(this.loop);
+    }
+  };
+
+  private loopBody(): void {
     const dt = Math.min(0.05, this.clock.getDelta());
 
     this.stepMovement(dt);
@@ -3560,8 +3583,7 @@ export class Game {
     this.hud.syncLayout();
     this.hud.setClock(hour.name, gameClock(hour.clock * DAY_LENGTH_MS), isDaytime(hour.clock * DAY_LENGTH_MS));
     this.world.render();
-    requestAnimationFrame(this.loop);
-  };
+  }
 
   /**
    * The pool of light under each person. See presence.ts for why it is a pool
