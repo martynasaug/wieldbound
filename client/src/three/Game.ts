@@ -2810,6 +2810,19 @@ export class Game {
       this.keys.add(e.key.toLowerCase());
 
       const key = e.key.toLowerCase();
+      // Graphics quality, beside F3's profiler on purpose: the two are meant to
+      // be used together, one to see what a frame costs and the other to change
+      // it. Said out loud as a toast because going up a level indoors, or down
+      // one where there is nothing casting a shadow, can change nothing you can
+      // see at the moment you press it — and a setting that appears to do
+      // nothing is a setting people press twice and then stop trusting.
+      if (e.key === "F4") {
+        e.preventDefault();
+        const q = this.world.cycleQuality();
+        this.hud.toast(`Graphics: ${q.label}`, "#8fd15a");
+        this.combatLog.push(`Graphics quality set to ${q.label}. F4 to cycle, F3 for the frame cost.`, "#8fd15a");
+        return;
+      }
       // The keys and the dock buttons are two ways to do one thing, so both
       // finish by re-lighting the dock.
       if (key === "c") {
@@ -3789,6 +3802,7 @@ export class Game {
       // Read AFTER the render, because three.js resets the per-frame counters
       // at the start of each one — sampled before, these are last frame's.
       const info = this.world.renderer.info;
+      this.profiler.setLabel(`quality ${this.world.qualityLabel} (F4)`);
       this.profiler.setStats({
         "draw calls": info.render.calls,
         triangles: info.render.triangles,

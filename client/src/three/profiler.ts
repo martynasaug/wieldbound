@@ -46,6 +46,9 @@ export class Profiler {
   /** Filled in by the owner each window, so the profiler needs no reference to
    *  the renderer and cannot keep one alive. */
   private stats: Record<string, number> = {};
+  /** A line under the title — the graphics level, so a reading is never
+   *  ambiguous about which settings produced it. */
+  private label = "";
 
   constructor() {
     window.addEventListener("keydown", (e) => {
@@ -94,6 +97,11 @@ export class Profiler {
   setStats(stats: Record<string, number>): void {
     if (!this.on) return;
     this.stats = stats;
+  }
+
+  setLabel(label: string): void {
+    if (!this.on) return;
+    this.label = label;
   }
 
   begin(label: string): void {
@@ -150,7 +158,7 @@ export class Profiler {
     );
 
     this.el.textContent =
-      `F3 profiler\n` +
+      `F3 profiler — ${this.label}\n` +
       `  fps             ${fps.toFixed(1).padStart(8)}\n` +
       `  frame avg       ${avg.toFixed(2).padStart(8)}ms\n` +
       // The number that explains hitching. Called out rather than listed,

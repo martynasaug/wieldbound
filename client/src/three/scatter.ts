@@ -16,6 +16,7 @@
 // decor, because the player learns to click on scenery.
 
 import * as THREE from "three";
+import { coverCullRadius } from "./culling";
 import { loadModel } from "./assets";
 import { terrainHeight } from "./World";
 import { windyGeometry } from "./wind";
@@ -333,6 +334,21 @@ export async function buildGroundCover(
         // there was no way to ask WHICH of twenty species was on screen without
         // this.
         im.name = `cover:${species.model}`;
+        // HOW FAR THIS ONE IS WORTH DRAWING, from its own declared height.
+        //
+        // The first version of the distance cut gave every species the same
+        // radius, which put a 0.22-unit pebble and a 0.98-unit grass tuft on
+        // the same schedule. Thirteen of the twenty ground-cover species are
+        // under half a unit tall — clover, flowers, mushrooms, five kinds of
+        // pebble — and every one of them stops being a thing you can see long
+        // before the tall grass does. Since draw calls scale with species x
+        // chunks-in-range and not with instance count, retiring the small ones
+        // early is most of what a cut can win here.
+        //
+        // `size[1]` is the species' own maximum, already declared in the table
+        // above and already what the placement code scales to, so this needs no
+        // new number to be kept in step with anything.
+        im.userData.cullRadius = coverCullRadius(species.size[1]);
         im.castShadow = species.castShadow ?? false;
         im.receiveShadow = true;
         for (let i = 0; i < placements.length; i++) {

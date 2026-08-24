@@ -7,6 +7,7 @@ import { createTerrainMaterial } from "./terrain";
 import { buildGroundCover } from "./scatter";
 import { buildForests } from "./forest";
 import { COVER_CULL_UNITS, DistanceCuller, TREE_CULL_UNITS } from "./culling";
+import { QUALITY, loadQuality, nextQuality, saveQuality, type QualityLevel } from "./quality";
 import { windyGeometry } from "./wind";
 import { seededRandom } from "../../../shared/rng";
 import { DayNight } from "./daynight";
@@ -177,6 +178,9 @@ export class World {
    * far away.
    */
   readonly culler = new DistanceCuller();
+  /** See quality.ts. Read once here and applied through `applyQuality`, which
+   *  is also what F4 calls, so the load path and the toggle path are one path. */
+  private quality: QualityLevel = loadQuality();
 
   private readonly sun: THREE.DirectionalLight;
   private readonly fill: THREE.HemisphereLight;
@@ -214,9 +218,10 @@ export class World {
   constructor(container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Pixel ratio, shadow map size and shadow filter are all set by
+    // `applyQuality` at the end of this constructor. They used to be three
+    // hardcoded numbers here, and they are the three most expensive things in
+    // the frame that are a matter of TASTE rather than of waste.
     // Filmic tone mapping is most of why this reads as lit rather than coloured.
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -298,7 +303,8 @@ export class World {
 
     this.sun = new THREE.DirectionalLight(0xffe9c4, 2.0);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    // Size and filter are set by `applyQuality` at the end of the constructor;
+    // everything else about the shadow is fixed.
     this.sun.shadow.camera.near = 1;
     this.sun.shadow.camera.far = 90;
     const s = 26;
@@ -312,6 +318,11 @@ export class World {
     this.scene.add(this.sun.target);
 
     this.buildTerrain();
+
+    // Last, because it writes to the renderer AND to the sun, and both have to
+    // exist. This is also the only place the initial settings come from — there
+    // are no hardcoded defaults left further up to disagree with it.
+    this.applyQuality(this.quality);
 
     window.addEventListener("resize", () => this.onResize());
   }
@@ -628,6 +639,72 @@ export class World {
   /** Last extent the shadow frustum was built for, so `follow` can skip
    *  rebuilding a matrix that has not changed. */
   private shadowExtent = -1;
+
+  /**
+   * Applies a quality level to the live renderer.
+   *
+   * Everything here can change on a running renderer, which is why F4 works at
+   * all rather than needing a reload. Antialiasing is the one knob that cannot
+   * — it is fixed when the WebGL context is created — so it is deliberately not
+   * in `QualitySettings` rather than being there and quietly not working.
+   *
+   * Disposing the shadow map is the part that is easy to miss: three.js will
+   * happily let `mapSize` change and go on rendering into the texture it
+   * already allocated at the old size, so the setting appears to do nothing.
+   * Freeing it forces a rebuild at the new size on the next frame.
+   */
+  applyQuality(level: QualityLevel): void {
+    const before = QUALITY[this.quality];
+    this.quality = level;
+    const q = QUALITY[level];
+
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pixelRatioCap));
+    this.renderer.shadowMap.enabled = q.shadows;
+    this.renderer.shadowMap.type = q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    this.sun.castShadow = q.shadows;
+    // Disposing the map is the part that is easy to miss: three.js will let
+    // `mapSize` change and go on rendering into the texture it already
+    // allocated at the old size, so the setting appears to do nothing.
+    if (this.sun.shadow.map) {
+      this.sun.shadow.map.dispose();
+      this.sun.shadow.map = null;
+    }
+    this.sun.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize);
+    this.renderer.shadowMap.needsUpdate = true;
+
+    // Only when the SHADOW MODEL changed, and the guard is the whole reason
+    // this is worth writing out. Every material in the scene was compiled
+    // against the old shadow type, so switching filters or turning shadows off
+    // does need every program rebuilt — but that rebuild is a stall of a second
+    // or more, and pixel ratio and cull scale need none of it. Without the
+    // guard, nudging the pixel ratio would recompile the entire world.
+    if (before.shadows !== q.shadows || before.softShadows !== q.softShadows) {
+      this.scene.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.material) return;
+        for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          m.needsUpdate = true;
+        }
+      });
+    }
+
+    this.culler.setScale(q.cullScale);
+  }
+
+  /** Steps to the next level, saves it, and says which one it landed on so the
+   *  caller can put it on screen — a setting that changes nothing visible at
+   *  the moment you press it (which `Balanced` to `High` can be, indoors) would
+   *  otherwise feel broken. */
+  cycleQuality(): { level: QualityLevel; label: string } {
+    const level = nextQuality(this.quality);
+    this.applyQuality(level);
+    saveQuality(level);
+    return { level, label: QUALITY[level].label };
+  }
+
+  get qualityLabel(): string {
+    return QUALITY[this.quality].label;
+  }
 
   /** Keeps the camera and the shadow frustum trailing the player. */
   follow(x: number, z: number, dtSeconds: number): void {

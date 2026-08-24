@@ -18,7 +18,13 @@
 //   node tools/test/culling.mjs
 
 import * as THREE from "three";
-import { DistanceCuller, COVER_CULL_UNITS, TREE_CULL_UNITS } from "../../client/src/three/culling.ts";
+import { readFileSync } from "node:fs";
+import {
+  DistanceCuller,
+  COVER_CULL_UNITS,
+  TREE_CULL_UNITS,
+  coverCullRadius,
+} from "../../client/src/three/culling.ts";
 
 let failures = 0;
 const check = (name, ok, detail = "") => {
@@ -134,6 +140,66 @@ c2.update(0, 0);
 const treesDrawn = forest.children.filter((c) => c.visible).length;
 check("trees are still culled at the far corners", treesDrawn < forest.children.length);
 console.log(`  ${treesDrawn}/${forest.children.length} tree chunks drawn`);
+
+section("6. a pebble is not a grass tuft");
+{
+  // The species table lives in scatter.ts, which reaches into the asset loader
+  // and the terrain and cannot be loaded under Node. Its SIZES can be read from
+  // the source, which is all this needs — the rule under test is arithmetic and
+  // lives in culling.ts precisely so it can be called for real.
+  const src = readFileSync(new URL("../../client/src/three/scatter.ts", import.meta.url), "utf8");
+  const from = src.indexOf("GROUND_COVER");
+  const table = src.slice(from, src.indexOf("];", from));
+  const species = [...table.matchAll(/model: "([^"]+)"[^\n]*?size: \[[0-9.]+, ([0-9.]+)\]/g)]
+    .map((m) => ({ model: m[1], max: Number(m[2]) }));
+  check("the species table was read", species.length >= 15, String(species.length));
+
+  const radii = species.map((s) => coverCullRadius(s.max));
+  const tallest = species.reduce((a, s) => (s.max > a.max ? s : a));
+  const shortest = species.reduce((a, s) => (s.max < a.max ? s : a));
+  check(
+    "the tallest cover keeps the full radius",
+    Math.abs(coverCullRadius(tallest.max) - COVER_CULL_UNITS) < 0.001,
+  );
+  check(
+    "the shortest is retired much sooner",
+    coverCullRadius(shortest.max) < COVER_CULL_UNITS * 0.75,
+    shortest.model + " -> " + coverCullRadius(shortest.max).toFixed(0),
+  );
+  check("the radii actually differ", new Set(radii.map((r) => r.toFixed(1))).size > 2);
+  // The floor exists so nothing vanishes while the player can still walk over
+  // and look down at it. The camera reaches 22 units on its own.
+  for (const s of species) {
+    check(
+      s.model + " is never culled inside the camera reach",
+      coverCullRadius(s.max) > 22 * 1.5,
+      String(coverCullRadius(s.max)),
+    );
+  }
+  console.log(
+    "  " + species.length + " species, radii " +
+      Math.min(...radii).toFixed(0) + "-" + Math.max(...radii).toFixed(0) + " units",
+  );
+}
+
+section("7. the quality scale closes the world in");
+{
+  const q = new DistanceCuller();
+  q.add(cover, COVER_CULL_UNITS, "cover");
+  q.setScale(1);
+  q.update(0, 0);
+  const atHigh = cover.children.filter((c) => c.visible).length;
+  q.setScale(0.62);
+  q.update(0, 0);
+  const atPerf = cover.children.filter((c) => c.visible).length;
+  check("Performance draws less than High", atPerf < atHigh, atPerf + " vs " + atHigh);
+  check("but the world is not empty", atPerf > 0);
+  // The setting must not be able to cull the ground out from under the player.
+  const under = cover.children.some((c) => c.visible &&
+    Math.hypot(c.boundingSphere.center.x, c.boundingSphere.center.z) <= c.boundingSphere.radius + CHUNK);
+  check("even at Performance there is ground under the player", under);
+  console.log("  chunks drawn: High " + atHigh + ", Performance " + atPerf);
+}
 
 console.log(
   failures === 0

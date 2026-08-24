@@ -7302,6 +7302,43 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- SEPARATE WASTE FROM TASTE BEFORE OPTIMISING, because they call for
+  opposite kinds of change. Geometry drawn at a distance where it cannot be
+  seen is WASTE: removing it needs nobody's opinion, nothing looks
+  different, and it is simply a fix. A 2048x2048 soft shadow map, a device
+  pixel ratio of 2 and multisampling are TASTE: each is expensive and each
+  buys something real, and which side of that trade a player wants depends
+  on their machine and their eyes. Shipping the first as a fix and the
+  second as a SETTING is what stops a performance pass from quietly
+  degrading the game for everyone who was happy with it — and it is also
+  the only honest answer to "make it run on lower-end machines", which is a
+  request about a range of machines, not about one.
+- DRAW CALLS SCALE WITH SPECIES x CHUNKS, NOT WITH INSTANCE COUNT, which
+  inverts what looks worth cutting. The instinct is to go after the biggest
+  numbers in the table — 1750 short grass, 1200 wispy — but those are
+  instances inside an `InstancedMesh` and cost one draw call however many
+  there are. What costs draw calls is how many SPECIES have a chunk in
+  range, and thirteen of the twenty ground-cover species are tiny props
+  (pebbles, clover, mushrooms, small flowers) with small counts and full
+  draw-call price. Retiring those by distance was worth far more than
+  anything that could have been done to the grass.
+- A KNOB THAT CANNOT CHANGE ON A LIVE RENDERER MUST NOT BE IN THE SETTINGS
+  OBJECT. `antialias` is fixed when the WebGL context is created; putting
+  it in `QualitySettings` next to pixel ratio and shadow size would have
+  produced a field that reads correctly, applies silently, and does
+  nothing — the exact shape of a bug that survives for a year because every
+  code path involving it looks right. It is left out, with the reason
+  written where somebody would go to add it.
+- THREE.JS WILL LET YOU CHANGE `shadow.mapSize` AND IGNORE IT. The old
+  texture is already allocated and rendering continues into it at the old
+  size, so the setting appears to work and does nothing. `shadow.map` has
+  to be disposed and nulled to force the rebuild. The neighbouring trap is
+  the opposite shape: changing `shadowMap.type` requires every material in
+  the scene to be invalidated or the change is invisible — but that is a
+  full recompile and a stall of a second or more, so it must be guarded to
+  fire only when the shadow model actually changed. One setting object,
+  two knobs, and each needs the opposite treatment.
+
 - A PROFILER CAN END AN ARGUMENT IN ONE READING, which is the whole case
   for building the instrument before the fix. "The game lags" had produced
   three plausible suspects (shadow map, pixel ratio, instanced mesh count)
@@ -10946,6 +10983,63 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.29 — a pebble and a grass tuft were on the same schedule,
+and the rest is taste.** Second F3 reading, from town rather than open
+field: 32.5fps, 24.49ms average, `render` 19.09ms, 1372 draw calls,
+4,698,827 triangles — and the number M70.28 added, **chunks drawn 1480 of
+5126**. So the cut was working (71% of chunks retired) and was still
+leaving too much: 1480 chunks of ground cover is most of 1372 draw calls
+once the frustum takes its own share. Also new and worse: **frame WORST
+71.6ms, with `render` peaking at 66.1ms** — the freezing, which the first
+reading (21.6ms worst) had not shown at all.
+Two changes, and they are deliberately different KINDS of change.
+First, the remaining waste. M70.28 gave every ground-cover species one
+radius, which put a 0.22-unit pebble and a 0.98-unit grass tuft on
+identical schedules — and thirteen of the twenty species are under half a
+unit tall (two clovers, four flowers, two mushrooms, five pebbles). Since
+draw calls scale with species x chunks-in-range and NOT with instance
+count, retiring the small ones early is most of what a cut can win here.
+`coverCullRadius` now scales the radius by the species' own declared
+`size[1]`, proportionally rather than in bands so a new species needs no
+decision — it gets a radius the moment it declares a size. Floored at
+half, and the floor does real work: a pebble scaled honestly would cull at
+seventeen units, INSIDE the camera's own 22-unit leash, and would wink out
+while the player could still walk over and look down at it. Radii now span
+39-78 instead of a flat 78. Moved into `culling.ts` rather than kept
+beside the table, because `scatter.ts` reaches into the asset loader and
+the terrain and cannot be loaded under Node — keeping the rule
+dependency-free is what lets the test call it for real.
+Second, and not waste at all: `quality.ts`. What is left in the frame is a
+2048x2048 soft shadow map re-rendered every frame, a device pixel ratio of
+2, and multisampling — every one of which somebody is PAYING for and
+getting something back for, at an exchange rate that depends on the
+machine and the person. So it is a setting, not a decision: three levels
+cycled with F4 and remembered per browser, sitting beside F3 on purpose
+because the two are meant to be used together — one to see what a frame
+costs and the other to change it. Defaults to `Balanced` rather than
+`High`, because the reading this came from was 32fps on a machine its
+owner describes as not low-end, and `High` is demonstrably the wrong thing
+to hand somebody who has never opened the setting. Pixel ratio is called
+out in the file as the biggest lever and the least obvious: at a ratio of
+2 the GPU shades FOUR times the fragments for identical draw calls and
+triangles, and it moves no counter the profiler shows.
+Two things worth recording about applying it live. `mapSize` alone does
+nothing — three.js goes on rendering into the texture it already allocated
+at the old size, so the shadow map has to be disposed to force a rebuild.
+And every material in the scene is compiled against the shadow TYPE, so
+switching filters needs every program invalidated — which is a stall of a
+second or more, and is therefore guarded to fire only when the shadow
+model actually changed, or nudging the pixel ratio would recompile the
+world. Antialiasing is deliberately NOT in `QualitySettings`: it is fixed
+when the WebGL context is created and cannot change on a live renderer, and
+a knob that silently does nothing is worse than an absent one.
+`tools/test/culling.mjs` gains both: that the tallest species keeps the
+full radius, the shortest is retired well under it, the radii genuinely
+differ, and — the one that matters — that NO species is ever culled inside
+the camera's own reach, checked for all twenty. Plus that `Performance`
+draws strictly less than `High` (47 chunks against 22 on the test field)
+while still leaving ground under the player. Full suite green.
 
 **Phase 70 M70.28 — nothing in this world was ever culled by distance.**
 M70.26's profiler paid for itself on its first reading, and the numbers

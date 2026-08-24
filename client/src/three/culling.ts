@@ -57,6 +57,7 @@ interface Tier {
 export class DistanceCuller {
   private tiers: Tier[] = [];
   private lastX = Infinity;
+  private scale = 1;
   private lastZ = Infinity;
   /** Chunks left visible at the last evaluation, for the profiler. */
   visibleChunks = 0;
@@ -65,6 +66,21 @@ export class DistanceCuller {
   add(group: THREE.Object3D, radius: number, label: string): void {
     this.tiers.push({ group, radius, label });
     this.lastX = Infinity; // force the next update to do the work
+  }
+
+  /**
+   * Scales every radius, for the graphics quality setting.
+   *
+   * A multiplier rather than a second set of distances, so the reasoning behind
+   * each radius — sub-pixel for cover, the fog's far plane for trees, and the
+   * per-species heights on top of both — stays in one place and keeps its
+   * proportions at every level. `Performance` closes the world in around the
+   * player; it does not re-decide which things matter to it.
+   */
+  setScale(scale: number): void {
+    if (scale === this.scale) return;
+    this.scale = scale;
+    this.lastX = Infinity; // the cut changed, so it has to be re-decided now
   }
 
   /**
@@ -105,7 +121,13 @@ export class DistanceCuller {
         }
         const cx = bound.center.x - camX;
         const cz = bound.center.z - camZ;
-        const reach = tier.radius + bound.radius;
+        // A chunk may name its own distance. Ground cover does, scaled by how
+        // tall the species is (see `coverCullRadius`) — a pebble and a grass
+        // tuft sharing one radius was most of what the first cut left on the
+        // table. The tier's radius is the default for anything that does not
+        // care to say.
+        const own = (child.userData.cullRadius as number | undefined) ?? tier.radius;
+        const reach = own * this.scale + bound.radius;
         const on = cx * cx + cz * cz <= reach * reach;
         child.visible = on;
         if (on) visible++;
@@ -120,3 +142,29 @@ export class DistanceCuller {
  *  that a chunk can never pop in late — the radii above have far more slack
  *  than this — and large enough that standing still costs nothing. */
 const RE_EVALUATE_UNITS = 2;
+
+/**
+ * The distance a ground-cover species stops being worth drawing, from how tall
+ * it is.
+ *
+ * Lives here rather than beside the species table because that file reaches
+ * into the asset loader and the terrain, and this rule is arithmetic — keeping
+ * it dependency-free is what lets `tools/test/culling.mjs` exercise it under
+ * plain Node against the real numbers.
+ *
+ * Proportional to height rather than banded, so adding a species needs no
+ * decision: it gets a radius the moment it declares a size. The tallest cover
+ * in the table (0.98 units) keeps the full `COVER_CULL_UNITS`, and everything
+ * shorter is retired in proportion.
+ *
+ * FLOORED AT HALF, and that floor is doing real work: a 0.22-unit pebble scaled
+ * honestly would be culled around seventeen units, INSIDE the camera's own
+ * 22-unit leash — it would wink out while the player could still walk over and
+ * look down at it. Half of 78 is 39, comfortably past anything the camera can
+ * reach and still less than half the distance the tall grass survives to.
+ */
+export function coverCullRadius(maxHeightUnits: number): number {
+  const tallest = 0.98;
+  const scale = Math.max(0.5, Math.min(1, maxHeightUnits / tallest));
+  return COVER_CULL_UNITS * scale;
+}
