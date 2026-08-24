@@ -685,12 +685,37 @@ export class Game {
         // Not on the first message: a returning character's whole balance
         // arrives at once and is not something they just earned.
         const gained = this.walletSeen ? (p.essence ?? 0) - this.wallet.essence : 0;
+        // Ingot and Wardweave are the forge's own output (REFINE_MATERIAL) and
+        // arrive through this exact same message — the identical "reward with
+        // no acknowledgement" gap M70.1 fixed for wood/ore/herb, one verb over:
+        // a refine can mint up to 50 in a single click and nothing said so.
+        // Read as a real delta rather than assumed +1, for the same reason.
+        const ingotGained = this.walletSeen ? (p.ingot ?? 0) - this.wallet.ingot : 0;
+        const weaveGained = this.walletSeen ? (p.weave ?? 0) - this.wallet.weave : 0;
         this.walletSeen = true;
         if (gained > 0 && this.localActor) {
           this.floaters.spawn(this.localActor.position, {
             kind: "loot",
             text: `+${gained} essence`,
             color: "#c0a6ff",
+            headY: 3.2,
+            weight: 0.15,
+          });
+        }
+        if (ingotGained > 0 && this.localActor) {
+          this.floaters.spawn(this.localActor.position, {
+            kind: "loot",
+            text: `+${ingotGained} ingot`,
+            color: "#c7d0da",
+            headY: 3.2,
+            weight: 0.15,
+          });
+        }
+        if (weaveGained > 0 && this.localActor) {
+          this.floaters.spawn(this.localActor.position, {
+            kind: "loot",
+            text: `+${weaveGained} wardweave`,
+            color: "#c9935a",
             headY: 3.2,
             weight: 0.15,
           });

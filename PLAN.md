@@ -10762,6 +10762,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.12 — the forge's other output got no acknowledgement
+either.** Broadened back out from monster AI/combat after two dedicated
+research passes confirmed that vein was well-covered; this is the
+smallest and cleanest of three candidates the follow-up research found.
+`onMaterials`'s own comment already earns its keep for essence — "the one
+material with no gathering animation and no node to stand at... so it is
+the one that most needs saying" — but Ingot and Wardweave arrive through
+this EXACT SAME message (`REFINE_MATERIAL` mints them at the smithy) and
+got nothing: no floater, no acknowledgement, the identical "reward with no
+feedback" gap M70.1 fixed for wood/ore/herb, one verb over — a refine can
+mint up to 50 of either in a single click and the wallet just quietly
+changed. Extended the same diff-against-`walletSeen` pattern essence
+already used to both refined materials, each with its own colour
+(`#c7d0da` for ingot, `#c9935a` for wardweave — distinct from ore's duller
+grey and herb's green, since a refined material is meant to read as
+levelled-up from its raw ingredient). Reads the real delta rather than
+assuming +1, for the same reason essence's own comment gives. Verified
+live: called the actual `GameSocket` dispatch path (`socket.handlers.
+onMaterials`, not a reimplementation of the logic) with a synthetic
+message jumping ingot by 3 and weave by 2 in one shot, confirmed both
+floaters read exactly `+3 ingot`/`+2 wardweave`, confirmed a no-change
+follow-up message spawned nothing, and confirmed the wallet balances
+themselves updated correctly. `animation.mjs`, `smoke.mjs` and `items.mjs`
+green; `fighting.mjs` flaked on its usual unrelated retreat-check noise
+and passed clean on re-run — this change touches only a client message
+handler with zero server interaction.
+
 **Phase 70 M70.11 — a shot fired from where you WERE facing.** Reported
 directly, and it survived M63.1's own fix for the neighbouring bug: a
 ranged attack fired while turning to face a target visibly launched from
