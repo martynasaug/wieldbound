@@ -7302,6 +7302,20 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A VALUE ALREADY ON THE WIRE CAN STILL BE UNREACHED BY MOST OF WHAT COULD
+  READ IT. `p.school` was never missing — it has coloured the floating
+  number and chosen the log's verb since the school system existed — but
+  `style.tint` answered the burst, the bolt and the beam from a completely
+  separate table keyed by weapon FAMILY, and nothing ever asked whether the
+  two should agree. A field being sent is not the same claim as a field
+  being used everywhere it is relevant.
+- FALL BACK TO THE WEAPON'S OWN TINT FOR PLAIN PHYSICAL HITS, rather than a
+  fixed white/style-free default. Physical is a school like any other in
+  this game's own vocabulary, but a sword's white and an axe's warm tan are
+  part of what makes the WEAPON FAMILIES read differently from each other;
+  collapsing them to one physical colour would have traded a real
+  distinction for a smaller one.
+
 - A METHOD NAMED FOR WHAT IT DOES, NOT WHO IT IS CALLED ON, WILL GET CALLED
   ON ONLY HALF THE ACTORS. `setChilled`/`setRecovering` live on `Actor`, the
   shared class both players and monsters use, and yet every call site was
@@ -10521,6 +10535,23 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — a Frostbrand swings the same white arc a plain sword does.**
+M69.17, improvised rather than reported: Phase 62 gave every weapon family a
+real elemental identity — a fire axe, a frost bow, five schools each with a
+weapon that deals them — and asked "what would be cool for an MMORPG" turned
+up that identity stopping exactly at the damage number. `style.tint`, the
+colour behind every ordinary swing's arc and every bolt or beam a staff or
+wand throws, is keyed by WEAPON FAMILY alone; `p.school` — already on the
+wire, already colouring the floating number and the log line — had never
+once reached the burst, the bolt, or the beam. A Frostbrand's swing painted
+the identical warm-white arc a plain sword's does; a fire staff's bolt flew
+the same generic blue every staff's does. `elementTint` reads the actual
+school dealt and falls back to the weapon's own tint only for plain physical
+hits, reaching the impact burst, the projectile in flight, and the wand's
+beam in one pass — the same three places M69.9-M69.12 already touched, this
+time carrying the right colour instead of a fixed one. Verified live: the
+exact frost hex the new code computes rendered as a clean ice-blue slash arc.
 
 **Phase 69 — the body you are looking at never told you it was burning.**
 M69.16: `setChilled` and `setRecovering` have been MONSTER-ONLY calls since

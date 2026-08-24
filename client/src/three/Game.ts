@@ -1582,7 +1582,16 @@ export class Game {
     const gap = vis ? this.distanceTo(vis) : 0;
     const delay = impactDelayMs(style, gap);
     playSfx(style.releaseSfx);
-    if (vis) this.launchAttack(style, vis, delay);
+    // A FROSTBRAND SWINGS THE SAME WHITE ARC A PLAIN SWORD DOES, because
+    // every visual downstream of `style.tint` reads the WEAPON FAMILY and
+    // never what it actually deals — the school only ever reached the
+    // floating number and the log line. `p.school` is already on the wire
+    // for exactly this; it had just never been asked.
+    const elementTint =
+      p.school && p.school !== "physical"
+        ? Number.parseInt(schoolDef(p.school).color.slice(1), 16)
+        : style.tint;
+    if (vis) this.launchAttack(style, vis, delay, elementTint);
 
     const label = vis ? MONSTER_LABELS[vis.kind] : "enemy";
 
@@ -1641,13 +1650,13 @@ export class Game {
         // an axe lands visibly heavier than a dagger.
         this.effects.play(style.impact, at.x, mid, at.z, {
           scale: size * style.impactScale * (p.playerCrit ? 1.5 : 1.15),
-          tint: p.playerCrit ? 0xffd85e : style.tint,
+          tint: p.playerCrit ? 0xffd85e : elementTint,
           durationMs: 420,
           spin: style.delivery === "melee" ? 0.05 : 0,
         });
         this.effects.play("impact", at.x, mid, at.z, {
           scale: size * style.impactScale * (p.playerCrit ? 1.25 : 0.95),
-          tint: p.playerCrit ? 0xffc94a : 0xfff0c8,
+          tint: p.playerCrit ? 0xffc94a : elementTint,
           durationMs: 360,
         });
         // A real sparkle at the point of impact, not another flat atlas
@@ -1701,6 +1710,7 @@ export class Game {
     style: ReturnType<typeof attackStyle>,
     vis: MonsterVisual,
     flightMs: number,
+    tint: number,
   ): void {
     const self = this.localActor;
     if (!self || style.delivery === "melee") return;
@@ -1716,7 +1726,10 @@ export class Game {
     if (style.delivery === "arrow") {
       this.projectiles.arrow(from, to, flightMs);
     } else if (style.delivery === "beam") {
-      this.projectiles.beam(from, to, style.tint);
+      // Tinted by the school actually dealt, not the wand's own generic
+      // purple — a fire wand's zap has to look like fire, not like every
+      // other wand with a different number attached.
+      this.projectiles.beam(from, to, tint);
     } else {
       // A bolt used to be a travelling fx quad from the 14-cell atlas, on the
       // reasoning that the effects system already carried the schools and the
@@ -1724,7 +1737,7 @@ export class Game {
       // ATTACK the least visible thing in the game: a soft 1.5-unit smudge
       // crossing three hundred pixels in a fifth of a second. It is real lit
       // geometry now.
-      this.projectiles.bolt(from, to, flightMs, style.tint);
+      this.projectiles.bolt(from, to, flightMs, tint);
     }
   }
 
