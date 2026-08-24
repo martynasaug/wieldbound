@@ -1,3 +1,4 @@
+import { profiler } from "../three/profiler";
 import type {
   HotbarLayout,
   AttributeName,
@@ -71,69 +72,95 @@ export class GameSocket {
     });
 
     this.socket.addEventListener("message", (event) => {
+      // TIMED, because this is the biggest thing the render loop cannot see.
+      //
+      // Messages arrive on their own schedule and are decoded and dispatched
+      // synchronously BETWEEN animation frames, so a snapshot that takes 80ms
+      // to apply does not lengthen any frame and never appeared in any
+      // measurement — it just stops the picture. Split into the parse and the
+      // dispatch because they fail for different reasons: parse cost tracks the
+      // size of what the server sent, dispatch cost tracks what the client does
+      // about it.
+      profiler.begin("net:parse");
       const msg = JSON.parse(event.data as string) as ServerToClientMessage;
-      if (msg.type === "WELCOME") {
-        this.handlers.onWelcome(msg.payload);
-      } else if (msg.type === "STATE_SNAPSHOT") {
-        this.handlers.onSnapshot(msg.payload);
-      } else if (msg.type === "INVENTORY_UPDATE") {
-        this.handlers.onInventoryUpdate(msg.payload);
-      } else if (msg.type === "MATERIALS_UPDATE") {
-        this.handlers.onMaterials(msg.payload);
-      } else if (msg.type === "RECIPES_UPDATE") {
-        this.handlers.onRecipes(msg.payload);
-      } else if (msg.type === "CONSUMABLES_UPDATE") {
-        this.handlers.onConsumables(msg.payload);
-      } else if (msg.type === "RUNES_UPDATE") {
-        this.handlers.onRunes(msg.payload);
-      } else if (msg.type === "HERB_UPDATE") {
-        this.handlers.onHerbUpdate(msg.payload);
-      } else if (msg.type === "ORE_UPDATE") {
-        this.handlers.onOreUpdate(msg.payload);
-      } else if (msg.type === "XP_UPDATE") {
-        this.handlers.onXpUpdate(msg.payload);
-      } else if (msg.type === "LOOT_UPDATE") {
-        this.handlers.onLootUpdate(msg.payload);
-      } else if (msg.type === "HP_UPDATE") {
-        this.handlers.onHpUpdate(msg.payload);
-      } else if (msg.type === "ITEMS_UPDATE") {
-        this.handlers.onItemsUpdate(msg.payload);
-      } else if (msg.type === "STATS_UPDATE") {
-        this.handlers.onStatsUpdate(msg.payload);
-      } else if (msg.type === "BATTLE_RESULT") {
-        this.handlers.onBattleResult(msg.payload);
-      } else if (msg.type === "MONSTER_ATTACK") {
-        this.handlers.onMonsterAttack(msg.payload);
-      } else if (msg.type === "POTIONS_UPDATE") {
-        this.handlers.onPotionsUpdate(msg.payload);
-      } else if (msg.type === "TONICS_UPDATE") {
-        this.handlers.onTonicsUpdate(msg.payload);
-      } else if (msg.type === "LEADERBOARD_UPDATE") {
-        this.handlers.onLeaderboardUpdate(msg.payload);
-      } else if (msg.type === "DAILY_BONUS") {
-        this.handlers.onDailyBonus(msg.payload);
-      } else if (msg.type === "INFO") {
-        this.handlers.onInfo(msg.payload);
-      } else if (msg.type === "SKILL_RESULT") {
-        this.handlers.onSkillResult(msg.payload);
-      } else if (msg.type === "MANA_UPDATE") {
-        this.handlers.onManaUpdate(msg.payload);
-      } else if (msg.type === "STATUS_UPDATE") {
-        this.handlers.onStatusUpdate(msg.payload);
-      } else if (msg.type === "CAST_STATE") {
-        this.handlers.onCastState(msg.payload);
-      } else if (msg.type === "STATUS_TICK") {
-        this.handlers.onStatusTick(msg.payload);
-      } else if (msg.type === "ATTACK_STATE") {
-        this.handlers.onAttackState(msg.payload);
-      } else if (msg.type === "WEAPON_PROGRESS") {
-        this.handlers.onWeaponProgress(msg.payload);
-      } else if (msg.type === "QUEST_STATE") {
-        this.handlers.onQuestState(msg.payload);
+      profiler.end("net:parse");
+      profiler.begin("net:" + msg.type);
+      try {
+        this.dispatch(msg);
+      } finally {
+        profiler.end("net:" + msg.type);
       }
     });
 
-    this.socket.addEventListener("close", () => {
+    this.listenForClose(this.socket);
+  }
+
+  private dispatch(msg: ServerToClientMessage): void {
+    if (msg.type === "WELCOME") {
+      this.handlers.onWelcome(msg.payload);
+    } else if (msg.type === "STATE_SNAPSHOT") {
+      this.handlers.onSnapshot(msg.payload);
+    } else if (msg.type === "INVENTORY_UPDATE") {
+      this.handlers.onInventoryUpdate(msg.payload);
+    } else if (msg.type === "MATERIALS_UPDATE") {
+      this.handlers.onMaterials(msg.payload);
+    } else if (msg.type === "RECIPES_UPDATE") {
+      this.handlers.onRecipes(msg.payload);
+    } else if (msg.type === "CONSUMABLES_UPDATE") {
+      this.handlers.onConsumables(msg.payload);
+    } else if (msg.type === "RUNES_UPDATE") {
+      this.handlers.onRunes(msg.payload);
+    } else if (msg.type === "HERB_UPDATE") {
+      this.handlers.onHerbUpdate(msg.payload);
+    } else if (msg.type === "ORE_UPDATE") {
+      this.handlers.onOreUpdate(msg.payload);
+    } else if (msg.type === "XP_UPDATE") {
+      this.handlers.onXpUpdate(msg.payload);
+    } else if (msg.type === "LOOT_UPDATE") {
+      this.handlers.onLootUpdate(msg.payload);
+    } else if (msg.type === "HP_UPDATE") {
+      this.handlers.onHpUpdate(msg.payload);
+    } else if (msg.type === "ITEMS_UPDATE") {
+      this.handlers.onItemsUpdate(msg.payload);
+    } else if (msg.type === "STATS_UPDATE") {
+      this.handlers.onStatsUpdate(msg.payload);
+    } else if (msg.type === "BATTLE_RESULT") {
+      this.handlers.onBattleResult(msg.payload);
+    } else if (msg.type === "MONSTER_ATTACK") {
+      this.handlers.onMonsterAttack(msg.payload);
+    } else if (msg.type === "POTIONS_UPDATE") {
+      this.handlers.onPotionsUpdate(msg.payload);
+    } else if (msg.type === "TONICS_UPDATE") {
+      this.handlers.onTonicsUpdate(msg.payload);
+    } else if (msg.type === "LEADERBOARD_UPDATE") {
+      this.handlers.onLeaderboardUpdate(msg.payload);
+    } else if (msg.type === "DAILY_BONUS") {
+      this.handlers.onDailyBonus(msg.payload);
+    } else if (msg.type === "INFO") {
+      this.handlers.onInfo(msg.payload);
+    } else if (msg.type === "SKILL_RESULT") {
+      this.handlers.onSkillResult(msg.payload);
+    } else if (msg.type === "MANA_UPDATE") {
+      this.handlers.onManaUpdate(msg.payload);
+    } else if (msg.type === "STATUS_UPDATE") {
+      this.handlers.onStatusUpdate(msg.payload);
+    } else if (msg.type === "CAST_STATE") {
+      this.handlers.onCastState(msg.payload);
+    } else if (msg.type === "STATUS_TICK") {
+      this.handlers.onStatusTick(msg.payload);
+    } else if (msg.type === "ATTACK_STATE") {
+      this.handlers.onAttackState(msg.payload);
+    } else if (msg.type === "WEAPON_PROGRESS") {
+      this.handlers.onWeaponProgress(msg.payload);
+    } else if (msg.type === "QUEST_STATE") {
+      this.handlers.onQuestState(msg.payload);
+    }
+  }
+
+  /** Extracted only so the message listener above can be a named method that
+   *  the profiler can wrap; the behaviour is unchanged. */
+  private listenForClose(socket: WebSocket): void {
+    socket.addEventListener("close", () => {
       if (!this.shouldReconnect) return;
       setTimeout(() => this.connect(), RECONNECT_DELAY_MS);
     });

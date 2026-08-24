@@ -69,6 +69,9 @@ export class Profiler {
    *  "it freezes sometimes" is describing — the per-window worst resets far too
    *  often to catch it. */
   private worstRecent = { ms: 0, at: 0 };
+  private frameEnded = 0;
+  private betweenMs = 0;
+  private betweenWorst = 0;
 
   constructor() {
     window.addEventListener("keydown", (e) => {
@@ -116,7 +119,14 @@ export class Profiler {
    * whether or not anybody was watching.
    */
   frameBegin(): void {
-    this.frameStart = performance.now();
+    const now = performance.now();
+    // Everything that happened since the last frame ENDED: websocket messages
+    // decoded and dispatched, promises resolving a loaded model, garbage
+    // collection, the browser's own work. None of it is inside the loop and
+    // none of it was visible to any measurement here — a 200ms websocket
+    // handler between two frames does not lengthen either of them.
+    this.betweenMs = this.frameEnded > 0 ? now - this.frameEnded : 0;
+    this.frameStart = now;
     for (const s of this.sections.values()) s.frameMs = 0;
   }
 
@@ -133,8 +143,18 @@ export class Profiler {
     this.label = label;
   }
 
+  /**
+   * Sections are timed WHETHER OR NOT the overlay is open.
+   *
+   * They used to be gated on it, and that made every stutter report useless:
+   * a hitch would fire, and the one thing it had to say — which subsystem was
+   * slow during it — came out as "(sections not timed — press F3)", because
+   * nobody has the overlay open at the moment a stutter surprises them. Two
+   * `performance.now()` calls per section per frame is about twenty calls a
+   * frame and does not register against a 15ms budget; having no idea what
+   * caused a 235ms freeze costs entire sessions.
+   */
   begin(label: string): void {
-    if (!this.on) return;
     let s = this.sections.get(label);
     if (!s) {
       s = { total: 0, worst: 0, calls: 0, startedAt: 0, frameMs: 0 };
@@ -145,7 +165,6 @@ export class Profiler {
   }
 
   end(label: string): void {
-    if (!this.on) return;
     const s = this.sections.get(label);
     if (!s || !s.startedAt) return;
     const ms = performance.now() - s.startedAt;
@@ -161,15 +180,27 @@ export class Profiler {
   frameEnd(): void {
     const now = performance.now();
     const ms = now - this.frameStart;
+    this.frameEnded = now;
+    if (this.betweenMs > this.betweenWorst) this.betweenWorst = this.betweenMs;
 
     // --- always on, overlay or not ------------------------------------------
+    // The gap BEFORE this frame counts as a stutter too. A player feels the
+    // picture stop; whether the browser was inside the loop or between two of
+    // them at the time is a distinction only this file cares about.
+    if (this.betweenMs >= HITCH_MS) {
+      this.hitches.push(now);
+      console.warn(
+        `[hitch] ${this.betweenMs.toFixed(0)}ms BETWEEN frames — not the render loop. ` +
+          `Network decode, a model finishing loading, or garbage collection.`,
+      );
+    }
     if (ms >= HITCH_MS) {
       this.hitches.push(now);
       // Which subsystem was slow DURING the stutter, not on average. A hitch
       // and a steadily-heavy frame have completely different causes, and the
       // averages in the overlay cannot tell them apart — one bad frame in
       // three hundred moves a 500ms average by a rounding error.
-      let worstLabel = "(sections not timed — press F3)";
+      let worstLabel = "(no sections registered)";
       let worstMs = 0;
       for (const [label, sec] of this.sections) {
         if (sec.frameMs > worstMs) {
@@ -183,10 +214,8 @@ export class Profiler {
       let accounted = 0;
       for (const sec of this.sections.values()) accounted += sec.frameMs;
       console.warn(
-        `[hitch] ${ms.toFixed(0)}ms frame — worst section: ${worstLabel}` +
-          (this.on
-            ? `, ${(ms - accounted).toFixed(0)}ms outside the timed sections`
-            : ""),
+        `[hitch] ${ms.toFixed(0)}ms frame — worst section: ${worstLabel}, ` +
+          `${(ms - accounted).toFixed(0)}ms outside the timed sections`,
       );
     }
     while (this.hitches.length && now - this.hitches[0] > HITCH_WINDOW_MS) {
@@ -234,6 +263,9 @@ export class Profiler {
       // "it freezes sometimes", and the count beside it says how often.
       `  worst /10s      ${this.worstRecent.ms.toFixed(1).padStart(8)}ms\n` +
       `  stutters /10s   ${String(this.hitches.length).padStart(8)}\n` +
+      // Time the loop never sees. High here and low everywhere else means the
+      // cost is not in the game at all.
+      `  between frames  ${this.betweenWorst.toFixed(1).padStart(8)}ms\n` +
       (statLines.length ? statLines.join("\n") + "\n" : "") +
       `  ---- sections ----\n` +
       rows.join("\n");
@@ -241,6 +273,7 @@ export class Profiler {
     this.frames = 0;
     this.frameTotal = 0;
     this.frameWorst = 0;
+    this.betweenWorst = 0;
     this.windowStart = now;
     for (const s of this.sections.values()) {
       s.total = 0;
@@ -249,3 +282,14 @@ export class Profiler {
     }
   }
 }
+
+/**
+ * The one profiler, shared.
+ *
+ * A module singleton rather than an instance owned by `Game`, because the most
+ * interesting thing left to measure — decoding and dispatching websocket
+ * messages — happens in `net/socket.ts`, which has no reference to the game and
+ * should not grow one just to be timed. Everything else about it is unchanged;
+ * `Game` uses this instead of constructing its own.
+ */
+export const profiler = new Profiler();

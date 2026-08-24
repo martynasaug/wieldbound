@@ -7302,6 +7302,32 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A DIAGNOSTIC THAT ONLY RUNS WHILE SOMEBODY IS WATCHING CANNOT DIAGNOSE A
+  SURPRISE. Section timing was gated on the overlay being open, which is
+  defensible as an optimisation and useless in practice: every stutter
+  report came back saying "(sections not timed — press F3)", because nobody
+  has the panel open at the moment a stutter surprises them. Twenty
+  `performance.now()` calls a frame is nothing against a 15ms budget. The
+  general form: when a measurement is cheap and the event is rare, the
+  measurement should always be on, because the cost is paid continuously
+  and the value arrives all at once.
+- MEASURING "THE FRAME" MISSES EVERYTHING BETWEEN THE FRAMES. Frame time
+  ran `frameBegin` to `frameEnd`, inside the loop — a perfectly sensible
+  definition that structurally could not see websocket decode and dispatch,
+  model loading finishing in a promise, or garbage collection, because all
+  of those happen between one frame ending and the next beginning. An 80ms
+  snapshot handler lengthens NO frame and stops the picture for 80ms. The
+  fix is to measure the gap as well as the work, and the tell that it was
+  needed had been sitting in every hitch report: the sections never added up
+  to the frame.
+- INSTRUMENTING SOMETHING CAN BE WORTH A REFACTOR. The websocket listener
+  was one long if/else chain inside an arrow function, which cannot be
+  wrapped without wrapping every branch. Extracting it into a `dispatch`
+  method to time it once is a change with no behavioural purpose whatsoever
+  — and it is the only way to learn whether the network handler is what
+  stops the picture. Code that cannot be measured stays unmeasured, and
+  "there was no seam to put a timer in" is a reason to add a seam.
+
 - OPEN THE CONSOLE BEFORE OPTIMISING, not after. Three rounds of profiling
   went past a GPU error that was firing hundreds of times a frame, because
   the instrument being watched was a frame-time overlay and the evidence was
@@ -11040,6 +11066,43 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.32 — timing the thing that happens between the frames.**
+The GL error is gone and the freezes with it: `stutters /10s` 0,
+`worst /10s` 22.6ms, 62.6fps at 15.04ms. But the console still showed a
+steady stream of 51-235ms hitches, and every single one of them said the
+same useless thing: `worst section: (sections not timed — press F3)`.
+That message was the bug in the instrument. `begin`/`end` were gated on
+the overlay being open, so the one fact a stutter report exists to carry —
+which subsystem was slow DURING it — was only ever collected when somebody
+already had the panel up. Nobody has the panel up at the moment a stutter
+surprises them. Sections are now timed unconditionally: about twenty
+`performance.now()` calls a frame, which does not register against a 15ms
+budget, against having no idea at all what caused a 235ms freeze.
+Then the larger blind spot, which the same reports were pointing at
+without being able to say so. Frame time was measured `frameBegin` to
+`frameEnd` — inside `loopBody`. Websocket messages are decoded and
+dispatched SYNCHRONOUSLY BETWEEN animation frames, so a snapshot that
+takes 80ms to apply lengthens no frame at all and was invisible to every
+measurement taken so far; the picture simply stops. Same for a model
+finishing loading, and for garbage collection. `frameBegin` now records
+the gap since the last `frameEnd` and reports it as its own kind of
+stutter — "BETWEEN frames — not the render loop" — with `between frames`
+on the overlay beside the rest. A player feels the picture stop; whether
+the browser was inside the loop or between two of them is a distinction
+only the profiler cares about.
+And the network dispatch itself is now timed, per message type, which
+needed one small structural change: the message listener's whole if/else
+chain became a `dispatch` method so it could be wrapped, and the profiler
+became a module singleton so `net/socket.ts` can reach it without growing
+a reference to the game. `net:parse` is separated from `net:<TYPE>`
+because they fail for different reasons — parse cost tracks the size of
+what the server sent, dispatch cost tracks what the client does about it.
+`ui` and `world` sections were added to close the last untimed stretches
+of the loop, so "outside the timed sections" now genuinely means outside.
+Nothing here makes the game faster. It is all instrument, and that is the
+point: four rounds of profiling produced real wins by measuring the right
+things, and the thing that is left has never once been measured.
 
 **Phase 70 M70.31 — the console said `shadow` and it was my fault.** The
 fourth reading came with the console open, and it changed the subject

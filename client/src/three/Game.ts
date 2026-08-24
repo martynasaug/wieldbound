@@ -143,7 +143,7 @@ function onGround(x: number, z: number): [number, number, number] {
 import { nightAmount } from "./daynight";
 import { Town } from "./town";
 import { buildNpcs, updateNpcs, type NpcVisual } from "./npcs";
-import { Profiler } from "./profiler";
+import { profiler } from "./profiler";
 import { DialoguePanel, type DialogueAction } from "../ui/DialoguePanel";
 import { QuestTracker } from "../ui/QuestTracker";
 import { EXCHANGE_OFFERS, EXCHANGE_RATE, SHOP_STOCK } from "../../../shared/shop";
@@ -604,9 +604,10 @@ export class Game {
   private running = false;
   /** Last moment combat traffic arrived, used to show the reach ring only while fighting. */
   private lastCombatAt = 0;
-  /** Off until F3. See profiler.ts — the loop runs about thirty subsystems and
-   *  none of them had ever been timed. */
-  private readonly profiler = new Profiler();
+  /** The shared profiler. See profiler.ts — the loop runs about thirty
+   *  subsystems and none of them had ever been timed, and the network dispatch
+   *  that runs BETWEEN frames had no way to be timed at all. */
+  private readonly profiler = profiler;
   // Watchdog bookkeeping — see `watchForSlide`. Held on the instance rather
   // than in the loop so a lock is measured across frames, which is the only
   // timescale it is visible on.
@@ -3681,7 +3682,9 @@ export class Game {
     // Advanced locally between snapshots, so the sweeps move smoothly rather
     // than in the ten steps a second the snapshots arrive in.
     this.serverTime += dt * 1000;
+    this.profiler.begin("ui");
     this.statusBar.update(this.serverTime);
+    this.profiler.end("ui");
     // What is on you and what is on whatever you are fighting, handed to the bar
     // so a skill that READS a condition can say when its condition is met.
     // Refreshed every frame because the answer changes as fast as the fight
@@ -3725,6 +3728,10 @@ export class Game {
     // under rather than against last frame's.
     // The road runs on the town's clock. A frontier that lit on its own
     // schedule would put two times of day in one frame.
+    // River, road, ambience, mist and town, all driven per frame off the same
+    // clock. Timed as one because they are one kind of work — living scenery —
+    // and twelve one-line sections would bury the list they appear in.
+    this.profiler.begin("world");
     this.northRoad.update(
       nightAmount(hour.clock),
       this.localActor?.position.x ?? 0,
@@ -3784,6 +3791,7 @@ export class Game {
       Math.hypot(this.playerX - TOWN_CENTER.x, this.playerY - TOWN_CENTER.y) / PX_PER_UNIT,
       performance.now() / 1000,
     );
+    this.profiler.end("world");
     this.profiler.begin("hud");
     this.hud.setPortrait(classForWeapon(this.appearance.weaponType));
     this.hud.syncLayout();
