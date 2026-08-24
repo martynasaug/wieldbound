@@ -31,7 +31,21 @@ interface Section {
   worst: number;
   calls: number;
   startedAt: number;
+  /** Just this frame, so a hitch can name what was slow DURING it. */
+  frameMs: number;
 }
+
+/**
+ * A frame this long is not slowness, it is a stutter somebody felt.
+ *
+ * Three times a 60Hz refresh. Below that a frame is late; above it the picture
+ * visibly stops.
+ */
+const HITCH_MS = 50;
+
+/** How long a hitch is remembered, so a readout taken a moment later still
+ *  shows that one happened. */
+const HITCH_WINDOW_MS = 10000;
 
 export class Profiler {
   private on = false;
@@ -49,6 +63,12 @@ export class Profiler {
   /** A line under the title — the graphics level, so a reading is never
    *  ambiguous about which settings produced it. */
   private label = "";
+  /** Timestamps of recent stutters, trimmed to `HITCH_WINDOW_MS`. */
+  private hitches: number[] = [];
+  /** The worst frame in the last ten seconds, which is what a player who says
+   *  "it freezes sometimes" is describing — the per-window worst resets far too
+   *  often to catch it. */
+  private worstRecent = { ms: 0, at: 0 };
 
   constructor() {
     window.addEventListener("keydown", (e) => {
@@ -85,10 +105,19 @@ export class Profiler {
     this.windowStart = performance.now();
   }
 
-  /** Whole-frame timing. Call at the very top of the loop body. */
+  /**
+   * Whole-frame timing. Call at the very top of the loop body.
+   *
+   * Runs whether or not the overlay is open, and that is the point: "it
+   * sometimes freezes" was unmeasurable while the only instrument had to be
+   * switched on and looked at during the half-second the freeze happened in.
+   * Two `performance.now()` calls a frame is nothing, and in exchange every
+   * stutter reports itself to the console with the section that caused it,
+   * whether or not anybody was watching.
+   */
   frameBegin(): void {
-    if (!this.on) return;
     this.frameStart = performance.now();
+    for (const s of this.sections.values()) s.frameMs = 0;
   }
 
   /** Whatever the owner wants shown alongside the timings — draw calls,
@@ -108,7 +137,7 @@ export class Profiler {
     if (!this.on) return;
     let s = this.sections.get(label);
     if (!s) {
-      s = { total: 0, worst: 0, calls: 0, startedAt: 0 };
+      s = { total: 0, worst: 0, calls: 0, startedAt: 0, frameMs: 0 };
       this.sections.set(label, s);
       this.order.push(label);
     }
@@ -122,15 +151,52 @@ export class Profiler {
     const ms = performance.now() - s.startedAt;
     s.startedAt = 0;
     s.total += ms;
+    s.frameMs += ms;
     s.calls++;
     if (ms > s.worst) s.worst = ms;
   }
 
-  /** Closes the frame and, once per window, rebuilds the readout. */
+  /** Closes the frame, reports any stutter, and once per window rebuilds the
+   *  readout. */
   frameEnd(): void {
-    if (!this.on || !this.el) return;
     const now = performance.now();
     const ms = now - this.frameStart;
+
+    // --- always on, overlay or not ------------------------------------------
+    if (ms >= HITCH_MS) {
+      this.hitches.push(now);
+      // Which subsystem was slow DURING the stutter, not on average. A hitch
+      // and a steadily-heavy frame have completely different causes, and the
+      // averages in the overlay cannot tell them apart — one bad frame in
+      // three hundred moves a 500ms average by a rounding error.
+      let worstLabel = "(sections not timed — press F3)";
+      let worstMs = 0;
+      for (const [label, sec] of this.sections) {
+        if (sec.frameMs > worstMs) {
+          worstMs = sec.frameMs;
+          worstLabel = `${label} ${sec.frameMs.toFixed(1)}ms`;
+        }
+      }
+      // Unaccounted time is itself a diagnosis: if the sections add up to far
+      // less than the frame, the stall was not in the loop at all — it was
+      // garbage collection, a texture upload, or a shader compile.
+      let accounted = 0;
+      for (const sec of this.sections.values()) accounted += sec.frameMs;
+      console.warn(
+        `[hitch] ${ms.toFixed(0)}ms frame — worst section: ${worstLabel}` +
+          (this.on
+            ? `, ${(ms - accounted).toFixed(0)}ms outside the timed sections`
+            : ""),
+      );
+    }
+    while (this.hitches.length && now - this.hitches[0] > HITCH_WINDOW_MS) {
+      this.hitches.shift();
+    }
+    if (ms > this.worstRecent.ms || now - this.worstRecent.at > HITCH_WINDOW_MS) {
+      this.worstRecent = { ms, at: now };
+    }
+
+    if (!this.on || !this.el) return;
     this.frames++;
     this.frameTotal += ms;
     if (ms > this.frameWorst) this.frameWorst = ms;
@@ -164,6 +230,10 @@ export class Profiler {
       // The number that explains hitching. Called out rather than listed,
       // because a worst frame far above the average IS the complaint.
       `  frame WORST     ${this.frameWorst.toFixed(1).padStart(8)}ms\n` +
+      // Over ten seconds rather than half of one. This is the line that answers
+      // "it freezes sometimes", and the count beside it says how often.
+      `  worst /10s      ${this.worstRecent.ms.toFixed(1).padStart(8)}ms\n` +
+      `  stutters /10s   ${String(this.hitches.length).padStart(8)}\n` +
       (statLines.length ? statLines.join("\n") + "\n" : "") +
       `  ---- sections ----\n` +
       rows.join("\n");

@@ -62,6 +62,10 @@ export class DistanceCuller {
   /** Chunks left visible at the last evaluation, for the profiler. */
   visibleChunks = 0;
   totalChunks = 0;
+  /** Per tier, so a reading says whether the cost is grass or trees — they are
+   *  cut at very different distances and only the split can say which one is
+   *  still worth attacking. */
+  readonly perTier = new Map<string, number>();
 
   add(group: THREE.Object3D, radius: number, label: string): void {
     this.tiers.push({ group, radius, label });
@@ -103,6 +107,7 @@ export class DistanceCuller {
     let visible = 0;
     let total = 0;
     for (const tier of this.tiers) {
+      let tierVisible = 0;
       for (const child of tier.group.children) {
         total++;
         // The INSTANCE sphere, not the geometry's. `computeBoundingSphere` on
@@ -117,6 +122,7 @@ export class DistanceCuller {
           // hole in the world.
           child.visible = true;
           visible++;
+          tierVisible++;
           continue;
         }
         const cx = bound.center.x - camX;
@@ -130,8 +136,12 @@ export class DistanceCuller {
         const reach = own * this.scale + bound.radius;
         const on = cx * cx + cz * cz <= reach * reach;
         child.visible = on;
-        if (on) visible++;
+        if (on) {
+          visible++;
+          tierVisible++;
+        }
       }
+      this.perTier.set(tier.label, tierVisible);
     }
     this.visibleChunks = visible;
     this.totalChunks = total;

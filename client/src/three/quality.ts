@@ -45,6 +45,17 @@ export interface QualitySettings {
   softShadows: boolean;
   /** Multiplies the ground-cover and tree cull radii. */
   cullScale: number;
+  /**
+   * Re-render the shadow map every N frames. 1 is every frame.
+   *
+   * The shadow pass is a COMPLETE second render of every casting object in the
+   * frustum, and it runs at full frame rate whether or not anything moved. Most
+   * of what casts here is scenery that will not move for the life of the world;
+   * the things that do move are a handful of characters. At 2 their shadows
+   * update thirty times a second, which on a soft 1024 map under a top-down
+   * camera is not something you can see, and it halves the pass.
+   */
+  shadowEveryNFrames: number;
 }
 
 export const QUALITY: Record<QualityLevel, QualitySettings> = {
@@ -57,6 +68,7 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     shadowMapSize: 2048,
     softShadows: true,
     cullScale: 1,
+    shadowEveryNFrames: 1,
   },
   // The one that should be most people's answer. Everything is still here and
   // still shadowed; the expensive halves of three separate knobs are not.
@@ -67,6 +79,7 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     shadowMapSize: 1024,
     softShadows: false,
     cullScale: 0.8,
+    shadowEveryNFrames: 2,
   },
   // For a machine that cannot hold a frame. Shadows go entirely — it is the
   // single biggest saving available and there is no point pretending it is
@@ -78,6 +91,7 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     shadowMapSize: 512,
     softShadows: false,
     cullScale: 0.62,
+    shadowEveryNFrames: 0,
   },
 };
 

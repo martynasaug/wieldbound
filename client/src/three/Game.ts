@@ -3814,7 +3814,8 @@ export class Game {
         // The ratio is the whole story of whether culling.ts is earning its
         // place, and it is the first thing to look at if the world starts
         // looking bare.
-        "chunks drawn": this.world.culler.visibleChunks,
+        "cover chunks": this.world.culler.perTier.get("cover") ?? 0,
+        "tree chunks": this.world.culler.perTier.get("trees") ?? 0,
         "chunks total": this.world.culler.totalChunks,
       });
     }

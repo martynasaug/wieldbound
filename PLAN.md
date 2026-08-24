@@ -7302,6 +7302,38 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- JUST MISSING THE REFRESH RATE IS WORSE THAN MISSING IT BY A LOT, and it
+  changes what "fast enough" means. At 16.96ms on a 60Hz display, frames
+  alternate between one refresh and two — a visible, rhythmic judder that
+  reads as far worse than a steady 45fps would. So a frame budget is not a
+  gradient to improve along, it is a LINE (16.67ms at 60Hz) with a cliff at
+  it, and the last two milliseconds before that line are worth more than the
+  ten before them. Worth knowing before deciding an optimisation was not
+  worth shipping because it "only" saved 2ms.
+- AN INSTRUMENT THAT HAS TO BE WATCHED CANNOT MEASURE A RARE EVENT. The
+  profiler reported the worst frame in each 500ms window, which is the right
+  figure for steady-state cost and completely useless for "it freezes
+  sometimes": the reading that came back said 20.7ms while the player was
+  describing stutters they could feel, because the freeze simply had not
+  happened during the half-second on screen. Two fixes, and both are about
+  the SHAPE of the measurement rather than its accuracy — remember the worst
+  over ten seconds instead of half of one, and have the stutter report
+  ITSELF to the console rather than waiting to be observed. The second is
+  what made it free to leave on with the overlay closed.
+- "HOW MUCH OF THE FRAME WAS OUTSIDE THE TIMED SECTIONS" IS A DIAGNOSIS, not
+  a gap in the data. If the sections add up to the frame, something in the
+  loop was slow and the sorted list says which. If they add up to a fraction
+  of it, the stall was not in the loop at all — garbage collection, a
+  texture upload, a shader compile — and no amount of optimising the listed
+  subsystems will touch it. Printing the difference is what lets one console
+  line tell those two apart, and they have nothing in common as problems.
+- A SHADOW MAP IS A SECOND RENDER OF THE WHOLE SCENE, and framing it that
+  way is what makes the fix obvious. It is easy to read `shadowMap.enabled =
+  true` as a shading option and hard to remember it means every casting
+  object in the frustum is drawn twice per frame. Once it is named as a
+  second render, the question "does it need to happen sixty times a second
+  when almost every caster is scenery that will never move" answers itself.
+
 - SEPARATE WASTE FROM TASTE BEFORE OPTIMISING, because they call for
   opposite kinds of change. Geometry drawn at a distance where it cannot be
   seen is WASTE: removing it needs nobody's opinion, nothing looks
@@ -10983,6 +11015,50 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.30 — the stutter nobody could measure, and a second render
+nobody asked for.** Third F3 reading, on Balanced: 54fps (from 32.5),
+16.96ms (from 24.49), 859 draw calls (from 1372), 2,985,450 triangles
+(from 4.7M), cover down to 655 chunks of 5126. M70.28 and M70.29 worked.
+The report was still "choppy, and sometimes freezes", and both halves of
+that turned out to be real and separate.
+CHOPPY: 16.96ms is just over the 16.67ms a 60Hz display gives you, and
+missing that line by a hair is VISIBLY worse than missing it by a lot —
+frames alternate between one refresh and two, which reads as constant
+judder rather than as a lower frame rate. So the remaining job was never
+"make it faster" in general, it was "get under 16.67", which is a much
+smaller and much more specific target.
+FREEZES: unmeasurable, and the instrument was the reason. The profiler
+reset its worst frame every 500ms window, so a stutter every few seconds
+was only ever caught if it happened during the half-second somebody was
+looking at — and the reading that came back said `frame WORST 20.7ms`,
+which is not a freeze at all. Fixed by making `frameBegin`/`frameEnd` run
+whether or not the overlay is open (two `performance.now()` calls a frame)
+and reporting any frame over 50ms to the console by itself, with the
+section that was slowest DURING that frame and — the part that is a
+diagnosis in its own right — how much of it was OUTSIDE the timed sections
+entirely, which is what garbage collection, a texture upload or a shader
+compile look like. The overlay gains `worst /10s` and `stutters /10s`
+beside the per-window figure, because a player saying "it freezes
+sometimes" is describing a ten-second memory, not a five-hundred
+millisecond one.
+And one more real saving, which is the first thing here that is a trade
+rather than a fix: the shadow pass is a COMPLETE second render of every
+casting object in the frustum, and it ran at full frame rate whether or
+not anything had moved. Almost everything that casts here is scenery that
+will not move for the life of the world; what does move is a handful of
+characters. `shadowEveryNFrames` puts it on its own schedule — 1 on High
+(untouched), 2 on Balanced, and 0 on Performance where shadows are off
+anyway. At 2 a character's shadow updates thirty times a second, which
+under a top-down camera on a soft 1024 map is not something to see, and it
+halves the pass. `autoUpdate` is left ON at interval 1 rather than the flag
+being set by hand every frame, so the default path is exactly what it has
+always been.
+The profiler also splits chunks by tier now (`cover chunks` against `tree
+chunks`) rather than reporting one total. They are cut at very different
+distances — 39-78 units against 165 — and only the split can say which of
+the two is still worth attacking, which is the question the next reading
+has to answer.
 
 **Phase 70 M70.29 — a pebble and a grass tuft were on the same schedule,
 and the rest is taste.** Second F3 reading, from town rather than open

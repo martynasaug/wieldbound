@@ -181,6 +181,9 @@ export class World {
   /** See quality.ts. Read once here and applied through `applyQuality`, which
    *  is also what F4 calls, so the load path and the toggle path are one path. */
   private quality: QualityLevel = loadQuality();
+  /** 0 = shadows off, 1 = every frame, N = every Nth. See `render`. */
+  private shadowInterval = 1;
+  private shadowTick = 0;
 
   private readonly sun: THREE.DirectionalLight;
   private readonly fill: THREE.HemisphereLight;
@@ -670,6 +673,11 @@ export class World {
       this.sun.shadow.map = null;
     }
     this.sun.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize);
+    this.shadowInterval = q.shadows ? q.shadowEveryNFrames : 0;
+    this.shadowTick = 0;
+    // Hand the schedule to three.js only when there IS one. Left on its own
+    // clock at interval 1, so the untouched path stays untouched.
+    this.renderer.shadowMap.autoUpdate = this.shadowInterval <= 1;
     this.renderer.shadowMap.needsUpdate = true;
 
     // Only when the SHADOW MODEL changed, and the guard is the whole reason
@@ -830,6 +838,17 @@ export class World {
   }
 
   render(): void {
+    // The shadow map, on its own schedule.
+    //
+    // With `autoUpdate` off, three.js re-renders the shadow pass only on a
+    // frame where `needsUpdate` was set — so this is what turns a complete
+    // second render of every caster from a per-frame cost into an every-Nth
+    // one. `autoUpdate` is left ON at interval 1 rather than setting the flag
+    // manually every frame, so the default path is exactly what it always was.
+    if (this.shadowInterval > 1) {
+      this.shadowTick = (this.shadowTick + 1) % this.shadowInterval;
+      this.renderer.shadowMap.needsUpdate = this.shadowTick === 0;
+    }
     this.renderer.render(this.scene, this.camera);
   }
 
