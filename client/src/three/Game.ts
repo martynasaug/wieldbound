@@ -1212,6 +1212,21 @@ export class Game {
         vis.actor.setChilled(false);
         vis.actor.setRecovering(false);
         if (this.lockedId === s.id) this.setTarget(null);
+        // THE BURST IS THE THING THAT HURT YOU, and until now nothing said so:
+        // a slime or spiky blob's parting shot applied damage with no visual of
+        // its own, which read as an ordinary hit landing a beat late. Drawn for
+        // every nearby client rather than only whoever it damaged — the same
+        // call the wind-up ring already makes — because a corpse detonating is
+        // worth seeing whether or not you were standing close enough to feel it.
+        const burstRadius = MONSTER_STATS[vis.kind].deathBurstRadiusPx;
+        if (burstRadius) {
+          const at = vis.actor.position;
+          const tint = Number.parseInt(
+            schoolDef(MONSTER_STATS[vis.kind].attackSchool).color.slice(1),
+            16,
+          );
+          this.skillFx.nova(at.x, surfaceHeight(at.x, at.z), at.z, burstRadius / PX_PER_UNIT, tint);
+        }
       } else if (!nowDead && vis.dead) {
         vis.actor.revive();
       } else if (!nowDead) {
@@ -1653,6 +1668,7 @@ export class Game {
     crit: boolean;
     damage: number;
     school?: DamageSchool;
+    deathBurst?: boolean;
   }): void {
     const vis = this.monsters.get(p.monsterId);
     this.lastCombatAt = performance.now();
@@ -1662,7 +1678,13 @@ export class Game {
       // and its swing was already playing, stretched across the wind-up that
       // just closed. Re-triggering it here would snap the pose back to frame
       // zero and play the whole thing again a beat after the hit already read.
-      if (MONSTER_STATS[vis.kind].windupMs === undefined) {
+      //
+      // A DEATH BURST HAS NO SWING AT ALL — the corpse that sent it is about
+      // to play `die` on the very next snapshot, and without this guard the
+      // body lunged into an attack pose for a single frame before falling
+      // over, which read as a lagged extra hit rather than the explosion it
+      // actually was.
+      if (MONSTER_STATS[vis.kind].windupMs === undefined && !p.deathBurst) {
         vis.actor.play("attack");
       }
       if (this.localActor) vis.actor.faceToward(this.localActor.position.x, this.localActor.position.z);

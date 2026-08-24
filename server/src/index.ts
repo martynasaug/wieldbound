@@ -1280,7 +1280,7 @@ function resolveDeathBurst(monster: MonsterState, now: number): void {
     }
     if (socket) {
       sendHpUpdate(socket, result.hp, maxHp, result.defeated, result.defeated ? PLAYER_ARRIVAL : undefined);
-      sendMonsterAttack(socket, { monsterId: monster.id, hit: true, crit: false, damage: mitigated });
+      sendMonsterAttack(socket, { monsterId: monster.id, hit: true, crit: false, damage: mitigated, deathBurst: true });
     }
   }
 }

@@ -4094,6 +4094,17 @@ export interface MonsterAttackMessage {
     /** What it hit you with. Physical for most of the bestiary; a dragon and a
      *  demon breathe fire, a ghost is arcane, a cactoro is nature. */
     school?: DamageSchool;
+    /**
+     * True for a dying monster's parting burst rather than a swing.
+     *
+     * The corpse has no ordinary attack left in it — this fires from
+     * `killMonster`, a moment before the status flip that plays `die` — so
+     * without the flag the client played a swing animation on a body that was
+     * about to fall over anyway, cut short a beat later when `die` overrode
+     * it. The same shape as `windupMs` telling the client a slam has no
+     * ordinary swing to re-trigger.
+     */
+    deathBurst?: boolean;
   };
 }
 

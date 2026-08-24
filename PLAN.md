@@ -7302,6 +7302,22 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A DAMAGE MESSAGE WITH NO VISUAL OF ITS OWN READS AS A LAGGED COPY OF ONE
+  THAT HAS ONE. A death burst applied real damage from a real radius and drew
+  nothing, so a player caught in it experienced an ordinary hit landing a beat
+  after the kill rather than the corpse's own parting shot.
+- AND THE SAME MESSAGE WAS ALSO WRONG ON THE BODY. `MONSTER_ATTACK` always
+  triggered the swing animation, and a death burst fires from inside
+  `killMonster` a line before the status flips to dead — so the corpse lunged
+  into an attack pose for a single frame before `die` cut it off. The fix is
+  the same shape `windupMs` already uses to say a kind has no ordinary attack
+  to re-trigger: a flag on the message, not a guess from timing.
+- A DEATH-BURST RING BELONGS TO EVERYONE WATCHING, NOT ONLY WHOEVER IT HIT. It
+  is drawn off the death-edge transition every client already has (kind, radius
+  from the static table) rather than off the per-victim attack message, the
+  same choice the wind-up danger ring already made — a corpse detonating is
+  worth seeing whether you were close enough to feel it or not.
+
 - A SPEED MULTIPLIER THE SERVER APPLIES IS NOT AUTOMATICALLY A SPEED THE
   PLAYER SEES. A leap has moved a monster at up to 3.4x its own pace since
   Phase 66 and the run cycle never knew: it played at its ordinary per-actor
@@ -10341,6 +10357,22 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — a corpse that explodes says so.** M69.6: a slime, spiky blob or
+cactoro's parting shot has applied real damage from a real radius since it
+was written, and drew nothing of its own — the client had no `deathBurst`
+code path at all, so a player standing in the blast took a plain hit with no
+ring, no colour, no signal that the corpse itself was the source. Worse, the
+same `MONSTER_ATTACK` message also fired the ordinary swing animation on a
+body that was a tick from playing `die` — a corpse lunging into an attack
+pose for one frame before falling over, indistinguishable from a lagged
+extra hit. A `deathBurst` flag on the message now suppresses that swing (the
+same shape `windupMs` already uses to say "this kind has no ordinary attack
+to re-trigger"), and a nova rings out from the body at the moment it dies,
+sized to its own `deathBurstRadiusPx` and drawn for every nearby client —
+not only whoever took the damage — because a corpse detonating is worth
+seeing whether or not you were close enough to feel it. Verified live: a
+killed slime sent `deathBurst: true` with its own configured damage.
 
 **Phase 69 — the burst is the whole mechanic, and it finally reads as one.**
 M69.5: a wolf and an armabee leap — a real speed multiplier the server has
