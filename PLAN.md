@@ -7302,6 +7302,12 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A NEW VISUAL BEAT CAN BE A CALL TO AN EXISTING METHOD RATHER THAN NEW
+  GEOMETRY. The beam needed a moment marking where it left from; the staff's
+  `bolt()` already IS exactly that moment, spark and glow and light together,
+  proven to work. A near-zero-length flight reuses it as a muzzle flash for
+  free rather than teaching `beamMesh` a fourth material.
+
 - "SLOWER" HAS TWO COMPLETELY DIFFERENT MEANINGS IN THIS COMBAT SYSTEM, AND
   ONLY ONE IS SAFE TO GUESS. `swingMs`/`speedPxPerSec` decide when a blow's
   FX and number appear; `swingIntervalFor`/`attackIntervalMs` decide how
@@ -10463,6 +10469,17 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — the wand has a muzzle now.** M69.12: the beam was the one
+delivery style M69.9's texture pass left untouched, and it had a real gap of
+its own — a zap simply appearing between two points with nothing marking
+where it left from. Rather than inventing a fifth visual system, the wand's
+`beam()` now opens with a call to the SAME `bolt()` a staff already throws —
+a near-zero-length flight (0.06 units, just enough to avoid a degenerate
+`lookAt`) that plants the proven spark/glow/light combination at the source
+for a beat before the zap itself draws. No new geometry, no new material, no
+new texture: the muzzle flash is a bolt that barely moves. Confirmed live —
+a soft tinted glow now sits at the beam's origin alongside the bright core.
 
 **Phase 69 — slower, on request, and not the number that matters.** M69.11
 answered "all attacks in general need to be a little slower" by touching

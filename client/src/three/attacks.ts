@@ -406,6 +406,13 @@ export class Projectiles {
   beam(from: THREE.Vector3, to: THREE.Vector3, tint: number, durationMs = 150): void {
     const length = from.distanceTo(to);
     if (length < 0.05) return;
+    // A muzzle flash at the source. The beam itself reads as the shot in
+    // flight, but nothing marked where it LEFT FROM — reusing `bolt`'s own
+    // spark/glow/light rather than a near-invisible sliver of travel is what
+    // gives the wand a real point of origin instead of a zap materialising
+    // out of thin air at the caster's hand.
+    const dir = to.clone().sub(from).normalize();
+    this.bolt(from, from.clone().add(dir.multiplyScalar(0.06)), 160, tint);
     const { object, materials } = beamMesh(length, tint);
     // Boxes are built centred on the origin and extend along their own +Z, so
     // the group sits at the midpoint and looks at the far end.
