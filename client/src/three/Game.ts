@@ -1449,6 +1449,20 @@ export class Game {
         height: spec.height,
         variance: (hashString(id) % 1000) / 1000,
         idleGlance: true,
+        // NO THROUGH-WALLS SILHOUETTE, for the same reason the presence light
+        // below is players-only: a monster behind a tree already has a
+        // nameplate, a target ring, a difficulty colour and a minimap blip, and
+        // the silhouette exists to answer "where am I / where is that person",
+        // which nothing about a monster is asking.
+        //
+        // It is not free. `buildSilhouette` builds a SkinnedMesh GHOST of every
+        // mesh in the rig, bound to the same skeleton — so every monster on
+        // screen was a second full set of skinned draw calls, skinned again in
+        // the shadow pass, and a second set of meshes to build in
+        // `finishBody`, which the profiler was reporting at 60-100ms per rig.
+        // Twenty monsters in view is twenty duplicate bodies drawn to say
+        // something four other pieces of UI already say.
+        silhouette: false,
       });
       const vis: MonsterVisual = { actor, kind: s.kind, state: s, dead: false, windingUp: false, windupStartedAt: 0, moving: false, alerted: false, fleeing: false };
       // Placed immediately, same as the old inline path did — otherwise the

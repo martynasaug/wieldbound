@@ -7302,6 +7302,39 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A DEFAULT OF `true` ON AN EXPENSIVE OPTION IS A DECISION NOBODY MADE.
+  `wantsSilhouette = options.silhouette ?? true` gave a through-walls ghost
+  to every actor in the game, monsters included — and that ghost is a
+  duplicate SkinnedMesh of every mesh in the rig, drawn again and skinned
+  again, plus a second set to build on load. Nothing chose that for
+  monsters; it was inherited from a default written when players were the
+  only actors. Worth auditing any `?? true` that guards real work: opting
+  out has to be remembered at every call site, and it never is.
+- THE ARGUMENT FOR THE NEW DECISION WAS ALREADY WRITTEN DOWN FOR AN OLD ONE.
+  Whether monsters need a silhouette was settled by a comment about the
+  PRESENCE LIGHT: players-only, because a monster "has nameplates, a target
+  ring and a difficulty colour already". The same reasoning transfers
+  exactly, and finding it is cheaper and more consistent than re-deriving
+  one. When a feature asks "who is this for", check whether a sibling
+  feature has already answered it.
+- A NEGATIVE REMAINDER IN A DIAGNOSTIC IS AN EMERGENCY, not a rounding
+  quirk. "rig:Monk 266.4ms, -747ms outside the timed sections" says a
+  section ran longer than the frame that contained it — impossible, and
+  therefore proof the accounting is wrong rather than the code being
+  measured. It came from clearing the per-section totals at frame END so
+  between-frame work could be attributed, and then not clearing them again
+  after reading, so the gap was billed twice. Output that cannot be true is
+  the cheapest bug signal there is and should be chased before the thing it
+  was measuring.
+- "IT LOOKS WRONG WHEN MOVING" IS TWO DIFFERENT REPORTS. "Duplicating while
+  running" is consistent with the stroboscopic effect of a low frame rate on
+  a high-refresh display and needs frames, not code. "Part of the character
+  comes out of the armour" cannot be perception — it is geometry, and it
+  points at rigid gear attached to a single bone passing through a body that
+  is skinned across many. The same sentence carried both. Getting a second
+  detail out of a visual report is worth more than any amount of staring at
+  the renderer, because it is what separates the two.
+
 - COMPILING IS NOT UPLOADING. `renderer.compile`/`compileAsync` builds shader
   programs and does not touch a single buffer; WebGL uploads a geometry's
   buffers the first time it is DRAWN. Warming materials therefore removes one
@@ -11309,6 +11342,59 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.41 — twenty duplicate bodies, drawn to say what four other
+things already said.** The reading landed at `frame avg 13.91ms` against a
+13.79ms budget for two refreshes at 145Hz — twelve HUNDREDTHS of a
+millisecond short of 72fps, and paced to 48 for it. So this round is about
+finding one millisecond, and about two mistakes in the instrument.
+THE MILLISECOND. `Actor`'s `wantsSilhouette` defaults to TRUE, so every
+actor in the world built one — including all twenty-odd monsters. That is
+not a flag, it is a second full body: `buildSilhouette` creates a
+`SkinnedMesh` GHOST of every mesh in the rig, bound to the same skeleton,
+so each monster on screen was a duplicate set of skinned draw calls,
+skinned again in the shadow pass, and a second set of meshes to build in
+`finishBody` — which the profiler was reporting at 60-100ms per rig
+(`rig:Demon.gltf 89ms`, `rig:Orc_Skull.gltf 96ms`, `rig:Monk 266ms`).
+Monsters do not need it, and the argument is already written down in this
+file for a different feature: the presence light is players-only because a
+monster "has nameplates, a target ring and a difficulty colour already".
+Every word of that applies here, plus a minimap blip since M70.19. The
+silhouette answers "where am I, where is that person", which is not a
+question anybody asks about a monster. Turned off for them.
+TWO INSTRUMENT BUGS, both caught by reading output that could not be true.
+`[hitch] 123ms frame — worst section: rig:Monk 266.4ms, -747ms outside the
+timed sections`: a section longer than the frame containing it, and a
+negative remainder. M70.40 moved the per-section reset to frame END so
+between-frame work could be attributed — and then never cleared it again
+after reading, so the gap's work was counted a second time as part of the
+following frame. Cleared after the read now. A negative remainder is a
+diagnostic saying it does not understand its own arithmetic, and it is
+worth treating as urgently as a wrong answer, because it is one.
+STILL OPEN, and stated plainly rather than guessed at again: `[hitch]
+5065ms BETWEEN frames — worst: net:STATE_SNAPSHOT 23ms`. Five seconds, of
+which twenty-three milliseconds were ours. That is now a trustworthy
+measurement and it says the pause is NOT this codebase — a garbage
+collection, or a file being parsed inside a loader callback we do not own
+(the FBX rigs are the obvious candidate; `dressFbx` is timed but the
+loader's own parse is not, and cannot be from outside it). The next move
+is to stop trying to make it faster and instead stop it happening during
+play at all.
+AND THE VISUAL REPORT, which has changed shape. "Duplicating while
+running" alone was consistent with the stroboscopic effect of 48fps on a
+144Hz display (M70.40). "Especially when wearing armour, part of the
+character comes out of the armour" is not — that is geometry, not
+perception. Investigated `buildSilhouette` and `buildRim` as the two
+things that deliberately draw a second copy of the body, and cleared both:
+the render-order chain is silhouette 1, body and gear 2, outline 3, and
+worn armour genuinely reaches `trackMesh` through `trackMaterials`, so the
+ordering the comments describe is the ordering that runs. Recorded as
+unresolved rather than closed, with the leading hypothesis being rigid
+gear on a deforming body — armour is attached to ONE bone and cannot skin,
+so the body's skinned surface passes through it exactly when the
+animation's deformation is largest, which is running. Full suite green;
+`fighting.mjs` hit the known keep-away flake against a demon at 165px and
+passed clean against a dragon on re-run.
 
 **Phase 70 M70.40 — the gap named itself, and the answer was three
 different things.** M70.39's instrumentation worked on its first reading,

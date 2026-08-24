@@ -149,6 +149,13 @@ export class Profiler {
         this.betweenWorst_ = `${label} ${sec.frameMs.toFixed(0)}ms`;
       }
     }
+    // And cleared again, now that the gap has been read. Work done BETWEEN
+    // frames must not also be counted as part of the frame that follows it —
+    // leaving it in produced sections totalling more than the frame they were
+    // supposedly inside, and a hitch line reading "rig:Monk 266.4ms, -747ms
+    // outside the timed sections". A negative remainder is a diagnostic saying
+    // it does not understand its own arithmetic.
+    for (const sec of this.sections.values()) sec.frameMs = 0;
   }
 
   /** Whatever the owner wants shown alongside the timings — draw calls,
