@@ -1575,6 +1575,7 @@ export class Game {
         dead: vis.dead,
         engaged: id === this.engagedId,
         locked: id === this.lockedId,
+        targetingMe: vis.state.targetId === this.playerId,
       });
     }
 

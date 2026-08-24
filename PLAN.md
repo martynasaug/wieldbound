@@ -10796,6 +10796,31 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.19 — a threat off the edge of the plate.** The third,
+smaller candidate from the same research pass as M70.18 — weaker payoff
+(a hunting monster is usually close enough to be plate-visible soon
+anyway) but the same shape of gap, so worth the small scope it costs.
+`MonsterState.targetId` (M70.10) already drives the nameplate's red
+"hunting" glyph; the minimap's own monster blips carry `engaged`/
+`locked`/`dead` and stopped one field short. A monster bearing down from
+outside nameplate range — the one distance band where the minimap is the
+only thing that could say anything at all — gave no signal until it was
+already close. Added `targetingMe` to `MinimapMonster`, drawn as the same
+red ring the nameplate's own mark uses, but ONLY when the monster isn't
+already `engaged`/`locked` — those two already get their own ring, and
+stacking a third colour on top of an already-fought target would be
+clutter answering a question that monster's UI has already answered
+elsewhere. Verified live two ways: fed the draw code a synthetic
+`targetingMe` monster directly and confirmed it draws without error, then
+teleported a real character next to the nearest live monster (reading the
+full un-filtered snapshot rather than `g.monsters`, which only holds
+whatever is already within client-side spawn radius) and watched
+`updateMinimap()`'s own output flip to `targetingMe: true` once the
+server's AI actually picked the player up as its target — the full real
+pipeline, not just the rendering half. `animation.mjs` and `smoke.mjs`
+green; `fighting.mjs` flaked once on the pre-existing retreat-check noise
+and passed clean on re-run.
+
 **Phase 70 M70.18 — the last two places an ally still read like a
 stranger.** Two direct, one-hop extensions of M70.13 and M70.17's own
 stated purpose, closing out the two surfaces they didn't reach.

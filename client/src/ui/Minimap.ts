@@ -26,6 +26,14 @@ export interface MinimapMonster extends Blip {
   locked?: boolean;
   /** Dead monsters stay on the map, dimmed, until they respawn. */
   dead?: boolean;
+  /**
+   * This monster's AI has the local player as its target — same fact and
+   * same reason as the nameplate's own "hunting" mark (M70.10). Ringed
+   * only when NOT already `engaged`/`locked`, which is the one case this
+   * adds a signal for at all: something coming for you from off-plate
+   * range, before it is close enough to be worth a nameplate or a click.
+   */
+  targetingMe?: boolean;
 }
 
 export interface MinimapNode extends Blip {
@@ -495,6 +503,14 @@ export class Minimap {
         this.dot(ctx, px, py, m.engaged ? 3.4 : 2.8, m.engaged ? COLORS.engaged : COLORS.monster);
         if (m.locked || m.engaged) {
           ctx.strokeStyle = m.locked ? "#fff0c8" : COLORS.engaged;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.arc(px, py, 5.6, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (m.targetingMe) {
+          // Same red the nameplate's own hunting mark uses, reserved for
+          // exactly the case neither ring above already covers.
+          ctx.strokeStyle = "#ff5a4a";
           ctx.lineWidth = 1.2;
           ctx.beginPath();
           ctx.arc(px, py, 5.6, 0, Math.PI * 2);
