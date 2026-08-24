@@ -7302,6 +7302,43 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- COMPILING IS NOT UPLOADING. `renderer.compile`/`compileAsync` builds shader
+  programs and does not touch a single buffer; WebGL uploads a geometry's
+  buffers the first time it is DRAWN. Warming materials therefore removes one
+  first-appearance cost and leaves the other completely intact, which is why
+  M70.36's warm-up helped and the render spikes continued. Worse, distance
+  culling makes the upload cost LATER rather than smaller — most of the world
+  is now still waiting to be drawn for the first time long after loading has
+  finished, so the bill arrives while somebody is playing. Drawing one full
+  frame with everything visible, before the loop starts, is what actually
+  uploads it; the buffers then stay resident, because `.visible = false`
+  never frees anything.
+- AN EXPONENTIAL AVERAGE IS THE WRONG ESTIMATOR WHEN THE OUTLIERS ARE THE
+  PROBLEM. The pacer chose its target from an EMA of frame cost, which meant
+  a single 919ms frame told it for the next ten seconds that frames cost far
+  more than they did — pacing an 11.68ms game to 48fps when 72 was
+  comfortably in reach. A rolling median ignores spikes entirely, and that is
+  the correct behaviour rather than a robustness trick: a spike is a stutter
+  to be fixed, not a reason to permanently lower the frame rate. Whenever an
+  average feeds a decision, ask what one catastrophic sample does to it.
+- READ A COUNTER BEFORE YOU RESET IT, AND RESET IT WHERE THE INTERVAL ENDS.
+  The between-frame attribution read each section's per-frame total at
+  `frameBegin` and cleared it there, so it reported the previous frame's
+  leftovers as "what ran in the gap" — a 3043ms stall came back blaming
+  `render 17ms`, work that had finished before the gap began. The interval
+  being measured is frame-end to frame-start, so the counters have to be
+  zeroed at frame END. An off-by-one-interval in a diagnostic is worse than
+  a missing diagnostic, because it produces confident wrong answers.
+- LOW FRAME RATE ON A HIGH-REFRESH DISPLAY LOOKS LIKE MULTIPLE COPIES, not
+  like slowness. Reported as a running character appearing "blurry,
+  duplicating many times" — which sounds like a rendering bug and is not
+  one. At 48fps on 144Hz each frame is held for three refreshes, so an eye
+  TRACKING a moving object sees it in three distinct places per frame period
+  and integrates them into overlapping copies. Even pacing makes the
+  duplicates regular rather than fewer. Worth recognising on sight, because
+  the instinct is to go looking for a trail or a double-draw in the
+  renderer, and the only cure is more frames.
+
 - WHEN A MESSAGE LISTS THREE POSSIBILITIES, THAT IS THE BUG IN THE
   INSTRUMENT. "Not the render loop. Network decode, a model finishing
   loading, or garbage collection." was written as a helpful hint and became
@@ -11272,6 +11309,57 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.40 — the gap named itself, and the answer was three
+different things.** M70.39's instrumentation worked on its first reading,
+and it turned one anonymous symptom into three separate problems.
+```
+  [hitch]  110ms BETWEEN frames — worst: rig:Demon.gltf 101ms
+  [hitch]  114ms BETWEEN frames — worst: rig:Orc.gltf 98ms
+  [hitch] 3043ms BETWEEN frames — worst: render 17ms
+  [hitch]  924ms frame — worst section: render 919.2ms, 0ms outside
+```
+FIRST, A FLAW IN THE INSTRUMENT ITSELF. `render 17ms` cannot be what ran
+in a 3043ms gap — `render` finishes before the gap begins. The counters
+were being read at `frameBegin` and reset there, so the report was showing
+the PREVIOUS frame's leftovers. Zeroed at the end of each frame now, so
+anything still standing when the next one starts genuinely ran in between.
+The `rig:` lines were real and are the good news: naming the model was
+worth it immediately, and ~100ms to build a rig, bounded to two in flight
+by M70.38, is a known and survivable cost.
+SECOND, THE 919ms RENDER. `warmUp` compiles programs and does not touch
+buffers, and WebGL uploads a geometry's buffers the first time it is
+DRAWN. So every one of the 4542 ground-cover chunks and 584 forest chunks
+paid for its own upload the first frame it appeared — and M70.28's
+distance culling made this WORSE rather than better, because it means most
+of the world is still waiting to be drawn for the first time long after
+loading has finished. Walking somewhere new then uploads a batch of them
+inside one `render()`. One full frame is now drawn before the loop starts,
+with everything still visible (the culler is driven from `follow`, inside
+the loop, so it has not run yet) — buffers stay resident once uploaded and
+`.visible = false` never frees them, so this is paid once per session,
+under the loading screen, instead of per chunk-first-seen during play.
+THIRD, AND THE REASON THE TARGET WAS SO LOW. The overlay read `1 frame per
+3 refreshes = 48fps target` against a frame average of 11.68ms — which
+fits inside the 13.89ms that two refreshes buy, comfortably. The pacer was
+not reading that average. It kept an exponential average of frame cost,
+and an EMA is exactly the wrong estimator when the thing it must survive is
+occasional enormous frames: one 919ms render drags it up for ten seconds,
+and the pacer spends that time pacing to a target the machine does not
+need. It is a rolling MEDIAN now, which ignores spikes completely — the
+right call, because a spike is a stutter to be fixed, not a reason to
+permanently lower the frame rate. Mutation-tested by restoring the EMA,
+which reproduces the reported reading exactly: divisor 3, 48fps, on 11.7ms
+frames.
+Also reported, and answered honestly rather than fixed: a running
+character "blurry, duplicating many times". That is not a rendering bug —
+it is what 48fps looks like on a 144Hz display when the eye TRACKS a
+moving object. Each frame is held for three refreshes, so a tracked
+character lands in three distinct places per frame period and the eye
+integrates them into several overlapping copies. Even pacing makes it more
+regular rather than less visible. The only cure is more frames, and the
+three fixes above are aimed at exactly the 11.68ms-to-72fps step that
+would cut the number of copies from three to two. Full suite green.
 
 **Phase 70 M70.39 — instrumenting the gap instead of guessing at it a
 third time.** M70.38's probe worked: the overlay reads `145Hz display`

@@ -149,7 +149,6 @@ export class Profiler {
         this.betweenWorst_ = `${label} ${sec.frameMs.toFixed(0)}ms`;
       }
     }
-    for (const s of this.sections.values()) s.frameMs = 0;
   }
 
   /** Whatever the owner wants shown alongside the timings — draw calls,
@@ -249,6 +248,15 @@ export class Profiler {
     if (ms > this.worstRecent.ms || now - this.worstRecent.at > HITCH_WINDOW_MS) {
       this.worstRecent = { ms, at: now };
     }
+
+    // CLEARED HERE, NOT AT THE START OF THE NEXT FRAME. Reading these at
+    // `frameBegin` and resetting them there meant the "what ran in the gap"
+    // report was showing the PREVIOUS frame's leftovers — which is why a 3043ms
+    // stall came back blaming "render 17ms", a number from work that had
+    // finished before the gap even began. Zeroed at the end of the frame, so
+    // anything that accumulates before the next one started genuinely ran in
+    // between the two.
+    for (const s of this.sections.values()) s.frameMs = 0;
 
     if (!this.on || !this.el) return;
     this.frames++;

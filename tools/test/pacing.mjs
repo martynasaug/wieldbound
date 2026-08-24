@@ -175,6 +175,49 @@ section("7. a slow game must not be mistaken for a slow display");
   check("a genuine 60Hz display still reads as 60Hz", Math.abs(sixty.refreshHz - 60) < 6, `${sixty.refreshHz.toFixed(0)}Hz`);
 }
 
+section("8. one enormous frame must not lower the target for ten seconds");
+{
+  // Observed: an 11.68ms average frame paced to 48fps when 72 was comfortably
+  // in reach, because the cost estimate was an exponential average and the
+  // session contained occasional 500-900ms frames (a batch of GPU uploads, a
+  // shader compile). One of those drags an EMA up for seconds, and the pacer
+  // spends that time pacing to a target the machine does not need.
+  //
+  // A spike is a stutter to be fixed, not a reason to permanently lower the
+  // frame rate.
+  const refresh = 1000 / 144;
+  const pacer = new FramePacer();
+  let ts = 0;
+  for (let i = 0; i < 144 * 20; i++) {
+    ts += refresh;
+    if (!pacer.onRaf(ts)) continue;
+    // A comfortable 11.7ms frame, with a 900ms catastrophe every few seconds.
+    const cost = i % 700 === 0 ? 900 : 11.7;
+    pacer.onFrameCost(cost, ts);
+    const overrun = Math.max(0, cost - refresh * pacer.divisor);
+    ts += Math.ceil(overrun / refresh) * refresh;
+  }
+  check(
+    "the divisor reflects the typical frame, not the worst one",
+    pacer.divisor === 2,
+    `divisor ${pacer.divisor} (${pacer.targetFps.toFixed(0)}fps)`,
+  );
+  console.log(`  11.7ms frames with 900ms spikes -> ${pacer.targetFps.toFixed(0)}fps target`);
+
+  // And a machine that is genuinely and consistently slow must still be paced
+  // down — the robustness must not become deafness.
+  const slow = new FramePacer();
+  let t2 = 0;
+  for (let i = 0; i < 144 * 20; i++) {
+    t2 += refresh;
+    if (!slow.onRaf(t2)) continue;
+    slow.onFrameCost(19, t2);
+    const overrun = Math.max(0, 19 - refresh * slow.divisor);
+    t2 += Math.ceil(overrun / refresh) * refresh;
+  }
+  check("a consistently slow machine is still paced down", slow.divisor === 3, String(slow.divisor));
+}
+
 console.log(
   failures === 0
     ? "\nOK — every frame lasts as long as the one before it"

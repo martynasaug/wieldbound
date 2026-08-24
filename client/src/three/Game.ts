@@ -1231,6 +1231,25 @@ export class Game {
     // screen is FOR, rather than as the opening stutter of the game.
     await this.world.warmUp(this.world.scene);
 
+    // AND ONE FULL FRAME, WITH EVERYTHING STILL VISIBLE, TO UPLOAD IT.
+    //
+    // `warmUp` compiles programs; it does not touch buffers. WebGL uploads a
+    // geometry's buffers the first time it is DRAWN, so every one of the 4542
+    // ground-cover chunks and 584 forest chunks was paying for its own upload
+    // the first frame it appeared — and M70.28's distance culling made that
+    // worse rather than better, because it means most of the world is still
+    // waiting to be drawn for the first time long after loading has finished.
+    // Walking somewhere new then uploads a batch of them inside one `render()`,
+    // which is what the profiler kept catching as 500ms and 919ms frames whose
+    // worst section was `render` with nothing outside it.
+    //
+    // The culler has not run yet at this point — it is driven from `follow`,
+    // inside the loop — so everything is still visible and one render touches
+    // all of it. Buffers stay resident once uploaded, and `.visible = false`
+    // never frees them, so this is paid once per session rather than per
+    // chunk-first-seen. Expensive, and it happens under the loading screen.
+    this.world.render();
+
     this.loop();
   }
 
