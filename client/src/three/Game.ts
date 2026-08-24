@@ -66,6 +66,7 @@ import {
   type ItemRarity,
   type ItemSlot,
   type MonsterKind,
+  VISIBLE_GEAR_SLOTS,
   DAY_LENGTH_MS,
   appearanceClass,
   gameClock,
@@ -468,8 +469,6 @@ export class Game {
   private gatherLevel = 0;
   private battlePowerLevel = 0;
   private weaponRarity: ItemRarity | null = null;
-  /** Next tick of a glowing-gear ambient particle wisp — see `updateWeaponAura`. */
-  private nextWeaponAuraAt = 0;
   private armorRarity: ItemRarity | null = null;
   private bootsRarity: ItemRarity | null = null;
   private items: ItemInstance[] = [];
@@ -525,6 +524,13 @@ export class Game {
   private moveInputY = 0;
 
   private readonly players = new Map<string, Actor>();
+  /**
+   * Each remote player's own `Appearance`, kept for `updateWeaponAura` —
+   * `setAppearance` consumes it to dress the rig immediately and does not
+   * retain it, and the aura needs to re-ask "what is this player wearing"
+   * every tick, not only on the frame a snapshot arrives.
+   */
+  private readonly playerAppearances = new Map<string, Appearance>();
   private readonly playerNames = new Map<string, string>();
   /**
    * What each remote player is wielding, for their nameplate's glyph.
@@ -1139,6 +1145,7 @@ export class Game {
       // renders itself from, so there is one drawing path rather than a
       // self-case and an others-case that can drift apart.
       actor.setAppearance(s.appearance);
+      this.playerAppearances.set(s.id, s.appearance);
       const x = toWorldX(s.x);
       const z = toWorldZ(s.y);
       const motion = this.playerMotion.get(s.id) ?? { x: s.x, y: s.y, moving: false };
@@ -1155,6 +1162,8 @@ export class Game {
       this.playerNames.delete(id);
       this.playerClasses.delete(id);
       this.playerMotion.delete(id);
+      this.playerAppearances.delete(id);
+      this.nextGearAuraAt.delete(id);
     }
   }
 
@@ -3253,25 +3262,50 @@ export class Game {
     ring: 1.05,
   };
 
+  /** Which slots an `Appearance` carries a rarity for, and where. `weapon`
+   *  and `offhand` are fields of their own; the rest ride in `layers`, and
+   *  `ring` is in neither — nothing renders a ring mesh, so there is no
+   *  slot for a wisp to come from even though the item itself is real. */
+  private static readonly APPEARANCE_RARITY_SLOTS: readonly ItemSlot[] = [
+    "weapon",
+    "offhand",
+    ...VISIBLE_GEAR_SLOTS,
+  ];
+
+  private static rarityOf(appearance: Appearance, slot: ItemSlot): ItemRarity | undefined {
+    if (slot === "weapon") return appearance.weaponRarity;
+    if (slot === "offhand") return appearance.offhandRarity;
+    return appearance.layers[slot]?.rarity;
+  }
+
+  /** Next tick of a glowing-gear wisp, per actor — `"__local__"` for the
+   *  player, the player id for everyone else, so two people in enchanted
+   *  gear standing together do not fight over one shared timer. */
+  private readonly nextGearAuraAt = new Map<string, number>();
+
   /**
-   * A wisp trailing EVERY piece of runed or enchanted gear worn, not only
-   * the weapon.
+   * A wisp trailing EVERY piece of runed or enchanted gear worn — the
+   * player's own, and everyone else's standing nearby.
    *
    * The top two rarities already get an emissive lift on the mesh itself
    * (see gear.ts), which says "this is special" while standing still — every
    * MMORPG with a rarity ladder gives its best drops a look that keeps
-   * paying off once you are actually moving and fighting in them, and this
-   * game never did. Reads `this.items` directly rather than the three
-   * per-slot rarity fields the server also sends (`weaponRarity`,
-   * `armorRarity`, `bootsRarity`) — those exist for their own gameplay
-   * bonuses (crit damage, XP, move speed) and were never meant to be a
-   * complete answer to "what is glowing"; a ring or a cape has no bonus
-   * riding on its rarity and so no field of its own, but it is glowing on
-   * the mesh exactly the same as a weapon is.
+   * paying off once someone is actually moving and fighting in them, and
+   * this game never did it for anyone, on either side of the connection.
+   *
+   * `Appearance` is what makes the OTHER half of this simple: it is already
+   * broadcast for every remote player, already the single source their rig
+   * is dressed from, and already carries a rarity for every slot that can
+   * glow — nothing new had to reach the wire. The tempting shortcut was
+   * `weaponRarity`/`armorRarity`/`bootsRarity`, three fields the server also
+   * sends, but those exist for their own gameplay bonuses (crit damage, XP,
+   * move speed) and were never a complete answer to "what is glowing"; a
+   * cape or a helm has no bonus riding on its rarity and so no field of its
+   * own, but glows on the mesh exactly the same as a weapon does.
    *
    * More glowing pieces means more frequent wisps, cycling between whichever
    * of them are actually worn — a character in a full glowing set should
-   * read as more radiant than someone wearing one glowing ring, the same way
+   * read as more radiant than someone wearing one glowing item, the same way
    * the mesh's own emissive lift already stacks visually piece by piece.
    *
    * Reuses `wisp`, the ambient-weight sibling of `bolt`, rather than the
@@ -3280,21 +3314,31 @@ export class Game {
    * reading as broken.
    */
   private updateWeaponAura(): void {
-    if (!this.localActor) return;
-    const glowing = this.items.filter((i) => i.equipped && RARITIES[i.rarity]?.glow);
+    if (this.localActor) this.tickGearAura("__local__", this.localActor, this.appearance);
+    for (const [id, actor] of this.players) {
+      const appearance = this.playerAppearances.get(id);
+      if (appearance) this.tickGearAura(id, actor, appearance);
+    }
+  }
+
+  private tickGearAura(key: string, actor: Actor, appearance: Appearance): void {
+    const glowing = Game.APPEARANCE_RARITY_SLOTS.map((slot) => ({
+      slot,
+      rarity: Game.rarityOf(appearance, slot),
+    })).filter((p): p is { slot: ItemSlot; rarity: ItemRarity } => !!p.rarity && !!RARITIES[p.rarity]?.glow);
     if (glowing.length === 0) return;
     const now = performance.now();
-    if (now < this.nextWeaponAuraAt) return;
+    if (now < (this.nextGearAuraAt.get(key) ?? 0)) return;
     // Staggered rather than a fixed beat, so it never reads as a metronome —
     // and faster with more glowing pieces worn, floored so a fully-enchanted
     // character does not become a strobe.
-    this.nextWeaponAuraAt = now + Math.max(140, 300 - glowing.length * 35) + Math.random() * 180;
+    this.nextGearAuraAt.set(key, now + Math.max(140, 300 - glowing.length * 35) + Math.random() * 180);
     const piece = glowing[Math.floor(Math.random() * glowing.length)];
     const tint = Number.parseInt(RARITIES[piece.rarity].color.slice(1), 16);
     const at =
       piece.slot === "weapon"
-        ? this.localActor.muzzlePosition(new THREE.Vector3())
-        : this.localActor.position
+        ? actor.muzzlePosition(new THREE.Vector3())
+        : actor.position
             .clone()
             .add(
               new THREE.Vector3(

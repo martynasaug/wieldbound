@@ -7302,6 +7302,32 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A FLEX NOBODY ELSE CAN SEE IS NOT MUCH OF A FLEX. The obvious reading of
+  "cool for an MMORPG" gear glow is showing it to OTHER PLAYERS, not only to
+  the person wearing it — the whole reason a rarity ladder exists in a
+  multiplayer game is other people noticing. Worth building even though the
+  first pass (self only) already looked complete; a single-player-shaped
+  version of a multiplayer feature is a smaller feature wearing the same
+  name.
+- A BROADCAST SHAPE ALREADY BUILT FOR ONE JOB CAN ANSWER A SECOND QUESTION
+  FOR FREE. `Appearance` exists so every remote player's rig can be dressed
+  identically to how the local player dresses itself, and in solving that it
+  had already collected a rarity for every glowable slot — nothing about
+  "what should this wisp system read" needed a new field once the actual
+  question ("what is this player wearing") was asked of the right existing
+  answer instead of reached for via three narrower gameplay-bonus fields.
+- A VALUE A METHOD CONSUMES AND APPLIES IS NOT THE SAME AS A VALUE KEPT.
+  `setAppearance` dresses a remote rig from the `Appearance` it is handed and
+  retains none of it — right for its own job, wrong for a system that needs
+  to ask "what is this player wearing" on every tick rather than only the
+  frame a snapshot happened to arrive. `playerAppearances` exists because the
+  consumer needed a copy the producer had no reason to keep.
+- A SHARED TIMER BECOMES A COORDINATION BUG THE MOMENT A SECOND ACTOR NEEDS
+  ONE. One `nextWeaponAuraAt` number was correct for a single player; adding
+  remote players without keying it per-actor would have made every glowing
+  character in view sparkle on the same tick, reading as one synchronized
+  effect rather than several independent ones.
+
 - A FIELD THAT EXISTS FOR A GAMEPLAY BONUS IS NOT A GENERAL ANSWER TO THE
   SAME QUESTION A VISUAL SYSTEM ASKS. `weaponRarity`/`armorRarity`/
   `bootsRarity` exist because those three slots' rarity feeds a stat
@@ -10556,6 +10582,26 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — everyone's legendary gear glows, not only your own.** M69.19
+answered "do that for other players?" — asked one message after M69.18
+shipped, and correctly, since a flex nobody else can see is not much of a
+flex. `Appearance` turned out to already carry everything needed: it is the
+single broadcast shape both the local player and every remote player have
+always dressed their rig from, and it already gives a rarity to every slot
+that can glow (`weaponRarity`, `offhandRarity`, and a rarity per entry in
+`layers` for cape/armor/helm/boots) — nothing new had to reach the wire. The
+per-actor timer that used to be one number is a map keyed by player id now
+(`"__local__"` for the player), so two people standing together in enchanted
+gear do not fight over a shared clock or sync their sparkle to the same
+tick. `playerAppearances` is a new small map retaining each remote player's
+last `Appearance` — `setAppearance` consumes and applies it immediately but
+never kept a copy, and the aura has to re-ask "what is this player wearing"
+every tick, not only on the frame a snapshot happened to arrive — cleaned up
+on disconnect alongside the actor itself. Verified: typecheck and the
+offline animation suite pass; a live two-client connectivity pass confirmed
+both players see each other and populate `playerAppearances` with no runtime
+errors across the session.
 
 **Phase 69 — a legendary set keeps saying so once you're wearing it.** M69.18,
 the second half of "what would be cool for an MMORPG": `RarityDef.glow` has
