@@ -872,7 +872,13 @@
       .lb-rank-1 { color: #ffd257; }
       .lb-rank-2 { color: #d8dde4; }
       .lb-rank-3 { color: #d08a4e; }
-      .lb-name { flex: 1; color: var(--parchment); }
+      .lb-name { flex: 1; color: var(--parchment); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+      .lb-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      /* Progress toward each row's OWN next level — the rank is level-first,
+         so two players tied on level are otherwise indistinguishable at a
+         glance even though the server already sorts xp as the tiebreaker. */
+      .lb-xpbar { height: 3px; border-radius: 2px; background: rgba(0,0,0,.35); overflow: hidden; }
+      .lb-xpbar i { display: block; height: 100%; background: var(--gold-bright); border-radius: 2px; }
       .lb-level { color: var(--gold-bright); font-size: 12px; }
 
       #combat-log {

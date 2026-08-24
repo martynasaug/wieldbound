@@ -1,4 +1,4 @@
-import type { LeaderboardEntry } from "../../../shared/protocol-types";
+import { xpToNextLevel, type LeaderboardEntry } from "../../../shared/protocol-types";
 import { iconSvg } from "./icons";
 
 const RANK_MEDAL: Record<number, string> = { 1: "rank-1", 2: "rank-2", 3: "rank-3" };
@@ -55,9 +55,24 @@ export class LeaderboardPanel {
       }
       row.appendChild(rankEl);
 
+      // Rank is level-first, so two players tied on level otherwise look
+      // identical here even though the server already sorts xp as the
+      // tiebreaker (`ORDER BY level DESC, xp DESC`) — the same fact the
+      // local player's own HUD bar already shows for themselves, just
+      // never carried onto anyone else's row.
       const nameEl = document.createElement("div");
       nameEl.className = "lb-name";
-      nameEl.textContent = entry.name;
+      const nameText = document.createElement("span");
+      nameText.textContent = entry.name;
+      nameEl.appendChild(nameText);
+      const xpBar = document.createElement("div");
+      xpBar.className = "lb-xpbar";
+      const xpFill = document.createElement("i");
+      const ratio = Math.max(0, Math.min(1, entry.xp / xpToNextLevel(entry.level)));
+      xpFill.style.width = `${ratio * 100}%`;
+      xpBar.title = `${entry.xp} / ${xpToNextLevel(entry.level)} xp toward level ${entry.level + 1}`;
+      xpBar.appendChild(xpFill);
+      nameEl.appendChild(xpBar);
       row.appendChild(nameEl);
 
       const levelEl = document.createElement("div");

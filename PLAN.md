@@ -10796,6 +10796,28 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.21 — the leaderboard sorted on a number it never showed.**
+Smaller companion to M70.20 from the same sweep. The server's own query
+(`SELECT name, level, xp ... ORDER BY level DESC, xp DESC`) has always
+used `xp` as the tiebreaker between two players on the same level, and
+`LeaderboardEntry` has carried it across the wire the whole time —
+`LeaderboardPanel` read `entry.name` and `entry.level` and dropped
+`entry.xp` on the floor. Two players tied on level looked completely
+identical in the list even though the ranking between them was real and
+already decided. The local player's own HUD already draws this exact
+ratio (`xp` versus `xpToNextLevel(level)`) as a bar; the leaderboard row
+never got the same treatment for anyone else. Added a thin bar under each
+name, clamped to 100% since `xp` is progress INTO the current level
+(`addXp` subtracts and rolls to the next level's counter, never
+cumulative-across-levels) and could in principle read momentarily over on
+a stale snapshot. Verified live: fed the panel three synthetic entries —
+one deliberately over-full to confirm the bar clamps rather than
+overflowing its track, one at an exact half, one at zero — and read the
+actual rendered bar widths and tooltip text back: 100%, 50%, 0%, all
+correct, with zero rendering as a visibly present empty bar rather than
+nothing at all. `animation.mjs` and `smoke.mjs` green; `fighting.mjs`
+clean.
+
 **Phase 70 M70.20 — a potion that looked ready when it was not.**
 Broadened past the ally-visibility vein into a fresh sweep (day/night,
 weather, waystones, salvage/runes and item tooltips all came back
