@@ -7302,6 +7302,42 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A GEOMETRIC BOUND CAN TURN A WHOLE-WORLD QUERY INTO A LOCAL ONE, and it is
+  worth looking for one before optimising the query itself. The occluder
+  fade raycast against every object in the world looked like it needed a
+  spatial index or a cheaper ray. It needed neither: both ends of the ray —
+  the camera and the player's head — are within `CAMERA_MAX_DISTANCE` of the
+  player by construction, so nothing further away than that can intersect
+  it, and the filter that follows is EXACT rather than approximate. The
+  general move is to ask what the query's inputs already guarantee about its
+  answer, because a bound derived from the geometry needs no tuning and
+  cannot be wrong, while a heuristic radius needs both.
+- CULLING AND LOD ANSWER DIFFERENT QUESTIONS AND COMPOSE. "Is this worth
+  drawing at all" had taken ground cover from 5126 chunks to a few hundred,
+  and it was easy to read that as the distance problem being solved. "How
+  much of it is worth drawing" then removed a further half of what survived,
+  because the two are independent: the first is about draw calls and the
+  second about vertices, and by that point draw calls were no longer what
+  was expensive. When one distance-based optimisation stops paying, the next
+  one is not necessarily a better version of it.
+- AN EXISTING PROPERTY CAN MAKE A FEATURE TRIVIAL — CHECK BEFORE BUILDING.
+  Thinning an `InstancedMesh` by lowering `count` draws a PREFIX of the
+  instance buffer, which is only an even thinning if the instances are in
+  arbitrary order. They were: `buildGroundCover` pushes placements in
+  scatter order and buckets them by chunk afterwards, deliberately, so that
+  "the field is identical no matter how the chunk grid happens to divide
+  it". A decision made for a completely unrelated reason is what turned this
+  from a re-sort into two lines.
+- A RULE EXPRESSED AS A FRACTION NEEDS AN ABSOLUTE FLOOR WHEN ITS DENOMINATOR
+  VARIES. The density bands are a proportion of each species' own cull
+  radius, which was the right way to make them scale — and those radii range
+  from 39 to 78 units, so the same fraction is 18 units for a pebble and 35
+  for tall grass. The short species reached their first thinning band close
+  enough to the player that the chunk being stood in could be affected. A
+  proportion is a good way to keep a rule consistent across things of
+  different sizes and a bad way to guarantee anything about the small end of
+  the range; those need a floor stated in the units that actually matter.
+
 - ASK WHAT THE DISPLAY REFRESHES AT BEFORE SETTING A FRAME BUDGET. Three
   entries of this log congratulate themselves for crossing 16.67ms, which is
   the 60Hz figure, on a machine with a 144Hz monitor where the budget is
@@ -11098,6 +11134,55 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.34 — thinning what survives, and a ray that asked the whole
+world a question about twenty-two units.** Two cuts aimed at the two
+biggest numbers in the last reading, `render` at 10.81ms and `occluders`
+at 1.60ms.
+The occluder fade casts one ray from the camera to the player's head to
+find whatever is standing in the way, and it was handing the raycaster
+`[...nodes, decor, ...buildings]` with `recursive = true` — every tree,
+rock, bush and building in the world, traversed and bounds-tested on every
+frame, plus a fresh array allocated to hold them. A tenth of the frame
+budget to answer a question about a line that is AT MOST twenty-two units
+long, because both of its ends — the camera and the player's head — are
+within `CAMERA_MAX_DISTANCE` of the player by construction. So anything
+whose bounds sit further than that from the player cannot possibly be on
+it, whatever direction the camera faces. That makes the filter exact
+rather than heuristic, which is why it can be as aggressive as it is. The
+candidate list is now rebuilt only when the player has moved two units
+(the same threshold the culler uses) and each object's bounding sphere is
+computed once and cached, since every one of them is scenery that will
+not move for the life of the world.
+The second is a real LOD, and it is the first thing this performance run
+has done that changes what is drawn rather than only what is skipped.
+Draw calls were already down to 996, so what is left is vertex and fill
+work — 3.16 million triangles, essentially all of it ground cover — and
+the only thing that moves that is drawing fewer blades. Culling answers
+"is this worth drawing at all"; `coverDensityAt` answers "how much of it"
+for everything that survived, by lowering `InstancedMesh.count`, which is
+a draw-time value that costs nothing to change. The placements went into
+each chunk in scatter order rather than sorted by position, so drawing a
+prefix of the buffer is a thinning spread evenly across the chunk rather
+than a bite taken out of one corner — that property was already true and
+is what makes this a two-line change instead of a re-sort.
+Measured against the real species table and the real world dimensions: it
+removes a further 50% of the instances that distance culling had already
+kept, at every quality level. Nearly invisible for the same reason the
+culling is: a patch of grass forty units away is a texture of green, and a
+texture of green with a third fewer blades is the same texture of green.
+The one real hazard is thinning something a player can walk up to, and the
+banded fractions alone did not prevent it — the bands are a proportion of
+each species' own cull radius, and those differ by a factor of two, so a
+pebble retired at 39 units reached its first band at about 18 and the
+chunk the player was STANDING IN could have been drawn thinned. An
+absolute floor of 30 units, checked before any proportion, closes that:
+past the camera's own 22-unit leash, so nothing that can be looked at
+closely is ever touched. `culling.mjs` asserts it directly, along with
+monotonicity (further away is never denser), that `count` never exceeds
+what was allocated or falls below one, and that anything without a
+`fullCount` — trees — keeps every instance, because a wood with a third of
+its trees missing is a different wood. Full suite green.
 
 **Phase 70 M70.33 — the monitor was the missing number.** Four rounds of
 profiling were measured against 16.67ms because that is what 60Hz gives

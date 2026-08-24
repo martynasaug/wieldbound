@@ -24,6 +24,7 @@ import {
   COVER_CULL_UNITS,
   TREE_CULL_UNITS,
   coverCullRadius,
+  coverDensityAt,
 } from "../../client/src/three/culling.ts";
 
 let failures = 0;
@@ -199,6 +200,71 @@ section("7. the quality scale closes the world in");
     Math.hypot(c.boundingSphere.center.x, c.boundingSphere.center.z) <= c.boundingSphere.radius + CHUNK);
   check("even at Performance there is ground under the player", under);
   console.log("  chunks drawn: High " + atHigh + ", Performance " + atPerf);
+}
+
+section("8. distant cover is thinned, near cover is not");
+{
+  // Culling answers "draw this at all"; density answers "how much of it". The
+  // failure to guard against is thinning something the player can walk up to,
+  // which would pop plants into existence as they move.
+  check("everything inside the camera reach is drawn in full",
+    coverDensityAt(0, 78) === 1 && coverDensityAt(22, 39) === 1 && coverDensityAt(29, 39) === 1);
+  check("and the far band is genuinely thinner", coverDensityAt(70, 78) < 0.5, String(coverDensityAt(70, 78)));
+  check("density never exceeds full", [0, 10, 30, 50, 70, 200].every((d) => coverDensityAt(d, 78) <= 1));
+  check("and never reaches zero", [0, 10, 30, 50, 70, 200].every((d) => coverDensityAt(d, 78) > 0));
+  // Monotonic: further away must never be denser.
+  let last = 1;
+  for (let d = 0; d <= 200; d += 5) {
+    const v = coverDensityAt(d, 78);
+    check(`density does not increase with distance at ${d}`, v <= last + 1e-9, `${v} after ${last}`);
+    last = v;
+  }
+}
+
+section("9. the culler applies it without over-drawing the buffer");
+{
+  const field = new THREE.Group();
+  const geo = new THREE.PlaneGeometry(0.3, 0.3);
+  const mat = new THREE.MeshBasicMaterial();
+  const m4 = new THREE.Matrix4();
+  const PER = 40;
+  for (let x = -200; x < 200; x += CHUNK) for (let z = -150; z < 150; z += CHUNK) {
+    const im = new THREE.InstancedMesh(geo, mat, PER);
+    for (let i = 0; i < PER; i++) { m4.makeTranslation(x + (i % 6) * 4, 0, z + ((i / 6) | 0)); im.setMatrixAt(i, m4); }
+    im.instanceMatrix.needsUpdate = true;
+    im.computeBoundingSphere();
+    im.userData.fullCount = PER;
+    field.add(im);
+  }
+  const c = new DistanceCuller();
+  c.add(field, COVER_CULL_UNITS, "cover");
+  c.update(0, 0);
+
+  let thinned = 0, full = 0, nearFull = true;
+  for (const ch of field.children) {
+    if (!ch.visible) continue;
+    check("count never exceeds what was allocated", ch.count <= PER, `${ch.count} > ${PER}`);
+    check("count is at least one", ch.count >= 1);
+    const d = Math.hypot(ch.boundingSphere.center.x, ch.boundingSphere.center.z);
+    if (d < 30 && ch.count !== PER) nearFull = false;
+    full += PER;
+    thinned += ch.count;
+  }
+  check("chunks the player can walk to are undiminished", nearFull);
+  check("and the far ones are cheaper", thinned < full);
+  console.log(`  visible cover draws ${thinned} of ${full} placed instances (${((1 - thinned / full) * 100).toFixed(0)}% fewer)`);
+
+  // Trees record no fullCount, so they must be left completely alone: a wood
+  // with a third of its trees missing is a different wood.
+  const trees = new THREE.Group();
+  const t = new THREE.InstancedMesh(geo, mat, 12);
+  for (let i = 0; i < 12; i++) { m4.makeTranslation(300, 0, 300); t.setMatrixAt(i, m4); }
+  t.instanceMatrix.needsUpdate = true; t.computeBoundingSphere();
+  trees.add(t);
+  const c2 = new DistanceCuller();
+  c2.add(trees, TREE_CULL_UNITS, "trees");
+  c2.update(300, 300);
+  check("anything without a fullCount keeps every instance", t.count === 12, String(t.count));
 }
 
 console.log(

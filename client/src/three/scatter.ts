@@ -349,6 +349,13 @@ export async function buildGroundCover(
         // above and already what the placement code scales to, so this needs no
         // new number to be kept in step with anything.
         im.userData.cullRadius = coverCullRadius(species.size[1]);
+        // How many were placed here, kept so the culler can draw FEWER of them
+        // far away without losing the real number. `InstancedMesh.count` is a
+        // draw-time value — lowering it draws a prefix of the buffer and costs
+        // nothing — and the placements went in in scatter order rather than
+        // sorted by position, so a prefix is a thinning spread evenly across
+        // the chunk rather than a bite taken out of one corner of it.
+        im.userData.fullCount = placements.length;
         im.castShadow = species.castShadow ?? false;
         im.receiveShadow = true;
         for (let i = 0; i < placements.length; i++) {

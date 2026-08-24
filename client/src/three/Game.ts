@@ -115,6 +115,7 @@ import {
   WORLD_UNITS_H,
   WORLD_UNITS_W,
   World,
+  CAMERA_MAX_DISTANCE,
   terrainHeight,
   surfaceHeight,
   toServerX,
@@ -4021,6 +4022,53 @@ export class Game {
    * not see. Every MMO solves it this way rather than with camera collision,
    * which fights the player for control of the view.
    */
+  /**
+   * Candidates for the fade ray, rebuilt only when the player has moved.
+   *
+   * `fadeOccluders` used to hand the raycaster `[...nodes, decor,
+   * ...buildings]` with `recursive = true` — every tree, rock, bush and
+   * building in the world, traversed and bounds-tested on every single frame.
+   * It measured 1.60ms, a tenth of the frame budget, to answer a question about
+   * a segment at most twenty-two units long.
+   *
+   * Because that is the whole insight: a blocker has to intersect the line from
+   * the camera to the player's head, and BOTH ends of that line are within the
+   * camera's own leash (`CAMERA_MAX_DISTANCE`, 22) of the player. So anything
+   * whose bounds are further than that from the player cannot possibly be on
+   * it, whatever direction the camera is facing. The filter is exact rather
+   * than heuristic, which is why it can be this aggressive.
+   */
+  private occluderCandidates: THREE.Object3D[] = [];
+  private occluderBuiltAt = { x: Infinity, z: Infinity };
+  private readonly occluderBox = new THREE.Box3();
+
+  private refreshOccluderCandidates(px: number, pz: number): void {
+    const dx = px - this.occluderBuiltAt.x;
+    const dz = pz - this.occluderBuiltAt.z;
+    if (dx * dx + dz * dz < 4) return; // two units, same threshold the culler uses
+    this.occluderBuiltAt = { x: px, z: pz };
+
+    this.occluderCandidates.length = 0;
+    const reach = CAMERA_MAX_DISTANCE + 6; // the leash, plus a little for large bounds
+    const consider = (obj: THREE.Object3D) => {
+      // Bounds are computed once and cached: every one of these is static
+      // scenery that will not move for the life of the world, and
+      // `setFromObject` walks the whole subtree.
+      let sphere = obj.userData.occluderSphere as THREE.Sphere | undefined;
+      if (!sphere) {
+        sphere = this.occluderBox.setFromObject(obj).getBoundingSphere(new THREE.Sphere());
+        obj.userData.occluderSphere = sphere;
+      }
+      const ox = sphere.center.x - px;
+      const oz = sphere.center.z - pz;
+      const r = reach + sphere.radius;
+      if (ox * ox + oz * oz <= r * r) this.occluderCandidates.push(obj);
+    };
+    for (const n of this.nodes.values()) consider(n);
+    for (const d of this.world.decor.children) consider(d);
+    for (const b of this.town.buildings) consider(b);
+  }
+
   private fadeOccluders(): void {
     for (const m of this.fadedMaterials) {
       const base = (m.userData.baseOpacity as number) ?? 1;
@@ -4050,10 +4098,8 @@ export class Game {
     // puts it closer than any camera can retreat past, and at that point moving
     // the lens cannot help. Fading the wall can. Each building owns its own
     // materials, so only the one actually in the way goes translucent.
-    const blockers = this.raycaster.intersectObjects(
-      [...this.nodes.values(), this.world.decor, ...this.town.buildings],
-      true,
-    );
+    this.refreshOccluderCandidates(actor.position.x, actor.position.z);
+    const blockers = this.raycaster.intersectObjects(this.occluderCandidates, true);
 
     for (const hit of blockers) {
       const mesh = hit.object as THREE.Mesh;

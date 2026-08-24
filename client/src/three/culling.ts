@@ -139,6 +139,15 @@ export class DistanceCuller {
         if (on) {
           visible++;
           tierVisible++;
+          // Thin what survived, by distance. Only ground cover opts in (it is
+          // the only thing that records a `fullCount`); a wood drawn with a
+          // third of its trees missing would be a different wood.
+          const full = child.userData.fullCount as number | undefined;
+          if (full !== undefined) {
+            const d = Math.sqrt(cx * cx + cz * cz);
+            const want = Math.max(1, Math.round(full * coverDensityAt(d, own * this.scale)));
+            (child as THREE.InstancedMesh).count = Math.min(full, want);
+          }
         }
       }
       this.perTier.set(tier.label, tierVisible);
@@ -178,3 +187,45 @@ export function coverCullRadius(maxHeightUnits: number): number {
   const scale = Math.max(0.5, Math.min(1, maxHeightUnits / tallest));
   return COVER_CULL_UNITS * scale;
 }
+
+/**
+ * How much of a chunk's cover to actually draw, by how far away it is.
+ *
+ * Culling answers "is this worth drawing at all"; this answers "how much of it"
+ * for everything that survived. The reading that prompted it had `render` at
+ * 10.81ms of a 15.04ms frame with 3.16 million triangles — and ground cover is
+ * essentially all of that, eighty-odd thousand plants of a few dozen triangles
+ * each. Draw calls were already down to 996 by then, so the remaining cost is
+ * vertex and fill work, and the only thing that moves it is drawing fewer
+ * blades.
+ *
+ * Thinning by distance is nearly invisible for the same reason culling by
+ * distance is: a patch of grass forty units away is a texture of green, and a
+ * texture of green with a third fewer blades in it is the same texture of
+ * green. Up close, where a player can pick out individual plants, nothing is
+ * removed at all.
+ *
+ * Banded rather than continuous on purpose — a smooth ramp would re-write
+ * `count` on every chunk every time the player took a step, and the bands mean
+ * a chunk's count changes a handful of times as it recedes and then stops.
+ */
+export function coverDensityAt(distance: number, radius: number): number {
+  // AN ABSOLUTE FLOOR FIRST, before any proportion of the radius.
+  //
+  // The bands alone are a fraction of each species own cull radius, and those
+  // radii differ by a factor of two — so a pebble, retired at 39 units, would
+  // reach its first thinning band at about 18, which is close enough that the
+  // chunk the player is STANDING IN could be drawn thinned. Nothing within
+  // reach of the camera (22 units at full zoom) may be touched, or walking
+  // forward would visibly pop plants into existence around the player.
+  if (distance < FULL_DENSITY_UNITS) return 1;
+  const fraction = distance / Math.max(1, radius);
+  if (fraction < 0.45) return 1;
+  if (fraction < 0.72) return 0.62;
+  return 0.36;
+}
+
+/** Everything this close is drawn in full, whatever its species radius. Past
+ *  the camera own 22-unit leash, so no thinning can happen where a player is
+ *  able to look closely at individual plants. */
+const FULL_DENSITY_UNITS = 30;
