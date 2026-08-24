@@ -7302,6 +7302,24 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A PROJECTILE METHOD DOES NOT HAVE TO TRAVEL. `bolt()`'s spark-glow-light
+  combination is what makes a magic missile read as hot; nothing about that
+  combination requires the `from` and `to` it lerps between to be far apart.
+  A near-zero flight turns the exact same call into a stationary flourish —
+  the third reuse this session (a staff's own missile, the wand's muzzle
+  flash, now a crit's point of impact) of one piece of proven geometry
+  rather than three bespoke ones.
+- A SPARKLE ON EVERY HIT IS NOISE; ON A CRIT IT IS A LANDMARK. The atlas
+  burst already fires for every swing, so adding the new particle flourish
+  there too would just be a brighter version of something already constant.
+  Reserving it for the moment the game already treats as special is what
+  keeps it meaning something.
+- THE OUTGOING AND INCOMING SPARKLES ARE DIFFERENT COLOURS ON PURPOSE, same
+  reason the gold self-flash and the red incoming-damage flash are: gold
+  says "I did that," red says "that happened to me," and the two moments
+  should never be colour-confusable mid-fight even for a fraction of a
+  second.
+
 - A FLAG THAT ALREADY GATES TWO READOUTS SHOULD GATE THE THIRD.
   `guaranteedDrop` already decides the framed nameplate and the target
   frame's elite border, both of which exist to tell a player they are
@@ -10492,6 +10510,19 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — the moment a crit is worth gets a real sparkle.** M69.15: every
+hit already paints its `fx.png` atlas burst; a crit only ever scaled that
+same flat frame up. The point of impact now also gets a genuine particle
+flourish — the exact `bolt()` call a staff's missile and the wand's muzzle
+flash already use, spawned stationary at the hit rather than travelling, so
+the same soft glow and real light this session gave projectiles now marks
+the single loudest moment of an ordinary swing too. Gold for the player's
+own outgoing crit, matching the gold number and gold self-flash already
+established; red for a monster's crit landing on the player, matching the
+rule that incoming damage keeps its red regardless of school. Crit-only on
+purpose — every hit already gets a burst, and a sparkle on all of them would
+be noise where it is meant to be a landmark. Verified live.
 
 **Phase 69 — a boss dying is not the same moment as a slime dying.** M69.14:
 `guaranteedDrop` already decides the framed nameplate and the target frame's

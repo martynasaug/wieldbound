@@ -1642,6 +1642,16 @@ export class Game {
           tint: p.playerCrit ? 0xffc94a : 0xfff0c8,
           durationMs: 360,
         });
+        // A real sparkle at the point of impact, not another flat atlas
+        // frame — the same spark/glow/light `bolt` already earns its keep as
+        // a bolt's core and the beam's muzzle flash, reused here as a
+        // stationary flourish. Crit-only: every hit already gets a burst
+        // from `fx.png`, and a sparkle on all of them would be noise rather
+        // than the one moment it is meant to mark.
+        if (p.playerCrit) {
+          const flourish = new THREE.Vector3(at.x, mid, at.z);
+          this.projectiles.bolt(flourish, flourish.clone().add(new THREE.Vector3(0, 0.06, 0)), 260, 0xffd85e);
+        }
       }
       if (p.playerCrit) this.effects.shake(0.09, 150);
 
@@ -1792,6 +1802,12 @@ export class Game {
           tint: 0xff7a5a,
           durationMs: 320,
         });
+        // The mirror of the player's own outgoing sparkle — red rather than
+        // gold, because incoming damage keeps its red regardless of school.
+        if (p.crit) {
+          const flourish = new THREE.Vector3(at.x, at.y + 1.0, at.z);
+          this.projectiles.bolt(flourish, flourish.clone().add(new THREE.Vector3(0, 0.06, 0)), 260, 0xff6b4a);
+        }
       }
       if (p.crit) this.effects.shake(0.11, 170);
     }, flight);
