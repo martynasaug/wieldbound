@@ -3796,6 +3796,12 @@ export class Game {
         textures: info.memory.textures,
         programs: info.programs?.length ?? 0,
         actors: this.players.size + this.monsters.size + this.npcs.size,
+        // Chunks the distance cut left standing, out of every chunk there is.
+        // The ratio is the whole story of whether culling.ts is earning its
+        // place, and it is the first thing to look at if the world starts
+        // looking bare.
+        "chunks drawn": this.world.culler.visibleChunks,
+        "chunks total": this.world.culler.totalChunks,
       });
     }
     this.profiler.frameEnd();

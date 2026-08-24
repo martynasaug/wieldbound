@@ -6,6 +6,7 @@ import { instantiate } from "./assets";
 import { createTerrainMaterial } from "./terrain";
 import { buildGroundCover } from "./scatter";
 import { buildForests } from "./forest";
+import { COVER_CULL_UNITS, DistanceCuller, TREE_CULL_UNITS } from "./culling";
 import { windyGeometry } from "./wind";
 import { seededRandom } from "../../../shared/rng";
 import { DayNight } from "./daynight";
@@ -169,6 +170,13 @@ export class World {
   readonly groundCover = new THREE.Group();
   /** The six woods. Instanced and chunked; see forest.ts. */
   readonly forests = new THREE.Group();
+  /**
+   * What is close enough to be worth drawing. See culling.ts — the frame this
+   * was added for spent 14.6 of its 17.8ms inside `render`, with 1143 draw
+   * calls and 4.26M triangles, and nothing anywhere rejected geometry for being
+   * far away.
+   */
+  readonly culler = new DistanceCuller();
 
   private readonly sun: THREE.DirectionalLight;
   private readonly fill: THREE.HemisphereLight;
@@ -520,6 +528,12 @@ export class World {
     // way they were when they were only a perimeter.
     const woods = await buildForests(this.forests);
     this.scene.add(this.forests);
+    // Registered only once both fields exist, and with a radius each rather
+    // than one shared number: a clover and a pine stop mattering at very
+    // different distances, and one cut for both would either hold the grass too
+    // long or pop the trees.
+    this.culler.add(this.groundCover, COVER_CULL_UNITS, "cover");
+    this.culler.add(this.forests, TREE_CULL_UNITS, "trees");
     console.info(
       `[world] forests: ${woods.trees} trees and ${woods.undergrowth} undergrowth ` +
         `across ${FORESTS.length} woods, ${woods.drawCalls} instanced meshes`,
@@ -697,6 +711,12 @@ export class World {
     // The star dome is centred on the viewer, which is what makes it read as
     // sky: a fixed dome would visibly slide as the player crossed the field.
     this.dayNight.stars.position.set(this.lookTarget.x, 0, this.lookTarget.z);
+
+    // From the LOOK TARGET rather than the camera. The camera swings around the
+    // player on a zoom and a wall clamp, and culling off it would re-evaluate
+    // the whole field for a movement the player did not make. What the cut is
+    // really about is where the player is standing.
+    this.culler.update(this.lookTarget.x, this.lookTarget.z);
   }
 
   /**

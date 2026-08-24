@@ -7302,6 +7302,38 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A PROFILER CAN END AN ARGUMENT IN ONE READING, which is the whole case
+  for building the instrument before the fix. "The game lags" had produced
+  three plausible suspects (shadow map, pixel ratio, instanced mesh count)
+  and no way to choose. One F3 reading answered it and eliminated an entire
+  half of the search space permanently: `render` was 14.63ms of a 17.81ms
+  frame and ALL the loop's JavaScript together was 2.4ms, so every
+  micro-optimisation anyone could have made to those thirty subsystems was
+  worth at most a rounding error. The lesson is not "profile first" as a
+  slogan — it is that the reading did not just rank the suspects, it proved
+  a whole category of work pointless, which no amount of reading the code
+  would have done.
+- FRUSTUM CULLING IS NOT DISTANCE CULLING, and having one makes the absence
+  of the other harder to notice. Ground cover was chunked deliberately and
+  correctly so the frustum test could reject what is off screen, the
+  comments say so, and it works — which is exactly why nobody asked the
+  next question. A camera 22 units from the player looking at a far plane
+  of 400 keeps most of a 400x300 world INSIDE the frustum, so the test that
+  was working was rejecting almost nothing. When a system exists to solve a
+  problem and the problem persists, check whether it is solving the half
+  you are not measuring.
+- CULL AGAINST THE INSTANCE SPHERE, NOT THE GEOMETRY'S, and the bug if you
+  get it wrong is silent and total. `InstancedMesh.computeBoundingSphere()`
+  bounds where the placements actually are; `geometry.boundingSphere`
+  bounds one prototype plant sitting at the origin. Culling against the
+  latter gives every chunk in the world an identical centre, so the entire
+  field either draws or vanishes as one — and nothing throws, because both
+  are perfectly valid spheres. `tools/test/culling.mjs` asserts the centres
+  are DISTINCT for exactly this reason. Both builders already computed the
+  instance sphere, and both had a comment explaining why (the frustum test
+  rejected a chunk the moment its origin left view) — the same fact, found
+  twice, for two different tests.
+
 - A LIBRARY CAN TURN A FLAG OFF THAT ONLY ITS OWN RESET TURNS BACK ON, and
   skipping that reset for a good reason quietly takes on the job of
   restoring the flag yourself. `play` skips `reset()` for run so a resumed
@@ -10914,6 +10946,60 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.28 — nothing in this world was ever culled by distance.**
+M70.26's profiler paid for itself on its first reading, and the numbers
+settled the question completely rather than narrowing it: 47fps, 17.81ms a
+frame, `render` 14.63ms of it, and EVERY line of JavaScript in the loop
+adding up to about 2.4ms (occluders 1.17, hud 0.41, actors 0.25, plates
+0.20, npcs 0.16, minimap 0.11, and the rest under a tenth each). So the
+loop was never the problem and no amount of tightening it could have been
+the answer. 1143 draw calls and 4,264,503 triangles were.
+The cause, once looked for: ground cover is about eighty-two thousand
+plants over a 400x300-unit world, already chunked per species SPECIFICALLY
+so the frustum test can reject what is off screen — and that half works.
+Nothing anywhere rejected what was on screen and far away. The camera sits
+at most 22 units from the player and looks toward a far plane at 400, so
+most of the map is inside the frustum at any moment, and every blade of
+grass in it was being transformed and rasterised at full detail while
+covering a fraction of a pixel.
+`culling.ts` cuts by distance, with a radius per KIND rather than one
+shared number, because a 0.3-unit clover and a 12-unit pine do not stop
+mattering at the same range and one cut would either hold the grass too
+long or pop the trees. Ground cover goes at 78 units — outside the
+camera's own 22-unit leash, inside the fog's 55-unit near plane, and far
+past where a third-of-a-metre plant is sub-pixel. Trees go at the fog's
+FAR plane, 165, which is not a number of their own at all: `THREE.Fog` is
+linear, so past its far distance a tree has already been fully replaced by
+sky colour and drawing it cannot change a pixel. It works on each chunk's
+own INSTANCE bounding sphere — the one both builders already compute from
+their placements, because the prototype's own sphere sits at the origin
+and culling against that would hide the entire world at once — and it
+toggles `.visible` rather than removing anything, so three.js skips the
+subtree before any per-object work while the instance buffers stay
+resident and walking back toward a wood re-uploads nothing. Re-evaluated
+only after the player has moved two units: standing still is the common
+case and re-deciding a thousand booleans sixty times a second for a camera
+that has not moved is the same class of waste being removed.
+Verified as a RUNTIME test against real three.js (`tools/test/culling.mjs`)
+— `InstancedMesh` and `computeBoundingSphere` are pure JavaScript, the
+same realisation M70.27 turned on the animation system. Built a real
+192-chunk field over the real world dimensions and measured: 47 of 192
+chunks drawn at the world centre, a 76% cut, BEFORE frustum culling takes
+its own share. The correctness half matters more than the saving and is
+where the silent failures live, so it checks both directions: nothing
+inside the radius is ever dropped, the chunk under the player survives at
+five positions including all four corners, a sub-threshold move does not
+re-decide the field, and every chunk's sphere is distinct — that last one
+guards the exact mistake of culling against the prototype's sphere, which
+would make the world vanish all at once and throw nothing. Full suite
+green including `forests.mjs` and `ground.mjs`.
+Deliberately shipped ALONE. The other candidates are all real costs and
+all visual trade-offs — a 2048x2048 PCFSoft shadow map re-rendered every
+frame, `setPixelRatio` capped at 2, `antialias: true` — and stacking them
+with this would make the next profiler reading unattributable. The
+profiler now also reports chunks-drawn against chunks-total, so the next
+reading says directly whether this earned its place.
 
 **Phase 70 M70.27 — the combat slide, reproduced: an action three.js
 turned off and nothing could turn back on.** M70.25's death-lock was real
