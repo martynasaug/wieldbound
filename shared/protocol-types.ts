@@ -1464,6 +1464,18 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // Real armour this time. And a body that size is a great deal of blood for
     // something to travel, which is what a coated blade is for.
     resist: { physical: 25, nature: -30 },
+    // A BODY BEHIND IT, made literal: the first telegraph below band 4, and
+    // the reason to give it one rather than any other band-3 kind is that its
+    // own line already says what a telegraph is FOR — mass committed to one
+    // blow. Not the goblin (a shout is its whole trick), not the cactoro or
+    // demon (keepAway is their answer to positioning already), and not the
+    // ghost (its own text is about evasion, the opposite of a creature that
+    // plants its feet). Solved against `balance.mjs`'s own acceptance bar —
+    // standing in it must cost at least 15%, dodging it must save at least
+    // 10 points — the same test troll/golem/dragon are held to.
+    windupMs: 850,
+    slamRadiusPx: 100,
+    slamDamageMultiplier: 2.0,
   },
 
   // ---------------------------------------------------------------- band 4
@@ -1496,6 +1508,13 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // A cold touch that stays with you. It is the fast one, so slowing you
     // is the thing it least deserves to be able to do and most wants to.
     inflicts: { status: "chilled", chance: 0.25 },
+    // A haunt is not one ghost, and the game already treats social aggro as
+    // "does this kind rouse its own" — goblin and orcbrute have it, and
+    // nothing about a ghost's own nature argues against a hurt one calling
+    // the rest of what is haunting the same ground. Matched to AGGRO_RANGE_PX
+    // rather than either humanoid's own number, since neither goblin's 210
+    // nor orcbrute's 300 was chosen for a reason that transfers.
+    alertRadiusPx: 260,
   },
   // The troll's damage without the tell — fast, hard-hitting and it crits.
   demon: {

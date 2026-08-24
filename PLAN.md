@@ -7302,6 +7302,30 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A CONSISTENT PATTERN IS NOT THE SAME AS A DOCUMENTED RULE, and both have to
+  be checked before touching it. Telegraphs being boss-only (exactly the
+  three `guaranteedDrop` kinds) held for three creatures running, which
+  looked like a scope decision — but nothing in the Decisions log actually
+  said so, which means it was available to extend rather than something to
+  work around. Asked before assuming either reading.
+- WHICH MONSTER GETS A NEW MECHANIC SHOULD BE ARGUABLE FROM ITS OWN TEXT,
+  not chosen for being next in line. Orc brute's "a body behind it" is the
+  one line in the band-3/4 bestiary that actually describes mass committed
+  to a blow; demon's "the troll's damage WITHOUT THE TELL" rules it out by
+  name. A kind that already has its own positioning trick (cactoro's
+  keepAway, goblin's shout, ghost's evasion) was left alone on the same
+  logic Rend keeps its own cone: a second trick stacked on a kind that
+  already has one is not the same move as giving the trick to a kind with
+  none.
+- A REUSABLE ACCEPTANCE TEST TURNS A NEW BALANCE NUMBER INTO SOMETHING
+  SOLVED RATHER THAN GUESSED. `balance.mjs`'s "what a dodge is worth" check
+  already reads `windupMs`/`slamRadiusPx` off every kind generically —
+  nothing hardcoded troll/golem/dragon — so extending the telegraph to a
+  fourth kind meant the SAME acceptance bar applied for free. The first
+  guess (5.2, scaled naively off troll) failed it outright: 78% health lost
+  standing still and a 35% loss rate at the level band 3 sends players to.
+  Measuring caught that before a player would have.
+
 - A FIELD CAN BE RIGHT FOR THE GAMEPLAY THAT READS IT AND WRONG FOR THE
   BROADCAST THAT RENDERS IT. Resetting a dead monster's position to home
   immediately cost nothing gameplay-side — every AI and collision pass
@@ -10615,6 +10639,41 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.4 — a body behind it, made literal.** The orc brute's own
+line has read "a body behind it" since it was written, and until now that
+was a comment nobody could feel — every blow it landed was the same
+ordinary swing every band-3 melee kind throws. It telegraphs a slam now,
+the first below band 4: `windupMs`/`slamRadiusPx`/`slamDamageMultiplier`
+are new data flowing through machinery M69.4-M68.2 already built and
+proved — the client's stretched-swing animation, the danger ring, and
+`balance.mjs`'s own acceptance bar (standing in it must cost at least 15%
+of a health bar, dodging it must save at least 10 points) all read these
+fields generically, with zero new code written anywhere. The multiplier
+was SOLVED against that bar, not picked: a first guess of 5.2 (scaled
+naively off troll's own number) put orc brute's stood-in cost at 78% and
+made band 3 unwinnable 35% of the time — measuring rather than guessing is
+what caught that before it shipped. Re-solved to 2.0, it lands at 26% of a
+health bar, between golem's 30 and troll's 33, with the full suite passing
+clean. Demon was deliberately left alone: its own comment calls it "the
+troll's damage WITHOUT THE TELL," a stated contrast a telegraph would
+erase. Cactoro, goblin and ghost were passed over too — keepAway,
+the shout, and evasion are each already that kind's own answer to
+positioning, and a telegraph would be a second trick stacked on a kind that
+already has one. Verified live: `windingUp: true` observed on a real orc
+brute mid-fight, and `tools/test/fighting.mjs`'s own generically-derived
+list now reads "troll, orcbrute, golem, dragon" with no code changed to
+produce that line.
+
+**Phase 70 M70.3 — a haunt is not one ghost.** Ghost now has
+`alertRadiusPx` (260px, anchored to `AGGRO_RANGE_PX` rather than either
+humanoid's own number, since neither goblin's 210 nor orcbrute's 300 was
+chosen for a reason that transfers), matching the social-aggro shout
+goblin and orcbrute already have. Not a fix for a stated promise — nothing
+in ghost's own text claims a shout — but a small, low-risk, thematically
+consistent addition: undead answering the same "does this kind rouse its
+own" question every other social kind already answers, at the cost of one
+stat field with no new balance numbers to solve.
 
 **Phase 70 M70.2 — a corpse dies where it fell, not where it will respawn.**
 Reported from play: killing a monster teleported the corpse to its spawn

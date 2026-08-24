@@ -152,8 +152,9 @@ function character(level, band, weaponBaseId) {
  *
  * A TELEGRAPHING MONSTER HAS NO ORDINARY ATTACK. The server's tick reads
  * `if (windupMs !== undefined && slamRadius !== undefined) { ... continue; }`,
- * so a troll, a golem and a dragon never make a normal swing at all — every
- * blow they land is a wind-up followed by a slam. The first version of this
+ * so a troll, an orc brute, a golem and a dragon never make a normal swing
+ * at all — every blow they land is a wind-up followed by a slam. The first
+ * version of this
  * model had them doing precisely the opposite: ordinary swings only, slams
  * ignored, which is why it reported a dragon leaving the player on 87% health
  * and a troll on 98%. Those were not weak bosses, they were absent attacks.
