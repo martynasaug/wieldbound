@@ -1014,7 +1014,13 @@ export class Actor {
    *  shared with every other character wearing the same look. */
   private trackMaterials(object: THREE.Object3D): void {
     object.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) this.trackMesh(o as THREE.Mesh);
+      if (!(o as THREE.Mesh).isMesh) return;
+      this.trackMesh(o as THREE.Mesh);
+      // And its outline, for the same reason it gets a render order here: this
+      // is the one place every worn and held piece passes through, so a new
+      // kind of attachment is outlined by construction rather than by memory.
+      // Without it the figure was outlined as the bare rig it is underneath.
+      this.rimFor(o as THREE.Mesh);
     });
   }
 
@@ -1389,44 +1395,63 @@ export class Actor {
       if (mesh.isMesh) sources.push(mesh);
     });
 
-    for (const mesh of sources) {
-      const skinned = mesh as THREE.SkinnedMesh;
-      let out: THREE.Mesh;
-      if (skinned.isSkinnedMesh) {
-        const s = new THREE.SkinnedMesh(skinned.geometry, this.outlineMaterial!);
-        s.bind(skinned.skeleton, skinned.bindMatrix);
-        out = s;
-      } else {
-        out = new THREE.Mesh(mesh.geometry, this.outlineMaterial!);
-      }
-      // AFTER the whole body, and depth-tested against it. THIS IS THE ORDERING
-      // THAT MATTERS, and getting it the other way round is what put loops
-      // around the character's collar, wrists and belt.
-      //
-      // Drawn BEFORE the body, each mesh's hull is erased only by the mesh it
-      // belongs to, so wherever the hood overhangs the neck or a bracer
-      // overhangs a forearm, that mesh's own outline survives on top of its
-      // neighbour — eleven outlines round the eleven parts a person is made of,
-      // which reads as jewellery.
-      //
-      // Drawn AFTER, every part of the rig has already written depth, and the
-      // hull's back faces sit BEHIND the real surface, so they fail against any
-      // of them. What survives is only where the hull overhangs the WHOLE
-      // figure — one line, round the outside, which is what an outline is. The
-      // same shape either way; the only difference is what it is measured
-      // against, and it is the same class of mistake the silhouette's own
-      // ordering note is about.
-      out.renderOrder = OUTLINE_RENDER_ORDER;
-      out.castShadow = false;
-      out.receiveShadow = false;
-      out.frustumCulled = false;
-      out.position.copy(mesh.position);
-      out.quaternion.copy(mesh.quaternion);
-      out.scale.copy(mesh.scale);
-      mesh.parent?.add(out);
-      this.rims.push(out);
-    }
+    for (const mesh of sources) this.rimFor(mesh);
   }
+
+  /**
+   * One outline hull for one mesh.
+   *
+   * Split out of `buildRim` because GEAR NEEDS IT TOO, and did not have it.
+   * `buildRim` runs on `instance.object` — the naked rig — and armour and held
+   * items are attached afterwards, asynchronously, so the outline traced the
+   * BODY while the figure on screen was a dressed one. Everywhere the two
+   * shapes disagree the body hull surfaces outside the armour: a translucent
+   * warm-cream copy of the bare figure moving against the armoured one, which
+   * is how it was reported — a secondary copy of the body mesh, the base rig
+   * before armour attachment, ghosting while running.
+   *
+   * The comment in `buildRim` was already reasoning about the hood over the
+   * head and a bracer over a forearm. Both of those are GEAR, and neither was
+   * ever in its `sources`.
+   */
+  private rimFor(mesh: THREE.Mesh): void {
+    if (!this.outlineMaterial) return;
+    const skinned = mesh as THREE.SkinnedMesh;
+    let out: THREE.Mesh;
+    if (skinned.isSkinnedMesh) {
+      const s = new THREE.SkinnedMesh(skinned.geometry, this.outlineMaterial!);
+      s.bind(skinned.skeleton, skinned.bindMatrix);
+      out = s;
+    } else {
+      out = new THREE.Mesh(mesh.geometry, this.outlineMaterial!);
+    }
+    // AFTER the whole body, and depth-tested against it. THIS IS THE ORDERING
+    // THAT MATTERS, and getting it the other way round is what put loops
+    // around the character's collar, wrists and belt.
+    //
+    // Drawn BEFORE the body, each mesh's hull is erased only by the mesh it
+    // belongs to, so wherever the hood overhangs the neck or a bracer
+    // overhangs a forearm, that mesh's own outline survives on top of its
+    // neighbour — eleven outlines round the eleven parts a person is made of,
+    // which reads as jewellery.
+    //
+    // Drawn AFTER, every part of the rig has already written depth, and the
+    // hull's back faces sit BEHIND the real surface, so they fail against any
+    // of them. What survives is only where the hull overhangs the WHOLE
+    // figure — one line, round the outside, which is what an outline is. The
+    // same shape either way; the only difference is what it is measured
+    // against, and it is the same class of mistake the silhouette's own
+    // ordering note is about.
+    out.renderOrder = OUTLINE_RENDER_ORDER;
+    out.castShadow = false;
+    out.receiveShadow = false;
+    out.frustumCulled = false;
+    out.position.copy(mesh.position);
+    out.quaternion.copy(mesh.quaternion);
+    out.scale.copy(mesh.scale);
+    mesh.parent?.add(out);
+    this.rims.push(out);
+}
 
   private trackMesh(mesh: THREE.Mesh): void {
     // Everything an actor owns draws after every silhouette in the scene, which
@@ -1454,10 +1479,20 @@ export class Actor {
       });
       object.removeFromParent();
       for (const m of mats) {
+        // NOT THE SHARED PASSES. Gear now carries outline hulls (see `rimFor`),
+        // and those are children of the gear meshes, so this traverse finds
+        // them — but the outline and silhouette materials belong to the ACTOR
+        // and are shared by every hull it owns. Disposing one because a
+        // breastplate was swapped would take the outline off the whole figure,
+        // and it would come back only on the next full body rebuild.
+        if (m === this.outlineMaterial || m === this.silhouetteMaterial) continue;
         m.dispose();
         this.ownedMaterials.delete(m);
       }
       this.litMaterials = this.litMaterials.filter((l) => !mats.has(l.mat));
+      // The hulls left with their gear; drop the references so repeated equip
+      // changes cannot grow this list for the life of the actor.
+      this.rims = this.rims.filter((r) => r.parent !== null);
     }
     this.held = [];
     this.worn = [];

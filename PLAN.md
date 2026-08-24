@@ -7302,6 +7302,42 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A SECOND DESCRIPTION OF A VISUAL BUG IS WORTH MORE THAN ANY AMOUNT OF
+  READING THE RENDERER. "Duplicating while running" was consistent with the
+  stroboscopic effect of a low frame rate on a high-refresh display, and a
+  whole round went into explaining it that way. "A translucent reddish ghost
+  offset from the figure, possibly the base rig before armour attachment"
+  named the mesh, the material and the cause in one sentence — the colour
+  ruled out the silhouette (which is blue), the translucency ruled out the
+  body, and "before armour attachment" was exactly right. When a visual
+  report is ambiguous, the cheapest next step is asking for colour, timing
+  and what makes it worse, not opening the renderer.
+- A COMMENT REASONING ABOUT THINGS THE CODE CANNOT SEE IS EVIDENCE OF A BUG.
+  `buildRim` explains at length how each part's hull is erased by the part
+  beside it, "wherever the hood overhangs the neck or a bracer overhangs a
+  forearm" — and it is only ever called on the naked rig, where there is no
+  hood and no bracer. The comment was not stale; it described the intended
+  input, and the call site supplied a different one. Grepping for what a
+  comment ASSUMES, rather than what it claims, is a way to find bugs that no
+  "does this feature work" test would catch, because the feature does work,
+  on the wrong set of meshes.
+- ADDING A CHILD TO SOMETHING THAT GETS DISPOSED INHERITS ITS DISPOSAL.
+  Giving gear an outline put hulls inside the gear objects, and `clearGear`
+  traverses gear and disposes every material it finds — including the
+  actor-wide outline material shared by every hull. An equip change would
+  have stripped the outline from the whole figure, which is a worse bug than
+  the one being fixed and would have looked completely unrelated to it.
+  Before parenting anything into an existing subtree, read what already
+  happens to that subtree.
+- rAF DOES NOT RUN WHILE A TAB IS HIDDEN, so a "stall" measured between two
+  animation frames may just be the player alt-tabbing. The 5065ms and 3043ms
+  BETWEEN-frame reports arrived in exactly the sessions where the player was
+  reading the console and taking screenshots, and their attribution said
+  almost none of our code ran in them — which is what a paused tab and a
+  garbage collection look like alike. Several rounds were spent hunting an
+  asset stall that may never have existed. Any wall-clock gap measured from
+  inside a render loop needs a visibility check before it is believed.
+
 - A DEFAULT OF `true` ON AN EXPENSIVE OPTION IS A DECISION NOBODY MADE.
   `wantsSilhouette = options.silhouette ?? true` gave a through-walls ghost
   to every actor in the game, monsters included — and that ghost is a
@@ -11342,6 +11378,57 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.42 — the ghost was the outline, tracing the body under the
+armour.** A second, much better description of the visual bug settled it:
+"a secondary copy of the character's body mesh, possibly the base rig
+before armor attachment, drawn out of sync with the main armored mesh, a
+translucent reddish ghost offset from the primary figure." Every clause of
+that is literally true, including the parenthetical guess.
+`buildRim` builds an inverted-hull outline from the mesh it is handed —
+back faces only, expanded 0.022 along the normals, translucent, in
+`RIM_COLOR` 0xffe6bd, which is a warm cream and reads as reddish against a
+blue-grey figure. `finishBody` hands it `instance.object`, the NAKED RIG,
+at line 904; armour and held items are attached at 908 and asynchronously
+after that. So gear never had an outline and the figure's outline was the
+body underneath it. Everywhere the two shapes disagree, the body's hull
+surfaces outside the armour — and running is when they disagree most,
+which is why it showed up as a ghost moving against the figure rather than
+as a static artefact.
+The evidence had been sitting in `buildRim`'s own comment the entire time,
+reasoning about "the hood over the head, a bracer over a forearm" clearing
+the part beside it. Both of those are GEAR. Neither was ever in its
+`sources`. A comment describing behaviour the code cannot produce, which
+is the same class of find as M70's "a code comment can be the bug".
+Fixed by splitting the per-mesh hull out as `rimFor` and calling it from
+`trackMaterials` — the single path every worn and held piece already takes
+to get its render order, so a new kind of attachment is outlined by
+construction rather than by memory, which is the idiom that choke point was
+built for.
+One real hazard came with it and is worth recording, because it would have
+been a worse bug than the one being fixed: the hulls are children of the
+gear meshes, so `clearGear`'s traverse finds them — and the outline and
+silhouette materials belong to the ACTOR and are shared by every hull it
+owns. Disposing one because a breastplate was swapped would have stripped
+the outline from the whole figure until the next full body rebuild.
+`clearGear` now skips both shared materials and prunes `rims` of hulls
+that left with their gear, so repeated equip changes cannot grow that list
+for the life of the actor.
+`tools/test/outline.mjs` locks all of it: that the hull is reusable rather
+than inlined, that gear reaches it, that `clearGear` skips the shared
+passes and prunes, that the layering is still silhouette 1 / body and gear
+2 / outline 3, and that monsters ask for neither pass. Mutation-tested in
+both directions — removing the gear call fails one check, removing the
+shared-material guard fails two.
+Also this round: the profiler no longer reports a gap that spans the tab
+being hidden or the window losing focus. rAF does not run while a tab is
+hidden and is throttled hard when the window is unfocused, so alt-tabbing
+or dragging a DevTools window produces an enormous gap that is
+indistinguishable from a stall — and the reports of `5065ms BETWEEN
+frames` with almost none of our code in them arrived in exactly the
+sessions where the player was reading the console and taking screenshots.
+Several rounds were spent hunting an asset stall that may never have
+existed. Full suite green.
 
 **Phase 70 M70.41 — twenty duplicate bodies, drawn to say what four other
 things already said.** The reading landed at `frame avg 13.91ms` against a

@@ -74,7 +74,33 @@ export class Profiler {
   private betweenWorst = 0;
   private betweenWorst_ = "";
 
+  /**
+   * Whether the page stopped being drawn for reasons that are not the game.
+   *
+   * rAF DOES NOT RUN while a tab is hidden, and it is throttled hard while the
+   * window is not focused. So alt-tabbing, switching to another tab, or dragging
+   * a DevTools window around produces an enormous gap between two animation
+   * frames — indistinguishable, from inside, from a five-second stall.
+   *
+   * This matters because it was actively misleading the investigation: the
+   * reports of "5065ms BETWEEN frames" and "3043ms BETWEEN frames" arrived in
+   * the same sessions where the player was reading the console and taking
+   * screenshots, and the attribution said almost none of our code ran in them —
+   * which is exactly what a paused tab looks like AND exactly what a garbage
+   * collection looks like. Several rounds were spent hunting an asset stall
+   * that may never have existed.
+   *
+   * A gap that spans a visibility change is therefore not reported at all.
+   */
+  private sawHidden = false;
+
   constructor() {
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.sawHidden = true;
+    });
+    window.addEventListener("blur", () => {
+      this.sawHidden = true;
+    });
     window.addEventListener("keydown", (e) => {
       if (e.key === "F3") {
         e.preventDefault();
@@ -215,6 +241,14 @@ export class Profiler {
     // The gap BEFORE this frame counts as a stutter too. A player feels the
     // picture stop; whether the browser was inside the loop or between two of
     // them at the time is a distinction only this file cares about.
+    // A gap that spans the tab being hidden or the window losing focus is not
+    // a stutter, it is the browser doing what it is supposed to. Cleared here
+    // rather than on the visibility event itself, because the oversized gap
+    // arrives on the frame AFTER focus comes back.
+    if (this.sawHidden) {
+      this.sawHidden = false;
+      this.betweenMs = 0;
+    }
     if (this.betweenMs >= HITCH_MS) {
       this.hitches.push(now);
       console.warn(
