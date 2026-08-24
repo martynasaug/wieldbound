@@ -1678,7 +1678,19 @@ export class Actor {
     if (!next) return;
     const prev = this.actions.get(this.currentAnim);
 
-    next.reset();
+    // RESUMING A STRIDE MUST NOT RESTART IT. Reported from play as sliding —
+    // "doing Michael Jackson" — while running and auto-attacking at once.
+    // Every attack interrupts run for its own one-shot pose and hands
+    // control back a moment later (see the `busy` block above), and
+    // `reset()` snaps an action's clip-local time to zero — so the stride
+    // restarted from frame zero on EVERY attack while the character kept
+    // gliding across the ground at full speed underneath it, unchanged.
+    // `AnimationMixer` keeps advancing every action's own clock even while
+    // its weight is faded to zero mid-crossfade, so simply not resetting
+    // run lets a resumed stride carry on from wherever it naturally already
+    // was — the same way a real runner's legs do not reset to a dead stop
+    // and restart because their sword arm did something for a second.
+    if (anim !== "run") next.reset();
     next.setEffectiveWeight(1);
     next.play();
     if (prev && prev !== next) {

@@ -7302,6 +7302,18 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A HEADLESS-BROWSER REPRODUCTION ATTEMPT THAT COMES BACK EMPTY IS NOT THE
+  SAME AS "NOT A BUG" — it can just mean the harness cannot exercise the
+  timing the bug depends on. A first attempt to reproduce the run/attack
+  sliding measured facing-vs-velocity mismatch over simulated movement and
+  got almost no samples, because headless Chromium's rAF throttling (the
+  same limitation documented back in M70.5) meant only a handful of real
+  frames executed in the whole window. Rather than conclude the bug wasn't
+  real, the fix was found by READING the animation code's own state
+  machine instead, then verified with a narrower, timing-independent
+  check: sampling `AnimationAction.time` directly across a real
+  interruption, which needs only a few actual frames to prove continuity
+  either held or broke — not dozens of smoothly-spaced samples.
 - A TYPE ERROR CAN POINT AT AN EXISTING INTENDED PATTERN INSTEAD OF A NEW
   DECISION TO MAKE. Adding `hp`/`maxHp` to `PlayerState` broke the
   server's live-player record (`LivePlayer = Omit<PlayerState,
@@ -10774,6 +10786,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.14 — a stride that kept restarting.** Reported directly
+and bluntly: running while attacking sometimes slides — "doing Michael
+Jackson." The comment already sitting on this exact code path had solved
+half of this bug once before: "auto-attacks fire while you are moving,
+the attack clip is around a second long, and for that whole second the
+model held a planted swing pose while the character kept travelling" —
+fixed by having movement cancel a busy one-shot rather than wait it out.
+What that fix never addressed is HOW run resumes once cancelled: `play()`
+calls `next.reset()` unconditionally before switching clips, and
+`reset()` zeroes an `AnimationAction`'s own clip-local time — so every
+single attack that interrupted a run, however briefly, snapped the run
+cycle back to the very start of its stride the instant it resumed. The
+character's actual position never paused — movement is driven entirely
+by input, independent of the animation mixer — so the legs restarting
+from a dead stop while the body kept gliding at full, unbroken speed
+underneath them is the moonwalk, exactly and literally. `AnimationMixer`
+keeps advancing every action's own internal clock even while its weight
+is faded to zero mid-crossfade, which is what made the fix a one-line
+subtraction rather than a new clock to build: skip the `reset()` call
+specifically for "run," and a resumed stride simply continues from
+wherever it naturally already was. Verified live by reading the actual
+`AnimationAction.time` value across a real interruption: it advanced
+normally before an attack, kept advancing through it, and read the exact
+same value immediately on resume that it held mid-attack — proof the
+reset no longer fires, not an inference from watching the model.
+`animation.mjs` and `smoke.mjs` green; `fighting.mjs` clean.
 
 **Phase 70 M70.13 — an ally was harder to read than a monster.** The
 larger of the two remaining research candidates. The target frame's own
