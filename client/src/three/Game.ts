@@ -304,6 +304,9 @@ interface MonsterVisual {
   /** Previous alert flag, so the shout cue fires on the edge, not every tick
    *  the flash is held. */
   alerted: boolean;
+  /** Previous flee flag, so the break-and-run line fires on the edge, not
+   *  every tick the monster spends running. */
+  fleeing?: boolean;
   /** Latched run/idle decision — see `isMoving`. */
   moving: boolean;
   /** Previous opening flag, so the log line fires on the edge not every tick. */
@@ -1276,7 +1279,7 @@ export class Game {
         variance: (hashString(id) % 1000) / 1000,
         idleGlance: true,
       });
-      const vis: MonsterVisual = { actor, kind: s.kind, state: s, dead: false, windingUp: false, windupStartedAt: 0, moving: false, alerted: false };
+      const vis: MonsterVisual = { actor, kind: s.kind, state: s, dead: false, windingUp: false, windupStartedAt: 0, moving: false, alerted: false, fleeing: false };
       // Placed immediately, same as the old inline path did — otherwise the
       // model pops in at the scene origin for a frame before the next
       // snapshot ever reaches it.
@@ -1328,7 +1331,16 @@ export class Game {
       // changed under them. Driving the same clip faster for the leap's own
       // duration is what makes closing the gap read as a lunge rather than a
       // glide.
-      vis.actor.setLeaping(s.leaping ? MONSTER_STATS[vis.kind].leapSpeedMultiplier ?? 1 : 1);
+      // Leaping and fleeing are mutually exclusive states on the AI's own
+      // state machine, so one run-speed knob covers both: whichever burst is
+      // in progress drives the clip, and the ordinary rate applies to neither.
+      vis.actor.setLeaping(
+        s.leaping
+          ? MONSTER_STATS[vis.kind].leapSpeedMultiplier ?? 1
+          : s.fleeing
+            ? MONSTER_STATS[vis.kind].fleeSpeedMultiplier ?? 1
+            : 1,
+      );
       // The window a big creature leaves after committing a swing. Read off the
       // broadcast statuses rather than timed on the client, so what glows and
       // what actually takes half again as much damage are one answer.
@@ -1344,6 +1356,14 @@ export class Game {
         this.combatLog.push(`The ${MONSTER_LABELS[vis.kind]} overcommits — hit it now.`, "#ffa63d");
       }
       vis.recovering = opening;
+
+      // SAID ONCE, ON THE EDGE, same as the wind-up and the shout: a monster
+      // breaking off is a real turn in the fight, not something to notice
+      // only once its HP bar is already gone.
+      if (s.fleeing && !vis.fleeing) {
+        this.combatLog.push(`The ${MONSTER_LABELS[vis.kind]} breaks and runs!`, "#ffa63d");
+      }
+      vis.fleeing = s.fleeing;
 
       const nowDead = s.status === "dead";
       if (nowDead && !vis.dead) {

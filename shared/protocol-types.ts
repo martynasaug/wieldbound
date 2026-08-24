@@ -1159,6 +1159,22 @@ export interface MonsterStats {
   deathBurstRadiusPx?: number;
   deathBurstDamage?: number;
   /**
+   * Below this fraction of max HP, the kind breaks off and runs from
+   * whoever hurt it rather than trading blows to the end.
+   *
+   * Reserved for a kind whose own text already says it is not a solo
+   * threat — a creature that calls for backup (see `alertRadiusPx`) is one
+   * that breaks once the backup is not there to save it. Not a general
+   * "low health" behaviour: most kinds in this table fight to the death,
+   * and giving all of them a last-second dash would flatten thirteen
+   * different personalities into one.
+   */
+  fleeThreshold?: number;
+  /** How much faster than its ordinary chase speed it runs while fleeing.
+   *  Never huge — this is a chance to put distance between hits, not a
+   *  guaranteed escape; a player who keeps pressing still catches it. */
+  fleeSpeedMultiplier?: number;
+  /**
    * What hurts it, and what it shrugs off.
    *
    * At most one resistance and one vulnerability per kind, and both follow from
@@ -1245,6 +1261,14 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     // The first thing in the world with an opinion about schools, and it is a
     // small one: scrap armour turns a blade a little, and nothing else.
     resist: { physical: 15 },
+    // COWARDICE, MADE LITERAL. A goblin was never written as a solo threat —
+    // its whole answer to a real fight is the shout above, bringing the camp
+    // rather than standing alone. A kind built around "I am not fighting
+    // this by myself" is exactly the kind that breaks and runs once it
+    // actually is by itself and losing. Below a fifth of its health it turns
+    // on whoever hurt it and flees rather than trading the last few blows.
+    fleeThreshold: 0.2,
+    fleeSpeedMultiplier: 1.35,
   },
   // Fast and evasive rather than tanky — low HP and light hits, but its
   // own attack cadence is the quickest of any monster, and its evasion is
@@ -3768,6 +3792,14 @@ export interface MonsterState {
    * a boolean the renderer can act on, not a coincidence it has to notice.
    */
   alerted: boolean;
+  /**
+   * True while this monster has broken off and is running from whoever hurt
+   * it critically — see `fleeThreshold` on `MonsterStats`. Same shape as
+   * `windingUp`/`leaping`/`alerted`: derived fresh every tick from the AI
+   * state machine rather than tracked as its own timer, so it can never
+   * survive a death or a walk home stuck `true`.
+   */
+  fleeing: boolean;
 }
 
 // --- Loot on the ground -----------------------------------------------------

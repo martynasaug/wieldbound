@@ -601,7 +601,7 @@ const nodeRespawnAt = new Map<string, number>();
 
 function spawnMonster(id: string, kind: MonsterState["kind"], x: number, y: number): MonsterState {
   const maxHp = MONSTER_STATS[kind].maxHp;
-  return { id, kind, x, y, status: "alive", hp: maxHp, maxHp, slowed: false, windingUp: false, leaping: false, alerted: false, statuses: [] };
+  return { id, kind, x, y, status: "alive", hp: maxHp, maxHp, slowed: false, windingUp: false, leaping: false, alerted: false, fleeing: false, statuses: [] };
 }
 
 // Monsters live in tight packs, not scattered individually, so clearing a
@@ -1403,7 +1403,7 @@ const monsterAttackAt = new Map<string, number>();
 // too far. Aggro is sticky: it keeps its current target until that target
 // dies, logs out, or outruns it, rather than re-picking the nearest player
 // every tick, which would make packs flip between targets constantly.
-type MonsterAiState = "idle" | "chase" | "return";
+type MonsterAiState = "idle" | "chase" | "return" | "flee";
 interface MonsterAi {
   state: MonsterAiState;
   targetId: string | null;
@@ -3511,6 +3511,10 @@ setInterval(() => {
     // this is the only place that ever reads it back, so a monster that dies
     // mid-flash cannot carry a stuck `true`.
     monster.alerted = now < (monsterAlertedUntil.get(monster.id) ?? 0);
+    // Same shape again: whether this monster is currently breaking off and
+    // running is entirely a function of `ai.state`, so it is read back off
+    // the state machine rather than kept as its own flag anywhere.
+    monster.fleeing = ai.state === "flee";
 
     if (monster.status !== "alive") {
       ai.state = "idle";
@@ -3522,10 +3526,21 @@ setInterval(() => {
 
     // Leash check first: being dragged too far from home overrides anything
     // else and sends it back, which is what stops a player towing a whole
-    // pack across the map and abandoning it there.
-    if (ai.state === "chase" && distFromHome > MONSTER_LEASH_PX) {
+    // pack across the map and abandoning it there. Fleeing counts as a leash
+    // case too — a goblin that broke off is not going to run itself off the
+    // edge of its own territory.
+    if ((ai.state === "chase" || ai.state === "flee") && distFromHome > MONSTER_LEASH_PX) {
       ai.state = "return";
       ai.targetId = null;
+    }
+
+    // Flee: some kinds break and run rather than fight to the end once
+    // critically hurt — see `fleeThreshold` on `MonsterStats` for which and
+    // why. Checked here, before the state dispatch below, so a monster that
+    // drops below the line breaks immediately, on the very tick that took
+    // the hit, rather than swinging one more time first.
+    if (ai.state === "chase" && stats.fleeThreshold !== undefined && monster.hp / monster.maxHp <= stats.fleeThreshold) {
+      ai.state = "flee";
     }
 
     if (ai.state === "chase") {
@@ -3707,11 +3722,31 @@ setInterval(() => {
         monster.x += ((ai.home.x - monster.x) / distFromHome) * step;
         monster.y += ((ai.home.y - monster.y) / distFromHome) * step;
       }
+    } else if (ai.state === "flee") {
+      const target = ai.targetId ? players.get(ai.targetId) : undefined;
+      const targetGone = !target || (hpBalances.get(ai.targetId!) ?? 1) <= 0;
+      const d = target ? Math.hypot(target.x - monster.x, target.y - monster.y) : Infinity;
+      // Given up entirely once the threat is gone or genuinely lost, the same
+      // threshold a chase gives up at — home to heal rather than standing
+      // wherever the run happened to stop.
+      if (targetGone || d > MONSTER_FORGET_PX) {
+        ai.state = "return";
+        ai.targetId = null;
+        clearThreat(monster.id);
+      } else if (d > 1 && target) {
+        // Straight away from whoever it is fleeing, at a pace a little above
+        // its ordinary chase speed — enough that pressing the advantage still
+        // works but standing still does not.
+        const speed = stepPx * (stats.fleeSpeedMultiplier ?? 1);
+        monster.x -= ((target.x - monster.x) / d) * speed;
+        monster.y -= ((target.y - monster.y) / d) * speed;
+      }
     }
 
     // Acquire a target when idle (or when returning and someone walks into
-    // it) — nearest living player inside the aggro radius.
-    if (ai.state !== "chase") {
+    // it) — nearest living player inside the aggro radius. A monster that is
+    // actively fleeing already has a target and is not looking for a new one.
+    if (ai.state !== "chase" && ai.state !== "flee") {
       let nearest: LivePlayer | null = null;
       let nearestDist = AGGRO_RANGE_PX;
       for (const player of players.values()) {

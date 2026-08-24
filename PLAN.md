@@ -7302,6 +7302,26 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A RESEARCH REPORT'S SUGGESTIONS ARE A STARTING POINT, NOT A SHORTLIST TO
+  APPROVE. Asked where the next monster-AI gap was, the research came back
+  with three candidates for a low-HP flee mechanic — goblin, wolf and
+  (for a parallel enrage idea) demon and troll. Checking each kind's own
+  bestiary text against the M70.4 rule ("arguable from its own line, not
+  chosen for being next in line") ruled out every one of them except
+  goblin: wolf's leap comment explicitly frames its whole identity as
+  COMMITTING to a distance, the opposite of giving ground; demon's comment
+  calls it the kind with no tell, already always at full aggression; troll
+  has no textual seed for panic at all. Only the goblin's existing
+  `alertRadiusPx` — "I do not fight alone" — argues for "and I do not fight
+  to the death alone either." A subagent's fact-finding is not the same
+  pass as the judgment call about which fact to act on.
+- A NEW AI STATE'S PASS THRESHOLD HAS TO ACCOUNT FOR REAL PLAYER DPS, not
+  an assumed one. The first live-verification run against the flee
+  mechanic gave the test character 30 seconds and it never even reached
+  the 20%-HP trigger — not a bug, just a slower real attacker than the
+  test assumed (9 of 35 HP in 30s). Fixed by extending the test window
+  rather than by adding a debug HP-set hook, since a hook that lets a test
+  skip real combat would stop being a test of the real trigger path.
 - "MODEL ALREADY CACHED" DOES NOT MEAN "CHEAP" — it means the expensive
   part (the network fetch) is gone, not the expensive part that matters
   here (cloning a skeleton, rebuilding a mixer, rebinding clips), which
@@ -10696,6 +10716,37 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.8 — cowardice, made literal.** Back to monster AI after the
+lag detour. A goblin was never written as a solo threat: its whole answer
+to a real fight is `alertRadiusPx`, calling the camp rather than standing
+alone. A kind built entirely around "I am not doing this by myself" is
+exactly the kind that breaks and runs once it actually is by itself and
+losing — so below a fifth of its own HP, a goblin now turns on whoever hurt
+it and flees rather than trading the last few blows. New `MonsterAiState`
+value `"flee"`, entered from `chase` the instant HP crosses the line (not
+diagnosed on a later tick — the same immediacy the wind-up check already
+had), exited back to `return` (walk home, heal, same as giving up a chase)
+once the threat is lost or outrun past `MONSTER_FORGET_PX`. Runs a little
+faster than its ordinary chase speed (`fleeSpeedMultiplier: 1.35`) — enough
+that disengaging even slightly lets it put real distance down, not so much
+that a player who keeps pressing can't still finish it. `fleeing` is a new
+`MonsterState` field, same shape as `windingUp`/`leaping`/`alerted`: derived
+fresh from the AI state every tick rather than tracked as its own timer, so
+it can never survive a death or a walk home stuck `true`. Considered
+demon and troll for the same treatment — the research that found this gap
+suggested them — and deliberately left both alone: demon's own comment
+calls it "the troll's damage WITHOUT THE TELL," already the
+always-at-full-aggression archetype, and neither kind's text says anything
+about breaking when hurt the way the goblin's shout already does. The rule
+from M70.4 held: a mechanic has to be arguable from a kind's own line, not
+handed to whichever kind was next in the research report. Verified live
+over a real socket: pressed a goblin from 35 HP down, watched it announce
+`fleeing: true` on the exact tick it crossed 7 HP (20%), and confirmed it
+covered a real 420px running from its attacker before a relentlessly
+pursuing player caught and finished it — exactly the "helps, does not
+guarantee" design. `animation.mjs`, `smoke.mjs` and `fighting.mjs` all
+green.
 
 **Phase 70 M70.7 — a camp is not one monster.** M70.6 fixed the GPU-side
 half of the reported lag; this is the CPU-side half, the other symptom
