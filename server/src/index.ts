@@ -601,7 +601,7 @@ const nodeRespawnAt = new Map<string, number>();
 
 function spawnMonster(id: string, kind: MonsterState["kind"], x: number, y: number): MonsterState {
   const maxHp = MONSTER_STATS[kind].maxHp;
-  return { id, kind, x, y, status: "alive", hp: maxHp, maxHp, slowed: false, windingUp: false, leaping: false, statuses: [] };
+  return { id, kind, x, y, status: "alive", hp: maxHp, maxHp, slowed: false, windingUp: false, leaping: false, alerted: false, statuses: [] };
 }
 
 // Monsters live in tight packs, not scattered individually, so clearing a
@@ -990,7 +990,7 @@ function applyDotTick(
     // to: `Immolate` deals most of its damage as ticks, so a dot that did not
     // carry its own school would make the one skill built for burning things
     // the worst way to be credited with burning one.
-    if (by) addThreat(monster.id, by, damage, dot.school);
+    if (by) addThreat(monster.id, by, damage, now, dot.school);
     for (const [pid, socket] of sockets) {
       if (!socket || socket.readyState !== WebSocket.OPEN) continue;
       // Only to people who can see it. A tick is a floating number over a
@@ -1154,11 +1154,17 @@ const monsterLeapUntil = new Map<string, number>();
 const monsterLeapReadyAt = new Map<string, number>();
 // Packmates a shout has already woken, so one pull doesn't re-alert forever.
 const alertedMonsters = new Set<string>();
+// How long a just-woken monster reads as alerted on the wire. Purely a flash
+// duration for the client — nothing downstream of the shout waits on it.
+const ALERT_FLASH_MS = 1400;
+// Who was told to flash, and until when.
+const monsterAlertedUntil = new Map<string, number>();
 
 function addThreat(
   monsterId: string,
   playerId: string,
   amount: number,
+  now: number,
   /**
    * What the amount was made of, where it was made of anything.
    *
@@ -1204,6 +1210,11 @@ function addThreat(
   const radius = MONSTER_STATS[self.kind].alertRadiusPx;
   if (radius === undefined) return;
   alertedMonsters.add(monsterId);
+  // THE ONE THAT SHOUTED FLASHES TOO, not only the packmates it woke — it is
+  // the thing that just went from "hit" to "raising the alarm", and a player
+  // who only sees its friends light up has no way to tell a shout happened at
+  // all rather than four separate aggro radii being walked into at once.
+  monsterAlertedUntil.set(monsterId, now + ALERT_FLASH_MS);
 
   for (const other of monsters) {
     if (other.id === monsterId || other.kind !== self.kind || other.status !== "alive") continue;
@@ -1218,6 +1229,7 @@ function addThreat(
       ai.state = "chase";
       ai.targetId = playerId;
     }
+    monsterAlertedUntil.set(other.id, now + ALERT_FLASH_MS);
   }
 }
 
@@ -1482,7 +1494,7 @@ function applySkillDamage(
   );
   result.damage = damage;
   monster.hp = Math.max(0, monster.hp - result.damage);
-  addThreat(monster.id, playerId, result.damage, school);
+  addThreat(monster.id, playerId, result.damage, now, school);
   markInCombat(playerId, now);
   if (monster.hp > 0) {
     return { hit: true, crit: result.crit, damage: result.damage, killed: false, school, resisted };
@@ -1859,7 +1871,7 @@ function useSkill(playerId: string, skillId: SkillId, now: number, fromCast = fa
         // A debuff is an act of aggression even when it does no damage, or
         // marking something from three hundred pixels away would leave it
         // attacking whoever happened to be nearest.
-        addThreat(monster.id, playerId, 1);
+        addThreat(monster.id, playerId, 1, now);
       }
       // A read that looks at the TARGET resolves per body, which is the whole
       // reason `empowered` is reported per hit: a detonator in a pack finds the
@@ -2172,7 +2184,7 @@ function resolvePlayerAttack(
       // Damage is threat: it is what decides who this monster turns on, what
       // earns a share of the XP when it dies, and — split by school — what the
       // player is credited with having killed it WITH.
-      addThreat(monster.id, playerId, playerAttack.damage, school);
+      addThreat(monster.id, playerId, playerAttack.damage, now, school);
       markInCombat(playerId, now);
       if (monster.hp <= 0) {
         monsterDefeated = true;
@@ -3480,6 +3492,10 @@ setInterval(() => {
     // `true` on its next several snapshots — the same bug a state-machine-
     // local flag would have needed a second cleanup path to avoid.
     monster.leaping = now < (monsterLeapUntil.get(monster.id) ?? 0);
+    // Same shape, for the same reason: `addThreat` sets a deadline once and
+    // this is the only place that ever reads it back, so a monster that dies
+    // mid-flash cannot carry a stuck `true`.
+    monster.alerted = now < (monsterAlertedUntil.get(monster.id) ?? 0);
 
     if (monster.status !== "alive") {
       ai.state = "idle";

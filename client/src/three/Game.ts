@@ -294,6 +294,9 @@ interface MonsterVisual {
   windingUp: boolean;
   /** When the current wind-up started, for the target frame's timer bar. */
   windupStartedAt: number;
+  /** Previous alert flag, so the shout cue fires on the edge, not every tick
+   *  the flash is held. */
+  alerted: boolean;
   /** Latched run/idle decision — see `isMoving`. */
   moving: boolean;
   /** Previous opening flag, so the log line fires on the edge not every tick. */
@@ -1160,7 +1163,7 @@ export class Game {
           variance: (hashString(s.id) % 1000) / 1000,
           idleGlance: true,
         });
-        vis = { actor, kind: s.kind, state: s, dead: false, windingUp: false, windupStartedAt: 0, moving: false };
+        vis = { actor, kind: s.kind, state: s, dead: false, windingUp: false, windupStartedAt: 0, moving: false, alerted: false };
         this.monsters.set(s.id, vis);
         void actor.load().then(() => this.world.scene.add(actor.root));
       } else if (distance > MONSTER_DESPAWN_RADIUS_PX) {
@@ -1232,6 +1235,18 @@ export class Game {
       } else if (!nowDead) {
         vis.actor.play(moving ? "run" : "idle");
       }
+
+      // SOCIAL AGGRO WAS SILENT AND INVISIBLE. One hit on a monster with an
+      // alert radius flips every same-kind packmate nearby into `chase` on the
+      // same tick, and until now the only evidence was several bodies starting
+      // to move at once — indistinguishable from wandering into four separate
+      // aggro radii. A flash and a bark on the edge say the shout happened,
+      // for whoever it woke and whoever raised it.
+      if (s.alerted && !vis.alerted) {
+        playSfx("alert", 0.8);
+        vis.actor.flash(0xfff2b0, 220);
+      }
+      vis.alerted = s.alerted;
 
       // The wind-up needs a sound the moment it starts, or a player looking at
       // their own character never learns the danger circle appeared.

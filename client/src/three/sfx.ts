@@ -22,11 +22,13 @@ export type SfxName =
   | "swing" | "hit" | "crit" | "miss" | "hurt"
   | "die" | "gather" | "levelup" | "cast" | "heal"
   // Release cues for the two weapon families that do not swing anything.
-  | "bow" | "beam";
+  | "bow" | "beam"
+  // A pack's shout — the one cue with no swing, cast or hit behind it at all.
+  | "alert";
 
 const SFX_NAMES: SfxName[] = [
   "swing", "hit", "crit", "miss", "hurt", "die", "gather", "levelup", "cast", "heal",
-  "bow", "beam",
+  "bow", "beam", "alert",
 ];
 
 const MIN_GAP_MS = 60;
@@ -46,6 +48,7 @@ const VOLUME: Partial<Record<SfxName, number>> = {
   gather: 0.3,
   bow: 0.35,
   beam: 0.3,
+  alert: 0.4,
 };
 
 const buffers = new Map<SfxName, AudioBuffer>();

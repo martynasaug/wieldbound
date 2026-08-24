@@ -7302,6 +7302,22 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A COORDINATED EVENT WITH NO SIGNAL READS AS SEVERAL ACCIDENTS. Social aggro
+  has flipped a whole camp into `chase` on one hit since the shout guard was
+  written, and a player watching four bodies start moving on the same tick had
+  no way to tell that apart from wandering into four separate aggro radii —
+  the mechanic this file already exists to make plannable was invisible at
+  the exact moment it happened.
+- THE ONE THAT SHOUTED FLASHES TOO. Only marking the packmates it woke would
+  say "these four just noticed you" and miss the more useful half: which one
+  you actually hit is the one that raised the alarm, and that is the fact a
+  player pulling carefully needs on the body they are looking at.
+- A NEW CUE HAS TO BE UN-MISTAKABLE AGAINST THE ELEVEN ALREADY IN THE FILE,
+  not just distinct in isolation. Every existing cue slides DOWN in pitch —
+  a swing decaying, a hit landing, a thing dying — because all of them are an
+  impact settling. A shout is the opposite motion on purpose: two short
+  RISING snarls, so it cannot be misheard as a blow landing mid-fight.
+
 - A DAMAGE MESSAGE WITH NO VISUAL OF ITS OWN READS AS A LAGGED COPY OF ONE
   THAT HAS ONE. A death burst applied real damage from a real radius and drew
   nothing, so a player caught in it experienced an ordinary hit landing a beat
@@ -10357,6 +10373,22 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — a shout you can hear.** M69.7: social aggro has flipped every
+same-kind packmate within `alertRadiusPx` into `chase` on one hit since the
+mechanic was written, and none of it ever reached a client — the only
+evidence a player got that a goblin camp had just coordinated against them,
+rather than four separate aggro radii being walked into by accident, was
+several bodies starting to move at once. An `alerted` boolean now rides the
+snapshot, the same shape `windingUp` and `leaping` already use, true for a
+1.4s flash on the monster that raised the alarm and on everyone it woke. The
+client plays a new cue on the edge — `alert.wav`, synthesised alongside the
+other eleven, two quick RISING snarls rather than the falling pitch every
+other cue in the game uses for an impact settling, so it cannot be mistaken
+for a blow landing — plus a pale flash on the body, reusing the same
+`Actor.flash` a hit reaction already uses. Verified live: pulling a goblin
+put `alerted: true` on it and brought three packmates up alongside it,
+flashing four bodies in the same tick.
 
 **Phase 69 — a corpse that explodes says so.** M69.6: a slime, spiky blob or
 cactoro's parting shot has applied real damage from a real radius since it

@@ -3735,6 +3735,20 @@ export interface MonsterState {
    * it has to infer.
    */
   leaping: boolean;
+  /**
+   * True for a brief flash after a shout wakes this monster — either the one
+   * that took the hit and raised the alarm, or a packmate that inherited a
+   * token of threat from it.
+   *
+   * Social aggro has applied since the shout guard was written — one hit
+   * flips every same-kind packmate in `alertRadiusPx` into `chase` on the
+   * same tick — and none of it reached the wire. A player pulling a goblin
+   * and getting swarmed by four had no way to tell a coordinated wake from
+   * wandering into four separate aggro radii; the only evidence was several
+   * bodies starting to move at once. Same shape as `windingUp` and `leaping`:
+   * a boolean the renderer can act on, not a coincidence it has to notice.
+   */
+  alerted: boolean;
 }
 
 // --- Loot on the ground -----------------------------------------------------

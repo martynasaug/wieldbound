@@ -195,5 +195,31 @@ for ($i = 0; $i -lt $buf.Length; $i++) {
 }
 Write-Wav $buf "beam.wav"
 
+# --- alert: a pack's shout — a bark, not a hit or a cast --------------
+# Every other cue slides DOWN in pitch (a swing decaying, a hit landing, a
+# thing dying) because those are all things settling after an impact. A
+# shout is the opposite motion: two quick rising snarls, so it cannot be
+# mistaken for a blow landing even at a glance at the waveform, let alone by
+# ear over a fight already in progress.
+$dur = 0.26; $buf = New-Buffer $dur; $ph = 0.0
+for ($i = 0; $i -lt $buf.Length; $i++) {
+  $t = $i / [double]$RATE
+  # Two barks: 0..0.11s and 0.13..0.24s, each its own rising snarl.
+  $local = $t
+  $barkDur = 0.11
+  $inBark2 = $t -ge 0.13
+  if ($inBark2) { $local = $t - 0.13 }
+  if ($local -gt $barkDur) {
+    $buf[$i] = 0.0
+    continue
+  }
+  $f = 140 + 260 * ($local / $barkDur)
+  $ph += 2 * [Math]::PI * $f / $RATE
+  $e = Env $local $barkDur 3.6
+  $rasp = (NoiseS) * 0.22
+  $buf[$i] = ((SquareW $ph) * 0.36 + $rasp) * $e * 0.9
+}
+Write-Wav $buf "alert.wav"
+
 "---"
 "wrote to $assets"
