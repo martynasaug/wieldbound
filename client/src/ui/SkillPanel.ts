@@ -5,8 +5,6 @@ import {
   WEAPONS,
   canLearnTalent,
   describeRead,
-  spentTalentPoints,
-  talentPointsAtLevel,
   talentTree,
   type HotbarLayout,
   type TalentId,
@@ -47,6 +45,10 @@ export class SkillPanel {
   private list = document.getElementById("skills-list")!;
   private title = document.getElementById("skills-title")!;
   private closeButton = document.getElementById("skills-close")!;
+  // Same nudge the attribute panel's own dock icon already gives for an
+  // unspent stat point — a talent point sitting unspent was invisible
+  // until the dock icon was actually clicked.
+  private dockBadge = document.getElementById("dock-skills-badge")!;
 
   private weapon: WeaponType = "fist";
   private progress: WeaponProgressView | null = null;
@@ -79,6 +81,8 @@ export class SkillPanel {
   setProgress(progress: WeaponProgressView): void {
     this.weapon = progress.weaponType;
     this.progress = progress;
+    this.dockBadge.textContent = String(progress.pointsAvailable);
+    this.dockBadge.classList.toggle("show", progress.pointsAvailable > 0);
     if (this.isOpen) this.render();
   }
 
@@ -187,8 +191,3 @@ export class SkillPanel {
   }
 }
 
-/** Points available given a level and what has been spent — used by the HUD
- *  badge, which has no reason to know about the panel. */
-export function unspentPoints(weapon: WeaponType, ranks: TalentRanks, level: number): number {
-  return talentPointsAtLevel(level) - spentTalentPoints(weapon, ranks);
-}

@@ -10787,6 +10787,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.16 — the badge that was already named after itself.** A
+fresh research pass into areas untouched this session (leaderboard, day/
+night, talents, crafting beyond materials) found `SkillPanel.ts`'s own
+`unspentPoints()` function, exported with a doc comment reading "used by
+the HUD badge, which has no reason to know about the panel" — and never
+once called anywhere. The sibling it describes already exists: the
+attribute panel's dock icon has carried a real badge for an unspent stat
+point since before this session started. The skills dock icon, one
+button over, had the identical unspent-currency shape (a talent point
+sitting unused until the player happens to open K) and no badge at all.
+Wired a `dock-skills-badge` span (same markup, same generic `.dock-badge`/
+`.show` CSS the character badge already uses) and drove it from
+`SkillPanel.setProgress`, which already receives `pointsAvailable` on
+every `WEAPON_PROGRESS` message — the exact same number
+`talentPointsAtLevel(level) - spentTalentPoints(weapon, ranks)` computes,
+already delivered over the wire, making the unused helper function
+genuinely redundant rather than merely unfinished. Deleted it rather than
+leaving two parallel ways to compute one number. Verified live: a fresh
+level-1 character's badge read "1" and was visible (a fresh character
+does start with a real unspent point), and forcing `pointsAvailable: 0`
+through the same method confirmed the badge correctly hides again.
+`animation.mjs`, `smoke.mjs` and `talents.mjs` green; `fighting.mjs`
+failed twice specifically against cactoro (a keepAway kiter this simple
+test bot struggles to close melee range on — unrelated to a change that
+touches only static HTML and a UI panel class) and passed clean against
+mushnub.
+
 **Phase 70 M70.15 — a mark for whoever has work.** The last of the three
 candidates the broader research pass found, the one flagged as weaker
 justification and worth a second look before committing — it survived the
