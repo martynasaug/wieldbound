@@ -7302,6 +7302,24 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A MEASUREMENT THAT COMES BACK "IT DEPENDS" IS A RESULT, AND THE ANSWER IS
+  USUALLY NO. Re-tuning the ground-cover chunk size looked promising and the
+  numbers came back as a clean trade: 26 to 44 units is 44% fewer draw calls
+  and 35% more instances drawn. Neither side can be priced without measuring
+  on a GPU, so the change was not made — and the table was written into the
+  log so the next person to have the idea starts from the data instead of
+  from scratch. The same standard M70.29 set for the shadow map and the
+  pixel ratio: a change with a real cost on both sides is a preference, not
+  an optimisation, and a preference needs evidence or a setting.
+- CHEAP ALLOCATIONS ARE WORTH REMOVING WHEN THE UNEXPLAINED SYMPTOM IS A
+  PAUSE. Two `Vector3` clones and a `Set` per frame will never appear in a
+  profiler reading and are not worth chasing on their own. They become worth
+  removing once the remaining symptom is specifically a stall BETWEEN frames
+  — the shape a garbage collection makes — because the collector's input is
+  the total of every small allocation in the loop, and no individual one of
+  them is ever the culprit. Optimise for the shape of the symptom, not for
+  the size of the line.
+
 - A GEOMETRIC BOUND CAN TURN A WHOLE-WORLD QUERY INTO A LOCAL ONE, and it is
   worth looking for one before optimising the query itself. The occluder
   fade raycast against every object in the world looked like it needed a
@@ -11134,6 +11152,40 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.35 — the allocations, and a tuning question answered with
+"no".** Small follow-up to M70.34, and half of it is a decision not to
+change anything.
+The chunk size ground cover is bucketed into (`CHUNK_UNITS`, 26) trades
+draw calls against vertices, and M70.34's density LOD changed that balance
+enough to be worth re-asking. Measured properly rather than guessed —
+`DistanceCuller` runs under Node, so a real field can be built at several
+chunk sizes with the real species table and the real world dimensions, and
+the cut averaged over five player positions so the answer does not depend
+on where the grid happens to fall:
+```
+  chunk   total meshes   draw calls   instances drawn
+     20           6000          334              3840
+     26           3840          239              4120
+     34           2160          175              5113
+     44           1400          133              5571
+     56            960          107              6037
+     70            600           98              7857
+```
+Going from 26 to 44 is 44% fewer draw calls and 35% MORE instances drawn.
+That is a trade, not a win, and which side of it is cheaper cannot be
+settled without measuring on a GPU — so it stays at 26 and the table is
+recorded here so the question does not get re-opened from scratch. The
+same reasoning the shadow map and the pixel ratio got in M70.29: a change
+with a real cost on both sides is not an optimisation, it is a preference,
+and a preference needs evidence or a setting.
+What did change is unambiguous waste. `fadeOccluders` cloned two
+`Vector3`s per frame and `drawPlates` built a fresh `Set` per frame; both
+are now reused. Individually invisible — the point is that the loop is
+full of ones like them, and the only stutter still unexplained is a pause
+BETWEEN frames, which is what a garbage collector does. Removing the cheap
+ones is worth doing on principle even though no single one of them will
+show up in a reading.
 
 **Phase 70 M70.34 — thinning what survives, and a ray that asked the whole
 world a question about twenty-two units.** Two cuts aimed at the two

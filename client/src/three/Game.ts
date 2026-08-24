@@ -4041,6 +4041,9 @@ export class Game {
   private occluderCandidates: THREE.Object3D[] = [];
   private occluderBuiltAt = { x: Infinity, z: Infinity };
   private readonly occluderBox = new THREE.Box3();
+  private readonly guideTargets = new Set<string>();
+  private readonly rayHead = new THREE.Vector3();
+  private readonly rayDir = new THREE.Vector3();
 
   private refreshOccluderCandidates(px: number, pz: number): void {
     const dx = px - this.occluderBuiltAt.x;
@@ -4081,10 +4084,15 @@ export class Game {
     const actor = this.localActor;
     if (!actor) return;
 
+    // Scratch vectors rather than clones. Two allocations a frame is nothing on
+    // its own; a hundred and twenty a second of them, alongside every other
+    // per-frame allocation in the loop, is the collector pressure that shows up
+    // as a pause BETWEEN frames — which is exactly the class of stutter left
+    // unexplained, so the cheap ones are worth removing on principle.
     const cam = this.world.camera.position;
-    const head = actor.position.clone();
+    const head = this.rayHead.copy(actor.position);
     head.y += 1.0;
-    const dir = head.clone().sub(cam);
+    const dir = this.rayDir.copy(head).sub(cam);
     const distance = dir.length();
     if (distance < 0.01) return;
     dir.normalize();
@@ -4351,7 +4359,12 @@ export class Game {
 
     // Which stones are currently somebody's business. Built once per frame
     // rather than per plate, because it walks the quest list.
-    const guideTargets = new Set<string>();
+    // Reused rather than rebuilt. Same reasoning as the scratch vectors in
+    // `fadeOccluders`: one Set a frame is invisible on its own and the loop is
+    // full of ones like it, and the only stutter left unexplained is a pause
+    // between frames, which is what a collector does.
+    const guideTargets = this.guideTargets;
+    guideTargets.clear();
     for (const entry of this.questTracker.activeQuests) {
       const def = QUESTS.find((q) => q.id === entry.id);
       if (def?.objective.kind === "reach" && !questSatisfied(def, entry.count)) {
