@@ -1216,6 +1216,11 @@ export class Game {
       if (s.windingUp && !vis.windingUp) {
         playSfx("cast", 0.8);
         vis.windupStartedAt = performance.now();
+        // The body tells the same story the ring does. Stretched to the real
+        // wind-up length so the swing finishes exactly as the slam lands,
+        // rather than snapping out only at the moment of impact.
+        const windupMs = MONSTER_STATS[vis.kind].windupMs;
+        if (windupMs) vis.actor.playTelegraph("attack", windupMs);
       }
       vis.windingUp = s.windingUp;
 
@@ -1645,7 +1650,14 @@ export class Game {
     const vis = this.monsters.get(p.monsterId);
     this.lastCombatAt = performance.now();
     if (vis) {
-      vis.actor.play("attack");
+      // A TELEGRAPHING CREATURE HAS NO ORDINARY ATTACK (see the server's own
+      // monster AI) — every MONSTER_ATTACK for one of these kinds is the slam,
+      // and its swing was already playing, stretched across the wind-up that
+      // just closed. Re-triggering it here would snap the pose back to frame
+      // zero and play the whole thing again a beat after the hit already read.
+      if (MONSTER_STATS[vis.kind].windupMs === undefined) {
+        vis.actor.play("attack");
+      }
       if (this.localActor) vis.actor.faceToward(this.localActor.position.x, this.localActor.position.z);
     }
     const label = vis ? MONSTER_LABELS[vis.kind] : "enemy";

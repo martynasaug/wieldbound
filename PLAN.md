@@ -7302,6 +7302,22 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A TELL HAS TO REACH THE THING BEING TOLD ABOUT. A boss's wind-up drew a
+  ground ring, played a cast sfx and glowed a nameplate bar, and the creature
+  itself just stood in idle or kept running until the slam landed — a player
+  actually looking at the troll rather than the floor under it saw nothing
+  change for the whole two seconds the mechanic exists to be read in.
+- STRETCH THE CLIP THAT ALREADY EXISTS RATHER THAN ASK FOR A NEW ONE. The
+  attack animation these three kinds already had is real geometry winding up
+  and swinging through; playing it at `clipDuration / windupMs` speed instead
+  of its own native one makes the wind-up visible on the body with no new art,
+  timed to finish exactly as the hit resolves rather than snapping out all at
+  once on impact.
+- A TELEGRAPHING CREATURE HAS NO ORDINARY ATTACK, and this file already said
+  so about the damage: every `MONSTER_ATTACK` a troll, golem or dragon sends
+  is the slam, so replaying the swing again at impact time was always a second
+  copy of the same event — it just used to be the only one anybody saw.
+
 - BEING HIT IS THE STRONGEST REASON TO FIGHT SOMEONE, AND IT WAS THE ONE REASON
   THE AI DID NOT HAVE. Damage woke every packmate of the creature you shot and
   skipped the creature itself; aggro reached your actual target only by walking
@@ -10306,7 +10322,21 @@ rarities), multiple crafting stations. Not committing to order yet.
   are whatever you're holding" has to let you hold nothing.
 
 ## Current status
-Phase 0 through 69 complete (2026-08-21).
+Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — a slam you can see coming, from the thing swinging it.** M69.4
+found that the wind-up before a troll, golem or dragon's slam — the two-second
+gap the whole mechanic is built to be read and stepped out of — showed on
+nothing but a ground ring, a cast sfx and a nameplate bar. The creature itself
+kept idling or running until the moment of impact, at which point its swing
+animation played AFTER the fact: the one body a player is actually looking at
+said nothing was happening until it already had. The attack clip now plays
+stretched across the real wind-up duration — no new art, the same clip these
+three kinds already had, timed to finish exactly as the blow lands rather than
+firing all at once at contact. The redundant full-speed replay at impact is
+skipped for these three kinds, on the rule this file already has on record:
+**a telegraphing creature has no ordinary attack**, so every `MONSTER_ATTACK`
+for one of them is the slam whose swing already played.
 
 **Phase 69 — a conditional you can see, skills that look like skills, and a monster that fights back.** M69.3 answered a report that monsters attacked from long range never retaliate, and found two mistakes propping each other up: damage aggroed every PACKMATE of the thing you hit and skipped the thing itself, so aggro reached your actual target only by walking inside its 260px perception radius; and the chase then gave up on anyone past 364px, which is inside the reach of a bow. Perception and pursuit are two questions and had one number between them. `MONSTER_FORGET_PX = 700` now sits beyond every reach in the game, and the leash from home — which was always the right bound on a chase — does the work.
 

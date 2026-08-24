@@ -1628,6 +1628,41 @@ export class Actor {
     }
   }
 
+  /**
+   * Plays a one-shot clip stretched to last exactly `ms` instead of its own
+   * native duration — for a telegraphed monster's wind-up.
+   *
+   * Without this the swing that a slam lands with plays only at the moment of
+   * impact, so the two-second gap a player is meant to read and step out of
+   * shows nothing on the monster's own body — idle or run, same as any other
+   * moment. Stretching the same clip across the wind-up means the body visibly
+   * rears back and the swing completes exactly as the blow does, which is the
+   * one thing a ground ring and a nameplate bar cannot say by themselves: a
+   * mechanic with no feedback on the thing doing it is still a mechanic
+   * nobody learns to read by looking at the creature.
+   *
+   * No new art: every telegraphing kind already has an attack clip, and this
+   * plays the same one slower rather than asking the bestiary for a pose it
+   * does not have.
+   */
+  playTelegraph(anim: ActorAnim, ms: number): void {
+    if (!this.mixer || ms <= 0) return;
+    const next = this.actions.get(anim);
+    if (!next) return;
+    const prev = this.actions.get(this.currentAnim);
+    const clipDuration = next.getClip().duration;
+
+    next.reset();
+    next.setEffectiveWeight(1);
+    next.setEffectiveTimeScale(clipDuration > 0 ? (clipDuration * 1000) / ms : 1);
+    next.play();
+    if (prev && prev !== next) prev.crossFadeTo(next, FADE_MS / 1000, false);
+    else next.fadeIn(FADE_MS / 1000);
+
+    this.currentAnim = anim;
+    this.oneShotUntil = performance.now() + ms;
+  }
+
   /** Cancels a death pose so a respawned monster animates again. */
   revive(): void {
     this.oneShotUntil = 0;
