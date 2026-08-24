@@ -1792,6 +1792,92 @@ export class Actor {
     this.play("idle", true);
   }
 
+  /**
+   * HOW FAR THE POSE HAS ACTUALLY ADVANCED, as one number.
+   *
+   * `play` is written to be silent — it has six early returns and every one of
+   * them is a deliberate no-op, because "the state you asked for is the state
+   * you are in" is the common case and must not cost anything. The price is
+   * that a state machine which has locked LOOKS EXACTLY LIKE one that is
+   * correctly idle: `play("run")` is called every frame either way and returns
+   * without a word either way.
+   *
+   * So the lock cannot be detected from the calls. It can be detected from the
+   * RESULT — an actor whose body is translating while its pose is not moving is
+   * sliding, and that is a fact about the mixer's own clocks, not about what
+   * anybody asked for. Summing the running actions' times (weighted, so a
+   * crossfade still reads as motion) gives one number that must change on any
+   * frame where the character is genuinely animating.
+   *
+   * This is the same measurement M70.5's freeze verification used — sampling
+   * `AnimationAction.time` across an interruption — turned from a test-only
+   * probe into something the game can ask itself.
+   */
+  poseClock(): number {
+    let sum = 0;
+    for (const action of this.actions.values()) {
+      if (!action.isRunning()) continue;
+      sum += action.time * (1 + action.getEffectiveWeight());
+    }
+    return sum;
+  }
+
+  /**
+   * Everything that decides whether `play` will do anything, for a log line.
+   *
+   * The whole reason the slide has survived two fixes is that when it happens
+   * there is nothing to read: no throw, no warning, and a `?.` on the mixer
+   * that makes even a missing rig silent. This is the state somebody would ask
+   * for first, printed at the moment it is still true rather than reconstructed
+   * afterwards.
+   */
+  animationState(): Record<string, unknown> {
+    return {
+      currentAnim: this.currentAnim,
+      baseAnim: this.baseAnim,
+      // The one value that can hold `busy` true forever, so it is the first
+      // thing worth seeing. Printed as the sentinel's name rather than as
+      // 9007199254740991, which reads as noise.
+      oneShotUntil:
+        this.oneShotUntil === Number.MAX_SAFE_INTEGER
+          ? "MAX_SAFE_INTEGER (death pose, never expires)"
+          : Math.round(this.oneShotUntil - performance.now()),
+      busy: performance.now() < this.oneShotUntil,
+      hasMixer: this.mixer !== null,
+      hasInstance: this.instance !== null,
+      bodyModel: this.bodyModel,
+      boundActions: [...this.actions.keys()],
+      runningActions: [...this.actions.entries()]
+        .filter(([, a]) => a.isRunning())
+        .map(([name, a]) => `${name}@${a.time.toFixed(2)}w${a.getEffectiveWeight().toFixed(2)}`),
+    };
+  }
+
+  /**
+   * Force the state machine back to a state that moves, from any lock.
+   *
+   * Deliberately not `revive()`: that one is for a monster whose death pose is
+   * over and assumes the actor is otherwise healthy, so it plays "idle" and
+   * trusts it. This is the last resort, and it clears every gate `play` can be
+   * held by — the never-expiring one-shot, a clamped one-shot action still
+   * holding weight, and a `currentAnim` that no longer matches anything running
+   * — before asking for the base state with `immediate` so the identity guard
+   * cannot swallow it too.
+   *
+   * Returns whether it had anything to play, so a caller can tell "recovered"
+   * from "this rig has no clips at all", which are very different problems.
+   */
+  unstick(): boolean {
+    this.oneShotUntil = 0;
+    for (const action of this.actions.values()) action.stop();
+    // `immediate` on purpose: it is what makes `play` skip the "you are already
+    // in this state" guard, which after a lock is precisely the claim that is
+    // wrong — `currentAnim` says run and nothing is running.
+    const target = this.baseAnim === "die" ? "idle" : this.baseAnim;
+    this.play(target, true);
+    return this.actions.has(target);
+  }
+
   update(dtSeconds: number): void {
     // The leap multiplier has to be re-applied every frame rather than only on
     // entry into "run": `play` no-ops on a state that is already current, which

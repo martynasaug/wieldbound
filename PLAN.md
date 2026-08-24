@@ -7302,6 +7302,55 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A DELIBERATELY SILENT NO-OP IS A PLACE A BUG CAN LIVE FOREVER, and the
+  more correct each individual early return is, the better it hides one.
+  `Actor.play` has six of them and every single one is right: "you are
+  already in this state" must cost nothing, a swing must not be cut short
+  by an idle, a roll must survive the movement it causes. But five are
+  bounded by a clip ending and the sixth — a `currentAnim` of "die", whose
+  `oneShotUntil` is `MAX_SAFE_INTEGER` — can never stop being true. From
+  outside, a permanently locked actor and a healthy one are IDENTICAL:
+  `play("run")` is called every frame and returns without a word in both
+  cases, nothing throws, and `mixer?.update()` swallows even a missing rig
+  through its `?.`. Three sessions of reading the call graph did not find
+  it, and the console never produced the clue the user was told to look
+  for, because there was nothing to produce. When a symptom is real and
+  reproducible but nothing anywhere reports it, look for the code that is
+  SUPPOSED to say nothing, and check whether any of its exits are
+  unbounded in time.
+- WHEN THREE CAUSES HAVE BEEN WRONG, STOP NAMING CAUSES AND DETECT THE
+  SYMPTOM. M70.5, M70.14, M70.22 and M70.23 each fixed a genuine bug that
+  fit the slide report, and the report survived all of them. A fourth
+  theory-only fix had poor odds. The symptom, by contrast, is exactly
+  expressible in code the game already has — the body is translating and
+  the pose is not — and both halves were already sitting in the loop.
+  A watchdog on that is not a bandage over a bug that should have been
+  found properly: it is the only thing that can distinguish "fixed" from
+  "not reproduced yet" on a bug whose failure mode is silence, and it
+  turns the next occurrence into a log line with full state instead of
+  another round of guessing.
+- A CHECK THAT PASSES AGAINST ITS OWN MUTANT IS WORSE THAN NO CHECK,
+  because it is also a claim. `sliding.mjs`'s guard against re-nesting
+  `revive()` inside the respawn-coordinate branch was first written with
+  string offsets against a fixed-length slice, and it passed cleanly when
+  the recovery was deliberately moved back inside the guard it exists to
+  forbid. It was only caught because the mutation was actually run. The
+  rewrite brace-matches the block properly — and the lesson is that
+  mutation-testing a new guard is not optional polish, it is the step that
+  tells you whether you wrote a test or a decoration.
+- MEASURE BEFORE CUTTING, ESPECIALLY WHEN EVERY CANDIDATE COSTS PICTURE.
+  Asked to make the game run on lower-end machines, the obvious suspects
+  were all immediately visible: a 2048x2048 PCFSoft shadow map re-rendered
+  every frame, `setPixelRatio` capped at 2 (four times the fragments of 1
+  on a high-DPI display), 584 instanced meshes. Every one is a real cost
+  and every one is a VISUAL trade-off, so picking between them by
+  plausibility would be guessing with the player's picture as the stake —
+  and the one that looked most likely of all, ground cover casting
+  shadows, turned out to be already handled. The instrument (`profiler.ts`,
+  F3) came first, and only the single change that costs nothing to look
+  at — skipping a shadow projection-matrix rebuild whose four inputs were
+  bit-identical to last frame's — shipped without numbers.
+
 - A FIELD "USED IN SHARED" IS NOT THE SAME AS A FIELD THE PLAYER CAN SEE,
   and a naive "is this referenced in client/?" grep will clear it anyway.
   `StatusDef.modifiers` came back as reachable from the client — through
@@ -10835,6 +10884,101 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.25 — the slide, found: a one-shot that never expires.**
+Reported a fourth time, straight after M70.24 shipped. M70.22 and M70.23
+were real fixes to a real WebGL context-loss bug and the symptom outlived
+both, so this stopped reasoning about the renderer and read the animation
+state machine's own guard chain instead. `Actor.play` is SIX early
+returns and every one of them is a deliberate, silent no-op — which is
+correct, because "the state you asked for is the state you are in" is the
+common case and must cost nothing. Five of them are bounded: they stop
+being true when a clip ends or when the requested state stops matching
+the current one. The sixth is not. `play("die")` sets `oneShotUntil` to
+`Number.MAX_SAFE_INTEGER`, and `busy` is a plain
+`performance.now() < this.oneShotUntil` — so while `currentAnim` is
+"die", `if (busy && this.currentAnim === "die") return;` swallows every
+`play("idle"/"walk"/"run")` for the rest of the session, while
+`stepMovement` goes on writing `playerX`/`playerY` every frame regardless.
+That is the report exactly, including the part that made it so hard to
+chase: NOTHING IS WRONG ANYWHERE AN ERROR COULD APPEAR. Nothing throws,
+nothing warns, `mixer?.update()` swallows even a missing rig through its
+`?.`, and `play("run")` is called every frame and returns without a word
+in the locked case and the healthy case alike. A locked actor and a
+running one are indistinguishable from outside, which is why three
+sessions of reading the call graph did not settle it and why the console
+never had the clue the user was asked to look for.
+Modelled the guard chain in `tools/test/sliding.mjs` and ran 3600 frames
+of held movement through it after a death: 0 animations started, exactly.
+Two fixes. First, the one provable way in: `onHpUpdate`'s defeat branch
+called `play("die")` unconditionally but scheduled its `revive()` INSIDE
+`if (p.x !== undefined && p.y !== undefined)`, so a defeat arriving
+without respawn coordinates locked the character permanently. All four of
+the server's defeat sites do send a position today — and there is no
+reason for the client's recovery from its own pose to depend on the
+server's payload at all, so the `setTimeout` moved out of the guard.
+Second, and the part that matters more: a WATCHDOG, because the lock
+above is one route into a state that is undetectable by construction, and
+naming a fourth cause after three wrong ones is not a plan. `watchForSlide`
+measures the SYMPTOM, which is exact and which nothing else in the game
+can produce — the body is translating and the pose is not. Both halves are
+already here: `stepMovement` is the only thing that moves the local player,
+and the new `Actor.poseClock()` sums the running actions' weighted times,
+the same `AnimationAction.time` probe M70.5's verification used, promoted
+from a test-only measurement into something the game can ask itself. After
+a second of continuous movement with a bit-identical pose clock it logs
+once — loudly, with `Actor.animationState()`: `currentAnim`, `baseAnim`,
+`oneShotUntil` (printed as "MAX_SAFE_INTEGER (death pose, never expires)"
+rather than as nine quadrillion), whether a mixer and instance exist, and
+every bound and running action with its time and weight — and then calls
+`unstick()`, which clears every gate `play` can be held by and asks for
+the base state with `immediate` so the identity guard cannot swallow the
+recovery too.
+Verified: `sliding.mjs` proves the lock is real and permanent from the
+source, that an ordinary expired one-shot does NOT behave that way, and
+that `unstick` recovers. Its guard against re-nesting `revive()` was
+mutation-tested — and the FIRST version of that check passed against the
+mutant, which is worse than having no check, so it was rewritten to
+brace-match the guard block properly and re-tested until it failed for the
+right reason. Full suite green; `fighting.mjs` hit the known cactoro
+keep-away flake and passed against a ghost on re-run. Flagged honestly:
+this is the mechanism that fits every reported detail and it is now both
+watched for and self-healing, but it has not been reproduced against the
+user's own session — the next occurrence will print `[slide]` and its full
+state, which is the thing that has been missing all along.
+
+**Phase 70 M70.26 — a frame budget you can read.** Reported alongside the
+slide: the game lags and freezes a lot, on a machine that is not low-end.
+The render loop runs about thirty subsystems per frame — actors, npcs,
+plates, minimap, indicators, targeting, day/night, road, river, ambience,
+mist, town — every one added for a good reason and NOT ONE of them ever
+timed. Optimising by reading that list and picking whichever looks
+expensive is how a day gets spent making the cheap thing cheaper, so the
+first thing built is the instrument. `profiler.ts`, toggled with F3, off
+by default and costing one boolean test per section while off. It reports
+average frame time (throughput — too much work every frame) and WORST
+frame time over each window separately, because they are different
+problems with different fixes and averages hide stalls completely: sixty
+frames at 8ms and one at 400ms is a visible lurch and a respectable 22ms
+average. Alongside them, `renderer.info` — draw calls, triangles, resident
+geometries and textures, program count — sampled after the render because
+three.js resets the per-frame counters at the start of each one. Sections
+are sorted by cost, since the only question anybody opens it to ask is
+which three of thirty are the problem. The GPU submission is timed on its
+own line, because "the scene is too heavy" and "the JavaScript above it is
+too heavy" are completely different diagnoses.
+One measured-free win shipped with it: `World.follow` called
+`sun.shadow.camera.updateProjectionMatrix()` on every single frame, though
+`extent` derives purely from camera distance and is constant for minutes
+at a time between zooms — now guarded on an actual change, with an epsilon
+so the easing zoom's ever-smaller steps cannot defeat the guard. Nothing
+else was touched: the obvious candidates (a 2048x2048 PCFSoft shadow map
+re-rendered every frame, `setPixelRatio` capped at 2, 584 instanced
+meshes) are all real suspects and all VISUAL trade-offs, and picking
+between them without numbers would be guessing with the player's picture
+as the stake. Ground cover was checked and already opts all but three
+species out of casting shadows, so the one that looked most likely was
+already handled. Awaiting F3 numbers before cutting anything.
 
 **Phase 70 M70.24 — a status that never said how much.** Fresh sweep for
 wire/table data with no client expression, mechanically: pulled every

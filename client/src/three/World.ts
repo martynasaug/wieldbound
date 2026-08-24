@@ -611,6 +611,10 @@ export class World {
     return nearest;
   }
 
+  /** Last extent the shadow frustum was built for, so `follow` can skip
+   *  rebuilding a matrix that has not changed. */
+  private shadowExtent = -1;
+
   /** Keeps the camera and the shadow frustum trailing the player. */
   follow(x: number, z: number, dtSeconds: number): void {
     // Chest height above the SURFACE, not above zero and not above the terrain.
@@ -659,12 +663,25 @@ export class World {
     // The shadow map covers what the camera can see and no more. Pinned to the
     // old wide framing it spent most of its resolution on ground that was off
     // screen, which is a large part of why armour read as a soft blob up close.
+    //
+    // Recomputed only when it actually changes. `extent` is derived purely from
+    // the camera distance, which moves on a zoom or a wall clamp and is
+    // otherwise constant for minutes at a time — but `updateProjectionMatrix`
+    // was being called on every single frame regardless, rebuilding an
+    // orthographic matrix from four numbers that were bit-identical to last
+    // frame's. The epsilon is what keeps the easing zoom from defeating the
+    // guard: `distance` lerps toward its target forever in ever-smaller steps,
+    // so an exact compare would go on rebuilding long after the movement
+    // stopped being visible.
     const extent = Math.max(11, Math.min(34, this.distance * 1.85));
-    this.sun.shadow.camera.left = -extent;
-    this.sun.shadow.camera.right = extent;
-    this.sun.shadow.camera.top = extent;
-    this.sun.shadow.camera.bottom = -extent;
-    this.sun.shadow.camera.updateProjectionMatrix();
+    if (Math.abs(extent - this.shadowExtent) > 0.01) {
+      this.shadowExtent = extent;
+      this.sun.shadow.camera.left = -extent;
+      this.sun.shadow.camera.right = extent;
+      this.sun.shadow.camera.top = extent;
+      this.sun.shadow.camera.bottom = -extent;
+      this.sun.shadow.camera.updateProjectionMatrix();
+    }
     // The light's DIRECTION is the hour's; only its distance is ours. It has to
     // stay far enough out that the shadow frustum's near plane clears anything
     // tall standing beside the player.

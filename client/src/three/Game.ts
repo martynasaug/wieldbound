@@ -143,6 +143,7 @@ function onGround(x: number, z: number): [number, number, number] {
 import { nightAmount } from "./daynight";
 import { Town } from "./town";
 import { buildNpcs, updateNpcs, type NpcVisual } from "./npcs";
+import { Profiler } from "./profiler";
 import { DialoguePanel, type DialogueAction } from "../ui/DialoguePanel";
 import { QuestTracker } from "../ui/QuestTracker";
 import { EXCHANGE_OFFERS, EXCHANGE_RATE, SHOP_STOCK } from "../../../shared/shop";
@@ -260,6 +261,13 @@ const IMPACT_DELAY_MS = 210;
 // The reach ring fades out once combat traffic stops, so it is not permanently
 // drawn under a player who is just walking around.
 const COMBAT_INDICATOR_TIMEOUT_MS = 3500;
+
+/** How long the body may translate with a completely frozen pose before that
+ *  counts as the slide bug rather than as one unlucky sample. A second is far
+ *  longer than any crossfade and far shorter than a player's patience. */
+const SLIDE_FREEZE_MS = 1000;
+/** Below this, "moving" is float noise in the position, not travel. */
+const SLIDE_MOVE_EPSILON_PX = 0.5;
 
 // How far out an enemy will be picked up automatically. Wider than any weapon
 // reaches, so the marker appears while you are still walking in and you know
@@ -596,6 +604,17 @@ export class Game {
   private running = false;
   /** Last moment combat traffic arrived, used to show the reach ring only while fighting. */
   private lastCombatAt = 0;
+  /** Off until F3. See profiler.ts — the loop runs about thirty subsystems and
+   *  none of them had ever been timed. */
+  private readonly profiler = new Profiler();
+  // Watchdog bookkeeping — see `watchForSlide`. Held on the instance rather
+  // than in the loop so a lock is measured across frames, which is the only
+  // timescale it is visible on.
+  private slideLastX = 0;
+  private slideLastY = 0;
+  private slidePose = -1;
+  private slideFrozenMs = 0;
+  private slideReported = false;
   /** Whether a standing attack order exists, per the server. */
   private attacking = false;
   private readonly dockButtons: { el: HTMLElement; isOpen: () => boolean }[] = [];
@@ -1740,9 +1759,24 @@ export class Game {
         this.playerX = p.x;
         this.playerY = p.y;
         this.localActor?.snapTo(...onGround(toWorldX(p.x), toWorldZ(p.y)));
-        // A death pose would otherwise persist through the respawn.
-        setTimeout(() => this.localActor?.revive(), 900);
       }
+      // OUTSIDE the coordinate check, and that is the whole point of the line.
+      //
+      // `play("die")` is unconditional and sets `oneShotUntil` to
+      // MAX_SAFE_INTEGER, which is the one value in the animation state machine
+      // that never expires on its own: while `currentAnim` is "die", every
+      // `play("idle"/"walk"/"run")` hits a `busy` guard and returns silently,
+      // forever. `revive` is the only thing that clears it — and it used to be
+      // scheduled only when the server had also sent respawn coordinates, so a
+      // defeat that arrived without them left the character permanently
+      // animation-locked while `stepMovement` kept translating it: sliding
+      // across the ground with no walk cycle and nothing in the console.
+      //
+      // All four of the server's defeat sites do pass a respawn position today.
+      // That is exactly the kind of fact that is true until one of them is
+      // added or edited, and there is no reason for the CLIENT's recovery from
+      // its own pose to depend on the payload at all.
+      setTimeout(() => this.localActor?.revive(), 900);
     }
   }
 
@@ -3582,21 +3616,27 @@ export class Game {
 
   private loopBody(): void {
     const dt = Math.min(0.05, this.clock.getDelta());
+    this.profiler.frameBegin();
 
+    this.profiler.begin("actors");
     this.stepMovement(dt);
 
     this.localActor?.update(dt);
+    this.watchForSlide(dt);
     for (const a of this.players.values()) a.update(dt);
     for (const v of this.monsters.values()) v.actor.update(dt);
     this.processMonsterSpawnQueue();
+    this.profiler.end("actors");
     // Nobody sends the townspeople anything, so these two lines are the only
     // thing that moves them at all — drop either and Emberhold is five statues.
     // `updateNpcs` places them off the shared clock and must run BEFORE the
     // actors tick, so the facing it hands over is eased this frame rather than
     // next one.
+    this.profiler.begin("npcs");
     updateNpcs(this.npcs);
     for (const n of this.npcs.values()) n.actor.update(dt);
     this.updateDialogueRange();
+    this.profiler.end("npcs");
     // The tracker's own no-op guard is the thing that makes this free: it keys
     // on a distance rounded to fifty pixels, so this rebuilds the panel about
     // twice a second while walking and never while standing still.
@@ -3614,12 +3654,14 @@ export class Game {
     // The hotbar's curtains are driven per frame, not per message. Calling this
     // only from onManaUpdate (as M1 did) left every cooldown visually frozen at
     // whatever it was when mana last changed.
+    this.profiler.begin("fx");
     this.hotbar.update(this.mana);
     this.effects.update(this.world.camera);
     this.updateWeaponAura();
     this.projectiles.update();
     this.skillFx.update();
     this.drops.update(performance.now());
+    this.profiler.end("fx");
     // After the actors have moved and before the frame is drawn, so a number
     // never lags the body it came off by a frame.
     this.floaters.update(this.projectForFloat);
@@ -3645,17 +3687,27 @@ export class Game {
       (facing?.state.statuses ?? []).map((s) => ({ id: s.id, endsAt: s.endsAt })),
     );
     this.updateForges();
+    this.profiler.begin("minimap");
     this.updateMinimap();
+    this.profiler.end("minimap");
     // Derived before anything draws, so the ring, the frame and the nameplate
     // all agree within a single frame.
+    this.profiler.begin("targeting");
     this.updateTargeting();
     this.hoverId =
       this.pointerX >= 0 ? this.pickMonsterAt(this.pointerX, this.pointerY) : null;
     this.updateIndicators();
+    this.profiler.end("targeting");
 
+    this.profiler.begin("occluders");
     this.fadeOccluders();
+    this.profiler.end("occluders");
+    this.profiler.begin("plates");
     this.drawPlates();
+    this.profiler.end("plates");
+    this.profiler.begin("daynight");
     const hour = this.world.updateDayNight();
+    this.profiler.end("daynight");
     // After updateDayNight, so the town is lit against the sky it is standing
     // under rather than against last frame's.
     // The road runs on the town's clock. A frontier that lit on its own
@@ -3719,10 +3771,34 @@ export class Game {
       Math.hypot(this.playerX - TOWN_CENTER.x, this.playerY - TOWN_CENTER.y) / PX_PER_UNIT,
       performance.now() / 1000,
     );
+    this.profiler.begin("hud");
     this.hud.setPortrait(classForWeapon(this.appearance.weaponType));
     this.hud.syncLayout();
     this.hud.setClock(hour.name, gameClock(hour.clock * DAY_LENGTH_MS), isDaytime(hour.clock * DAY_LENGTH_MS));
+    this.profiler.end("hud");
+
+    // The GPU submission on its own line. This is the number that separates
+    // "the scene is too heavy" from "the JavaScript above it is too heavy",
+    // and they are completely different problems with completely different
+    // fixes — so it is the first thing worth being able to read.
+    this.profiler.begin("render");
     this.world.render();
+    this.profiler.end("render");
+
+    if (this.profiler.enabled) {
+      // Read AFTER the render, because three.js resets the per-frame counters
+      // at the start of each one — sampled before, these are last frame's.
+      const info = this.world.renderer.info;
+      this.profiler.setStats({
+        "draw calls": info.render.calls,
+        triangles: info.render.triangles,
+        geometries: info.memory.geometries,
+        textures: info.memory.textures,
+        programs: info.programs?.length ?? 0,
+        actors: this.players.size + this.monsters.size + this.npcs.size,
+      });
+    }
+    this.profiler.frameEnd();
   }
 
   /**
@@ -3942,6 +4018,95 @@ export class Game {
       }
     }
     this.raycaster.far = Infinity;
+  }
+
+  /**
+   * THE SLIDE WATCHDOG.
+   *
+   * Reported four times now: attack a monster, a few seconds of lag, and then
+   * the walking animation is gone and the character glides across the ground
+   * forever. M70.22 and M70.23 fixed a real WebGL context-loss bug that fits
+   * every detail of it, and the report survived both — so this stops trying to
+   * name the cause and instead detects the SYMPTOM, which is exact and which
+   * nothing else in the game can produce.
+   *
+   * The symptom is: the body is translating and the pose is not. Both halves
+   * are measurable here — `stepMovement` is the only thing that moves the local
+   * player and it runs one line above this, and `poseClock()` is the mixer's
+   * own advancement. Neither is a guess about why.
+   *
+   * WHY THIS IS A LEGITIMATE THING TO ADD rather than a bandage over a bug that
+   * should be found properly: `Actor.play` is six early returns, every one of
+   * them a deliberate silent no-op, and one of them — a `currentAnim` of "die",
+   * whose `oneShotUntil` is `MAX_SAFE_INTEGER` — can never expire on its own.
+   * A locked actor and a healthy one are byte-for-byte identical from outside:
+   * `play("run")` is called every frame and returns without a word in both
+   * cases, `mixer.update()` is called on a `?.` that swallows a missing rig,
+   * and nothing throws. That is a class of failure the codebase currently has
+   * NO way to observe, which is exactly why three sessions of reading the call
+   * graph have not settled it.
+   *
+   * So it logs, loudly and once per episode, with the full state at the moment
+   * it is still true — the console line the bug has never produced — and then
+   * recovers, because a player should not have to reload to walk again.
+   */
+  private watchForSlide(dt: number): void {
+    const actor = this.localActor;
+    if (!actor) return;
+
+    // A frame the mixer did not advance is not evidence about anything. `dt` is
+    // clamped to 50ms at the top of the loop, so a stall shows up as a run of
+    // ordinary frames rather than one huge one — which is the case this has to
+    // survive, since "a few seconds of lag" is in every report.
+    if (dt <= 0) return;
+
+    const moved =
+      Math.abs(this.playerX - this.slideLastX) + Math.abs(this.playerY - this.slideLastY);
+    this.slideLastX = this.playerX;
+    this.slideLastY = this.playerY;
+
+    const pose = actor.poseClock();
+    // Standing still proves nothing: a static pose is what idle looks like when
+    // idle is a single-frame clip, and nobody is sliding if nobody is moving.
+    if (moved < SLIDE_MOVE_EPSILON_PX) {
+      this.slideFrozenMs = 0;
+      this.slidePose = pose;
+      this.slideReported = false;
+      return;
+    }
+
+    if (pose !== this.slidePose) {
+      this.slidePose = pose;
+      this.slideFrozenMs = 0;
+      this.slideReported = false;
+      return;
+    }
+
+    // Moving, and the pose has not advanced by so much as a float. Real
+    // animation cannot do this for a whole second: every base state the local
+    // player can be in is a looping clip whose time advances on every update.
+    this.slideFrozenMs += dt * 1000;
+    if (this.slideFrozenMs < SLIDE_FREEZE_MS || this.slideReported) return;
+    this.slideReported = true;
+
+    const state = actor.animationState();
+    console.error(
+      `[slide] the character has moved for ${Math.round(this.slideFrozenMs)}ms with a frozen ` +
+        `pose — the animation state machine is stuck. Recovering. State at the lock:`,
+      state,
+    );
+    const ok = actor.unstick();
+    if (ok) {
+      console.error("[slide] recovered — the base animation is playing again.");
+    } else {
+      // A different problem entirely, and one worth saying out loud rather than
+      // retrying forever: the rig has no clip for the state it is being asked
+      // for, so no amount of unsticking will animate it.
+      console.error(
+        "[slide] could NOT recover: this rig has no action bound for its base state.",
+        state,
+      );
+    }
   }
 
   private stepMovement(dt: number): void {
