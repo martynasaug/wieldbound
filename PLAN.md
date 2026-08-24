@@ -10811,6 +10811,43 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.23 — M70.22 fixed the renderer, not the rig.** Reported
+again right after M70.22 shipped: the character still keeps sliding after
+combat. M70.22's fix was real and verified (the render loop genuinely
+resumes after a forced context loss), but a restored WebGL context does
+not mean every GPU resource came back correctly — it means the RENDERER
+is drawing again, using whatever three.js lazily decides to re-upload,
+and a `SkinnedMesh`'s pose lives somewhere three.js does not
+automatically rebuild on its own: `Skeleton.boneTexture`, the packed bone
+matrices a rig is actually posed from, separate from the mesh's own
+geometry. If that texture's old GPU handle came back invalid while the
+JS-side object still believed it was fine, a character would render —
+terrain, lighting, its own translating position, all genuinely working —
+while its RIG stayed frozen at whatever pose the bone texture last held,
+gliding across the ground in a locked stance. Exactly the report, both
+times.
+`webglcontextrestored` now explicitly rebuilds every `SkinnedMesh`'s bone
+texture (`boneTexture = null; computeBoneTexture(); update();`) and marks
+every texture reachable from every material in the scene `needsUpdate`,
+rather than trusting three.js's own lazy re-upload path to catch
+everything on its own. Investigating this one also ruled out several
+real alternate theories worth recording so they are not re-chased:
+directly forcing a monster's alive→dead transition confirmed the
+death-burst code path throws nothing and correctly guards against
+re-firing; instrumenting `Actor.update()` directly confirmed it keeps
+being called at its normal rate throughout, and that `currentAnim`
+staying "attack" during continuous combat is CORRECT behaviour (an attack
+order persists and keeps re-swinging on its own cadence for as long as a
+target stays in reach, whether or not the button keeps getting pressed —
+not a bug, just this session's own test scripts not accounting for it).
+Verified live: forced a real context loss/restore cycle with real skinned
+character meshes present and confirmed the skeleton's bone texture came
+back with a genuinely new identity (not the same stale object silently
+reused), rendering resumed, and nothing threw. `animation.mjs` and
+`smoke.mjs` green; `fighting.mjs` clean. Flagged honestly in the commit:
+this could not be proven against the user's own exact repro, only against
+the best-understood mechanism that fits every reported detail.
+
 **Phase 70 M70.22 — a lost GPU context nobody ever told to come back.**
 Reported directly, and it was serious: attacked a monster, a few seconds
 of lag, the walking animation vanished, and the character just slid

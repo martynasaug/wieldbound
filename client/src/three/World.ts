@@ -242,11 +242,34 @@ export class World {
       "webglcontextrestored",
       () => {
         console.warn("[world] WebGL context restored.");
-        // three.js reuploads most GPU resources on its own once the context
-        // returns, but a restored context starts from a cleared render
-        // state — one resize is a cheap, reliable nudge that no stale
-        // internal viewport/state cache quietly lingers past it.
+        // three.js reuploads most GPU resources on its own the next time an
+        // object is drawn, but two things are worth forcing rather than
+        // trusting to that lazy path, because they are exactly what a
+        // frozen-pose-but-still-moving character would look like if either
+        // one silently stayed stale: a SkinnedMesh's own bone matrices (the
+        // thing that actually poses a rig, separate from the mesh's own
+        // geometry) and every texture already resident in memory, which a
+        // lost context invalidates on the GPU side without touching the JS
+        // object that still thinks it is fine.
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.scene.traverse((obj) => {
+          const mesh = obj as THREE.SkinnedMesh;
+          if (mesh.isSkinnedMesh && mesh.skeleton) {
+            mesh.skeleton.boneTexture = null;
+            mesh.skeleton.computeBoneTexture();
+            mesh.skeleton.update();
+          }
+          const withMaterial = obj as THREE.Mesh;
+          const rawMaterial = withMaterial.material as THREE.Material | THREE.Material[] | undefined;
+          const mats = Array.isArray(rawMaterial) ? rawMaterial : rawMaterial ? [rawMaterial] : [];
+          for (const mat of mats) {
+            const bag = mat as unknown as Record<string, unknown>;
+            for (const key of Object.keys(bag)) {
+              const value = bag[key] as THREE.Texture | undefined;
+              if (value?.isTexture) value.needsUpdate = true;
+            }
+          }
+        });
       },
       false,
     );
