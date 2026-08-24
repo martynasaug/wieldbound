@@ -1586,11 +1586,31 @@ export class Actor {
     return this.root.position;
   }
 
-  faceToward(x: number, z: number): void {
+  /**
+   * @param instant Skip the eased turn and apply the new facing THIS frame.
+   *
+   * Reported from play: a ranged shot fired while turning to face a target
+   * visibly launched from behind the character — from a point BEHIND where
+   * the arrow was headed, so it read as flying backwards. `muzzlePosition`
+   * reads the weapon bone's CURRENT world transform, and the ordinary turn
+   * (`update`'s `turnRate`) closes only a fraction of a large angle per
+   * frame — so calling `faceToward` and then immediately reading the muzzle
+   * in the same tick, as `onBattleResult` does the instant a swing lands,
+   * caught the bone still oriented wherever the character was facing a
+   * moment before (away, if they had just been backing off). Every OTHER
+   * caller wants the slow turn — a wandering monster glancing around, or
+   * the player's own body easing to face whatever they're circling — so
+   * this stays opt-in rather than becoming the only behaviour.
+   */
+  faceToward(x: number, z: number, instant = false): void {
     const dx = x - this.root.position.x;
     const dz = z - this.root.position.z;
     if (dx * dx + dz * dz < 1e-6) return;
     this.targetFacing = Math.atan2(dx, dz);
+    if (instant) {
+      this.facing = this.targetFacing;
+      this.pivot.rotation.y = this.facing + this.facingOffset;
+    }
   }
 
   /**

@@ -7302,6 +7302,18 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- SETTING A TARGET VALUE AND READING THE EASED RESULT IN THE SAME TICK IS A
+  RACE, even when both lines are right next to each other and look
+  synchronous. `onBattleResult` called `faceToward` and then immediately
+  read `muzzlePosition` (which depends on the bone's actual current
+  rotation) one line later — but `faceToward` only ever sets `targetFacing`;
+  the real rotation eases toward it over several frames. Two adjacent lines
+  of code do not imply the second sees the first's intended effect if
+  something in between is animated rather than assigned. The fix
+  (`instant` parameter, applying the rotation THIS frame) is opt-in rather
+  than the default specifically because most callers — an idle glance, the
+  player's own body turning while circling a target — want the easing;
+  only a same-tick read like this one needs to bypass it.
 - AN AGGREGATION KEY HAS TO MATCH WHERE THE OVERLAP ACTUALLY COMES FROM. A
   first version of the combat-log merge keyed grouped hits by monster id,
   reasoning that repeated swings from the same attacker should collapse —
@@ -10749,6 +10761,35 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.11 — a shot fired from where you WERE facing.** Reported
+directly, and it survived M63.1's own fix for the neighbouring bug: a
+ranged attack fired while turning to face a target visibly launched from
+behind the character rather than in front of it — "firing backwards" while
+running. The cause was one frame of lag between two things that looked
+simultaneous. `onBattleResult` forces the player to face whatever they
+just hit (`faceToward`) and, on the very next line, reads the muzzle
+bone's world position to spawn the shot (`launchAttack` → `muzzlePosition`)
+— but `faceToward` only ever set a TARGET angle; the actual turn is eased
+over several frames at `turnRate = 14` (`Actor.ts`'s `update`). Reading the
+muzzle bone synchronously, in the same tick the target angle was just
+set, caught it still oriented wherever the character had been facing a
+moment before — which, backing away from a fight, is directly away from
+where the arrow needed to go. `Actor.faceToward` gained an `instant`
+parameter that applies the new facing to the bone THIS frame rather than
+easing into it, used only by `onBattleResult`'s snap (every other caller —
+a wandering monster's idle glance, the player's own body easing to face
+whatever it's circling — keeps the smooth turn, which is what makes normal
+movement not look like a turret). Verified live: reproduced the exact
+scenario at the `Actor` level — faced away, then read the muzzle position
+with and without `instant` — and confirmed the non-instant read stayed on
+the stale "away" side in the same tick (the bug, reproduced on demand)
+while the instant read immediately reflected the new forward-facing
+orientation. `animation.mjs` and `smoke.mjs` green; `fighting.mjs` flaked
+once (an unrelated "still swinging while retreating" false positive) and
+passed clean on four of five runs — this fix touches only client files,
+and `fighting.mjs` connects over a raw socket with no client dependency at
+all, so it structurally cannot have been caused by this change.
 
 **Phase 70 M70.10 — which of these is coming for ME.** Requested directly:
 multi-monster combat, and continued monster AI. The melee ring queue

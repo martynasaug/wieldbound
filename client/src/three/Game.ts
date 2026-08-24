@@ -1728,7 +1728,14 @@ export class Game {
     // zero on every BATTLE_RESULT, which costs nothing on an ordinary single
     // swing — the guard only ever mattered for two arriving this close.
     this.localActor?.play("attack", true);
-    if (vis) this.localActor?.faceToward(vis.actor.position.x, vis.actor.position.z);
+    // Instant, not eased — `launchAttack` below reads the muzzle bone's
+    // position in this same tick, and the ordinary turn only closes a
+    // fraction of the angle per frame. See `Actor.faceToward`'s own
+    // comment: without this, a shot fired while turning to face a target
+    // (backing off, then landing a swing) launched from wherever the
+    // character had been facing a moment before, which read as firing
+    // backwards.
+    if (vis) this.localActor?.faceToward(vis.actor.position.x, vis.actor.position.z, true);
 
     // What the weapon actually does, and — for anything that flies — how long
     // it takes to get there. One table drives both, so the damage number can
