@@ -43,6 +43,7 @@ import {
   readMultiplier,
   statusGroupIds,
 } from "../../shared/protocol-types.ts";
+import { statusEffectLines } from "../../shared/items.ts";
 
 let failures = 0;
 function check(name, ok, detail = "") {
@@ -541,6 +542,46 @@ section("9. skills that read a status");
   console.log(
     `  ${readers.length} readers: ` +
       readers.map((s) => `${s.id}(${s.reads.consume ? "spends" : "reads"})`).join(", "),
+  );
+}
+
+// --- 10. every status can say what it does ----------------------------------
+// The tooltip prints `statusEffectLines`, and a row whose mechanics that
+// describer has no words for renders an EMPTY gap rather than an error: the
+// status still works, still ticks, still slows, and the hover just silently
+// stops short. That is the same class of silent failure as the modifier keys
+// checked in section 1 — a number that exists and is never said.
+section("10. every status states its own numbers");
+{
+  for (const def of defs) {
+    const lines = statusEffectLines(def);
+    check(
+      `${def.id} says what it does`,
+      lines.length > 0,
+      "no mechanical line — the tooltip would show a name and a blurb and nothing else",
+    );
+    // A line with no text is worse than no line: it is a blank row.
+    check(
+      `${def.id}'s lines are all worded`,
+      lines.every((l) => typeof l.text === "string" && l.text.trim().length > 0),
+    );
+  }
+
+  // A tick of damage has a SCHOOL, and the school is the reason a resistance
+  // does or does not apply to it. Saying the number without it would be the
+  // half of the fact that cannot be acted on.
+  for (const def of defs.filter((d) => d.dot)) {
+    const first = statusEffectLines(def)[0];
+    check(
+      `${def.id} names its damage school`,
+      first.text.includes(def.dot.school) && typeof first.color === "string",
+      first.text,
+    );
+  }
+
+  console.log(
+    `  ${defs.length} statuses, ` +
+      `${defs.reduce((n, d) => n + statusEffectLines(d).length, 0)} mechanical lines`,
   );
 }
 

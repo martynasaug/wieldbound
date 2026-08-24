@@ -4,6 +4,8 @@
  * floating over its head, which is unreadable mid-fight in a pack.
  */
 import { iconSvg } from "./icons";
+import { statusEffectLines } from "../../../shared/items";
+import { statusDef } from "../../../shared/protocol-types";
 
 /** Everything the frame shows beyond a name and a health value. */
 export interface TargetLook {
@@ -142,7 +144,20 @@ export class TargetFrame {
         icon.className = "status-icon";
         icon.innerHTML = iconSvg(status.icon, "icon");
         cell.appendChild(icon);
-        cell.title = `${status.name} — ${status.blurb}`;
+        // The numbers too, not just the sentence. This row is the one place a
+        // player reads what is running on the thing they are hitting, and the
+        // two statuses that exist ONLY as a number — Marked's +25% taken, and
+        // the Recovering window a dodged slam opens — said nothing about
+        // themselves here at all. Looked up from `STATUSES` by id rather than
+        // carried on the wire: the payload is already only a projection of that
+        // table, and widening it would be a second copy of numbers the client
+        // already has.
+        const effects = statusEffectLines(statusDef(status.id))
+          .map((line) => line.text)
+          .join(" · ");
+        cell.title = effects
+          ? `${status.name} — ${effects} — ${status.blurb}`
+          : `${status.name} — ${status.blurb}`;
         this.statusRow.appendChild(cell);
       }
       this.statusRow.classList.toggle("shown", ordered.length > 0);

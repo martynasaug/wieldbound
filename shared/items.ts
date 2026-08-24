@@ -64,8 +64,10 @@ import {
   MONSTER_LABELS,
   MONSTER_STATS,
   SLOT_LABEL,
+  schoolDef,
   type MonsterKind,
   type PassiveBonus,
+  type StatusDef,
   type WeaponType,
   // Extension included on purpose: the tools/test suites run this file under
   // plain Node ESM, which will not resolve an extensionless specifier. Both
@@ -927,6 +929,77 @@ export function passiveSummary(bonus: PassiveBonus): string {
 /** How an affix reads in a tooltip, at the band of the item carrying it. */
 export function affixSummary(affix: AffixDef, band: ItemBand): string {
   return passiveSummary(affixBonus(affix, band));
+}
+
+/** One mechanical line of a status, and the colour it should be read in.
+ *  Colour is set only where it carries meaning of its own — a damage school —
+ *  exactly as the item tooltip's own `tt-school` line does. */
+export interface StatusEffectLine {
+  text: string;
+  color?: string;
+}
+
+/**
+ * What a status actually DOES, in numbers.
+ *
+ * Every status has always carried its mechanics in the one `STATUSES` table —
+ * a slow multiplier, a damage-taken multiplier, a tick of damage in a named
+ * school, a bag of `PassiveBonus` — and the client has never shown a single one
+ * of them. All a player ever got was the `blurb`, which says the SHAPE of the
+ * effect and deliberately not its size: "moving at a fraction of its usual
+ * pace" is true of a 10% slow and of a 60% one, and Chilled is the second.
+ *
+ * Worse, a couple of blurbs make claims nothing else can settle. Poison's says
+ * "it slows what it is in" — the only place that 35% exists is this table.
+ * Marked's whole reason to be cast is a number (+25% taken) that the game has
+ * never once printed. And a damage-over-time has a SCHOOL, which is the fact
+ * that decides whether the resistance you are wearing matters to it at all —
+ * the same argument the item tooltip already makes for putting a weapon's
+ * school on its own line.
+ *
+ * Goes through `passiveSummary` for the `modifiers` bag rather than wording
+ * them again, so a status granting armour says "armour" in the same words an
+ * affix or a set bonus does. The three fields that are NOT `PassiveBonus`
+ * (`moveMultiplier`, `damageTakenMultiplier`, `dot`) have no such vocabulary to
+ * borrow because nothing else in the game expresses them, so they get one here.
+ *
+ * Ordered by how much a player in a fight cares: what is ticking on them, how
+ * much harder they are being hit, how much slower they are, then the rest.
+ */
+export function statusEffectLines(def: StatusDef | null | undefined): StatusEffectLine[] {
+  const lines: StatusEffectLine[] = [];
+  if (!def) return lines;
+
+  if (def.dot) {
+    const school = schoolDef(def.dot.school);
+    // Per second where the tick IS a second (all of them, today) rather than
+    // "4 damage every 1s", which is the same fact said worse. The general form
+    // survives for a future row that ticks at some other rate.
+    const every = def.tickMs && def.tickMs !== 1000
+      ? `every ${Math.round(def.tickMs / 100) / 10}s`
+      : "per second";
+    lines.push({
+      text: `${def.dot.damage} ${school.name.toLowerCase()} damage ${every}`,
+      color: school.color,
+    });
+  }
+
+  if (def.damageTakenMultiplier !== undefined && def.damageTakenMultiplier !== 1) {
+    const pct = Math.round((def.damageTakenMultiplier - 1) * 100);
+    lines.push({ text: `${pct > 0 ? "+" : ""}${pct}% damage taken` });
+  }
+
+  if (def.moveMultiplier !== undefined && def.moveMultiplier !== 1) {
+    const pct = Math.round((def.moveMultiplier - 1) * 100);
+    lines.push({ text: `${pct > 0 ? "+" : ""}${pct}% movement speed` });
+  }
+
+  if (def.modifiers) {
+    const text = passiveSummary(def.modifiers);
+    if (text) lines.push({ text });
+  }
+
+  return lines;
 }
 
 const PASSIVE_LABEL: Record<keyof PassiveBonus, string> = {

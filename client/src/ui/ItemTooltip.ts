@@ -45,7 +45,8 @@ function attachTooltip(target: HTMLElement, renderContent: () => void): void {
 }
 
 /**
- * A plain tooltip: a title, a one-word category, and a line of prose.
+ * A plain tooltip: a title, a one-word category, what the thing does, and a
+ * line of prose.
  *
  * Shares the one tooltip element and the one placement rule with the item
  * tooltip, so a status hovered over the unit frame and an item hovered over in
@@ -55,7 +56,16 @@ function attachTooltip(target: HTMLElement, renderContent: () => void): void {
  */
 export function attachTextTooltip(
   target: HTMLElement,
-  content: () => { title: string; tag?: string; tagColor?: string; body: string },
+  content: () => {
+    title: string;
+    tag?: string;
+    tagColor?: string;
+    /** The mechanical rows, said before the prose for the same reason the item
+     *  tooltip puts its rolls before its flavour: the numbers are what the
+     *  hover was for, and the sentence is what is left once they are read. */
+    lines?: { text: string; color?: string }[];
+    body: string;
+  },
 ): void {
   attachTooltip(target, () => {
     const d = content();
@@ -71,6 +81,13 @@ export function attachTextTooltip(
       sub.textContent = d.tag;
       if (d.tagColor) sub.style.color = d.tagColor;
       el.appendChild(sub);
+    }
+    for (const line of d.lines ?? []) {
+      const row = document.createElement("div");
+      row.className = "tt-line";
+      row.textContent = line.text;
+      if (line.color) row.style.color = line.color;
+      el.appendChild(row);
     }
     const body = document.createElement("div");
     body.className = "tt-flavour";

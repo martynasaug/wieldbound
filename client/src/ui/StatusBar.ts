@@ -28,6 +28,7 @@
 import { STATUSES, statusDef, type ActiveStatus, type StatusId } from "../../../shared/protocol-types";
 import { iconSvg } from "./icons";
 import { attachTextTooltip } from "./ItemTooltip";
+import { statusEffectLines } from "../../../shared/items";
 
 /** Under two seconds is "about to go", which is when a debuff starts pulsing
  *  and when a buff is worth re-casting. */
@@ -123,14 +124,18 @@ export class StatusBar {
     icon.innerHTML = iconSvg(def.icon, "icon");
     el.appendChild(icon);
 
-    // Says what it is, what it does, and — the part a player actually wants —
-    // whether it is helping. The WORD is there because the shape and the colour
-    // are both things somebody might not be reading, and a tooltip is the one
-    // place there is room to be unambiguous.
+    // Says what it is, whether it is helping, BY HOW MUCH, and last the line
+    // that is only there to be read. The WORD is there because the shape and
+    // the colour are both things somebody might not be reading, and a tooltip
+    // is the one place there is room to be unambiguous — which is the same
+    // argument for the numbers: `blurb` is written to say the shape of an
+    // effect and not its size, so on its own it cannot tell a 10% slow from
+    // Chilled's 60%.
     attachTextTooltip(el, () => ({
       title: def.name,
       tag: kind === "buff" ? "Helping you" : "Being done to you",
       tagColor: kind === "buff" ? "#8fd15a" : "#ff7a6a",
+      lines: statusEffectLines(def),
       body: def.blurb,
     }));
 

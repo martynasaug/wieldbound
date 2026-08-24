@@ -7302,6 +7302,31 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A FIELD "USED IN SHARED" IS NOT THE SAME AS A FIELD THE PLAYER CAN SEE,
+  and a naive "is this referenced in client/?" grep will clear it anyway.
+  `StatusDef.modifiers` came back as reachable from the client — through
+  `statusModifiers`, into the character sheet's "Running effects" total.
+  That is real, and it is also only an AGGREGATE, for the local player,
+  with every running effect summed together; the question a player asks
+  by hovering one pip ("what is this ONE thing doing to me") was still
+  unanswerable. The three sibling fields next to it (`moveMultiplier`,
+  `damageTakenMultiplier`, `dot`) had no expression at all and were the
+  easier find. The lesson is that the sweep's real question is not "is
+  this symbol referenced anywhere" but "can a player read this number at
+  the moment they would want it" — a field can pass the first test and
+  fail the second, and the second is the one the gap is measured in.
+- A `blurb` FIELD IS DOCUMENTED TO OMIT THE NUMBER, so prose being present
+  is not evidence the fact is covered. `StatusDef.blurb`'s own doc comment
+  says it exists to state what an effect DOES "not what it is" — one line,
+  for a tooltip — and every one of the fifteen honours that faithfully.
+  Which means the surface LOOKED complete: hover a status, get a name, a
+  category and a sentence. Two of those sentences were making claims only
+  the table could settle ("it slows what it is in", "hits harder"), and
+  the sentence being well-written is exactly what made the absence hard to
+  notice. When a field's contract is "the shape, not the size", the size
+  is by construction somewhere else, and whether anything shows it is a
+  separate question worth asking.
+
 - NOT EVERY "GAME FREEZES" REPORT HAS A JS-LEVEL CAUSE, and the tell is
   when a targeted reproduction attempt finds nothing wrong in application
   logic despite genuinely exercising the reported path (real movement,
@@ -10810,6 +10835,66 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.24 — a status that never said how much.** Fresh sweep for
+wire/table data with no client expression, mechanically: pulled every
+field off the state and definition interfaces and grepped the client for
+each. Most of what came back was correctly server-only (`MonsterStats`'
+whole AI table — `fleeThreshold`, `leapRangePx`, `deathBurstDamage` — is
+design data the client has no business quoting). One row was not.
+`StatusDef` carries the mechanics of every timed effect in the game in
+the one `STATUSES` table, and three of the four ways it expresses them —
+`moveMultiplier`, `damageTakenMultiplier`, `dot`/`tickMs` — had **zero**
+references anywhere in `client/`. The fourth, `modifiers`, reached the
+client only as an aggregate: the character sheet's "Running effects" row
+totals it, for the local player, mixed together. Hover the pip itself —
+the one place a player actually asks what is on them — and all fifteen
+statuses said a name, a category, and a `blurb`, which is written by its
+own doc comment to say what an effect DOES and deliberately not how much.
+So "moving at a fraction of its usual pace" was equally true of a 10%
+slow and of Chilled's actual 60%. Two blurbs went further and made claims
+nothing in the game could settle: poison's "it slows what it is in" (35%,
+stated nowhere), and Marked's entire reason to be cast — "everything that
+lands on it hits harder" — whose +25% the game had never once printed.
+Same for Recovering, the two-second window a dodged slam opens, which
+M70's own notes call "the best two seconds you will get on that
+creature": +50%, unstated.
+Added `statusEffectLines(def)` to `shared/items.ts` — beside
+`passiveSummary`, not in `protocol-types.ts`, because that file's own
+header records the no-cycle invariant (items imports protocol-types,
+never the reverse) and because the vocabulary for what a modifier does
+already lives there. The `modifiers` bag goes through `passiveSummary`
+rather than being worded a second time, so a status granting armour says
+"armour" in the same words an affix and a set bonus do; only the three
+fields that are NOT `PassiveBonus` needed new words, because nothing else
+in the game expresses them. A DoT's line carries its school in the
+school's own colour, which is a direct reuse of the argument the item
+tooltip already makes for putting a weapon's school on its own line — the
+school is what decides whether the resistance you are wearing applies.
+`attachTextTooltip` gained an optional `lines`, rendered as `tt-line`
+rows BEFORE the flavour, matching the reading order the item tooltip's
+own comment states ("what it does, what was rolled, and last the line
+that is only there to be enjoyed"). Wired at both surfaces that show a
+status: the player's own `StatusBar` pips, and `TargetFrame`'s row for
+what you are fighting — the latter by `statusDef(status.id)` lookup
+rather than by widening the wire payload, since that payload is already
+only a projection of a table the client fully has.
+Verified: drove the real shared formatter across all fifteen rows and
+read the output back — every one produces at least one correct
+mechanical line, no empties, with Poisoned correctly showing both halves
+of the claim its blurb makes ("4 nature damage per second · -35%
+movement speed"). Added section 10 to `tools/test/statuses.mjs`, which is
+already the home of the "a modifier key nothing reads" class of silent
+failure — every status must state at least one worded line, and every DoT
+must name its school — then mutation-tested that guard by stripping
+Marked's `damageTakenMultiplier` and confirming it fails rather than
+passing quietly. `statuses.mjs`, `items.mjs`, `animation.mjs` and
+`smoke.mjs` green; `fighting.mjs` hit the known cactoro keep-away flake
+twice and passed clean against a mushnub on re-run. Flagged honestly: no
+browser automation was available in this session, so the ~6 lines of DOM
+append that render these rows were not seen on screen — they follow the
+existing pattern in the same function, and the data half is verified
+exhaustively, but the pixels are the part for a human to confirm.
 
 **Phase 70 M70.23 — M70.22 fixed the renderer, not the rig.** Reported
 again right after M70.22 shipped: the character still keeps sliding after
