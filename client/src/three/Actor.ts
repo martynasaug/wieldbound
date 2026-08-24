@@ -1691,6 +1691,32 @@ export class Actor {
     // was — the same way a real runner's legs do not reset to a dead stop
     // and restart because their sword arm did something for a second.
     if (anim !== "run") next.reset();
+    // AND THIS LINE IS WHY THE ONE ABOVE IS SAFE.
+    //
+    // `reset()` is the ONLY thing in three.js that sets `enabled` back to true,
+    // and skipping it for run — correct, and the whole point of the comment
+    // above — left run as the one action in the game that could never get that
+    // flag back. It matters because three.js turns the flag OFF by itself: when
+    // a crossfade-out completes, `_updateWeight` sets `enabled = false` on the
+    // action that faded to zero. And a disabled action is unrecoverable through
+    // the calls made here — `setEffectiveWeight(1)` stores
+    // `this.enabled ? weight : 0`, so it writes 0; `play()` does not touch the
+    // flag; and `_updateWeight` returns 0 without even evaluating the fade
+    // interpolant while it is false, so the fade-in scheduled by
+    // `crossFadeTo` below can never complete and never re-enable it.
+    //
+    // Which is exactly the combat slide. Auto-attack while STANDING STILL and
+    // the run -> attack crossfade runs to completion (nothing calls play("run")
+    // during it, because you are not moving, and play("idle") is refused by the
+    // `busy` guard) — so run is disabled. Move again and `currentAnim` becomes
+    // "run" with a weight of zero: the character travels at full speed in a
+    // frozen pose, for the rest of the session, with nothing in the console.
+    // Idle and attack keep working the whole time, because they still `reset()`,
+    // which is why standing still looks completely normal and only moving is
+    // broken.
+    //
+    // Set before `setEffectiveWeight`, not after: that call READS the flag.
+    next.enabled = true;
     next.setEffectiveWeight(1);
     next.play();
     if (prev && prev !== next) {

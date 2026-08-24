@@ -156,6 +156,94 @@ check(
   game.includes("setTimeout(() => this.localActor?.revive(), 900);"),
 );
 
+// --- 5. the run action must never be left disabled --------------------------
+// A RUNTIME test, unlike the rest of this file, because three.js's animation
+// system is pure JavaScript and needs no GPU — so the actual bug can be
+// reproduced against the actual library rather than argued about from source.
+//
+// The mechanism: `reset()` is the only call that sets `AnimationAction.enabled`
+// back to true, and `play` deliberately skips it for "run" so that a resumed
+// stride carries on from where it was instead of snapping to frame zero. But
+// three.js turns that flag OFF on its own — `_updateWeight` sets
+// `enabled = false` on an action whose crossfade-out reaches zero — and a
+// disabled action cannot be recovered by anything `play` does:
+// `setEffectiveWeight` stores `enabled ? weight : 0`, `play()` does not touch
+// the flag, and `_updateWeight` returns 0 without evaluating the fade-in
+// interpolant while it is false.
+//
+// Result: attack while standing still, the run->attack crossfade completes, and
+// run is dead for the session. Move again and the character travels at full
+// speed in a frozen pose. That is the combat slide.
+section("5. an interrupted stride can still be resumed (real three.js)");
+{
+  const THREE = await import("three");
+
+  const bone = new THREE.Object3D();
+  const track = (v) => new THREE.VectorKeyframeTrack(".position", [0, 1], [0, 0, 0, 0, v, 0]);
+  const mixer = new THREE.AnimationMixer(bone);
+  const run = mixer.clipAction(new THREE.AnimationClip("Run", 1, [track(1)]));
+  const atk = mixer.clipAction(new THREE.AnimationClip("Attack", 1, [track(2)]));
+  atk.setLoop(THREE.LoopOnce, 1);
+  atk.clampWhenFinished = true;
+
+  // `Actor.play`'s crossfade, in the part that decides whether a clip animates.
+  // Kept in step with the real one by section 6's source checks below.
+  const play = (next, prev, isRun) => {
+    if (!isRun) next.reset();
+    next.enabled = true;
+    next.setEffectiveWeight(1);
+    next.play();
+    if (prev && prev !== next) prev.crossFadeTo(next, 0.2, false);
+  };
+  const step = (n) => { for (let i = 0; i < n; i++) mixer.update(1 / 60); };
+
+  play(run, null, true);
+  step(30);
+  check("a stride plays", run.getEffectiveWeight() > 0 && run.isRunning());
+
+  // The exact combat case: an auto-attack lands while the player is NOT moving,
+  // so nothing calls play("run") during the crossfade and it runs to completion.
+  play(atk, run, false);
+  step(30);
+  check(
+    "three.js disables the faded-out action by itself",
+    run.enabled === false,
+    "if this ever stops being true the bug below cannot happen and this test is moot",
+  );
+
+  const before = bone.position.y;
+  play(run, atk, true);
+  step(60);
+  check(
+    "the stride can be resumed after the interruption",
+    run.getEffectiveWeight() > 0,
+    "run is permanently disabled — the character would slide at full speed in a frozen pose",
+  );
+  check("and the rig actually moves again", bone.position.y !== before);
+  console.log(
+    `  run after resume: enabled=${run.enabled} weight=${run.getEffectiveWeight().toFixed(2)}`,
+  );
+}
+
+// --- 6. the source keeps making that true -----------------------------------
+section("6. the line the runtime test depends on");
+{
+  const at = actor.indexOf('if (anim !== "run") next.reset();');
+  check("play() still skips reset() for run", at > -1);
+  const enabledAt = actor.indexOf("next.enabled = true;", at);
+  const weightAt = actor.indexOf("next.setEffectiveWeight(1);", at);
+  check(
+    "play() re-enables the action explicitly, since reset() no longer does it for run",
+    enabledAt > -1,
+    "without this, run is permanently dead after its first completed crossfade-out",
+  );
+  check(
+    "and does it BEFORE setEffectiveWeight, which reads the flag",
+    enabledAt > -1 && weightAt > -1 && enabledAt < weightAt,
+    "setEffectiveWeight stores `enabled ? weight : 0`, so the order is the fix",
+  );
+}
+
 console.log(
   failures === 0
     ? "\nOK — the slide has one unbounded lock, it is watched for, and it is recoverable"

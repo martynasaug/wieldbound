@@ -7302,6 +7302,36 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A LIBRARY CAN TURN A FLAG OFF THAT ONLY ITS OWN RESET TURNS BACK ON, and
+  skipping that reset for a good reason quietly takes on the job of
+  restoring the flag yourself. `play` skips `reset()` for run so a resumed
+  stride does not snap to frame zero — a real fix for a real report. What
+  nobody checked was what else `reset()` does: it is three.js's ONLY setter
+  for `AnimationAction.enabled`, and `_updateWeight` clears that flag on
+  its own whenever a crossfade-out completes. So the optimisation removed
+  the only path back from a state the library enters by itself. The lesson
+  is not "do not skip reset" — it is that skipping a library call means
+  inheriting every side effect it had, and the way to find them is to read
+  the call, not to reason about its name.
+- WHEN A SYMPTOM IS "INTERMITTENT", ASK WHAT IS DIFFERENT ABOUT THE TIMES
+  IT DOES NOT HAPPEN. The run action dies only when a crossfade-out runs to
+  COMPLETION, which needs the player to be standing still while an attack
+  interrupts the stride — attack on the move and `play("run")` re-crossfades
+  before the fade finishes, and nothing breaks. That is why it read as
+  random, and why "especially in combat" was the single most useful word in
+  the report: it narrowed the search from the whole renderer to what a
+  one-shot does to a stride.
+- THREE.JS'S ANIMATION SYSTEM RUNS UNDER PLAIN NODE, so an animation bug can
+  be REPRODUCED rather than argued about. `AnimationMixer`, `AnimationAction`
+  and `AnimationClip` need no GPU, no canvas and no loader — a bare
+  `Object3D`, a `VectorKeyframeTrack` and a hand-driven `mixer.update` loop
+  are enough to run the real library through the exact call sequence and read
+  the real effective weight back. Three sessions of this bug were spent
+  reading source and reasoning about state machines because the assumption
+  was that anything touching animation needed a browser. Only the BINDING
+  half needs one (which is why `animation.mjs` is correctly a source test);
+  the state machine half does not.
+
 - A DELIBERATELY SILENT NO-OP IS A PLACE A BUG CAN LIVE FOREVER, and the
   more correct each individual early return is, the better it hides one.
   `Actor.play` has six of them and every single one is right: "you are
@@ -10884,6 +10914,51 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.27 — the combat slide, reproduced: an action three.js
+turned off and nothing could turn back on.** M70.25's death-lock was real
+but it was not this: reported again as still happening, "especially in
+combat", which is the detail that mattered. Combat means one-shots
+interrupting a stride, so the question became what an interruption does to
+the run action specifically — and the answer was in a fix this session's
+own notes are proud of. `play` deliberately skips `reset()` for run
+("RESUMING A STRIDE MUST NOT RESTART IT", the Michael-Jackson report),
+which is correct. But `reset()` is the ONLY call in three.js that sets
+`AnimationAction.enabled` back to true, and three.js turns that flag off
+BY ITSELF: `_updateWeight` sets `enabled = false` on an action whose
+crossfade-out reaches zero. So run became the one action in the game that
+could be disabled and never re-enabled. And a disabled action is
+unrecoverable through everything `play` does — `setEffectiveWeight(1)`
+stores `this.enabled ? weight : 0`, so it writes ZERO; `play()` does not
+touch the flag; and `_updateWeight` returns 0 without even evaluating the
+fade-in interpolant `crossFadeTo` schedules, so the fade can never
+complete and never re-enable it.
+The trigger is auto-attacking while STANDING STILL: nothing calls
+play("run") during the crossfade because you are not moving, and
+play("idle") is refused by the `busy` guard, so run -> attack runs to
+completion and run dies. Move again and `currentAnim` becomes "run" with a
+weight of zero — full speed, frozen pose, rest of the session, nothing in
+the console. Idle and attack keep working throughout because they still
+`reset()`, which is exactly why standing still looks completely normal and
+only moving is broken, and why this read as intermittent rather than as a
+hard failure.
+Fix is one line — `next.enabled = true` before `setEffectiveWeight`, which
+READS the flag — and it keeps the stride-continuity behaviour the skipped
+`reset()` exists for.
+Verified by REPRODUCTION, not by argument. three.js's animation system is
+pure JavaScript and needs no GPU, so `sliding.mjs` section 5 now builds a
+real `AnimationMixer` with real clips and runs the exact call sequence:
+the stride plays, an attack crossfades it out to completion, three.js
+disables it, and the resumed stride comes back at weight 0.00 with the rig
+not moving — then passes at 1.00 with the line in place. Mutation-tested
+by stripping the fix from both the source and the model: 3 failures, the
+right three. Full suite green; `fighting.mjs` clean first run.
+Worth recording that M70.25's watchdog would have caught this one on its
+own — `unstick()` calls `stop()`, and `stop()` calls `reset()`, which is
+the flag's only route back — so the "sometimes" in the report is probably
+the watchdog recovering after its one-second threshold rather than the bug
+being intermittent. The watchdog stays as the backstop it was built to be,
+but the cause is fixed rather than papered over.
 
 **Phase 70 M70.25 — the slide, found: a one-shot that never expires.**
 Reported a fourth time, straight after M70.24 shipped. M70.22 and M70.23
