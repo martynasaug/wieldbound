@@ -7302,6 +7302,38 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- ASK WHAT THE DISPLAY REFRESHES AT BEFORE SETTING A FRAME BUDGET. Three
+  entries of this log congratulate themselves for crossing 16.67ms, which is
+  the 60Hz figure, on a machine with a 144Hz monitor where the budget is
+  6.94ms. The player kept saying it was choppy and the numbers kept saying
+  it was fine, and the disagreement lasted four rounds because the refresh
+  rate is an input to every one of those numbers and was never asked for. A
+  frame budget is not a property of the game.
+- EVEN FRAMES BEAT FAST FRAMES. A display changes its picture only on a
+  refresh boundary, so what a player sees is not the frame time but which
+  boundary each frame lands on. At 144Hz a 15.04ms frame alternates between
+  two boundaries and three — 13.9, 20.8, 13.9, 20.8 — while the game clock
+  advances evenly, and the eye reads that unevenness as stutter far more
+  readily than it reads a uniformly lower rate. A LOCKED 48fps looks better
+  than a fluctuating 62. This is also why the profiler could truthfully
+  report zero stutters while the player described exactly that: nothing was
+  slow, things were merely uneven, and nothing was measuring evenness.
+- RUN A NEW RULE ACROSS HARDWARE YOU DO NOT HAVE, ON PAPER, BEFORE SHIPPING
+  IT. The pacer's first decision rule applied its safety margin in both
+  directions, which was invisible on the 144Hz machine it was written for
+  and would have demoted every 60Hz player making a comfortable 60fps to 30.
+  It cost one small table of refresh-rate and frame-cost pairs to catch, run
+  before the code shipped rather than after a bug report. Any rule keyed on
+  a property of the user's machine should be evaluated against a spread of
+  those properties, because the author's own is a sample of one and is the
+  one case guaranteed to look correct.
+- A GUARD BAND BELONGS ON THE REVERSIBLE HALF OF A DECISION. Missing a frame
+  budget is a fact — the frame does not appear on the boundary. Fitting
+  inside one with room to spare is a judgement about whether it will keep
+  fitting. Hysteresis exists to stop a rule oscillating, so it goes on the
+  step that undoes a previous decision, never on the step that responds to
+  something already measurably true.
+
 - A DIAGNOSTIC THAT ONLY RUNS WHILE SOMEBODY IS WATCHING CANNOT DIAGNOSE A
   SURPRISE. Section timing was gated on the overlay being open, which is
   defensible as an optimisation and useless in practice: every stutter
@@ -11066,6 +11098,56 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.33 — the monitor was the missing number.** Four rounds of
+profiling were measured against 16.67ms because that is what 60Hz gives
+you, and the display is 144Hz. The budget was never 16.67ms; it is 6.94ms,
+and 15.04ms is not "just over the line" but less than half the required
+rate. Every "you are fine now" in the last three entries was measured
+against a monitor the player does not own — worth recording as a plain
+mistake rather than a subtlety: the refresh rate is an input to every
+frame budget and it was never once asked for.
+The more useful half is that raw speed is not the whole of it. A display
+shows a new image only on a refresh boundary. At 144Hz those are 6.94ms
+apart, so a 15.04ms frame lands on the wrong side of two of them and the
+right side of three — ALTERNATING. The picture advances 13.9, 20.8, 13.9,
+20.8ms while the game's own clock advances evenly, and the eye reads that
+unevenness as stutter far more readily than it reads a low frame rate.
+Which is why 62fps here looks worse than a locked 48 does, and why the
+profiler could honestly report zero stutters while the player was
+describing exactly that: nothing was slow, things were merely uneven, and
+nothing was measuring evenness.
+`pacer.ts` picks a whole number of refreshes per frame and holds it, so
+every frame lasts exactly as long as the last. It MEASURES the display
+rather than assuming one (the web exposes no refresh rate, so the only way
+to know is to watch how fast rAF is called, taking the median so a few
+long frames during load cannot convince it the monitor is 40Hz), and it
+skips the whole loop body on unpaced frames rather than only the render —
+the point is to fit the work into the budget, and doing the logic anyway
+would spend a third of it. `clock.getDelta()` is read only inside
+`loopBody`, so it returns the accumulated time and movement stays correct.
+The decision rule is where the real care went, and its first version was
+WRONG in a way that only shows on hardware the author does not have. It
+applied its safety margin in both directions, so a 60Hz machine at 15.04ms
+— comfortably inside its own 16.67ms budget, genuinely making 60fps — was
+demoted to 30 for missing an 82% margin it never needed to meet. Caught by
+running the rule across a table of displays and costs before shipping it
+rather than after. Missing a budget is a FACT (the frame does not appear);
+the margin is only a guard against oscillating, so it belongs on the
+reversible half. Step up when the budget is genuinely missed, step down
+only with headroom.
+Settles at: 144Hz/15.04ms to 48fps evenly, 144Hz/12ms to 72, 144Hz/6ms to
+the full 144, 60Hz/15.04ms left alone at 60, 60Hz/20ms to 30, 240Hz/15ms
+to 80. `tools/test/pacing.mjs` drives a real pacer through simulated
+displays and asserts all of it, including that the chosen divisor's budget
+actually fits the frame (pacing that does not fit is a lie and the cadence
+is still uneven) and that it stops changing once settled. Mutation-tested
+by reinstating the two-directional margin: the 60Hz regression fails
+exactly as it should.
+Where this leaves the machine in question: 48fps, evenly paced, which
+should look substantially better than 62fps did. 72fps needs the frame
+under 13.89ms and it is at 15.04 — 1.2ms away, well within reach of
+turning shadows off, and the next thing to measure. Full suite green.
 
 **Phase 70 M70.32 — timing the thing that happens between the frames.**
 The GL error is gone and the freezes with it: `stutters /10s` 0,

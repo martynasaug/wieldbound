@@ -144,6 +144,7 @@ import { nightAmount } from "./daynight";
 import { Town } from "./town";
 import { buildNpcs, updateNpcs, type NpcVisual } from "./npcs";
 import { profiler } from "./profiler";
+import { FramePacer } from "./pacer";
 import { DialoguePanel, type DialogueAction } from "../ui/DialoguePanel";
 import { QuestTracker } from "../ui/QuestTracker";
 import { EXCHANGE_OFFERS, EXCHANGE_RATE, SHOP_STOCK } from "../../../shared/shop";
@@ -608,6 +609,8 @@ export class Game {
    *  subsystems and none of them had ever been timed, and the network dispatch
    *  that runs BETWEEN frames had no way to be timed at all. */
   private readonly profiler = profiler;
+  /** Chooses how many display refreshes each frame lasts. See pacer.ts. */
+  private readonly pacer = new FramePacer();
   // Watchdog bookkeeping — see `watchForSlide`. Held on the instance rather
   // than in the loop so a lock is measured across frames, which is the only
   // timescale it is visible on.
@@ -3604,7 +3607,7 @@ export class Game {
     this.projectiles.wisp(at, tint);
   }
 
-  private loop = (): void => {
+  private loop = (ts = 0): void => {
     if (!this.running) return;
     // EVERY FRAME MUST RESCHEDULE ITSELF, WHATEVER HAPPENS INSIDE IT. This
     // function reaches into a couple dozen subsystems and iterates Maps that
@@ -3619,8 +3622,23 @@ export class Game {
     // is changing under the loop's feet. The `try`/`finally` below cannot
     // fix whatever throws, but it guarantees a bad frame costs exactly one
     // bad frame rather than the rest of the session.
+    // PACED. See pacer.ts — on a display faster than this frame can be drawn,
+    // rendering whenever we happen to be ready produces frames that last two
+    // refreshes and three refreshes alternately, which reads as stutter even at
+    // a respectable average. Rendering on a fixed whole number of refreshes
+    // makes every frame last exactly as long as the last one.
+    //
+    // The skipped frames skip the WHOLE body, not just the render: the point is
+    // to fit the work into the budget, and doing the logic anyway would spend a
+    // third of it. `clock.getDelta()` is only read inside `loopBody`, so it
+    // returns the accumulated time and movement stays correct.
+    const render = this.pacer.onRaf(ts);
     try {
-      this.loopBody();
+      if (render) {
+        const started = performance.now();
+        this.loopBody();
+        this.pacer.onFrameCost(performance.now() - started, started);
+      }
     } catch (err) {
       console.error("[loop] frame threw and was skipped:", err);
     } finally {
@@ -3810,7 +3828,12 @@ export class Game {
       // Read AFTER the render, because three.js resets the per-frame counters
       // at the start of each one — sampled before, these are last frame's.
       const info = this.world.renderer.info;
-      this.profiler.setLabel(`quality ${this.world.qualityLabel} (F4)`);
+      this.profiler.setLabel(
+        `quality ${this.world.qualityLabel} (F4)  ·  ` +
+          `${this.pacer.refreshHz.toFixed(0)}Hz display, 1 frame per ` +
+          `${this.pacer.divisor} refresh${this.pacer.divisor === 1 ? "" : "es"} ` +
+          `= ${this.pacer.targetFps.toFixed(0)}fps target`,
+      );
       this.profiler.setStats({
         "draw calls": info.render.calls,
         triangles: info.render.triangles,
