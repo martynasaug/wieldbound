@@ -36,7 +36,9 @@ import type { SfxName } from "./sfx";
 // frames out of eighty, at a fraction of their native resolution.
 const PARTICLE_TEX_LOADER = new THREE.TextureLoader();
 const particleTextures = new Map<string, THREE.Texture>();
-function particleTexture(name: "glow" | "spark" | "trail" | "ring"): THREE.Texture {
+// Exported so `skillfx.ts` can share this cache rather than opening its own
+// second `TextureLoader` for the one frame (`ring`) it actually uses.
+export function particleTexture(name: "glow" | "spark" | "trail" | "ring"): THREE.Texture {
   let tex = particleTextures.get(name);
   if (!tex) {
     tex = PARTICLE_TEX_LOADER.load(`/assets/particles/${name}.png`);

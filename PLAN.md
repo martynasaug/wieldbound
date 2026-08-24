@@ -7302,6 +7302,26 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- CHECK A GEOMETRY'S UV CONVENTION BEFORE ASSUMING IT WILL GARBLE A TEXTURE.
+  The instinct was that `RingGeometry` maps radially (angle/radius) and would
+  need new UVs to take a texture authored for a flat square stamp — checked
+  by building one in Node and printing `attributes.uv` against
+  `attributes.position`, and it is already a plain `x/outerRadius/2 + 0.5`
+  projection, the exact convention the source texture assumes. The assumption
+  would have cost a UV rewrite that turned out to be unnecessary.
+- A TEXTURE GOES ON THE SHAPE IT MEANS SOMETHING FOR, NOT ON EVERY CALLER OF
+  THE SAME GEOMETRY. `mark` and `nova` share one `RingGeometry`, but only
+  `mark` is about a condition landing on a body — a rune circle on
+  Earthshatter, a physical shockwave with no school, would describe an
+  element the skill does not deal. Shared geometry is not the same claim as
+  shared meaning.
+- RECORD A VERIFICATION GAP RATHER THAN PAPER OVER IT WITH A CONFIDENT LINE.
+  The mark texture's live check never produced a clean isolated shot — the
+  test camera's manual override kept losing to the game's own per-frame
+  follow logic — so what actually got confirmed (the material renders and
+  carries colour) is stated as exactly that, and what did not (a clean shape
+  check) is named as a rig problem rather than implied to be settled.
+
 - A GLOW IS A PROPERTY OF SOMETHING FLAT FACING THE VIEWER, NOT OF A SHAPE. A
   radial-gradient texture wrapped onto a sphere's UVs tiles around it instead
   of reading as light — spheres and cones are the wrong geometry for a 2D
@@ -10428,6 +10448,25 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — the mark is a rune circle now, not a plain ring.** M69.10 spent
+the fourth particle frame M69.9 downloaded but left reserved: `ring.png`, a
+Kenney rune circle, mapped onto the exact `RingGeometry` `skillfx.ts`'s
+`mark()` already draws for eight skills (Gut Punch, Concuss, Stagger, Expose,
+Hunter's Mark and the three readers' self/target rings). Checked rather than
+assumed — `RingGeometry`'s own UV attribute is a plain `u = x/outerRadius/2 +
+0.5` square projection, verified by constructing one in Node and printing its
+vertices, which is exactly the convention the texture was authored for, so no
+new UVs were needed. `nova` and the rest keep their flat fill on purpose: a
+rune circle on Earthshatter, a physical shockwave with no school of its own,
+would be describing something the skill does not have — the same "a shared
+signature is a vocabulary, not a uniform" call this file already has on
+record for Rend's cone. Verified live that the textured material renders and
+carries colour (a character standing inside one tinted visibly toward the
+mark's own hue); a fully clean isolated shot of the shape was not obtained —
+the test camera's override kept losing the fight with the game's own
+per-frame follow logic, a rig problem rather than a code one, and is recorded
+here rather than glossed over.
 
 **Phase 69 — a bolt that glows instead of a ball that is lit.** M69.9,
 reported from play: *"the projectile animations and effects are very

@@ -52,14 +52,16 @@ sfx/*.wav    Synthesised for this project (16-bit mono, 22050Hz):
 
 particles/*.png  Downscaled to 128x128 from Kenney "Particle Pack" (CC0)
              https://kenney.nl/assets/particle-pack
-             Billboarded onto the existing procedural projectile geometry
-             (see attacks.ts) rather than replacing it — the sphere/cone
-             meshes and the point lights that travel with them are what
-             solved M64.1's "reads as a smudge" problem; these textures give
-             that geometry a soft gradient instead of a flat additive fill.
+             Mapped or billboarded onto the existing procedural projectile
+             and skill-fx geometry (see attacks.ts, skillfx.ts) rather than
+             replacing it — the sphere/cone/ring meshes and the point lights
+             that travel with them are what solved M64.1's "reads as a
+             smudge" problem; these textures give that geometry a soft
+             gradient instead of a flat additive fill.
                glow.png  <- light_01.png   a bolt's hot core, a pillar's base
                spark.png <- star_04.png    crit accents, a hot four-point pop
                trail.png <- trace_07.png   the streak a fast thing leaves
-               ring.png  <- magic_02.png   a rune circle - no caller yet;
-                            picked for skillfx.ts's mark/nova rings, same
-                            situation fx.png's own unused rows document
+               ring.png  <- magic_02.png   the rune circle skillfx.ts's
+                            `mark()` maps onto its ring geometry — RingGeometry's
+                            own UVs are a plain 0..1 square projection, the
+                            same convention the texture was authored for

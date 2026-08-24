@@ -18,6 +18,7 @@
 
 import * as THREE from "three";
 import type { SkillId } from "../../../shared/protocol-types";
+import { particleTexture } from "./attacks";
 
 /** How a skill's effect is delivered, beyond the atlas flash it already plays. */
 export type FxShape =
@@ -215,9 +216,15 @@ export class SkillFx {
    * colour with the grass showing through it. Those use normal blending and
    * tint the ground instead.
    */
-  private material(color: number, opacity: number, additive = true): THREE.MeshBasicMaterial {
+  private material(
+    color: number,
+    opacity: number,
+    additive = true,
+    map?: THREE.Texture,
+  ): THREE.MeshBasicMaterial {
     return new THREE.MeshBasicMaterial({
       color,
+      map,
       transparent: true,
       opacity,
       // depthWrite off either way, so two overlapping effects do not clip.
@@ -286,7 +293,15 @@ export class SkillFx {
    * so an unrotated ring faces the viewer by construction.
    */
   mark(x: number, y: number, z: number, color: number, durationMs = 380): void {
-    const mat = this.material(color, 0.9);
+    // A rune circle rather than a flat ring — this is the one shape in the
+    // library that is actually ABOUT a condition landing on a body, which is
+    // exactly what the texture is a picture of. `RingGeometry`'s own UVs are a
+    // plain square projection (`u = x/outerRadius/2 + 0.5`), the same
+    // convention the texture was authored for, so this needed no new UVs —
+    // only `nova` and the rest keep the flat fill, since a rune circle on a
+    // physical shockwave like Earthshatter would be describing a school the
+    // skill does not have.
+    const mat = this.material(color, 0.9, true, particleTexture("ring"));
     const mesh = new THREE.Mesh(this.ring, mat);
     mesh.position.set(x, y, z);
     mesh.renderOrder = 3;
