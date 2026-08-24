@@ -7302,6 +7302,43 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A MEASUREMENT CONTAMINATED BY THE THING IT CONTROLS WILL LOCK ITSELF IN.
+  The pacer measured the display refresh from the gaps between animation
+  frames — but a frame that overruns a refresh boundary is called again at
+  the boundary after it, so once the game is slow every gap is a MULTIPLE of
+  the refresh and reads as a slower display. The divisor is then chosen
+  against a doubled budget, the frame appears to fit, the divisor never
+  rises, every frame keeps overrunning, and no short gap is ever produced to
+  correct the estimate. It reported success at half rate. No statistic fixes
+  this — a percentile was tried and failed — because the information is not
+  in the samples: every one of them is wrong in the same direction for the
+  same reason. Whenever a controller measures a quantity its own output
+  perturbs, ask what the measurement looks like once the controller is
+  wrong, not only once it is right.
+- IF THE DATA CANNOT ANSWER IT, PAY FOR AN OBSERVATION. The refresh interval
+  is unknowable from contaminated gaps, and knowable exactly by drawing
+  nothing for one frame and timing the callback that follows. Giving up one
+  frame every three seconds — one in four hundred, invisible — buys a
+  measurement that no amount of filtering could have produced. A deliberate
+  probe is a legitimate design, not a hack, when the alternative is a
+  control loop running on a number it cannot trust.
+- "N PER FRAME" IS NOT A THROTTLE WHEN THE WORK IS ASYNCHRONOUS.
+  `MAX_SPAWNS_PER_FRAME = 3` bounded how many rig builds were STARTED and
+  nothing at all about how many finished at once — `load()` returns
+  immediately and the expensive half runs in the continuation. A dozen
+  builds kicked off across a few frames landed their clones together,
+  between frames, where no frame timer could see them. Throttle by work IN
+  FLIGHT, not by work started, whenever the cost is on the far side of an
+  await.
+- A TEST THAT MATCHES ONE EXACT CODE SHAPE WILL FAIL ON A REFACTOR THAT
+  CHANGES NOTHING. `warmup.mjs` asserted the actor build paths by matching
+  `void actor.load().then(async () => {...})` verbatim, and bounding the
+  builds added a `.finally()` — so it reported "both paths found — 1" for a
+  behaviour-preserving change. It failed for the right reason (something it
+  guards did move) and the wrong cause. A source test should match the
+  smallest thing that carries the meaning — here, the load call and the
+  window after it — or it becomes a tax on every edit near it.
+
 - RAYCASTING A SKINNED MESH IS NOT A RAYCAST, IT IS A SKINNING PASS.
   three.js resolves `intersectObject` against a `SkinnedMesh` by computing
   the posed world position of every vertex in the rig before testing a
@@ -11213,6 +11250,56 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.38 — the pacer had convinced itself the monitor was half
+its real speed.** The overlay read `72Hz display, 1 frame per 2 refreshes
+= 36fps target` on the same 144Hz machine that had read 143Hz two rounds
+earlier, and that number is a bug I shipped in M70.33.
+THE SPIRAL. rAF is called on a refresh boundary, and a frame that overruns
+one is called again at the boundary AFTER it. So once the game is slower
+than the display, EVERY gap between callbacks is two or three refreshes
+and there is no honest sample of the refresh interval anywhere in the
+data. Measured from those gaps, a 144Hz display reads as 72Hz — and then
+the divisor is chosen against a DOUBLED budget, so a 13.7ms frame looks
+like it comfortably fits a 13.89ms allowance, the pacer concludes
+everything is fine, and never steps up. It locks itself at half rate
+believing it has succeeded. Worse than the original problem, and entirely
+self-reinforcing: because the divisor stays at 1 every frame overruns, so
+no short gap is ever produced, so the measurement can never recover.
+A percentile was the obvious fix and does not work, which the test proved
+before the theory did: the information is not in the samples, because
+every one of them is contaminated by the same cause. It has to be
+OBSERVED. `PROBE_INTERVAL_MS` gives up one frame every three seconds and
+draws nothing — the browser then calls back at the very next boundary, and
+THAT gap is the refresh interval, measured rather than inferred. One
+dropped frame in about four hundred, below anything a player can see, in
+exchange for pacing to the real display instead of a halved guess.
+`pacing.mjs` section 7 simulates the whole thing faithfully — a true 144Hz
+tick, with a frame delivered at the next boundary that clears it — and now
+reports 144Hz measured at both 13.7ms and 26ms frame costs, where before
+the fix it read 72Hz and 36Hz. Mutation-tested by pointing the estimate
+back at the ordinary gaps.
+TWO MORE STALLS, both named by the hitch reporter. A 496ms frame whose
+worst section was `render` at 465.8ms, landing immediately after the world
+finished building — the first frame of a session compiling the terrain,
+the town, the river, the road and every ground-cover species and tree at
+once, inside `render()`. `warmUp(scene)` now runs before the loop starts:
+the same work, done while the loading screen is still up, where a pause is
+what the screen is FOR.
+And the multi-second "BETWEEN frames" freezes, which survived M70.36 and
+M70.37. `MAX_SPAWNS_PER_FRAME = 3` reads like a throttle and only limits
+the cheap half — `actor.load()` returns immediately, and the expensive
+part (cloning the rig through SkeletonUtils, cloning a material per mesh,
+binding six actions, measuring lifts, building the silhouette and rim)
+happens in the CONTINUATION whenever the promise resolves. Nothing bounded
+those, so walking into a camp started a dozen builds within a few frames
+and their continuations landed together, between frames, where no frame
+timer could see them. Bounded now at two rig builds in flight, which fills
+a camp visibly fast while never putting more than two clones in one gap.
+Also of note: `warmup.mjs` failed on this commit for the right reason and
+the wrong cause — it matched one exact promise shape, and bounding the
+builds added a `.finally()`. Rewritten to match the load call and the
+window after it, then re-mutation-tested. Full suite green.
 
 **Phase 70 M70.37 — a skinned raycast on every frame, and the other lazy
 fetch.** The reading came back with `render` still spiking (44-101ms) and

@@ -245,6 +245,9 @@ const MOVE_SEND_INTERVAL_MS = 60;
 // the 260px a monster will notice you from — so nothing ever pops in while it
 // could matter. Set at 1500 initially, which rendered ~54 skinned meshes while
 // standing at spawn because bands 1-3 all fell inside it.
+/** How many rigs may be part-built at once. See `processMonsterSpawnQueue`. */
+const MAX_ACTOR_BUILDS_IN_FLIGHT = 2;
+const MAX_SPAWNS_PER_FRAME = 3;
 const MONSTER_SPAWN_RADIUS_PX = 1150;
 const MONSTER_DESPAWN_RADIUS_PX = 1550;
 
@@ -607,6 +610,7 @@ export class Game {
   private running = false;
   /** Last moment combat traffic arrived, used to show the reach ring only while fighting. */
   private lastCombatAt = 0;
+  private actorBuildsInFlight = 0;
   /** The shared profiler. See profiler.ts — the loop runs about thirty
    *  subsystems and none of them had ever been timed, and the network dispatch
    *  that runs BETWEEN frames had no way to be timed at all. */
@@ -1212,6 +1216,21 @@ export class Game {
     this.world.scene.add(this.localActor.root);
     this.localActor.snapTo(...onGround(toWorldX(this.playerX), toWorldZ(this.playerY)));
 
+    // COMPILE THE WHOLE WORLD BEFORE THE FIRST FRAME DRAWS IT.
+    //
+    // three.js compiles a material the first time it is rendered, so the very
+    // first frame of a session compiles the terrain, the town, the river, the
+    // road, every ground-cover species and every tree at once, inside
+    // `render()`. The profiler caught it exactly: a 496ms frame whose worst
+    // section was `render` at 465.8ms, immediately after the world finished
+    // building. It is the single worst frame of a session by an order of
+    // magnitude and it lands on the first one the player sees.
+    //
+    // Doing it here costs the same work — this is a compile either way — but it
+    // happens while the loading screen is still up, where a pause is what the
+    // screen is FOR, rather than as the opening stutter of the game.
+    await this.world.warmUp(this.world.scene);
+
     this.loop();
   }
 
@@ -1374,8 +1393,23 @@ export class Game {
    * single frame. See `monsterSpawnQueue` for why this exists.
    */
   private processMonsterSpawnQueue(): void {
-    const MAX_SPAWNS_PER_FRAME = 3;
+    // BOUNDED BY WHAT IS STILL BEING BUILT, not only by how many are started.
+    //
+    // Three starts a frame reads like a throttle and only limits the cheap half.
+    // `actor.load()` returns immediately; the expensive part — cloning the rig
+    // through SkeletonUtils, cloning a material per mesh, binding six actions,
+    // measuring lifts, building the silhouette and rim — happens in the
+    // continuation, whenever the promise resolves. Nothing bounded THOSE, so
+    // walking into a camp started a dozen builds within a few frames and their
+    // continuations landed together, between frames, where no frame timer could
+    // see them. That is the multi-second freeze the hitch reporter kept
+    // attributing to "BETWEEN frames".
+    //
+    // Two in flight keeps a camp filling in visibly fast while never putting
+    // more than two rig clones in one gap.
+    if (this.actorBuildsInFlight >= MAX_ACTOR_BUILDS_IN_FLIGHT) return;
     for (let i = 0; i < MAX_SPAWNS_PER_FRAME; i++) {
+      if (this.actorBuildsInFlight >= MAX_ACTOR_BUILDS_IN_FLIGHT) return;
       const id = this.monsterSpawnQueue.shift();
       if (id === undefined) return;
       const s = this.pendingMonsterSpawns.get(id);
@@ -1407,12 +1441,18 @@ export class Game {
       // frame that draws it compiles them inline — see `World.warmUp`. The
       // monster appears a beat later than it used to and no frame is spent
       // on it.
-      void actor.load().then(async () => {
-        actor.root.visible = false;
-        this.world.scene.add(actor.root);
-        await this.world.warmUp(actor.root);
-        actor.root.visible = true;
-      });
+      this.actorBuildsInFlight++;
+      void actor
+        .load()
+        .then(async () => {
+          actor.root.visible = false;
+          this.world.scene.add(actor.root);
+          await this.world.warmUp(actor.root);
+          actor.root.visible = true;
+        })
+        .finally(() => {
+          this.actorBuildsInFlight--;
+        });
     }
   }
 

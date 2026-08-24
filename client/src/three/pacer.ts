@@ -42,11 +42,46 @@ const HEADROOM = 0.82;
  *  unevenness. */
 const SETTLE_MS = 900;
 
+/**
+ * How often to give up one frame purely to measure the display.
+ *
+ * THE CIRCULARITY THIS BREAKS. rAF is called on a refresh boundary, and a frame
+ * that overruns one is called again at the boundary after it — so once the game
+ * is slower than the display, EVERY gap is two or three refreshes and there is
+ * no honest sample of the refresh interval anywhere in the data. Reading those
+ * gaps as the refresh rate reports a 144Hz display as 72Hz, and then the pacer
+ * compares the frame cost against a doubled budget, concludes it is comfortably
+ * meeting it, and never steps the divisor up. It locks itself at half rate
+ * believing everything is fine. That is not a hypothetical: it shipped, and the
+ * overlay read "72Hz display, 1 frame per 2 refreshes = 36fps target" on a
+ * 144Hz machine.
+ *
+ * No amount of statistics fixes it, because the information is not in the
+ * samples — every one of them is contaminated by the same cause. It has to be
+ * OBSERVED: skip one frame, draw nothing, and the browser calls back at the
+ * very next boundary. That gap is the refresh interval, measured rather than
+ * inferred.
+ *
+ * Three seconds costs one dropped frame in about four hundred, which is below
+ * anything a player can see, and it is the difference between pacing to the
+ * real display and pacing to a halved guess.
+ */
+const PROBE_INTERVAL_MS = 3000;
+
 export class FramePacer {
   /** Measured, not assumed: `screen.refreshRate` does not exist on the web, so
    *  the only way to know is to watch how fast rAF is called. */
   private refreshMs = 0;
   private deltas: number[] = [];
+  /**
+   * Gaps measured immediately after a deliberately skipped frame, which are the
+   * only honest samples of the refresh interval. See `PROBE_INTERVAL_MS`.
+   */
+  private cleanDeltas: number[] = [];
+  private probeArmed = false;
+  private probePending = false;
+  private lastProbeAt = 0;
+  private probeAt = 0;
   private lastTs = 0;
   /** Exponential average of what a rendered frame costs. */
   private costMs = 0;
@@ -70,6 +105,26 @@ export class FramePacer {
     }
     this.lastTs = ts;
 
+    // The frame after a probe: nothing was drawn last time, so the browser
+    // called us again at the very next boundary and this gap IS the refresh
+    // interval. These are the only samples that mean anything.
+    if (this.probePending) {
+      this.probePending = false;
+      this.cleanDeltas.push(ts - this.probeAt);
+      if (this.cleanDeltas.length > 24) this.cleanDeltas.shift();
+    }
+
+    if (ts - this.lastProbeAt >= PROBE_INTERVAL_MS) {
+      this.lastProbeAt = ts;
+      this.probeArmed = true;
+    }
+    if (this.probeArmed) {
+      this.probeArmed = false;
+      this.probePending = true;
+      this.probeAt = ts;
+      return false;
+    }
+
     this.tick++;
     return this.tick % this.divisor === 0;
   }
@@ -79,18 +134,22 @@ export class FramePacer {
     this.costMs = this.costMs === 0 ? ms : this.costMs * 0.9 + ms * 0.1;
 
     if (now - this.decidedAt < SETTLE_MS) return;
-    // Not enough evidence about the display yet.
-    if (this.deltas.length < 30) return;
+    // Not enough evidence about the display yet. Probes arrive every three
+    // seconds, so this holds the divisor at 1 for the first few of them —
+    // which is the right default: render everything until told otherwise.
+    if (this.cleanDeltas.length < 3) return;
     this.decidedAt = now;
 
-    // The MEDIAN gap, not the mean. A handful of long frames while the world
-    // loads would pull a mean toward them and convince this that the monitor is
-    // 40Hz; the median ignores them.
-    const sorted = [...this.deltas].sort((a, b) => a - b);
-    // The loop is rescheduled on EVERY refresh whatever the divisor — only the
-    // body is skipped — so these gaps are the real refresh interval and must
-    // not be divided by anything.
-    this.refreshMs = sorted[sorted.length >> 1];
+    // Only the probe samples. See PROBE_INTERVAL_MS for why the ordinary gaps
+    // cannot be used once the game is slower than the display: they are all
+    // whole multiples of the refresh and there is no way to tell which multiple
+    // from the numbers alone.
+    //
+    // The lowest quarter of them, not the minimum: a probe can still be
+    // lengthened by something outside our control landing on the same frame,
+    // and one unlucky sample should not set the display rate for the session.
+    const sorted = [...this.cleanDeltas].sort((a, b) => a - b);
+    this.refreshMs = sorted[Math.floor(sorted.length * 0.25)];
 
     // STEP UP ONLY WHEN THE BUDGET IS GENUINELY MISSED, and step down with
     // headroom. Applying the headroom in both directions was wrong in a way

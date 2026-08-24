@@ -79,7 +79,11 @@ section("2. nothing is drawn before its shaders exist");
   // Both actor paths — monsters and remote players — must add hidden, warm,
   // then show. Either one left out is a spike that only appears in one
   // situation: walking into a camp, or another player walking up to you.
-  const spawns = [...game.matchAll(/void actor\.load\(\)\.then\(async \(\) => \{([\s\S]{0,400}?)\}\);/g)];
+  // Matched on the load call and the window after it rather than on one exact
+  // promise shape: the monster path grew a .finally() when actor builds were
+  // bounded in M70.38, and a test recognising only .then(async () => {})
+  // reported "both paths found - 1" for a refactor that changed no behaviour.
+  const spawns = [...game.matchAll(/\.load\(\)[\s\S]{0,80}?\.then\(async \(\) => \{([\s\S]{0,400}?)\n\s*\}\)/g)];
   check("both actor build paths were found", spawns.length === 2, String(spawns.length));
   for (const [i, m] of spawns.entries()) {
     const body = m[1];

@@ -118,6 +118,63 @@ section("6. it settles rather than oscillating");
   check("the divisor stops changing once settled", seen.size === 1, [...seen].join("/"));
 }
 
+section("7. a slow game must not be mistaken for a slow display");
+{
+  // THE SPIRAL. rAF is called on a refresh boundary, and a frame that overruns
+  // one is called again at the boundary AFTER it — so a game running at half
+  // rate produces two-refresh gaps for most of its samples. Measured as the
+  // refresh interval, that reports a 144Hz display as 72Hz; the divisor is then
+  // chosen against the halved figure, which lowers the target, which produces
+  // longer gaps still. Observed in the wild: a 144Hz machine drawing 13.7ms
+  // frames reported "72Hz display, 1 frame per 2 refreshes = 36fps target".
+  //
+  // Simulated faithfully: the display ticks at a true 144Hz, and a frame that
+  // does not fit its budget is delivered at the next boundary that clears it.
+  function realistic(hz, costMs, seconds = 14) {
+    const pacer = new FramePacer();
+    const refresh = 1000 / hz;
+    let ts = 0;
+    const end = seconds * 1000;
+    while (ts < end) {
+      // The next boundary, always — this is what the browser actually does.
+      ts += refresh;
+      if (!pacer.onRaf(ts)) continue;
+      pacer.onFrameCost(costMs, ts);
+      // The frame overran; boundaries pass while it is being drawn and rAF is
+      // not called on them.
+      const overrun = Math.max(0, costMs - refresh);
+      ts += Math.ceil(overrun / refresh) * refresh;
+    }
+    return pacer;
+  }
+
+  const p = realistic(144, 13.7);
+  check(
+    "a 144Hz display is still measured as 144Hz while the game runs slowly",
+    Math.abs(p.refreshHz - 144) < 12,
+    `measured ${p.refreshHz.toFixed(0)}Hz`,
+  );
+  check(
+    "so the target is not halved on top of the slowness",
+    p.targetFps > 40,
+    `${p.targetFps.toFixed(0)}fps target at divisor ${p.divisor}`,
+  );
+  console.log(`  144Hz display, 13.7ms frames -> measured ${p.refreshHz.toFixed(0)}Hz, ${p.targetFps.toFixed(0)}fps target`);
+
+  // And the same for a machine that is struggling much harder, where the
+  // spiral would have been worst.
+  const bad = realistic(144, 26);
+  check(
+    "even a badly overrunning game does not shrink its own display",
+    Math.abs(bad.refreshHz - 144) < 20,
+    `measured ${bad.refreshHz.toFixed(0)}Hz`,
+  );
+  console.log(`  144Hz display, 26ms frames   -> measured ${bad.refreshHz.toFixed(0)}Hz, ${bad.targetFps.toFixed(0)}fps target`);
+
+  const sixty = realistic(60, 14);
+  check("a genuine 60Hz display still reads as 60Hz", Math.abs(sixty.refreshHz - 60) < 6, `${sixty.refreshHz.toFixed(0)}Hz`);
+}
+
 console.log(
   failures === 0
     ? "\nOK — every frame lasts as long as the one before it"
