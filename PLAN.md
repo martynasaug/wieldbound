@@ -7302,6 +7302,16 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A SIGNAL THAT LANDS EVERYWHERE EXCEPT ON THE PERSON WHO CAUSED IT IS STILL
+  MISSING. Every crit signal — the gold number, the bigger burst, the shake —
+  answers "what did this do to the target", and none of them answer "did I
+  just land a crit" from the attacker's own point of view, which is the
+  question they are actually asking when they glance at their own character.
+- FIX THE GAP THAT IS ACTUALLY THERE, NOT ITS MIRROR. Being crit BY a monster
+  already differentiates (bigger burst, its own shake); only landing one had
+  nothing on the swinging body. Symmetry is not owed where one side was
+  already answered.
+
 - A NEW VISUAL BEAT CAN BE A CALL TO AN EXISTING METHOD RATHER THAN NEW
   GEOMETRY. The beam needed a moment marking where it left from; the staff's
   `bolt()` already IS exactly that moment, spark and glow and light together,
@@ -10469,6 +10479,17 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — a crit is a fact about the swing, not only about what it hit.**
+M69.13: every other signal a crit produces — the gold number, the bigger
+burst, the screen shake — lands on the target or the screen, and the one
+body that never showed anything for LANDING one was the player's own. Landing
+a crit and missing one looked, felt and read identically from the swinging
+character's own point of view; the only place "that was a crit" showed up
+was somewhere else on screen. The player's own body now takes the same gold
+flash the target already gets, on the same edge. A small, deliberately
+narrow fix — the mirror case (being crit BY a monster) already differentiates
+via a bigger burst and its own shake, so nothing there was missing.
 
 **Phase 69 — the wand has a muzzle now.** M69.12: the beam was the one
 delivery style M69.9's texture pass left untouched, and it had a real gap of

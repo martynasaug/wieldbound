@@ -1610,6 +1610,11 @@ export class Game {
         const size = Math.max(1.6, MONSTER_MODELS[target.kind].height * 1.3);
 
         target.actor.flash(p.playerCrit ? 0xffd85e : 0xffffff, p.playerCrit ? 190 : 120);
+        // A crit is a fact about the SWING, not only about what it hit — every
+        // other crit signal (the gold number, the bigger burst, the shake)
+        // lands on the target or the screen, and the one body that never
+        // showed anything for landing one was the player's own.
+        if (p.playerCrit) this.localActor?.flash(0xffd85e, 150);
         this.floatOnMonster(
           target,
           {
