@@ -846,6 +846,33 @@ export class World {
     return { name: phase.name, clock: this.dayNight.clock };
   }
 
+  /**
+   * Compile an object materials BEFORE it is first drawn.
+   *
+   * three.js compiles a program the first time a material is rendered, and it
+   * does it synchronously, inside `render()`. So every monster arriving in
+   * view paid for its own shaders in the middle of a frame — which is what the
+   * profiler kept reporting as a 50-85ms spike whose worst section was
+   * `render` with nothing outside the timed sections. Steady render was 8.9ms
+   * and these were six to ten times that, a dozen times in ten seconds.
+   *
+   * `compileAsync` uses KHR_parallel_shader_compile where the driver has it,
+   * so the work happens off the main thread and the promise resolves when the
+   * program is ready. Passing the object as the scene and the real scene as
+   * `targetScene` is how three.js is asked to compile just this one thing
+   * against the lighting it will actually be drawn under.
+   *
+   * Never rejects: a warm-up that fails is a frame that stutters, not a
+   * monster that should stay invisible.
+   */
+  async warmUp(object: THREE.Object3D): Promise<void> {
+    try {
+      await this.renderer.compileAsync(object, this.camera, this.scene);
+    } catch {
+      // Older drivers, a lost context mid-compile. The object still renders.
+    }
+  }
+
   render(): void {
     // The shadow map, on its own schedule.
     //

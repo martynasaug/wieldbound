@@ -7302,6 +7302,40 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- THE INSTRUMENT THAT NAMES THE CULPRIT IS WORTH MORE THAN THE ONE THAT
+  RANKS THE SUSPECTS. Five rounds of profiling optimised the render loop
+  from 24.49ms to 11.47ms, all of it real, and the player said "still
+  laggy" after every one — because both remaining stalls were OUTSIDE the
+  loop and no ranking of the loop's own sections could ever have contained
+  them. What found them was the hitch reporter printing a line at the
+  moment a stutter happened, with the worst section during it and how much
+  fell outside the timed sections. Two lines of console output identified a
+  3798ms asset parse and a 55ms shader compile that six readings of a
+  frame-time overlay had walked straight past.
+- PRELOAD WHATEVER IS FETCHED LAZILY DURING PLAY, and check what is NOT on
+  that list. Sounds were preloaded in Phase 39 and models never were, and
+  nothing about the code looked wrong for thirty phases: `loadModel` caches
+  correctly, resolves correctly, and is called from the right place. It was
+  simply called for the first time at the worst possible moment. The
+  question worth asking periodically is not "is this loader correct" but
+  "what does this game fetch for the first time while somebody is playing".
+- THREE.JS COMPILES SHADERS INSIDE `render()`, SYNCHRONOUSLY, and it will do
+  it for anything newly visible. That makes every first appearance of a
+  model a frame spike, and it is invisible in every counter except a
+  per-frame worst — the average absorbs it completely. `compileAsync` with
+  the object as `scene` and the real scene as `targetScene` compiles one
+  thing against the lighting it will be drawn under, off the main thread
+  where the driver supports it. Add hidden, warm, then show: the order is
+  the whole fix, and showing before warming is the original bug with extra
+  steps.
+- A PRELOAD WRITTEN AS A LIST IS A SECOND PLACE TO REMEMBER. Iterating
+  `MONSTER_MODELS` means a fourteenth kind is covered the moment it is
+  added to the table. A hand-written list would work perfectly, pass review,
+  and then silently fail the first time somebody adds a monster — as a
+  multi-second freeze occurring only in the one corner of the map that
+  monster lives in, which is close to undiagnosable. `warmup.mjs` asserts
+  the loop form specifically, not just that a preload exists.
+
 - A MEASUREMENT THAT COMES BACK "IT DEPENDS" IS A RESULT, AND THE ANSWER IS
   USUALLY NO. Re-tuning the ground-cover chunk size looked promising and the
   numbers came back as a clean trade: 26 to 44 units is 44% fewer draw calls
@@ -11152,6 +11186,55 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.36 — both stalls were outside the render loop, and the
+hitch reporter named them.** The reading that made this possible was the
+first one taken with F3 open and the console visible at once, and the two
+instruments built in M70.30 and M70.32 paid for themselves in one screen:
+```
+  [hitch]   55ms frame — worst section: render 53.7ms, 0ms outside sections
+  [hitch] 3798ms BETWEEN frames — not the render loop.
+```
+Everything M70.34-35 did worked — `occluders` fell out of the top twelve
+entirely (1.60ms to nothing), `render` 10.81ms to 8.90ms, draw calls 996
+to 782, frame average 15.04ms to 11.47ms, and the pacer reports it is
+holding 1 frame per 2 refreshes on a 141Hz display. And the player still
+says laggy, because `fps` reads 46.8 against a 70fps target: twelve
+stutters every ten seconds, worst 139ms, and neither kind is in the loop.
+THE MULTI-SECOND ONES. Sounds have been preloaded since Phase 39 and
+models never were, so the first time each of the thirteen monster kinds
+came into view, its glTF was fetched and parsed on the main thread, in
+play. That is a 3798ms freeze and an 1161ms one in a single session, and
+no amount of work on the render loop could ever have touched it. All
+thirteen are now requested during `start`, where there is a loading screen
+to hide them and where `loadModel` already counts them through
+`beginLoad`/`endLoad`. Not awaited — blocking the world on a dragon the
+player will not meet for an hour is the wrong trade, and the cache returns
+the in-flight promise, so a monster that does arrive early joins the same
+fetch rather than starting a second one. Written as a loop over
+`MONSTER_MODELS` rather than a list, so a fourteenth kind is covered the
+moment it is added; a hand-written list would be a second place to
+remember, and forgetting costs a multi-second freeze in exactly one corner
+of the map.
+THE 55ms ONES. three.js compiles a material's program the first time it is
+rendered, and does it SYNCHRONOUSLY inside `render()` — so every monster
+arriving in view paid for its own shaders in the middle of a frame. Steady
+render was 8.90ms and these were 52-85ms, a dozen times in ten seconds,
+which is exactly the profile: worst section `render`, nothing outside the
+timed sections. `World.warmUp` calls `compileAsync`, which uses
+KHR_parallel_shader_compile where the driver has it and therefore does the
+work OFF the main thread; passing the object as the scene and the real
+scene as `targetScene` is how three.js is asked to compile one thing
+against the lighting it will actually be drawn under. Both actor paths —
+monsters and remote players — now add the rig hidden, warm it, and show it
+after. The creature appears a beat later than it used to and no frame is
+spent on it.
+`tools/test/warmup.mjs` guards both: that the preload iterates the table
+rather than naming models, that it cannot reject its way out of `start`,
+that the warm-up uses the async compile rather than the blocking one and
+never rejects, and that BOTH actor paths hide-warm-show in that order —
+mutation-tested by reordering one of them to show before warming, which
+fails as it should. Full suite green.
 
 **Phase 70 M70.35 — the allocations, and a tuning question answered with
 "no".** Small follow-up to M70.34, and half of it is a decision not to

@@ -123,7 +123,7 @@ import {
   toWorldX,
   toWorldZ,
 } from "./World";
-import { instantiate, whenLoadsSettle } from "./assets";
+import { instantiate, loadModel, whenLoadsSettle } from "./assets";
 
 /**
  * An XZ position, plus the height of the ground under it.
@@ -1099,6 +1099,28 @@ export class Game {
     // safe before this, but nothing will make a sound until it has happened.
     unlockAudio();
     preloadSfx();
+    // EVERY MONSTER MODEL, NOW, WHILE THERE IS A LOADING SCREEN TO HIDE IT.
+    //
+    // Sounds have been preloaded since Phase 39 and models never were, so the
+    // first time each of the thirteen kinds came into view its glTF was fetched
+    // and parsed on the main thread, mid-play. That is what the profiler was
+    // reporting as multi-second stalls BETWEEN frames — 3798ms and 1161ms in
+    // one session — which no amount of work on the render loop could ever have
+    // touched, because none of it happens inside the loop.
+    //
+    // Deliberately not awaited: the loading screen already counts these through
+    // `beginLoad`/`endLoad` inside `loadModel`, and blocking on them would
+    // hold the world back for models the player will not meet for minutes. The
+    // cache is keyed by name and `loadModel` returns the in-flight promise, so
+    // a monster that does arrive early joins the same fetch rather than
+    // starting a second one.
+    for (const spec of Object.values(MONSTER_MODELS)) {
+      void loadModel(spec.model).catch(() => {
+        // A model that fails here fails again at spawn, where there is already
+        // a path for it. Swallowed so one bad asset cannot reject its way out
+        // of the start sequence.
+      });
+    }
     this.socket.connect();
 
     // The town is generated rather than downloaded, so it costs a few
@@ -1283,7 +1305,15 @@ export class Game {
         });
         this.players.set(s.id, actor);
         this.playerMotion.set(s.id, { x: s.x, y: s.y, moving: false });
-        void actor.load().then(() => this.world.scene.add(actor!.root));
+        // Warmed before it is shown, same as a monster — a player walking into
+        // view compiles the same kind of shaders a monster does.
+        const built = actor;
+        void actor.load().then(async () => {
+          built.root.visible = false;
+          this.world.scene.add(built.root);
+          await this.world.warmUp(built.root);
+          built.root.visible = true;
+        });
       }
       // Remote players are dressed from the same `Appearance` the local player
       // renders itself from, so there is one drawing path rather than a
@@ -1358,7 +1388,16 @@ export class Game {
       // snapshot ever reaches it.
       actor.setTargetPosition(...onGround(toWorldX(s.x), toWorldZ(s.y)));
       this.monsters.set(id, vis);
-      void actor.load().then(() => this.world.scene.add(actor.root));
+      // Added hidden, shown once its shaders are ready. Otherwise the first
+      // frame that draws it compiles them inline — see `World.warmUp`. The
+      // monster appears a beat later than it used to and no frame is spent
+      // on it.
+      void actor.load().then(async () => {
+        actor.root.visible = false;
+        this.world.scene.add(actor.root);
+        await this.world.warmUp(actor.root);
+        actor.root.visible = true;
+      });
     }
   }
 
