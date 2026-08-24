@@ -1183,6 +1183,13 @@ export class Game {
       // Chill is a gameplay signal (your Frost Nova is still working), so it
       // gets a colour rather than being inferred from the monster moving slower.
       vis.actor.setChilled(s.slowed);
+      // THE BURST IS THE WHOLE MECHANIC, and until now it was invisible: the
+      // server has moved this body at several times its own speed and the run
+      // cycle kept playing at its ordinary rate, legs cycling as if nothing had
+      // changed under them. Driving the same clip faster for the leap's own
+      // duration is what makes closing the gap read as a lunge rather than a
+      // glide.
+      vis.actor.setLeaping(s.leaping ? MONSTER_STATS[vis.kind].leapSpeedMultiplier ?? 1 : 1);
       // The window a big creature leaves after committing a swing. Read off the
       // broadcast statuses rather than timed on the client, so what glows and
       // what actually takes half again as much damage are one answer.

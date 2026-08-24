@@ -3724,6 +3724,17 @@ export interface MonsterState {
   // wind-up is in progress to draw the danger zone, and the radius is a
   // static per-kind stat it can already look up.
   windingUp: boolean;
+  /**
+   * True while a gap-closer's burst is in progress.
+   *
+   * The server has always known this — `speed = stepPx * leapSpeedMultiplier`
+   * for the duration of the leap — and never said so. Without it the client's
+   * only evidence is a bigger gap between two positions, which reads as a run
+   * animation quietly moving the body faster than its own legs are cycling.
+   * Same shape as `windingUp`: a boolean the renderer can act on, not a value
+   * it has to infer.
+   */
+  leaping: boolean;
 }
 
 // --- Loot on the ground -----------------------------------------------------

@@ -601,7 +601,7 @@ const nodeRespawnAt = new Map<string, number>();
 
 function spawnMonster(id: string, kind: MonsterState["kind"], x: number, y: number): MonsterState {
   const maxHp = MONSTER_STATS[kind].maxHp;
-  return { id, kind, x, y, status: "alive", hp: maxHp, maxHp, slowed: false, windingUp: false, statuses: [] };
+  return { id, kind, x, y, status: "alive", hp: maxHp, maxHp, slowed: false, windingUp: false, leaping: false, statuses: [] };
 }
 
 // Monsters live in tight packs, not scattered individually, so clearing a
@@ -3475,6 +3475,11 @@ setInterval(() => {
     // than either alone, and neither can root it.
     const stepPx =
       ((stats.speedPxPerSec * statusMoveMultiplier(statusesOf(monster.id, now))) * TICK_MS) / 1000;
+    // Derived here rather than only inside the chase branch below, so a
+    // monster that leashes home or dies mid-burst does not carry a stuck
+    // `true` on its next several snapshots — the same bug a state-machine-
+    // local flag would have needed a second cleanup path to avoid.
+    monster.leaping = now < (monsterLeapUntil.get(monster.id) ?? 0);
 
     if (monster.status !== "alive") {
       ai.state = "idle";

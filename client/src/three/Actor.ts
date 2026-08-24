@@ -562,6 +562,12 @@ export class Actor {
   /** While set, a one-shot (attack/hit) owns the pose and update() will not override it. */
   private oneShotUntil = 0;
   private baseAnim: ActorAnim = "idle";
+  /** The run clip's own per-actor rate, captured where `play` sets it — needed
+   *  because a leap has to multiply THAT number, not overwrite it, or every
+   *  leaping wolf in a pack would snap to the same footfall. */
+  private runTimeScale = 1;
+  /** >1 while a gap-closer is mid-burst. See `setLeaping`. */
+  private leapMultiplier = 1;
 
   private facing = 0;
   private targetFacing = 0;
@@ -1608,7 +1614,8 @@ export class Actor {
     } else if (anim === "run") {
       // Run is not phase-offset: a pack chasing you is supposed to move
       // together. Only the rate varies, so their footfalls are not identical.
-      next.setEffectiveTimeScale(0.94 + this.variance * 0.12);
+      this.runTimeScale = 0.94 + this.variance * 0.12;
+      next.setEffectiveTimeScale(this.runTimeScale * this.leapMultiplier);
     } else if (anim === "walk") {
       // Walk IS phase-offset, unlike run, and for the opposite reason: nothing
       // is chasing anything, so two people crossing the same square in step
@@ -1663,6 +1670,24 @@ export class Actor {
     this.oneShotUntil = performance.now() + ms;
   }
 
+  /**
+   * A leap is a real speed multiplier on the server — "the burst is the whole
+   * mechanic" — and the client had no idea it was happening: the run cycle
+   * played at its ordinary rate while the body covered three times the ground,
+   * legs cycling as if nothing had changed under them. That reads as skating,
+   * not lunging. Driving the SAME run clip faster for the burst's own duration
+   * needs no new clip and keeps every leaping kind's stride honest about the
+   * distance it is actually covering.
+   *
+   * `multiplier` is 1 to clear. Applied every frame in `update`, not just on
+   * entry, so it survives `play("run")` no-oping once a chase is already
+   * running (the state-change guard that stops a moving pack's footfalls from
+   * resyncing every snapshot).
+   */
+  setLeaping(multiplier: number): void {
+    this.leapMultiplier = multiplier;
+  }
+
   /** Cancels a death pose so a respawned monster animates again. */
   revive(): void {
     this.oneShotUntil = 0;
@@ -1671,6 +1696,13 @@ export class Actor {
   }
 
   update(dtSeconds: number): void {
+    // The leap multiplier has to be re-applied every frame rather than only on
+    // entry into "run": `play` no-ops on a state that is already current, which
+    // is exactly the case for a chasing monster whose leap starts and ends
+    // mid-run.
+    if (this.currentAnim === "run") {
+      this.actions.get("run")?.setEffectiveTimeScale(this.runTimeScale * this.leapMultiplier);
+    }
     this.mixer?.update(dtSeconds);
     // After the mixer, because it reads the weights the mixer just advanced.
     this.applyGroundLift();

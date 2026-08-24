@@ -7302,6 +7302,24 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A SPEED MULTIPLIER THE SERVER APPLIES IS NOT AUTOMATICALLY A SPEED THE
+  PLAYER SEES. A leap has moved a monster at up to 3.4x its own pace since
+  Phase 66 and the run cycle never knew: it played at its ordinary per-actor
+  rate regardless, so the body covered three times the ground a stride should
+  and the mismatch read as skating rather than committing to a distance.
+- DERIVE A TIMED FLAG FRESH EVERY TICK RATHER THAN SET IT INSIDE ONE STATE
+  BRANCH. `windingUp` and the new `leaping` both need to go false again on
+  their own — a monster that leashes home or dies mid-leap must not carry a
+  stuck `true` into its next several snapshots — and a flag set only where the
+  behaviour starts has no path back to false when the monster leaves that
+  branch first.
+- A `play()` GUARD THAT STOPS A NO-OP RETRIGGER ALSO STOPS A LEGITIMATE RE-RATE.
+  Re-entering `play("run")` on an already-running actor is correctly a no-op —
+  a moving pack is not supposed to resync its footfalls every snapshot — but
+  that same guard means a leap's speed boost cannot be applied through `play`
+  at all. It has to be written directly onto the action's time scale, every
+  frame, independent of the state machine that owns which clip is playing.
+
 - A TELL HAS TO REACH THE THING BEING TOLD ABOUT. A boss's wind-up drew a
   ground ring, played a cast sfx and glowed a nameplate bar, and the creature
   itself just stood in idle or kept running until the slam landed — a player
@@ -10323,6 +10341,20 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — the burst is the whole mechanic, and it finally reads as one.**
+M69.5: a wolf and an armabee leap — a real speed multiplier the server has
+applied since Phase 66, "the burst is the whole mechanic" in its own comment —
+and the client had no way to know it was happening. The run cycle kept playing
+at its ordinary per-actor rate while the body covered three times the ground a
+normal run would, legs cycling as if nothing had changed underneath them,
+which reads as skating rather than lunging. A `leaping` boolean now rides the
+monster snapshot, the same shape `windingUp` already used for a wind-up, and
+the client drives the SAME run clip at the leap's own speed multiplier for the
+burst's own duration — no new art, no new state, just an honest stride. Derived
+fresh every tick from the same map the movement code already reads, rather than
+set once inside the chase branch, so a monster that leashes home or dies
+mid-burst does not carry a stuck `true` into its next several snapshots.
 
 **Phase 69 — a slam you can see coming, from the thing swinging it.** M69.4
 found that the wind-up before a troll, golem or dragon's slam — the two-second
