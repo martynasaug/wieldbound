@@ -124,6 +124,7 @@ import {
   toWorldZ,
 } from "./World";
 import { instantiate, loadModel, whenLoadsSettle } from "./assets";
+import { warmInBackground } from "./warmer";
 
 /**
  * An XZ position, plus the height of the ground under it.
@@ -1121,6 +1122,20 @@ export class Game {
         // of the start sequence.
       });
     }
+    // And every weapon and armour model, in the background, whenever the
+    // browser is idle. These were the OTHER lazy fetch — the one M70.36 did not
+    // find, because preloading the monsters removed the stalls it was looking
+    // at and left these behind: a 2914ms freeze mid-fight, still reported as
+    // "BETWEEN frames". Not added to the loading screen, since most characters
+    // will never hold most of this gear. See warmer.ts.
+    warmInBackground(
+      Object.values(ITEM_BASES)
+        .map((base) => base.art?.model)
+        .filter((m): m is string => typeof m === "string")
+        // "rig:Warrior/Sword" means the mesh is harvested off a body rig, so
+        // what has to be warmed is the body, not the path.
+        .map((m) => (m.startsWith("rig:") ? m.slice(4).split("/")[0] : m)),
+    );
     this.socket.connect();
 
     // The town is generated rather than downloaded, so it costs a few
@@ -3445,10 +3460,32 @@ export class Game {
     this.raycaster.setFromCamera(ndc, this.world.camera);
     let hitId: string | null = null;
     let hitDepth = Infinity;
+    // A SPHERE, NOT THE MESH. `intersectObject(root, true)` walks into the
+    // SkinnedMesh, and three.js resolves a skinned raycast by computing the
+    // posed world position of every vertex in the rig before it tests a single
+    // triangle. That is thousands of bone-weighted transforms per candidate,
+    // and this runs on every frame the pointer is over the canvas — it showed
+    // up in the profiler as `targeting` spiking to 45ms, six times in one
+    // ten-second window, against a 0.04ms average.
+    //
+    // Triangle-exact picking was never worth that here. These are creatures
+    // between 0.8 and 3.4 units tall being clicked on with a mouse, the
+    // candidate list is already filtered to things within `PICK_CANDIDATE_PX`
+    // of the cursor on screen, and the whole function falls back to nearest-on-
+    // screen anyway when nothing is hit. A capsule-ish sphere around the body
+    // answers the only question the ray is actually being asked: of the things
+    // under the cursor, which is in front?
     for (const c of candidates) {
-      const hits = this.raycaster.intersectObject(c.vis.actor.root, true);
-      if (hits.length > 0 && hits[0].distance < hitDepth) {
-        hitDepth = hits[0].distance;
+      const spec = MONSTER_MODELS[c.vis.kind];
+      const p = c.vis.actor.position;
+      this.pickSphere.center.set(p.x, p.y + spec.height * 0.5, p.z);
+      // Half the height is the body radius, floored so a slime is still
+      // comfortably clickable and not a marble.
+      this.pickSphere.radius = Math.max(0.45, spec.height * 0.5);
+      if (!this.raycaster.ray.intersectsSphere(this.pickSphere)) continue;
+      const depth = this.world.camera.position.distanceTo(this.pickSphere.center);
+      if (depth < hitDepth) {
+        hitDepth = depth;
         hitId = c.id;
       }
     }
@@ -4081,6 +4118,7 @@ export class Game {
   private occluderBuiltAt = { x: Infinity, z: Infinity };
   private readonly occluderBox = new THREE.Box3();
   private readonly guideTargets = new Set<string>();
+  private readonly pickSphere = new THREE.Sphere();
   private readonly rayHead = new THREE.Vector3();
   private readonly rayDir = new THREE.Vector3();
 

@@ -7302,6 +7302,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- RAYCASTING A SKINNED MESH IS NOT A RAYCAST, IT IS A SKINNING PASS.
+  three.js resolves `intersectObject` against a `SkinnedMesh` by computing
+  the posed world position of every vertex in the rig before testing a
+  single triangle. On a per-frame hover test against several candidates
+  that is thousands of bone-weighted transforms a frame, and it looks
+  exactly like the cheap bounding-box raycast the same call performs on a
+  static mesh. Nothing in the call site says which one you are getting. Any
+  ray against an animated character wants a proxy — a sphere, a capsule, a
+  box — unless triangle accuracy is genuinely the requirement.
+- FIXING ONE LAZY FETCH REVEALS THE NEXT, and the symptom does not change
+  in the meantime. Preloading the thirteen monster models removed real
+  multi-second stalls and the report came back with multi-second stalls,
+  because gear models were a SECOND lazy path with the identical signature
+  — "BETWEEN frames", a couple of seconds, nothing in the loop. When a fix
+  is correct and the symptom persists unchanged, the question is not
+  whether the fix worked but whether the symptom had two sources; asset
+  loading in particular tends to have several, because every subsystem
+  fetches its own.
+- A LOADING SCREEN IS NOT A FREE PLACE TO PUT WORK. Adding every weapon and
+  armour model to the initial load would have fixed the stall and was the
+  wrong call: most characters never hold most of that gear, so it is a wait
+  everyone pays for something almost nobody uses. `requestIdleCallback` is
+  the right home for work that has no deadline and only one requirement —
+  not to happen during a fight — and serialising it is what keeps any single
+  pause below feeling. The general shape: preload what is CERTAIN to be
+  needed (every monster kind is), warm in idle what is merely LIKELY.
+
 - THE INSTRUMENT THAT NAMES THE CULPRIT IS WORTH MORE THAN THE ONE THAT
   RANKS THE SUSPECTS. Five rounds of profiling optimised the render loop
   from 24.49ms to 11.47ms, all of it real, and the player said "still
@@ -11186,6 +11213,53 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
+
+**Phase 70 M70.37 — a skinned raycast on every frame, and the other lazy
+fetch.** The reading came back with `render` still spiking (44-101ms) and
+a section that had never appeared before: `targeting`, averaging 0.04ms
+and spiking to 45ms, six times in one ten-second window.
+THE PICK. `pickMonsterAt` runs on every frame the pointer is over the
+canvas, and it disambiguated overlapping candidates with
+`intersectObject(actor.root, true)`. That walks into the `SkinnedMesh` —
+and three.js resolves a skinned raycast by computing the POSED WORLD
+POSITION OF EVERY VERTEX IN THE RIG before it tests a single triangle.
+Thousands of bone-weighted transforms, per candidate, per frame, to answer
+a question about a mouse cursor. Triangle-exact picking was never worth
+that here: these are creatures between 0.8 and 3.4 units tall, the
+candidate list is already filtered to things within `PICK_CANDIDATE_PX` of
+the cursor ON SCREEN, and the whole function falls back to nearest-on-
+screen when nothing is hit. A sphere around the body answers the only
+question the ray is actually asked — of the things under the cursor, which
+is in front — and `Ray.intersectsSphere` is a dot product.
+THE OTHER FETCH. M70.36 preloaded the thirteen monster models and the
+multi-second freezes stayed: 2914ms and 1132ms, still "BETWEEN frames".
+Preloading the monsters had removed the stalls it was looking at and left
+a second lazy path standing — `gear.ts` fetches every WEAPON AND ARMOUR
+model the first time one is seen, which is a drop being inspected or
+another player walking up wearing one. Twenty-seven item art models and
+ten wardrobe donors.
+Deliberately NOT added to the loading screen, which was the obvious fix
+and the wrong one: most characters will never hold most of this gear, and
+a loading screen is not free just because waiting is expected there.
+`warmer.ts` instead queues them and parses one at a time in whatever gaps
+the browser has spare, through `requestIdleCallback` — which hands back a
+deadline and only fires when nothing else wants the thread, exactly the
+shape of work that has no hurry and only one requirement: not to land
+during a fight. Serialised rather than fired together for the same reason
+the stall existed at all, since three parses at once is a three-parse
+stall. `loadModel` caches by name and returns the in-flight promise, so a
+model the player reaches before the warmer does joins that fetch rather
+than starting a second one — the warming can make something earlier and
+can never make anything slower. `rig:` models are mapped back to the body
+that carries the mesh, or the warmer would ask for a filename that does
+not exist and quietly warm nothing.
+This does not make parsing cheaper. It moves it to a moment nobody is
+looking at, which for a cost that cannot be removed is the whole available
+win. `warmup.mjs` gains a section for it: serialised not parallel, idle
+not immediate, a fallback for Safari (which still has no
+`requestIdleCallback` and would otherwise warm nothing at all), a catch so
+warming can never be a source of errors of its own, and the `rig:` mapping.
+Full suite green.
 
 **Phase 70 M70.36 — both stalls were outside the render loop, and the
 hitch reporter named them.** The reading that made this possible was the

@@ -97,6 +97,43 @@ section("2. nothing is drawn before its shaders exist");
   }
 }
 
+section("3. gear is warmed in the background, not fetched mid-fight");
+{
+  const warmer = read("client/src/three/warmer.ts");
+  check(
+    "start() queues the item art models",
+    /warmInBackground\(\s*Object\.values\(ITEM_BASES\)/.test(game),
+    "weapon and armour models would be parsed the first time one is seen",
+  );
+  check(
+    "rig-harvested models are mapped to the body that carries them",
+    /startsWith\("rig:"\) \? m\.slice\(4\)\.split\("\/"\)\[0\] : m/.test(game),
+    'loading "rig:Warrior/Sword" as a filename would 404 and warm nothing',
+  );
+  // Serialised, not parallel: three glTF parses at once is a three-parse stall,
+  // and the entire point is that no single pause is long enough to feel.
+  check(
+    "models are warmed one at a time",
+    /\.finally\(\(\) => whenIdle\(step\)\)/.test(warmer) && !/Promise\.all/.test(warmer),
+    "firing them together would recreate the stall it exists to avoid",
+  );
+  check("and only when the browser has nothing better to do", /requestIdleCallback/.test(warmer));
+  check(
+    "with a fallback where that does not exist",
+    /setTimeout\(fn, \d+\)/.test(warmer),
+    "Safari has no requestIdleCallback and would warm nothing at all",
+  );
+  check(
+    "a failed warm cannot become an unhandled rejection",
+    /loadModel\(next\)[\s\S]{0,40}?\.catch\(/.test(warmer),
+  );
+  check(
+    "warming an already-loaded model is harmless",
+    /loadModel` caches by name/.test(warmer),
+    "the warmer must never start a second fetch for something already in flight",
+  );
+}
+
 console.log(
   failures === 0
     ? "\nOK — models arrive before they are needed and compile before they are drawn"
