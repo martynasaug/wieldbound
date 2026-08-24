@@ -1646,12 +1646,27 @@ export class Game {
       if (p.playerCrit) this.effects.shake(0.09, 150);
 
       if (p.monsterDefeated) {
-        this.combatLog.push(`You defeated the ${label}.`, "#7ed957");
+        // A BOSS DYING IS NOT THE SAME MOMENT AS A SLIME DYING, and the game
+        // already knows it — `guaranteedDrop` is the same flag the framed
+        // nameplate and the target frame's elite border read — but the kill
+        // itself played the identical burst either way. The three things
+        // with a guaranteed drop are what a player walks a long way to find;
+        // the death should say so.
+        const boss = vis ? MONSTER_STATS[vis.kind].guaranteedDrop : false;
+        this.combatLog.push(
+          boss ? `You have defeated the ${label}!` : `You defeated the ${label}.`,
+          boss ? "#ffd873" : "#7ed957",
+        );
         playSfx("die");
         if (target) {
           const at = target.actor.position;
-          this.effects.play("impact", at.x, at.y + 0.7, at.z, { scale: 2.6, tint: 0xffb066, durationMs: 520 });
+          this.effects.play("impact", at.x, at.y + 0.7, at.z, {
+            scale: boss ? 4.2 : 2.6,
+            tint: 0xffb066,
+            durationMs: boss ? 760 : 520,
+          });
         }
+        if (boss) this.effects.shake(0.16, 260);
       }
     }, delay);
   }

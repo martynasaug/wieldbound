@@ -7302,6 +7302,19 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Decisions log
 (append here as we make non-obvious calls, so we don't relitigate them)
 
+- A FLAG THAT ALREADY GATES TWO READOUTS SHOULD GATE THE THIRD.
+  `guaranteedDrop` already decides the framed nameplate and the target
+  frame's elite border, both of which exist to tell a player they are
+  looking at something worth the walk — and the payoff those two readouts
+  build toward, the kill itself, was reading the flag from neither. Two
+  places already asking the same question is the strongest sign a third
+  place should be asking it too.
+- SHAKE IS A BUDGET, NOT A DEFAULT. Nothing shook on an ordinary kill before
+  this, only crits mid-fight — so a boss kill's shake had to read as bigger
+  than a crit's (0.16/260 against 0.09/150 or 0.11/170) rather than reuse
+  either number, or the rarest moment in the fight would shake the screen
+  less than a lucky roll two swings earlier.
+
 - A SIGNAL THAT LANDS EVERYWHERE EXCEPT ON THE PERSON WHO CAUSED IT IS STILL
   MISSING. Every crit signal — the gold number, the bigger burst, the shake —
   answers "what did this do to the target", and none of them answer "did I
@@ -10479,6 +10492,15 @@ rarities), multiple crafting stations. Not committing to order yet.
 
 ## Current status
 Phase 0 through 69 complete (2026-08-24).
+
+**Phase 69 — a boss dying is not the same moment as a slime dying.** M69.14:
+`guaranteedDrop` already decides the framed nameplate and the target frame's
+elite border — "the three things with a guaranteed drop are what a player
+walks a long way to find" — and the kill itself, the one moment those two
+readouts have spent the whole fight pointing toward, played the identical
+burst either way. A troll's death now gets a bigger, longer burst, a real
+screen shake (nothing shook on a kill before this — only crits mid-fight
+did), and its own combat-log line and colour. Ordinary kills are untouched.
 
 **Phase 69 — a crit is a fact about the swing, not only about what it hit.**
 M69.13: every other signal a crit produces — the gold number, the bigger
