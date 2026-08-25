@@ -2081,6 +2081,19 @@ export class Actor {
  *  not rebuild a rig. */
 function sameAppearance(a: Appearance, b: Appearance): boolean {
   if (a.weaponType !== b.weaponType || a.weaponRarity !== b.weaponRarity) return false;
+  // Base id, not just type/rarity: two different bows are both `weaponType:
+  // "bow"`, and comparing only type/rarity treated swapping one for the
+  // other as no change at all — the rig kept whatever model it already had
+  // on, silently wrong. Offhand was missing from this function entirely,
+  // the same gap one hand over: an offhand swap or removal never triggered
+  // a re-dress either.
+  if (
+    a.weaponBaseId !== b.weaponBaseId ||
+    a.offhandBaseId !== b.offhandBaseId ||
+    a.offhandRarity !== b.offhandRarity
+  ) {
+    return false;
+  }
   const slots = new Set<string>([...Object.keys(a.layers), ...Object.keys(b.layers)]);
   for (const slot of slots) {
     const x = a.layers[slot as ItemSlot];

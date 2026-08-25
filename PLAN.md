@@ -11379,6 +11379,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
+found while looking for its cause.** Confirmed live, after M70.64: zero
+`[dispose-trace]` and zero `[programs]` lines at all — only the two
+already-understood, already-benign hitch classes (occasional cold rig
+loads, and the residual GC pause from M70.52) remain. Five files
+converted from a bug that started as "guess which material" and ended as
+a genuinely different mechanism (three.js deleting a compiled program the
+instant its last referencing material is disposed) than the one first
+suspected (a light-count-driven recompile, M70.43's class of bug) — worth
+recording as the actual shape of a multi-round investigation: three wrong
+guesses that were each real bugs, a stack trace that ended the guessing,
+and two more real sources the trace itself turned up along the way.
+Screenshotted separately: a Hunter's Bow and a staff held at once.
+Investigated `equipItem` (`db.ts`) and confirmed it is not a server-side
+data bug — the bow is correctly `twoHanded: true`, `unequipSlotStmt`
+correctly clears the previous weapon-slot item, offhand-conflict handling
+reads correctly. Found a real, separate client-side bug while checking
+the render path: `sameAppearance()` compared only `weaponType`/
+`weaponRarity`/visible-layer style — never `weaponBaseId`, `offhandBaseId`
+or `offhandRarity`. Two different weapons sharing a `weaponType` (e.g. any
+two bows) were silently treated as "no change," skipping the re-dress
+that would have removed the old model. Fixed by adding the three missing
+fields to the comparison. Not yet confirmed as the FULL explanation for
+the exact screenshot — the exact repro sequence that produced two
+simultaneously-worn weapon-slot models is still being narrowed down; this
+closes a real gap found on the way, not a confirmed root cause.
+
 **Phase 70 M70.64 — two more, found by the trace going quiet on the first
 three and loud on what was left.** Confirmed live: after M70.63, zero
 `[dispose-trace]` lines fired at all — the three converted files held.
