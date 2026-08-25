@@ -11379,6 +11379,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.62 — the weapon-attack half gets the same pool.** Confirmed
+live: after M70.61, `effects.ts` never appeared in a dispose trace again —
+every trace left was `Projectiles.update` (`attacks.ts:543`), exactly the
+half deferred rather than rushed. Same treatment now: `boltMesh`/
+`beamMesh` no longer construct their own materials — they take pooled
+ones as parameters and only build the disposable wrapper (group, sprites,
+mesh) around them. `Projectiles` holds six fixed pools of 16 (spark, glow,
+trail, beam core, beam glow, wisp), built once in `prewarm()` and never
+disposed.
+The harder part deferred last entry: a pooled `SpriteMaterial`'s
+`rotation` accumulates every frame a bolt is in flight (the spin that
+keeps its silhouette moving), and `opacity`/`colour` on every pooled
+material get animated toward their fade-out value by `update()` — reused
+without resetting either would carry the LAST cast's spin and fade state
+into the next one, a real visual bug rather than a missed cosmetic flash.
+Every acquire site (`bolt`/`beam`/`wisp`) now explicitly resets rotation
+to 0 and opacity/colour to each material's own starting value before
+using it. Pool exhaustion drops the cast silently, same call as
+`effects.ts` and `lightPool.ts` before it.
+Arrows untouched — their trail material comes from a cloned model
+prototype (`arrowPrototype()`), not a per-cast `new Material()`, and
+`LiveProjectile.materials` has always been `[]` for that kind, meaning
+nothing in `update()`'s cleanup path has EVER disposed it — confirmed by
+reading the code rather than assumed, since "arrow" never once appeared
+in a dispose trace across every screenshot this whole thread has seen.
+Not yet confirmed live.
+
 **Phase 70 M70.61 — the fix was never "keep a decoy warm," it was "stop
 disposing at all."** The corrected tracer fired, live, with real stack
 traces: `Projectiles.update` (`attacks.ts:543`) and `Effects.update`

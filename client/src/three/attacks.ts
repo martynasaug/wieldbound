@@ -174,40 +174,26 @@ const BOLT_TRAIL_GEO = new THREE.ConeGeometry(0.3, 2.2, 10, 1, true);
  * down -Z so the group can simply `lookAt` its destination, which is the same
  * convention the beam uses.
  */
-function boltMesh(tint: number, pool: LightPool): {
+/**
+ * Builds the disposable wrapper (group, sprites, mesh) around three ALREADY
+ * POOLED materials — see `Projectiles`'s pools for why the materials
+ * themselves are never created here and never disposed by the caller.
+ * Retinting/resetting is the caller's job at acquire time, not this
+ * function's, since a pooled material carries whatever state its last use
+ * left it in.
+ */
+function boltMesh(
+  pool: LightPool,
+  tint: number,
+  sparkMat: THREE.SpriteMaterial,
+  glowMat: THREE.SpriteMaterial,
+  trailMat: THREE.MeshBasicMaterial,
+): {
   object: THREE.Object3D;
   materials: THREE.Material[];
   light: THREE.PointLight | null;
   spinMats: THREE.SpriteMaterial[];
 } {
-  const sparkMat = new THREE.SpriteMaterial({
-    map: particleTexture("spark"),
-    color: 0xffffff,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    fog: false,
-  });
-  const glowMat = new THREE.SpriteMaterial({
-    map: particleTexture("glow"),
-    color: tint,
-    transparent: true,
-    opacity: 0.55,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    fog: false,
-  });
-  const trailMat = new THREE.MeshBasicMaterial({
-    map: particleTexture("trail"),
-    color: tint,
-    transparent: true,
-    opacity: 0.6,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    fog: false,
-  });
-
   // A sprite always faces the camera by construction, which is what makes it
   // read as a glow rather than a decal at any viewing angle — but it also
   // means the old trick of spinning the geometry to vary the silhouette does
@@ -315,40 +301,29 @@ function arrowPrototype(): Promise<THREE.Object3D> {
   return arrowProto;
 }
 
-function beamMesh(length: number, tint: number): { object: THREE.Object3D; materials: THREE.Material[] } {
+/** Same split as `boltMesh`: the two materials are pooled and passed in,
+ *  never created or disposed here. Only the geometry is still built fresh
+ *  per beam — it is sized to the beam's own length, cheap to upload (a
+ *  handful of cylinder verts), and not what this pool exists to fix. */
+function beamMesh(
+  length: number,
+  coreMat: THREE.MeshBasicMaterial,
+  glowMat: THREE.MeshBasicMaterial,
+): { object: THREE.Object3D; materials: THREE.Material[] } {
   // Two nested boxes: a hot white core inside a wider tinted glow. One box on
   // its own reads as a coloured stick rather than as light.
   // Both widened by about three times: at 0.05 and 0.16 units these were a
   // one-pixel core inside a two-pixel glow, which is a hairline rather than a
   // zap. Cylinders rather than boxes so the glow has no flat sides to catch
   // the light wrong as the camera turns with the beam.
-  const core = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.075, 0.075, length, 6),
-    new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false,
-    }),
-  );
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, length, 6), coreMat);
   core.rotation.x = Math.PI / 2;
-  const glow = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.26, 0.26, length, 8),
-    new THREE.MeshBasicMaterial({
-      color: tint,
-      transparent: true,
-      opacity: 0.5,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false,
-    }),
-  );
+  const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, length, 8), glowMat);
   glow.rotation.x = Math.PI / 2;
   const group = new THREE.Group();
   group.add(glow, core);
   group.renderOrder = 10;
-  return { object: group, materials: [core.material as THREE.Material, glow.material as THREE.Material] };
+  return { object: group, materials: [coreMat, glowMat] };
 }
 
 /**
@@ -360,66 +335,80 @@ function beamMesh(length: number, tint: number): { object: THREE.Object3D; mater
 export class Projectiles {
   private readonly live: LiveProjectile[] = [];
 
+  /**
+   * Fixed pools, never disposed — same fix `effects.ts`'s `Effects` was
+   * given, for the same confirmed reason: a warm-up material kept alive
+   * ALONGSIDE the real, per-cast disposable ones did not stop three.js
+   * from deleting the compiled program the moment the last REAL one was
+   * disposed (confirmed live, via `[dispose-trace]` stack traces landing
+   * here — `attacks.ts:543` — after that approach had already been tried).
+   * The only fix that cannot fail this way is to never create or destroy
+   * the material at all. Sized to `POOL_SIZE` concurrent casts of each
+   * shape; `bolt`/`beam`/`wisp` drop the effect silently on exhaustion
+   * rather than fall back to `new Material()`, which would reintroduce
+   * the exact bug for the overflow case.
+   */
+  private static readonly POOL_SIZE = 16;
+  private readonly sparkPool: THREE.SpriteMaterial[] = [];
+  private readonly glowPool: THREE.SpriteMaterial[] = [];
+  private readonly trailPool: THREE.MeshBasicMaterial[] = [];
+  private readonly beamCorePool: THREE.MeshBasicMaterial[] = [];
+  private readonly beamGlowPool: THREE.MeshBasicMaterial[] = [];
+  private readonly wispPool: THREE.SpriteMaterial[] = [];
+  private readonly freeSparks: THREE.SpriteMaterial[] = [];
+  private readonly freeGlows: THREE.SpriteMaterial[] = [];
+  private readonly freeTrails: THREE.MeshBasicMaterial[] = [];
+  private readonly freeBeamCores: THREE.MeshBasicMaterial[] = [];
+  private readonly freeBeamGlows: THREE.MeshBasicMaterial[] = [];
+  private readonly freeWisps: THREE.SpriteMaterial[] = [];
+
   constructor(
     private readonly scene: THREE.Scene,
     private readonly lightPool: LightPool,
   ) {}
 
   /**
-   * Kept alive for the life of this object — every real `bolt`/`beam`/
-   * `wisp` disposes its own materials the moment its flight ends (see
-   * `update()`), and three.js deletes and destroys a compiled program the
-   * instant the last material referencing its exact cache key is
-   * disposed. A warm-up whose own material is left to be garbage-collected
-   * does not survive a real fight: the first gap between two casts where
-   * nothing of that shape happens to be alive, the program is gone, and
-   * the next cast recompiles it cold regardless of ever having been
-   * warmed. This array is what keeps that from happening — see
-   * `SkillFx.warmed` for the identical reasoning one file over.
-   */
-  private readonly warmed: THREE.Object3D[] = [];
-
-  /**
-   * Uploads and compiles everything `bolt`/`beam`/`wisp`/`arrow` build,
-   * before a real cast is the first thing to pay for it — see
-   * `SkillFx.prewarm` for the fuller reasoning; this is the same gap in
-   * the sibling file that draws a weapon's own attacks rather than a
-   * skill's. The arrow prototype is a loaded model, same as any monster,
-   * and reaches the same un-warmed gap despite going through `loadModel`
-   * — parsing it is not the same as compiling its material or uploading
-   * its geometry, and nothing else in the game ever adds it to a scene
-   * before the first arrow actually fired does.
-   *
-   * The light `boltMesh` acquires is released immediately after: this is
-   * a warm-up, not a cast, and holding a real pool slot for the rest of
-   * the session over it would silently shrink combat's own light budget
-   * by one for no fight to ever benefit from.
+   * Fills every pool and uploads/compiles what they hold, before a real
+   * cast is the first thing to pay for it — see `SkillFx.prewarm` for the
+   * fuller reasoning; this is the same gap in the sibling file that draws
+   * a weapon's own attacks rather than a skill's. The arrow prototype is a
+   * loaded model, same as any monster, and reaches the same un-warmed gap
+   * despite going through `loadModel` — parsing it is not the same as
+   * compiling its material or uploading its geometry, and nothing else in
+   * the game ever adds it to a scene before the first arrow actually
+   * fired does.
    */
   prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
     const group = new THREE.Group();
-    const boltParts = boltMesh(0xffffff, this.lightPool);
-    group.add(boltParts.object);
-    this.warmed.push(boltParts.object);
-    if (boltParts.light) this.lightPool.release(boltParts.light);
-    const beamObject = beamMesh(1, 0xffffff).object;
-    group.add(beamObject);
-    this.warmed.push(beamObject);
-    const wisp = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: particleTexture("spark"),
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        fog: false,
-      }),
-    );
-    group.add(wisp);
-    this.warmed.push(wisp);
+    const spriteBase = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false } as const;
+    const meshBase = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false } as const;
+    for (let i = 0; i < Projectiles.POOL_SIZE; i++) {
+      const spark = new THREE.SpriteMaterial({ ...spriteBase, map: particleTexture("spark") });
+      const glow = new THREE.SpriteMaterial({ ...spriteBase, map: particleTexture("glow") });
+      const trail = new THREE.MeshBasicMaterial({ ...meshBase, map: particleTexture("trail"), side: THREE.DoubleSide });
+      const beamCore = new THREE.MeshBasicMaterial({ ...meshBase });
+      const beamGlow = new THREE.MeshBasicMaterial({ ...meshBase });
+      const wisp = new THREE.SpriteMaterial({ ...spriteBase, map: particleTexture("spark") });
+      for (const [pool, free, mat] of [
+        [this.sparkPool, this.freeSparks, spark],
+        [this.glowPool, this.freeGlows, glow],
+        [this.trailPool, this.freeTrails, trail],
+        [this.beamCorePool, this.freeBeamCores, beamCore],
+        [this.beamGlowPool, this.freeBeamGlows, beamGlow],
+        [this.wispPool, this.freeWisps, wisp],
+      ] as const) {
+        (pool as THREE.Material[]).push(mat);
+        (free as THREE.Material[]).push(mat);
+      }
+      group.add(new THREE.Sprite(spark), new THREE.Sprite(glow), new THREE.Mesh(BOLT_TRAIL_GEO, trail));
+      group.add(new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 1, 6), beamCore));
+      group.add(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 1, 8), beamGlow));
+      group.add(new THREE.Sprite(wisp));
+    }
     void world.warmUp(group).then(() => world.warmBuffers(group, "attacks"));
 
     void arrowPrototype().then((proto) => {
       const arrow = proto.clone(true);
-      this.warmed.push(arrow);
       void world.warmUp(arrow).then(() => world.warmBuffers(arrow, "arrow"));
     });
   }
@@ -452,7 +441,31 @@ export class Projectiles {
    * its own light now.
    */
   bolt(from: THREE.Vector3, to: THREE.Vector3, flightMs: number, tint: number): void {
-    const { object, materials, light, spinMats } = boltMesh(tint, this.lightPool);
+    const sparkMat = this.freeSparks.pop();
+    const glowMat = this.freeGlows.pop();
+    const trailMat = this.freeTrails.pop();
+    if (!sparkMat || !glowMat || !trailMat) {
+      // Pool exhausted — dropped rather than falling back to `new
+      // Material()`, which would reintroduce the exact bug this pool
+      // exists to remove, just for whichever cast happened to be the
+      // overflow. Whatever WAS acquired goes straight back.
+      if (sparkMat) this.freeSparks.push(sparkMat);
+      if (glowMat) this.freeGlows.push(glowMat);
+      if (trailMat) this.freeTrails.push(trailMat);
+      return;
+    }
+    // A pooled material carries whatever state its LAST use left it in —
+    // spark's own colour never varies (always white), but rotation
+    // (spun every frame in flight) and glow/trail's colour and opacity
+    // (animated toward zero as the previous cast faded) all need resetting
+    // before this cast can rely on them.
+    sparkMat.rotation = 0;
+    glowMat.rotation = 0;
+    glowMat.color.set(tint);
+    glowMat.opacity = 0.55;
+    trailMat.color.set(tint);
+    trailMat.opacity = 0.6;
+    const { object, materials, light, spinMats } = boltMesh(this.lightPool, tint, sparkMat, glowMat, trailMat);
     object.position.copy(from);
     object.lookAt(to);
     this.scene.add(object);
@@ -477,14 +490,12 @@ export class Projectiles {
    * would read as a volley rather than a wisp.
    */
   wisp(at: THREE.Vector3, tint: number, durationMs = 650): void {
-    const mat = new THREE.SpriteMaterial({
-      map: particleTexture("spark"),
-      color: tint,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false,
-    });
+    const mat = this.freeWisps.pop();
+    if (!mat) return; // pool exhausted — see `bolt`'s own comment on why dropped rather than fresh
+    mat.color.set(tint);
+    // Faded to (near) zero by the previous use's `update()` — reset before
+    // this one can rely on it starting visible.
+    mat.opacity = 1;
     const sprite = new THREE.Sprite(mat);
     sprite.scale.setScalar(0.22 + Math.random() * 0.1);
     sprite.position.copy(at);
@@ -514,7 +525,21 @@ export class Projectiles {
     // out of thin air at the caster's hand.
     const dir = to.clone().sub(from).normalize();
     this.bolt(from, from.clone().add(dir.multiplyScalar(0.06)), 160, tint);
-    const { object, materials } = beamMesh(length, tint);
+    const coreMat = this.freeBeamCores.pop();
+    const glowMat = this.freeBeamGlows.pop();
+    if (!coreMat || !glowMat) {
+      // See `bolt`'s own comment — dropped rather than falling back to a
+      // fresh material.
+      if (coreMat) this.freeBeamCores.push(coreMat);
+      if (glowMat) this.freeBeamGlows.push(glowMat);
+      return;
+    }
+    // Core stays white always; glow's colour and both materials' opacity
+    // were faded toward zero by the previous use's `update()`.
+    glowMat.color.set(tint);
+    coreMat.opacity = 1;
+    glowMat.opacity = 0.5;
+    const { object, materials } = beamMesh(length, coreMat, glowMat);
     // Boxes are built centred on the origin and extend along their own +Z, so
     // the group sits at the midpoint and looks at the far end.
     object.position.copy(from).lerp(to, 0.5);
@@ -538,9 +563,11 @@ export class Projectiles {
       const t = (now - p.startedAt) / p.durationMs;
       if (t >= 1) {
         this.scene.remove(p.object);
-        // Handed back to the pool rather than disposed — see lightPool.ts.
+        // Handed back to their pools rather than disposed — see this
+        // class's own pool fields for why, and `lightPool.ts` for the
+        // identical reasoning applied to the light one tick earlier.
         if (p.light) this.lightPool.release(p.light);
-        for (const m of p.materials) m.dispose();
+        this.releaseMaterials(p);
         this.live.splice(i, 1);
         continue;
       }
@@ -575,12 +602,42 @@ export class Projectiles {
     }
   }
 
+  /** Returns a finished cast's materials to whichever pool they came from —
+   *  dispatched by `kind` since `materials`' own order differs per shape
+   *  (`bolt`: spark/glow/trail; `beam`: core/glow; `wisp`: one sprite) and
+   *  is otherwise untyped once it is sitting in a `LiveProjectile`. Arrows
+   *  push nothing here — their own materials come from a cloned model
+   *  prototype, not a pool, unchanged by this round of fixes. */
+  private releaseMaterials(p: LiveProjectile): void {
+    if (p.kind === "bolt") {
+      const [spark, glow, trail] = p.materials as [THREE.SpriteMaterial, THREE.SpriteMaterial, THREE.MeshBasicMaterial];
+      this.freeSparks.push(spark);
+      this.freeGlows.push(glow);
+      this.freeTrails.push(trail);
+    } else if (p.kind === "beam") {
+      const [core, glow] = p.materials as [THREE.MeshBasicMaterial, THREE.MeshBasicMaterial];
+      this.freeBeamCores.push(core);
+      this.freeBeamGlows.push(glow);
+    } else if (p.kind === "wisp") {
+      this.freeWisps.push(p.materials[0] as THREE.SpriteMaterial);
+    }
+  }
+
   dispose(): void {
     for (const p of this.live) {
       this.scene.remove(p.object);
       if (p.light) this.lightPool.release(p.light);
-      for (const m of p.materials) m.dispose();
     }
     this.live.length = 0;
+    // The whole pools, not just what was live — the free lists hold the
+    // rest, and skipping them here would leak exactly what pooling was
+    // supposed to stop leaking.
+    for (const pool of [this.sparkPool, this.glowPool, this.trailPool, this.beamCorePool, this.beamGlowPool, this.wispPool]) {
+      for (const m of pool) m.dispose();
+      pool.length = 0;
+    }
+    for (const free of [this.freeSparks, this.freeGlows, this.freeTrails, this.freeBeamCores, this.freeBeamGlows, this.freeWisps]) {
+      free.length = 0;
+    }
   }
 }
