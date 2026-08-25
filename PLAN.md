@@ -11379,6 +11379,22 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.59 — stopped inferring, started tracing.** Reported still
+churning after M70.58, the exact same two keys AGAIN — four rounds now
+(M70.54 skill/attack VFX, M70.56 keeping warm materials referenced,
+M70.57 the hit-impact flash, M70.58 loot drops), each individually a real
+bug found and fixed by reading actual code, none of them the source of
+this specific churn. That is the signal to stop reading cache-key numbers
+and inferring which file, and instead ask the browser directly: patched
+`THREE.Material.prototype.dispose` once, at start, to print a full stack
+trace whenever a `MeshBasicMaterial` or `SpriteMaterial` with `fog ===
+true` is disposed. `fog: true` is the one property every file checked so
+far does NOT have — every combat-effect material in this codebase
+explicitly sets `fog: false` — so a trace firing at all names a file none
+of M70.54-58 has looked at yet, directly, by the actual call stack rather
+than by a guess. Temporary and marked as such in its own comment; meant to
+come back out once the real source is found.
+
 **Phase 70 M70.58 — the SAME two keys, bit for bit, after M70.57.** The
 tell was numeric: `8388608,8389633` and `8388608,8393729` again, identical
 to the reading BEFORE `effects.ts` was fixed — not similar, identical —

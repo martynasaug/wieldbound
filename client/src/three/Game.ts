@@ -358,6 +358,35 @@ const CONTACT_CULL_UNITS = 70;
  * animation over a sliding character — the ice-skating this is here to remove.
  * The server positions are the actual motion and have no lag to be fooled by.
  */
+let disposeTracerInstalled = false;
+
+/**
+ * TEMPORARY DIAGNOSTIC. M70.54-58 chased the shader-recompile churn the F3
+ * overlay's `[programs]` count exposed through four files by inferring the
+ * culprit from cache-key numbers — three wrong guesses in a row that were
+ * each individually well-reasoned and confirmed live as real bugs, none of
+ * them THE bug. This ends the guessing: `THREE.Material.prototype.dispose`
+ * is patched once to print a stack trace whenever a `MeshBasicMaterial` or
+ * `SpriteMaterial` with `fog === true` is disposed — `fog: true` is the one
+ * property every combat-effect file this thread has already checked does
+ * NOT have (all of them explicitly set `fog: false`), so a trace firing at
+ * all means the material came from somewhere none of M70.54-58 looked.
+ * Remove once the actual source is found and fixed.
+ */
+function installDisposeTracer(): void {
+  if (disposeTracerInstalled) return;
+  disposeTracerInstalled = true;
+  const proto = THREE.Material.prototype as THREE.Material & { dispose(): void };
+  const original = proto.dispose;
+  proto.dispose = function (this: THREE.Material) {
+    const m = this as THREE.MeshBasicMaterial | THREE.SpriteMaterial;
+    if ((m.type === "MeshBasicMaterial" || m.type === "SpriteMaterial") && m.fog === true) {
+      console.warn(`[dispose-trace] ${m.type} fog=true disposed:`, new Error().stack);
+    }
+    original.call(this);
+  };
+}
+
 function isMoving(prevX: number, prevY: number, x: number, y: number, wasMoving: boolean): boolean {
   const travelled = Math.hypot(x - prevX, y - prevY);
   if (travelled > MOVE_START_PX) return true;
@@ -1159,6 +1188,7 @@ export class Game {
     this.projectiles.prewarm(this.world);
     this.effects.prewarm(this.world);
     this.drops.prewarm(this.world);
+    installDisposeTracer();
     this.socket.connect();
 
     // The town is generated rather than downloaded, so it costs a few
