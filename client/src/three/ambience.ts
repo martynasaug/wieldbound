@@ -72,6 +72,15 @@ import { currentWind } from "./wind";
  * thinning rather than a wall.
  */
 const RADIUS = 26;
+// dragonfly's and firefly's `suits` call riverAt/forestStrengthAt, and update()
+// used to re-run that check for every awake mote of those kinds on every single
+// frame just to see if it had drifted off suitable ground — up to ~190 fireflies
+// at once, only at night, the same hours mist is also sampling terrain (see
+// mist.ts's own SAMPLE_SLICE). A mote drifts a fraction of a unit a frame, so
+// missing a few frames of "did I leave the water/wood" is invisible; cycling
+// through a slice of the awake motes instead of checking all of them keeps the
+// same behaviour at a fraction of the cost.
+const SUITS_SLICE = 6;
 
 /**
  * How a mote arrives and leaves: a fade on DISTANCE from the player rather than
@@ -265,6 +274,7 @@ export class Ambience {
   /** Where the neighbourhood was centred last frame, so respawns can chase it. */
   private cx = 0;
   private cz = 0;
+  private frameIndex = 0;
 
   build(): THREE.Group {
     const wing = butterflyGeometry();
@@ -530,6 +540,7 @@ export class Ambience {
     const dx = Math.cos(wa) * drift;
     const dz = Math.sin(wa) * drift;
 
+    this.frameIndex++;
     for (const kind of this.kinds) {
       const share = kind.presence(night);
       const awake = Math.round(kind.motes.length * Math.min(1, share));
@@ -561,7 +572,8 @@ export class Ambience {
         // walking into a wood should empty the butterflies out of the air
         // around you rather than carry a meadow's worth of them in.
         const d = Math.hypot(m.ax - this.cx, m.az - this.cz);
-        if (d > RADIUS || !kind.suits(toServerX(m.ax), toServerY(m.az))) {
+        const checkSuits = (i + this.frameIndex) % SUITS_SLICE === 0;
+        if (d > RADIUS || (checkSuits && !kind.suits(toServerX(m.ax), toServerY(m.az)))) {
           m.live = false;
           this.matrix.makeScale(0, 0, 0);
           kind.mesh.setMatrixAt(i, this.matrix);

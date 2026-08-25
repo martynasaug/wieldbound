@@ -11485,6 +11485,36 @@ worst-case riverAt-from-mist load to roughly a quarter. `npx tsc --noEmit`
 clean, Vite hot-reloaded `mist.ts` with no console errors. Not yet
 confirmed live.
 
+**Phase 70 M70.69 — mist fix landed but underperformed; a second
+unthrottled riverAt caller found in ambience.ts.** Live recording after
+M70.68 showed `riverAt` dropping only ~14% (1521ms to 1328ms) instead of
+the ~75% SAMPLE_SLICE=4 should have bought — a real but partial
+improvement, not the whole story. (That same recording also flagged
+INP at 348ms, red/bad, versus 56ms two readings ago, and the tab's error
+badge at 13 instead of 3 — NOT yet explained; see below.) Re-read every
+call site of `riverAt` in the client and found `Ambience.update()`
+(ambience.ts:521) calling `kind.suits()` — which is `riverAt`/
+`forestStrengthAt` for the dragonfly and firefly kinds — on every single
+awake mote, every single frame, not just when a mote respawns. Firefly
+pools to ~190 motes (`density: 89.5` through `poolFor`) and is only awake
+at night, meaning this ran at up to ~190 riverAt-or-forestStrengthAt
+calls a frame during the exact same hours mist was also sampling nonstop
+— the two bugs were compounding, not independent. Fixed the same way as
+mist: `frameIndex` counter, `SUITS_SLICE = 6`, `checkSuits` gates the
+`kind.suits()` re-check to 1/6 of awake motes per frame; the rest keep
+flying on their last-known answer for up to 6 frames, which a drifting
+insect cannot make visible. `npx tsc --noEmit` clean, Vite hot-reloaded
+`ambience.ts` cleanly.
+The INP/error-count regression is a separate open thread: that recording
+was NOT Incognito (Sider and AdBlock extensions were active, and
+`content-all.js` — an extension content script — was wrapping 78.7% of
+total scripting time in the Bottom-Up view, which is exactly the kind of
+attribution noise M70.66 through M70.68's Incognito readings avoided).
+Asked for a clean Incognito re-read and a look at the actual Console tab
+for what the 13 errors are, since a jump from 3 to 13 is a real signal
+worth explaining rather than folding into "it's the extensions" without
+checking.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two
