@@ -11379,6 +11379,25 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.51 — an undefined map, passed on purpose by omission.**
+Reported live, on the strong 60Hz machine this time — `THREE.Material:
+parameter 'map' has value of undefined`, repeated, from `skillfx.ts:244`.
+`SkillFx.material()` takes `map?: THREE.Texture` and most calls to it pass
+none — every nova, disc and streak with no texture of its own — but the
+helper handed `map` straight into `new THREE.MeshBasicMaterial({ map,
+... })` regardless, and three.js's constructor warns specifically when a
+texture-map KEY is present in the params at all, even set to `undefined`
+— it is not the same as the key being absent, which is what most callers
+actually meant. Fixed by spreading `map` in only when it is set. Grepped
+the rest of the client for the same `map?: THREE.Texture` optional-param
+shape and found nothing else matching it — `terrain.ts`'s only look-alike
+turned out to be a guaranteed-defined field access, not the same bug.
+Behaviourally inert (setting `.map = undefined` is the same as never
+setting it) but a real fix regardless: the spam was landing in the same
+console the hitch reporter uses, making a real hitch harder to read
+against everything nearby it, the same complaint the favicon fix answered
+two rounds ago for a different noise source.
+
 **Phase 70 M70.50 — the wolf's own line, finally paid off.** Its comment
 has said "a death by a thousand cuts pack fight" since it was written, and
 it was the only band-3-or-higher kind in the whole table with no

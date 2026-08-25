@@ -243,7 +243,13 @@ export class SkillFx {
   ): THREE.MeshBasicMaterial {
     return new THREE.MeshBasicMaterial({
       color,
-      map,
+      // Only included when set. Three.js's constructor warns
+      // ("THREE.Material: parameter 'map' has value of undefined") when a
+      // texture-map key is present in the params at all, even set to
+      // undefined — passing the key only conditionally is what most calls to
+      // this helper need, since most effects have no map and call this with
+      // two arguments.
+      ...(map ? { map } : {}),
       transparent: true,
       opacity,
       // depthWrite off either way, so two overlapping effects do not clip.
