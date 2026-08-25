@@ -365,6 +365,47 @@ export class Projectiles {
     private readonly lightPool: LightPool,
   ) {}
 
+  /**
+   * Uploads and compiles everything `bolt`/`beam`/`wisp`/`arrow` build,
+   * before a real cast is the first thing to pay for it — see
+   * `SkillFx.prewarm` for the fuller reasoning; this is the same gap in
+   * the sibling file that draws a weapon's own attacks rather than a
+   * skill's. The arrow prototype is a loaded model, same as any monster,
+   * and reaches the same un-warmed gap despite going through `loadModel`
+   * — parsing it is not the same as compiling its material or uploading
+   * its geometry, and nothing else in the game ever adds it to a scene
+   * before the first arrow actually fired does.
+   *
+   * The light `boltMesh` acquires is released immediately after: this is
+   * a warm-up, not a cast, and holding a real pool slot for the rest of
+   * the session over it would silently shrink combat's own light budget
+   * by one for no fight to ever benefit from.
+   */
+  prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
+    const group = new THREE.Group();
+    const boltParts = boltMesh(0xffffff, this.lightPool);
+    group.add(boltParts.object);
+    if (boltParts.light) this.lightPool.release(boltParts.light);
+    group.add(beamMesh(1, 0xffffff).object);
+    group.add(
+      new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: particleTexture("spark"),
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          fog: false,
+        }),
+      ),
+    );
+    void world.warmUp(group).then(() => world.warmBuffers(group, "attacks"));
+
+    void arrowPrototype().then((proto) => {
+      const arrow = proto.clone(true);
+      void world.warmUp(arrow).then(() => world.warmBuffers(arrow, "arrow"));
+    });
+  }
+
   /** An arrow that reaches `to` in `flightMs`, nocked pointing along its path. */
   arrow(from: THREE.Vector3, to: THREE.Vector3, flightMs: number): void {
     void arrowPrototype().then((proto) => {

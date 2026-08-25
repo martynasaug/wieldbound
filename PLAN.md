@@ -11379,6 +11379,35 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.54 — two more real gaps closed, two more confirmed not the
+one being chased, and one instrument that stops the guessing.**
+`SkillFx`/`Projectiles` (every skill's shape — rings, novas, wedges — and
+every weapon attack's own bolt/beam/arrow) never went through ANY warming
+path, unlike every model in the game: not a loaded model, so `loadModel`
+never saw them, and nothing else in `Game.ts`'s start sequence ever
+touched them either. `SkillFx.prewarm`/`Projectiles.prewarm` upload and
+compile everything either class ever builds — five throwaway meshes for
+the four shared shape geometries × the two program variants (textured vs.
+not, which is a genuine second program, not a variant of the first) plus
+one arrow-model warm — called once at start, off-screen, the same "nobody
+is looking" moment the gear-warming background queue already runs in.
+Confirmed live, twice: casts/attacks look and sound correct, no console
+errors, and the still-unexplained `render`-section spikes did not change.
+Kept anyway, same standard M70.53 was held to — these close a real,
+previously-total gap regardless of whether they explain this symptom.
+THREE FOR THREE NOW ON "REAL BUT NOT THIS," which is exactly the outcome
+that stops guessing being productive. Added a fourth, purely diagnostic
+change instead of a fourth warming pass: `Game.ts` already reads
+`renderer.info.programs.length` every frame for the F3 overlay's own
+`programs` counter — it now also diffs that count frame-to-frame and logs
+`[programs] N -> M this frame` the moment it changes at all, regardless
+of whether that frame was slow. Whatever compiles that count up next,
+this catches it BY NAME-ADJACENT EVIDENCE — the exact frame it happened
+on — rather than needing a fourth guess about which subsystem to warm
+next. Zero behaviour change; a read of an existing counter and a
+`console.warn`. Not yet observed live: the next session's F12, read
+alongside the next `render`-section spike, is what actually answers this.
+
 **Phase 70 M70.53 — a real gap, confirmed real, confirmed not the one
 being chased.** `warmUp`'s own comment says it compiles shader PROGRAMS
 and does not touch buffers — verified against three.js's own

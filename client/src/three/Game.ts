@@ -619,6 +619,10 @@ export class Game {
    *  subsystems and none of them had ever been timed, and the network dispatch
    *  that runs BETWEEN frames had no way to be timed at all. */
   private readonly profiler = profiler;
+  /** Previous frame's `renderer.info.programs.length`, so a late shader
+   *  compile can be caught by name-adjacent evidence instead of guessed at.
+   *  `null` means "no reading yet" — the first frame is never a delta. */
+  private lastProgramCount: number | null = null;
   /** Chooses how many display refreshes each frame lasts. See pacer.ts. */
   private readonly pacer = new FramePacer();
   // Watchdog bookkeeping — see `watchForSlide`. Held on the instance rather
@@ -1144,6 +1148,12 @@ export class Game {
         // what has to be warmed is the body, not the path.
         .map((m) => (m.startsWith("rig:") ? m.slice(4).split("/")[0] : m)),
     );
+    // Skill and weapon VFX, same as the gear above and for the same reason:
+    // never a loaded model, so none of the warming above ever reaches it,
+    // and a live cast was the first thing to pay for it — see
+    // `SkillFx.prewarm`/`Projectiles.prewarm`.
+    this.skillFx.prewarm(this.world);
+    this.projectiles.prewarm(this.world);
     this.socket.connect();
 
     // The town is generated rather than downloaded, so it costs a few
@@ -3996,6 +4006,25 @@ export class Game {
       // Read AFTER the render, because three.js resets the per-frame counters
       // at the start of each one — sampled before, these are last frame's.
       const info = this.world.renderer.info;
+      // A NEW SHADER PROGRAM, IF ONE JUST GOT COMPILED. Three warming passes
+      // (M70.53's actor buffers, and the two `prewarm` calls started this
+      // session) have all been confirmed live not to be the cause of the
+      // remaining `render`-section spikes — so rather than warm a fourth
+      // thing on a guess, this answers the only question left directly:
+      // did `renderer.info.programs` — the same count the overlay already
+      // shows — actually grow on the frame that spiked. If it did, some
+      // material somewhere is still compiling cold and this says so by
+      // name-adjacent evidence (the count and how it moved) rather than by
+      // guessing which one. If it did NOT, shader compilation is eliminated
+      // as a cause entirely, the same way M70.52 eliminated the loader.
+      const programCount = info.programs?.length ?? 0;
+      if (this.lastProgramCount !== null && programCount !== this.lastProgramCount) {
+        console.warn(
+          `[programs] ${this.lastProgramCount} -> ${programCount} this frame ` +
+            `(${programCount - this.lastProgramCount > 0 ? "+" : ""}${programCount - this.lastProgramCount})`,
+        );
+      }
+      this.lastProgramCount = programCount;
       this.profiler.setLabel(
         `quality ${this.world.qualityLabel} (F4)  ·  ` +
           `${this.pacer.refreshHz.toFixed(0)}Hz display, 1 frame per ` +

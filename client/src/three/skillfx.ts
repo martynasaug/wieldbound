@@ -262,6 +262,38 @@ export class SkillFx {
     });
   }
 
+  /**
+   * Uploads every shape's geometry and compiles both material variants this
+   * class ever builds, before any of the twenty-seven skills gets to be the
+   * first one cast in a session.
+   *
+   * Every `nova`/`ground`/`cone`/`mark`/`strike`/`pillar`/`rain` call above
+   * builds a fresh `MeshBasicMaterial` and hands it one of four SHARED
+   * geometries (`ring`/`disc`/`streak`/`wedge`) — the geometries only need
+   * their buffers uploaded once each, ever, but nothing before this ever
+   * did that, and no model-warming path (`World.warmUp`/`warmBuffers`)
+   * ever reached this file, because none of this is a loaded model. Only
+   * `mark` passes a texture (`particleTexture("ring")`); every other call
+   * passes none — and `map` presence is a shader DEFINE, not just a
+   * uniform, so that is genuinely a second program to compile, not a
+   * variant of the first. Four geometries plus two programs is five
+   * throwaway meshes, not the twenty-seven this table has rows for.
+   *
+   * Called once, off-screen, from wherever the background gear-warming
+   * queue already runs (see `warmer.ts`) — the same "nobody is looking"
+   * moment M70.40 used for the whole static world, one system over.
+   */
+  prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
+    const group = new THREE.Group();
+    const untextured = this.material(0xffffff, 1);
+    for (const geo of [this.ring, this.disc, this.streak, this.wedge]) {
+      group.add(new THREE.Mesh(geo, untextured));
+    }
+    group.add(new THREE.Mesh(this.ring, this.material(0xffffff, 1, true, particleTexture("ring"))));
+    group.visible = true;
+    void world.warmUp(group).then(() => world.warmBuffers(group, "skillfx"));
+  }
+
   /** A ring racing outward along the ground. */
   nova(x: number, y: number, z: number, radius: number, color: number, durationMs = 520): void {
     const mat = this.material(color, 0.95);
