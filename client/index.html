@@ -1289,7 +1289,29 @@
         width: 100%;
         background: linear-gradient(180deg, #e46a6a, #a32626 60%, #7d1b1b);
         box-shadow: inset 0 1px 0 rgba(255,255,255,.26), inset 0 -4px 6px rgba(0,0,0,.28);
-        transition: width .16s ease-out;
+        transition: width .16s ease-out, background .25s ease-out;
+      }
+      /* The wind-up bar answers WHEN a telegraphed slam lands; this answers
+         WHEN in the fight a boss gets more dangerous — the same "read it,
+         don't guess it" idea M63.1 wrote for the recovering window, one
+         health bar over. A thin line at the exact fraction rather than a
+         label: the number matters far less than "you are here, and there is
+         the mark," which is legible at a glance mid-fight. */
+      #target-hp-enrage-mark {
+        display: none;
+        position: absolute;
+        top: 0; bottom: 0;
+        width: 2px;
+        background: rgba(255,255,255,.55);
+        box-shadow: 0 0 3px rgba(0,0,0,.6);
+        pointer-events: none;
+      }
+      #target-hp-enrage-mark.shown { display: block; }
+      /* Past the mark. Magenta rather than the ordinary red, matching the
+         body's own tint (Actor.setEnraged) so the bar and the character read
+         as the same event rather than two unrelated things happening at once. */
+      #target-hp-fill.enraged {
+        background: linear-gradient(180deg, #ef7ec2, #ab1f74 60%, #7c1256);
       }
       /* The value sits ON the bar rather than under it: a third line of text
          for a number you read at a glance was the tallest part of the frame. */
@@ -2033,6 +2055,7 @@
           <div id="target-name"></div>
           <div id="target-hp-track">
             <div id="target-hp-fill"></div>
+            <div id="target-hp-enrage-mark"></div>
             <div id="target-hp-text"></div>
           </div>
           <div id="target-known"></div>

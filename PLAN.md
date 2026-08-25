@@ -11379,6 +11379,29 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.49 — a mark on the bar for where M70.48 kicks in.** The
+enrage phase shipped with a reveal (flash, bark, log line, tint) for the
+MOMENT it happens, but nothing telling a player it was coming — the same
+gap the wind-up ring exists to close for a slam, one system over. "A
+mechanic with no feedback is a mechanic nobody learns" is `Actor.ts`'s own
+line about `setRecovering`, and it applies exactly as much here.
+`TargetFrame`'s health bar gets a thin vertical mark at the boss's own
+`enrageThreshold` fraction — present only when the target has one, same
+`?? undefined` pattern `knownFor` already uses — and the fill itself turns
+the same magenta `Actor.setEnraged` already tints the body with, once
+crossed, so the bar and the body read as the same event rather than two
+separate things a player has to notice independently.
+Deliberately NOT added to the floating nameplate bar over a monster's own
+head — this file already has a stated rule for exactly that call
+(resistances live on the frame, not the nameplate, because "a line of
+[detail] floating over every monster in a camp is exactly the clutter the
+nameplate hierarchy exists to prevent"), and an enrage mark is that same
+kind of per-creature detail worth a deliberate look, not a glance.
+Client-only, no protocol or server change — `enrageThreshold` was already
+in the shared bestiary table `M70.48` added, so this is pure UI reading
+data that already existed. Full suite green, same four pre-existing
+failures as before this diff; `camps.mjs` passed clean this round.
+
 **Phase 70 M70.48 — the enrage phase: a boss's own opposite of a goblin
 breaking and running.** Asked to work on combat/monster AI directly and
 told to improvise, rather than told to fix something specific. Looked for

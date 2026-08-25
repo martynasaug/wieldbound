@@ -50,12 +50,19 @@ export interface TargetLook {
    * arrangement to learn rather than two.
    */
   statuses?: { id: string; name: string; icon: string; kind: "buff" | "debuff"; blurb: string }[];
+  /**
+   * Fraction of max HP where a boss's own enrage phase begins — see
+   * `MonsterStats.enrageThreshold`. Undefined for everything that does not
+   * have one, same as `knownFor`.
+   */
+  enrageThreshold?: number;
 }
 
 export class TargetFrame {
   private root = document.getElementById("target-frame")!;
   private nameEl = document.getElementById("target-name")!;
   private fill = document.getElementById("target-hp-fill")!;
+  private enrageMark = document.getElementById("target-hp-enrage-mark")!;
   private hpText = document.getElementById("target-hp-text")!;
   private cast = document.getElementById("target-cast")!;
   private castFill = document.getElementById("target-cast-fill")!;
@@ -185,6 +192,15 @@ export class TargetFrame {
     this.fill.textContent = "";
     (this.fill.parentElement as HTMLElement).style.visibility = known ? "visible" : "hidden";
     this.hpText.textContent = known ? `${Math.max(0, Math.round(hp))} / ${Math.round(maxHp)}` : "";
+
+    // The mark says where the phase change is BEFORE it happens; the fill's
+    // own colour says it is happening NOW — the same "here is the warning,
+    // here is the event" split the wind-up ring and `setRecovering` already
+    // draw elsewhere in this fight.
+    const threshold = look?.enrageThreshold;
+    this.enrageMark.classList.toggle("shown", known && threshold !== undefined);
+    if (threshold !== undefined) this.enrageMark.style.left = `${threshold * 100}%`;
+    this.fill.classList.toggle("enraged", known && threshold !== undefined && ratio <= threshold);
   }
 
   /**

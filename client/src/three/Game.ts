@@ -4754,6 +4754,7 @@ export class Game {
           .map((s) => STATUSES[s.id])
           .filter(Boolean)
           .map((d) => ({ id: d.id, name: d.name, icon: d.icon, kind: d.kind, blurb: d.blurb })),
+        enrageThreshold: tStats.enrageThreshold,
         ...(() => {
           const { resists, weakTo } = describeResists(tStats.resist);
           const tag = (e: { school: DamageSchool }) => ({
