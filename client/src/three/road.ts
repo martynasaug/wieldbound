@@ -327,8 +327,12 @@ export class NorthRoad {
     for (let i = 0; i < LIT_TORCHES; i++) {
       // Range is generous and the decay is physical, so a torch lights its own
       // patch of road and nothing beyond it.
+      // Intensity 0, never `.visible = false` — see lightPool.ts for why: an
+      // invisible light drops out of the renderer's active-light count and
+      // forces every lit material in view to recompile its shader for the
+      // new count, which is exactly the "random" mid-play stutter this pool
+      // was supposed to prevent.
       const light = new THREE.PointLight(FLAME_COLOR, 0, 16, 2);
-      light.visible = false;
       this.group.add(light);
       this.lights.push(light);
     }
@@ -407,7 +411,7 @@ export class NorthRoad {
     this.flames?.update(timeSeconds, lit);
 
     if (lit <= 0.04) {
-      for (const l of this.lights) l.visible = false;
+      for (const l of this.lights) l.intensity = 0;
       return;
     }
 
@@ -425,7 +429,7 @@ export class NorthRoad {
       const pick = this.ranked[k];
       const light = this.lights[k];
       if (!pick) {
-        light.visible = false;
+        light.intensity = 0;
         continue;
       }
       const t = this.torches[pick.i];
@@ -435,7 +439,6 @@ export class NorthRoad {
         Math.sin(timeSeconds * 2.9 + t.phase * 2) * 0.07;
       light.position.set(t.x, t.y, t.z);
       light.intensity = lit * 15 * flicker;
-      light.visible = true;
     }
   }
 

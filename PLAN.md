@@ -11379,6 +11379,38 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.43 — the road's own torches reintroduced the bug the light
+pool exists to prevent.** Reported live: F3 locked at 60fps standing still,
+and still a "mirage duplicate" while running, but only sometimes. The
+console had the answer already timed and labelled — `[hitch] 15780ms frame
+— worst section: render 15777.6ms` alongside several more in the
+hundreds-of-ms range, all attributed to `render` itself, not "BETWEEN
+frames." That is a synchronous shader recompile, and `lightPool.ts` already
+carries a paragraph explaining exactly this: adding, removing, or (the part
+that matters here) toggling `.visible` on a `THREE.Light` changes the point
+light count the renderer bakes into every lit material's shader, and any
+material that has never been compiled for that exact count pays for it
+inline, for every lit thing in view at once. Combat lights were moved to a
+fixed pool at intensity 0 for exactly this reason.
+`road.ts`'s fourteen-torch light pool never got the memo — a separate,
+independently-written pool for the North Road's torches, toggling
+`light.visible = false/true` as the nearest few are re-assigned each frame
+and as dusk/dawn cross the 0.04 threshold. Both are exactly the conditions
+that made it read as "random": walking near or away from the road, or
+simply the clock ticking through twilight, changes the active light count
+on essentially every frame, so the stutter shows up whenever the player is
+near that stretch of world at the wrong moment rather than on any action of
+their own. Fixed the same way `lightPool.ts` already had it: `.visible`
+never toggles again, `intensity = 0` is "off." Confirmed via `tsc --noEmit`
+and the full test suite (`brace`/`casting`/`slaying`/`throwers` fail for
+unrelated, pre-existing reasons predating this pull — none of those files
+changed; `fighting.mjs` hit its documented keep-away flake and passed clean
+on re-run).
+Not yet re-confirmed live at the road itself — the report that found this
+was general "sometimes," not localized to the road, so treat this as the
+leading fix rather than the last word until walking that stretch at dusk
+stops producing the hitch.
+
 **Phase 70 M70.42 — the ghost was the outline, tracing the body under the
 armour.** A second, much better description of the visual bug settled it:
 "a secondary copy of the character's body mesh, possibly the base rig
