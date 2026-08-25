@@ -11379,6 +11379,39 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.64 — two more, found by the trace going quiet on the first
+three and loud on what was left.** Confirmed live: after M70.63, zero
+`[dispose-trace]` lines fired at all — the three converted files held.
+`programs` kept climbing anyway (68→76 over a couple of minutes), and
+playing on turned up two more real sources, both caught the same way:
+`Drops.dispose` (`drops.ts:245`) and `GroundRing.dispose` at
+`Indicators.endDanger` (`indicators.ts:151`/`270`).
+`drops.ts` had ALREADY been "fixed" once, in M70.58 — with the same
+decoy-reference pattern M70.54/56 tried first and every other file since
+has needed converting away from. Converted for real now: `discPool` (32)
+and `beamPool` (12) — sized unevenly because every drop gets a disc and
+only the top two qualities glow — built in `prewarm()`, borrowed in
+`create()`, returned in `dispose(vis)` instead of disposed. The generic
+material-disposal traverse in `dispose(vis)` now explicitly skips
+`vis.disc`/`vis.beam` (pooled) while still disposing the held-item/pouch
+clone's own materials (genuinely unique per drop, never pooled, unrelated
+to this bug).
+`indicators.ts` was checked once already (M70.60) and cleared by grepping
+for `.dispose()` and finding none — an incomplete grep, not a careful
+read: `GroundRing.dispose()` exists at line 149, called from
+`Indicators.endDanger()` every time a telegraphing boss's own wind-up
+cycle ends, on a monster-id-keyed pair of fresh `MeshBasicMaterial`s per
+telegraph. Fixed with a 6-slot pool sized for "more than one telegraphing
+boss near this player at once" — rare but real with packs — with an
+honest overflow path: a monster winding up with no ring drawn at all
+would be a safety regression, unlike a dropped hit-flash, so overflow
+still builds and disposes a real pair rather than silently doing nothing.
+Also reported and not yet investigated, a separate and unrelated bug:
+equipping a new weapon shows it stacked on top of the old one rather than
+replacing it. `Actor.clearGear()`/`setAppearance()` read correctly on
+inspection — no fix attempted without being able to reproduce or narrow
+it further first.
+
 **Phase 70 M70.63 — the third and last file, confirmed by the same trace
 that closed the first two.** Confirmed live: after M70.62, both
 `effects.ts` and `attacks.ts` were gone from the dispose trace entirely —

@@ -41,11 +41,19 @@ const SPIN = 0.9;
 const HOVER = 0.55;
 const BOB = 0.09;
 
+/** Shared across every disc/beam a drop ever gets — one buffer upload each,
+ *  ever, the same reasoning `BOLT_TRAIL_GEO` already applies one file over. */
+const DISC_GEO = new THREE.CircleGeometry(0.42, 20);
+const BEAM_GEO = new THREE.CylinderGeometry(0.16, 0.3, 3.2, 8, 1, true);
+
 interface DropVisual {
   root: THREE.Group;
   /** Carries the model, so the spin does not fight the bob. */
   pivot: THREE.Group;
-  disc: THREE.Mesh;
+  /** `null` only when the disc pool was exhausted — the drop still exists
+   *  and is still pickable, just without its ground marker for as long as
+   *  every slot stays busy. */
+  disc: THREE.Mesh | null;
   beam: THREE.Mesh | null;
   /** Seeded from the id, so two drops side by side are not in lockstep — the
    *  same argument the monster idles make. */
@@ -56,39 +64,49 @@ interface DropVisual {
 export class Drops {
   private readonly visuals = new Map<string, DropVisual>();
   private readonly seen = new Set<string>();
-  /** Kept alive for the life of this object — same reasoning as
-   *  `Effects.warmed`. Every drop's own disc/beam material is disposed the
-   *  moment it is picked up or expires (`dispose()`), and three.js deletes
-   *  a compiled program the instant the last material referencing its
-   *  cache key is disposed — so a quiet stretch between two rare drops
-   *  cycles the beam's own program compiled/destroyed/compiled again. */
-  private readonly warmed: THREE.Mesh[] = [];
+  /**
+   * Fixed pools, never disposed — the same fix `effects.ts`/`attacks.ts`/
+   * `skillfx.ts` were given after their own "keep one warm decoy
+   * referenced" attempt (this file's own former `warmed` array, the exact
+   * pattern all three of them started with too) was confirmed live not to
+   * survive contact with a real session — `[dispose-trace]` stack traces
+   * landed here, at `Drops.dispose` (`drops.ts:245`), after every other
+   * known file had already been converted to a real pool. `disc` is sized
+   * well past `beam`: every drop gets a disc, only the top two qualities
+   * glow.
+   */
+  private static readonly DISC_POOL_SIZE = 32;
+  private static readonly BEAM_POOL_SIZE = 12;
+  private readonly discPool: THREE.MeshBasicMaterial[] = [];
+  private readonly beamPool: THREE.MeshBasicMaterial[] = [];
+  private readonly freeDiscs: THREE.MeshBasicMaterial[] = [];
+  private readonly freeBeams: THREE.MeshBasicMaterial[] = [];
 
   constructor(private readonly scene: THREE.Scene) {}
 
-  /** Uploads and compiles the disc every drop gets, and the beam the top two
-   *  qualities add — see `warmed`'s own comment for why the reference has
-   *  to outlive this call, not just the compile. Called once, off-screen,
-   *  alongside `SkillFx.prewarm` and its siblings. */
+  /** Fills both pools and uploads/compiles what they hold. Called once,
+   *  off-screen, alongside `SkillFx.prewarm` and its siblings. */
   prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
     const group = new THREE.Group();
-    const disc = new THREE.Mesh(
-      new THREE.CircleGeometry(0.42, 20),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.34, depthWrite: false }),
-    );
-    const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.16, 0.3, 3.2, 8, 1, true),
-      new THREE.MeshBasicMaterial({
+    for (let i = 0; i < Drops.DISC_POOL_SIZE; i++) {
+      const m = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.34, depthWrite: false });
+      this.discPool.push(m);
+      this.freeDiscs.push(m);
+      group.add(new THREE.Mesh(DISC_GEO, m));
+    }
+    for (let i = 0; i < Drops.BEAM_POOL_SIZE; i++) {
+      const m = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
         opacity: 0.16,
         depthWrite: false,
         side: THREE.DoubleSide,
         blending: THREE.AdditiveBlending,
-      }),
-    );
-    this.warmed.push(disc, beam);
-    group.add(disc, beam);
+      });
+      this.beamPool.push(m);
+      this.freeBeams.push(m);
+      group.add(new THREE.Mesh(BEAM_GEO, m));
+    }
     void world.warmUp(group).then(() => world.warmBuffers(group, "drops"));
   }
 
@@ -135,37 +153,33 @@ export class Drops {
     root.add(pivot);
 
     // The disc on the ground is what makes a drop findable in long grass — the
-    // model itself is small and the grass is not.
-    const disc = new THREE.Mesh(
-      new THREE.CircleGeometry(0.42, 20),
-      new THREE.MeshBasicMaterial({
-        color: colour,
-        transparent: true,
-        opacity: 0.34,
-        depthWrite: false,
-      }),
-    );
-    disc.rotation.x = -Math.PI / 2;
-    disc.position.y = 0.02;
-    root.add(disc);
+    // model itself is small and the grass is not. Borrowed from the pool
+    // rather than built fresh — see `discPool`'s own comment — with colour
+    // and opacity reset, since a pooled material carries whatever its last
+    // use faded it to.
+    let disc: THREE.Mesh | null = null;
+    const discMat = this.freeDiscs.pop();
+    if (discMat) {
+      discMat.color.copy(colour);
+      discMat.opacity = 0.34;
+      disc = new THREE.Mesh(DISC_GEO, discMat);
+      disc.rotation.x = -Math.PI / 2;
+      disc.position.y = 0.02;
+      root.add(disc);
+    }
 
     // A beam for the top two qualities only. One that everything has is one
     // that says nothing — the same rule the nameplates and the mesh tint keep.
     let beam: THREE.Mesh | null = null;
     if (glows(drop.item.rarity)) {
-      beam = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.16, 0.3, 3.2, 8, 1, true),
-        new THREE.MeshBasicMaterial({
-          color: colour,
-          transparent: true,
-          opacity: 0.16,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-          blending: THREE.AdditiveBlending,
-        }),
-      );
-      beam.position.y = 1.6;
-      root.add(beam);
+      const beamMat = this.freeBeams.pop();
+      if (beamMat) {
+        beamMat.color.copy(colour);
+        beamMat.opacity = 0.16;
+        beam = new THREE.Mesh(BEAM_GEO, beamMat);
+        beam.position.y = 1.6;
+        root.add(beam);
+      }
     }
 
     this.scene.add(root);
@@ -229,7 +243,7 @@ export class Drops {
       // fades has visibly run out of time.
       const left = vis.expiresAt - nowMs;
       const fade = left < 6000 ? Math.max(0, left / 6000) : 1;
-      (vis.disc.material as THREE.MeshBasicMaterial).opacity = 0.34 * fade;
+      if (vis.disc) (vis.disc.material as THREE.MeshBasicMaterial).opacity = 0.34 * fade;
       if (vis.beam) (vis.beam.material as THREE.MeshBasicMaterial).opacity = 0.16 * fade;
       vis.pivot.visible = fade > 0.05 || Math.floor(t * 8) % 2 === 0;
     }
@@ -245,13 +259,29 @@ export class Drops {
     vis.root.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
-      // Geometry is shared with the cached prototype for anything instantiated,
-      // so only the materials this file created are freed — the same rule
-      // `Actor.dispose` keeps, and for the same reason.
+      // The disc/beam materials are POOLED, not owned by this drop — see
+      // `discPool`'s own comment — and are returned below instead of
+      // disposed here. Everything else (the held-item/pouch clone) is
+      // still this drop's own, same as before. Geometry is shared with the
+      // cached prototype for anything instantiated, so only materials are
+      // ever freed here — the same rule `Actor.dispose` keeps.
+      if (mesh === vis.disc || mesh === vis.beam) return;
       for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) m.dispose();
     });
-    vis.disc.geometry.dispose();
-    vis.beam?.geometry.dispose();
+    if (vis.disc) this.freeDiscs.push(vis.disc.material as THREE.MeshBasicMaterial);
+    if (vis.beam) this.freeBeams.push(vis.beam.material as THREE.MeshBasicMaterial);
+  }
+
+  /** Disposes the pools themselves — everything `dispose(vis)` above hands
+   *  back stays claimed by this object until this runs, same as every
+   *  sibling pool's own teardown. */
+  disposeAll(): void {
+    for (const pool of [this.discPool, this.beamPool]) {
+      for (const m of pool) m.dispose();
+      pool.length = 0;
+    }
+    this.freeDiscs.length = 0;
+    this.freeBeams.length = 0;
   }
 }
 

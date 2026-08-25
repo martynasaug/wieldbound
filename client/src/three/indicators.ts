@@ -165,6 +165,16 @@ function disc(radius: number, color: number, opacity: number): GroundRing {
   return new GroundRing(0, 1, color, opacity, 0.02, 1);
 }
 
+/** A borrowed or built danger-zone pair — either it came from `Indicators`'
+ *  fixed pool (kept, returned on `endDanger`) or, on overflow, a genuine
+ *  one-off pair disposed for real. See `Indicators.dangerPool`'s own
+ *  comment for why both cases exist. */
+interface DangerZone {
+  fill: GroundRing;
+  edge: GroundRing;
+  pooled: boolean;
+}
+
 export class Indicators {
   private readonly targetRing: GroundRing;
   /** Drawn around a target you picked by hand, so a deliberate choice stays
@@ -174,8 +184,28 @@ export class Indicators {
    *  bodies a click would actually take. */
   private readonly hoverRing: GroundRing;
   private readonly reachRing: GroundRing;
-  private readonly dangerZones = new Map<string, { fill: GroundRing; edge: GroundRing }>();
+  private readonly dangerZones = new Map<string, DangerZone>();
   private seen = new Set<string>();
+
+  /**
+   * Fixed pool for telegraph danger zones, never disposed — the same fix
+   * `effects.ts`/`attacks.ts`/`skillfx.ts`/`drops.ts` were given.
+   * `danger()`/`endDanger()` used to build a fresh `{fill, edge}` pair of
+   * `GroundRing`s (two `MeshBasicMaterial`s each) per monster id and
+   * dispose them the instant a wind-up ended — on a boss whose own
+   * `attackIntervalMs` cycle is a few seconds, that is a compile/destroy/
+   * compile tied directly to the fight's own tempo, confirmed live via a
+   * `[dispose-trace]` stack trace landing at `GroundRing.dispose`
+   * (`indicators.ts:151`) after every other known file had already been
+   * converted. Sized for "more than one telegraphing boss near the same
+   * player at once," which is rare but not impossible with packs; genuine
+   * overflow still works, it just pays the old per-use cost rather than
+   * being silently dropped — a monster winding up with no telegraph ring
+   * at all would be a real safety regression, unlike a skipped hit-flash.
+   */
+  private static readonly DANGER_POOL_SIZE = 6;
+  private readonly dangerPool: DangerZone[] = [];
+  private readonly freeDanger: DangerZone[] = [];
 
   constructor(private readonly scene: THREE.Scene) {
     this.targetRing = ring(0.42, 0.55, 0xffd873, 0.9);
@@ -186,6 +216,13 @@ export class Indicators {
     scene.add(this.lockRing.mesh);
     scene.add(this.hoverRing.mesh);
     scene.add(this.reachRing.mesh);
+
+    for (let i = 0; i < Indicators.DANGER_POOL_SIZE; i++) {
+      const zone: DangerZone = { fill: disc(1, 0xff5a3c, 0.22), edge: ring(0.94, 1.0, 0xff7a4a, 0.8), pooled: true };
+      scene.add(zone.fill.mesh, zone.edge.mesh);
+      this.dangerPool.push(zone);
+      this.freeDanger.push(zone);
+    }
   }
 
   /** Gold in reach, grey out of it â€” the ring doubles as a range readout. */
@@ -248,11 +285,19 @@ export class Indicators {
     this.seen.add(id);
     let d = this.dangerZones.get(id);
     if (!d) {
-      d = { fill: disc(1, 0xff5a3c, 0.22), edge: ring(0.94, 1.0, 0xff7a4a, 0.8) };
+      const pooled = this.freeDanger.pop();
+      if (pooled) {
+        d = pooled;
+      } else {
+        // Overflow: more telegraphing bosses near this player at once than
+        // the pool was sized for. A real pair rather than a dropped ring —
+        // see `dangerPool`'s own comment on why this one case still pays
+        // the old cost instead of silently doing nothing.
+        d = { fill: disc(1, 0xff5a3c, 0.22), edge: ring(0.94, 1.0, 0xff7a4a, 0.8), pooled: false };
+        this.scene.add(d.fill.mesh, d.edge.mesh);
+      }
       d.fill.visible = true;
       d.edge.visible = true;
-      this.scene.add(d.fill.mesh);
-      this.scene.add(d.edge.mesh);
       this.dangerZones.set(id, d);
     }
     const pulse = 0.78 + Math.sin(performance.now() / 90) * 0.22;
@@ -265,10 +310,19 @@ export class Indicators {
   endDanger(): void {
     for (const [id, d] of this.dangerZones) {
       if (this.seen.has(id)) continue;
-      this.scene.remove(d.fill.mesh);
-      this.scene.remove(d.edge.mesh);
-      d.fill.dispose();
-      d.edge.dispose();
+      if (d.pooled) {
+        // Handed back rather than disposed — see `dangerPool`'s own
+        // comment. Hidden and reset rather than removed from the scene:
+        // it stays resident, ready for whichever monster winds up next.
+        d.fill.visible = false;
+        d.edge.visible = false;
+        this.freeDanger.push(d);
+      } else {
+        this.scene.remove(d.fill.mesh);
+        this.scene.remove(d.edge.mesh);
+        d.fill.dispose();
+        d.edge.dispose();
+      }
       this.dangerZones.delete(id);
     }
   }
