@@ -34,6 +34,16 @@
 //   CULL SCALE multiplies M70.28's distance radii. Below 1 the world closes in
 //   around the player; it is last because it is the only one that changes what
 //   is THERE rather than how it is drawn.
+//
+//   ANTIALIAS was hardcoded `true` at the renderer's construction until M70.45
+//   — invisible to this file even though MSAA is exactly the kind of cost the
+//   other four knobs are: nothing about it is waste, it is a fixed multiple of
+//   fill-rate work a low-end or integrated GPU pays for every single pixel,
+//   every single frame, whether or not the player has ever opened this menu.
+//   Unlike the other knobs it cannot change live — WebGL fixes the sample
+//   count at context creation — so it is read once, from whatever quality was
+//   loaded before the renderer existed, and a level switched via F4 mid-session
+//   takes effect on the next page load rather than the next frame.
 
 export type QualityLevel = "high" | "balanced" | "performance";
 
@@ -41,6 +51,12 @@ export interface QualitySettings {
   label: string;
   /** What the browser's own devicePixelRatio is clamped to. */
   pixelRatioCap: number;
+  /**
+   * MSAA at the renderer. Fixed for the life of the renderer — see the note
+   * above; a quality switched live keeps its OLD antialias setting until the
+   * page reloads, since WebGL cannot change sample count on an open context.
+   */
+  antialias: boolean;
   shadows: boolean;
   shadowMapSize: number;
   /** Multiplies the ground-cover and tree cull radii. */
@@ -64,6 +80,7 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
   high: {
     label: "High",
     pixelRatioCap: 2,
+    antialias: true,
     shadows: true,
     shadowMapSize: 2048,
     cullScale: 1,
@@ -74,6 +91,7 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
   balanced: {
     label: "Balanced",
     pixelRatioCap: 1.5,
+    antialias: true,
     shadows: true,
     shadowMapSize: 1024,
     cullScale: 0.8,
@@ -81,10 +99,14 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
   },
   // For a machine that cannot hold a frame. Shadows go entirely — it is the
   // single biggest saving available and there is no point pretending it is
-  // subtle — and the pixel ratio drops to native.
+  // subtle — and the pixel ratio drops to native. MSAA goes with it: it is
+  // full-scene fill-rate work paid on every pixel of every frame, which is
+  // exactly the kind of fixed tax a machine that cannot hold a frame cannot
+  // afford, and losing it here costs a soft edge rather than a system.
   performance: {
     label: "Performance",
     pixelRatioCap: 1,
+    antialias: false,
     shadows: false,
     shadowMapSize: 512,
     cullScale: 0.62,

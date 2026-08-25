@@ -98,14 +98,25 @@ section("3. the levels that use it");
   check("High is untouched — every frame, as it always was", QUALITY.high.shadowEveryNFrames === 1);
   check("Balanced halves it", QUALITY.balanced.shadowEveryNFrames === 2);
   check("Performance has no shadows at all", QUALITY.performance.shadows === false);
+  for (const level of QUALITY_ORDER) {
+    check(`${level} declares antialias`, typeof QUALITY[level].antialias === "boolean");
+  }
+  check("Performance also drops MSAA — full-scene fill-rate work, same tier as shadows", QUALITY.performance.antialias === false);
+  check("High keeps it, unchanged from before this knob existed", QUALITY.high.antialias === true);
 }
 
 section("4. no knob that silently does nothing");
 {
   // PCFSoftShadowMap is deprecated in this three.js: WebGLShadowMap.render
   // warns and reassigns itself to PCFShadowMap on the first frame. A setting
-  // for it would read correctly, apply silently and change nothing — the same
-  // reason `antialias` is absent (it is fixed at context creation).
+  // for it would read correctly, apply silently and change nothing.
+  //
+  // `antialias` USED to be excluded for a related-sounding but different
+  // reason — fixed at WebGL context creation, so it cannot be part of the
+  // live-appliable knobs `applyQuality` updates. M70.45 found that is not the
+  // same as "cannot be a quality setting at all": it can still be read ONCE,
+  // from whatever level was loaded before the renderer existed. What must
+  // stay true is that it is set at construction and never touched again.
   const three = readFileSync(
     new URL("../../node_modules/three/src/renderers/webgl/WebGLShadowMap.js", import.meta.url),
     "utf8",
@@ -120,8 +131,22 @@ section("4. no knob that silently does nothing");
     !deprecated || !/softShadows\s*:/.test(quality),
     "the setting would apply silently and change nothing",
   );
-  check("and antialias is not offered either", !/antialias\s*:/.test(quality));
   const world = readFileSync(new URL("../../client/src/three/World.ts", import.meta.url), "utf8");
+  check(
+    "World reads antialias once, at construction, from the level loaded before the renderer existed",
+    world.includes("antialias: QUALITY[this.quality].antialias"),
+  );
+  // The METHOD body specifically, not "anywhere after the word applyQuality"
+  // — this file's own constructor comment mentions `applyQuality` by name
+  // right next to the antialias line above, which a naive whole-file search
+  // would trip on.
+  const methodStart = world.indexOf("applyQuality(level: QualityLevel): void {");
+  const methodBody = methodStart === -1 ? "" : world.slice(methodStart, methodStart + 2000);
+  check(
+    "applyQuality's own body never touches antialias — it cannot apply live",
+    methodStart !== -1 && !methodBody.includes("antialias"),
+    "antialias is fixed at context creation — see quality.ts's own note on this",
+  );
   check(
     "World asks quality.ts for the schedule rather than inlining it again",
     world.includes("shadowSchedule("),

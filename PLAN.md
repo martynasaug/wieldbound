@@ -11379,6 +11379,47 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.45 — MSAA was never a quality knob.** Asked to optimise
+further for a lower-end machine that could not be tested live this round
+(the reports so far are all from a 60Hz/powerful and a 144Hz/weaker
+machine, and only the former has been re-measured after M70.43/44).
+`World.ts`'s `WebGLRenderer` has taken `antialias: true` unconditionally
+since before `quality.ts` existed, invisible to the whole quality-tier
+system even though MSAA is exactly the kind of cost that file's own
+opening comment describes — "a matter of TASTE... somebody is PAYING for
+and getting something back for" — full-scene fill-rate work paid on every
+pixel of every frame, which is disproportionately expensive on the
+integrated/low-end GPUs the Performance tier exists for.
+It was left out for a real reason, just a narrower one than it was given
+credit for: WebGL fixes MSAA sample count at context creation, so it
+cannot join `pixelRatioCap`/`shadows`/`shadowMapSize`/`shadowEveryNFrames`
+as something `applyQuality` updates live. That is not the same claim as
+"it cannot be a quality setting at all" — it can still be read ONCE, from
+whatever level was loaded before the renderer existed, same as the
+initial pixel ratio is before `applyQuality` runs at the end of the
+constructor. Added as a fifth field on `QualitySettings`: on for
+High/Balanced (unchanged from before this knob existed), off for
+Performance, alongside shadows — "the single biggest saving available"
+now has a second one next to it. Switching quality live via F4 does not
+change it until the next page load, which is now stated as an explicit
+invariant rather than left implicit: `applyQuality`'s own body never
+touches it.
+`tools/test/shadows.mjs` had a section asserting the OLD absence by name
+("and antialias is not offered either") — a passing test actively
+encoding the design this round reverses. Updated rather than deleted: it
+now asserts the new shape (declared per level, read once at construction,
+untouched by `applyQuality`'s body specifically — checked against the
+method's own text, not "the word `applyQuality` appears anywhere earlier
+in the file," which false-failed against this very entry's own
+constructor comment mentioning `applyQuality` by name next to the new
+line). Full suite otherwise unchanged from the prior entry; `camps.mjs`
+was seen failing intermittently (~240px against a 216px line) across
+several of these runs with no code in this diff touching monster AI at
+all — flagged as apparently pre-existing flakiness, not chased.
+Unverified live: this cuts a real, fixed GPU cost, but there is no
+before/after reading from actual lower-end hardware yet, only the
+reasoning above.
+
 **Phase 70 M70.44 — a healing potion could lower your HP.** Asked for a
 general bug sweep and got one back from a background agent, traced through
 `addHp`'s clamp-and-persist semantics (`server/src/db.ts:445-450`,

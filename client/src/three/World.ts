@@ -226,7 +226,14 @@ export class World {
   private readonly desiredLook = new THREE.Vector3();
 
   constructor(container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    // Antialias is the one quality knob that cannot be applied live — see
+    // quality.ts — so it is read here, once, from whatever was loaded before
+    // this renderer existed, rather than from `applyQuality` below with
+    // everything else.
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: QUALITY[this.quality].antialias,
+      powerPreference: "high-performance",
+    });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     // Pixel ratio, shadow map size and shadow filter are all set by
     // `applyQuality` at the end of this constructor. They used to be three
