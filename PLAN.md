@@ -11379,6 +11379,46 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.44 — a healing potion could lower your HP.** Asked for a
+general bug sweep and got one back from a background agent, traced through
+`addHp`'s clamp-and-persist semantics (`server/src/db.ts:445-450`,
+`hp = min(maxHp, row.hp + amount)`, written unconditionally). Two call
+sites computed the cap with `maxHpForLevel(level, vitality)` alone,
+skipping both `passivesOf(id).maxHpBonus` and the class's own
+`baseHpBonus` — both of which `maxHpOf()` (index.ts:2324) already exists
+to include, and which every OTHER max-HP read in the file already goes
+through. A Warrior (`baseHpBonus: 30`) sitting at 620/630 true HP who
+drinks a potion had their cap computed as 600, so `addHp` clamped their
+NEXT hp down to 600 — the potion cost them 20 HP, and it persisted. Same
+bug in reverse let a Mage (`baseHpBonus: -10`) overheal past their true
+cap. The passive HP-regen tick had the identical formula and the identical
+missing bonus, one function away — softer in effect (it just gates
+`hp >= maxHp` early, so a Warrior's regen silently stops 30 HP short of
+their real max rather than actively subtracting), but the same root cause.
+Both call sites now go through `maxHpOf`, matching the rest of the file.
+The same sweep also surfaced why `throwers.mjs` has been failing:
+overflow-ranked (queued) keep-away monsters fall into the melee ring-orbit
+branch (`stopAt = attackRangePx*0.8 + overflow*MELEE_RING_STEP_PX`), which
+was written for melee and has no upper bound — for a cactoro pack that
+routinely pushes a queued rank's stand-off ring past its own 185px
+`attackRangePx`, so it orbits forever without ever being in range to fire.
+Attempted fix (capping the ring at the thrower's own range) made it WORSE:
+every overflow rank collapsed onto the same capped distance instead of
+each holding its own wider ring, which crowds them into each other and
+`camps.mjs`'s monster-separation pass shoves the loser far past its
+leash — regression caught immediately (`camps.mjs`: 177px → 573px against
+a 216px pass line) and reverted before it shipped. Left as a documented,
+real, NOT-yet-fixed bug: the actual fix needs each overflow rank to keep a
+DISTINCT ring while still fitting inside the thrower's own range (e.g.
+scale the ring step down for keep-away kinds rather than hard-capping the
+result), which needs more care than this pass had budget for.
+`slaying.mjs`'s failure is confirmed NOT a game bug: the `Slayer` test
+character sits at level 1 with the `rule-armabee` quest gated at
+`requiresLevel: 5`, and the test's own header says to seed it to level 40
+first — that seed step was simply never run on this machine.
+Full suite otherwise green (`brace`/`casting` fail for the same
+pre-existing missing-seed reason).
+
 **Phase 70 M70.43 — the road's own torches reintroduced the bug the light
 pool exists to prevent.** Reported live: F3 locked at 60fps standing still,
 and still a "mirage duplicate" while running, but only sometimes. The

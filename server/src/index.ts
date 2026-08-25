@@ -3382,7 +3382,7 @@ wss.on("connection", (socket) => {
 
       const attrs = attributes.get(id) ?? EMPTY_ATTRS;
       if (def.effect.heal) {
-        const maxHp = maxHpForLevel(playerLevels.get(id) ?? 1, attrs.vitality);
+        const maxHp = maxHpOf(id, attrs);
         const newHp = addHp(id, def.effect.heal, maxHp);
         hpBalances.set(id, newHp);
         lastRegenAt.set(id, nowMs);
@@ -4138,8 +4138,8 @@ setInterval(() => {
   }
 
   for (const [playerId] of players) {
-    const attrs = attributes.get(playerId);
-    const maxHp = maxHpForLevel(playerLevels.get(playerId) ?? 1, attrs?.vitality ?? 0);
+    const attrs = attributes.get(playerId) ?? EMPTY_ATTRS;
+    const maxHp = maxHpOf(playerId, attrs);
     const hp = hpBalances.get(playerId) ?? maxHp;
 
     // MANA FIRST, AND OUTSIDE THE HEALTH GATE.
