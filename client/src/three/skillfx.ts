@@ -263,21 +263,39 @@ export class SkillFx {
   }
 
   /**
-   * Uploads every shape's geometry and compiles both material variants this
+   * Kept alive for the life of the object, not disposed of once `prewarm`
+   * returns — every one of `nova`/`ground`/`cone`/`mark`/`strike`/`pillar`/
+   * `rain`'s OWN materials gets `.dispose()`d the moment its effect ends
+   * (see `update()`), and three.js's own program cache DELETES and
+   * DESTROYS a compiled program the instant the last material using its
+   * exact cache key is disposed (`WebGLPrograms.releaseProgram`, `--
+   * usedTimes === 0`). Warming once and letting the warm material be
+   * garbage-collected would not survive a real fight: the moment between
+   * two casts where nothing of that shape happens to be alive, the
+   * program is deleted, and the NEXT cast recompiles it cold anyway — a
+   * program is warm only as long as SOMETHING keeps it referenced. This
+   * array is that something.
+   */
+  private readonly warmed: THREE.Mesh[] = [];
+
+  /**
+   * Uploads every shape's geometry and compiles every material variant this
    * class ever builds, before any of the twenty-seven skills gets to be the
    * first one cast in a session.
    *
-   * Every `nova`/`ground`/`cone`/`mark`/`strike`/`pillar`/`rain` call above
-   * builds a fresh `MeshBasicMaterial` and hands it one of four SHARED
-   * geometries (`ring`/`disc`/`streak`/`wedge`) — the geometries only need
-   * their buffers uploaded once each, ever, but nothing before this ever
-   * did that, and no model-warming path (`World.warmUp`/`warmBuffers`)
-   * ever reached this file, because none of this is a loaded model. Only
-   * `mark` passes a texture (`particleTexture("ring")`); every other call
-   * passes none — and `map` presence is a shader DEFINE, not just a
-   * uniform, so that is genuinely a second program to compile, not a
-   * variant of the first. Four geometries plus two programs is five
-   * throwaway meshes, not the twenty-seven this table has rows for.
+   * Every call above builds a fresh `MeshBasicMaterial` and hands it one of
+   * four SHARED geometries (`ring`/`disc`/`streak`/`wedge`) — the
+   * geometries only need their buffers uploaded once each, ever, but
+   * nothing before this ever did that, and no model-warming path
+   * (`World.warmUp`/`warmBuffers`) ever reached this file, because none of
+   * this is a loaded model. Three axes actually vary the compiled program
+   * rather than just a uniform: `map` presence (only `mark` passes one),
+   * additive vs. normal blending (only `ground` uses normal) — kept in
+   * case it turns out to matter to the cache key, since getting this
+   * wrong silently is worse than one redundant mesh — and the geometry
+   * itself, which needs its OWN buffer regardless of which program draws
+   * it. Eight throwaway-but-kept meshes, not the twenty-seven this table
+   * has rows for.
    *
    * Called once, off-screen, from wherever the background gear-warming
    * queue already runs (see `warmer.ts`) — the same "nobody is looking"
@@ -285,11 +303,16 @@ export class SkillFx {
    */
   prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
     const group = new THREE.Group();
-    const untextured = this.material(0xffffff, 1);
     for (const geo of [this.ring, this.disc, this.streak, this.wedge]) {
-      group.add(new THREE.Mesh(geo, untextured));
+      for (const additive of [true, false]) {
+        const mesh = new THREE.Mesh(geo, this.material(0xffffff, 1, additive));
+        this.warmed.push(mesh);
+        group.add(mesh);
+      }
     }
-    group.add(new THREE.Mesh(this.ring, this.material(0xffffff, 1, true, particleTexture("ring"))));
+    const marked = new THREE.Mesh(this.ring, this.material(0xffffff, 1, true, particleTexture("ring")));
+    this.warmed.push(marked);
+    group.add(marked);
     group.visible = true;
     void world.warmUp(group).then(() => world.warmBuffers(group, "skillfx"));
   }

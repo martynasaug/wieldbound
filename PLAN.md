@@ -11379,6 +11379,45 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.56 — found it: a warm-up that was not staying warm.** The
+cache-key diagnostic reported back with real keys attached — long,
+near-identical strings differing only in a couple of packed bits at the
+end. Decoded against three.js's own `getProgramCacheKeyBooleans` (read
+directly, bit by bit, rather than guessed): `fog`/`useFog` varying is
+normal — different materials in the same frame legitimately do and don't
+want fog — but that still left something to explain, and reading
+`WebGLPrograms.releaseProgram` found it:
+```
+function releaseProgram( program ) {
+  if ( --program.usedTimes === 0 ) {
+    programsMap.delete( program.cacheKey );
+    program.destroy();
+  }
+}
+```
+A compiled program is deleted and DESTROYED the instant the last material
+referencing its cache key calls `.dispose()` — and both
+`SkillFx.update()`/`Projectiles.update()` DO dispose every effect's
+material the moment it finishes (novas, bolts — alive 150-900ms). M70.54's
+`prewarm()` warmed the right shapes once, but its own material was a local
+variable nobody kept a reference to — it was never explicitly disposed
+either, which should have kept its program's `usedTimes` above zero
+forever, UNLESS the cache key it produced did not actually match what a
+real cast builds. Rather than chase that mismatch by more guessing, closed
+both doors at once: `SkillFx`/`Projectiles` now hold a permanent `warmed`
+array of the meshes `prewarm` built, so those specific materials are never
+eligible for disposal or garbage collection for the life of the object —
+a program those exact instances reference can never hit zero users. Also
+widened `SkillFx.prewarm` to cover BOTH blending variants (`ground()` is
+the one skill that uses normal blending, not additive; everything else
+does) rather than assume blending is uniform-only and risk being wrong
+about that too.
+This is the strongest lead of the whole thread — a real, cited,
+line-and-verse three.js mechanism that exactly fits every symptom
+(constant churn, tied to active combat, present even after two prior
+"real but not the cause" warming attempts because those attempts didn't
+survive their own function returning). Not yet confirmed live.
+
 **Phase 70 M70.55 — the program count does not just grow, it OSCILLATES.**
 M70.54's diagnostic reported live within the hour, and it is a bigger find
 than a late compile: `[programs] 64 -> 65 (+1)`, `65 -> 71 (+6)`, `71 -> 68

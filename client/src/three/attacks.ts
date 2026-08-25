@@ -366,6 +366,20 @@ export class Projectiles {
   ) {}
 
   /**
+   * Kept alive for the life of this object — every real `bolt`/`beam`/
+   * `wisp` disposes its own materials the moment its flight ends (see
+   * `update()`), and three.js deletes and destroys a compiled program the
+   * instant the last material referencing its exact cache key is
+   * disposed. A warm-up whose own material is left to be garbage-collected
+   * does not survive a real fight: the first gap between two casts where
+   * nothing of that shape happens to be alive, the program is gone, and
+   * the next cast recompiles it cold regardless of ever having been
+   * warmed. This array is what keeps that from happening — see
+   * `SkillFx.warmed` for the identical reasoning one file over.
+   */
+  private readonly warmed: THREE.Object3D[] = [];
+
+  /**
    * Uploads and compiles everything `bolt`/`beam`/`wisp`/`arrow` build,
    * before a real cast is the first thing to pay for it — see
    * `SkillFx.prewarm` for the fuller reasoning; this is the same gap in
@@ -385,23 +399,27 @@ export class Projectiles {
     const group = new THREE.Group();
     const boltParts = boltMesh(0xffffff, this.lightPool);
     group.add(boltParts.object);
+    this.warmed.push(boltParts.object);
     if (boltParts.light) this.lightPool.release(boltParts.light);
-    group.add(beamMesh(1, 0xffffff).object);
-    group.add(
-      new THREE.Sprite(
-        new THREE.SpriteMaterial({
-          map: particleTexture("spark"),
-          transparent: true,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          fog: false,
-        }),
-      ),
+    const beamObject = beamMesh(1, 0xffffff).object;
+    group.add(beamObject);
+    this.warmed.push(beamObject);
+    const wisp = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: particleTexture("spark"),
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+      }),
     );
+    group.add(wisp);
+    this.warmed.push(wisp);
     void world.warmUp(group).then(() => world.warmBuffers(group, "attacks"));
 
     void arrowPrototype().then((proto) => {
       const arrow = proto.clone(true);
+      this.warmed.push(arrow);
       void world.warmUp(arrow).then(() => world.warmBuffers(arrow, "arrow"));
     });
   }
