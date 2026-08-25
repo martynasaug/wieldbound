@@ -508,6 +508,8 @@ export class Hud {
   private lastPortrait = "";
   /** Last published frame height, so the CSS variable is written only on change. */
   private lastFrameHeight = 0;
+  /** Next time syncLayout is allowed to touch the DOM again; see syncLayout. */
+  private nextSyncAt = 0;
   /** Live bottom edge of the unit frames, refreshed by syncLayout. */
   private framesBottom = HUD_FRAME_RECT.h;
   /** Looked up once: it lives in index.html and is never replaced. */
@@ -516,6 +518,8 @@ export class Hud {
   private readonly clockPhase: HTMLElement;
   private readonly clockTime: HTMLElement;
   private lastClockIcon = "";
+  private lastClockPhase = "";
+  private lastClockTime = "";
 
   private readonly plates = new Map<string, PlateState>();
   private seenThisFrame = new Set<string>();
@@ -564,13 +568,20 @@ export class Hud {
   /**
    * The hour, its name, and a sun or a moon.
    *
-   * Called every frame, so the icon is only rewritten when it actually changes
-   * — swapping innerHTML sixty times a second to draw the same glyph is the
-   * kind of thing that never shows up in a profile until it does.
+   * Called every frame, so every piece is only rewritten when it actually
+   * changes — writing the same textContent sixty to a hundred-plus times a
+   * second forces the browser to re-run its text layout each time, and that
+   * showed up as real time in a profiler even though the string never moved.
    */
   setClock(phase: string, time: string, daytime: boolean): void {
-    this.clockPhase.textContent = phase;
-    this.clockTime.textContent = time;
+    if (phase !== this.lastClockPhase) {
+      this.lastClockPhase = phase;
+      this.clockPhase.textContent = phase;
+    }
+    if (time !== this.lastClockTime) {
+      this.lastClockTime = time;
+      this.clockTime.textContent = time;
+    }
     const want = daytime ? "sun" : "moon";
     if (want !== this.lastClockIcon) {
       this.lastClockIcon = want;
@@ -604,8 +615,20 @@ export class Hud {
    * then the two overlapped, with the target frame drawing over the clock.
    * Measuring and publishing is the same fix the minimap and the window rail
    * already use, and it survives anything else being added to either.
+   *
+   * `getBoundingClientRect()` forces a synchronous layout, and this used to
+   * run on every animation frame — flushing layout in the middle of a frame
+   * that was also writing HP/MP/XP bar styles and text, which is exactly the
+   * kind of interleaved read-after-write that turns into "layout thrashing"
+   * in a profiler. The frame's height only ever changes when a row appears
+   * or disappears (an equip, a level-up, the target frame showing), so a
+   * 150ms throttle costs nothing perceptible and cuts the forced layout to a
+   * fraction of the calls.
    */
   syncLayout(): void {
+    const now = performance.now();
+    if (now < this.nextSyncAt) return;
+    this.nextSyncAt = now + 150;
     const height = Math.round(this.frameEl.getBoundingClientRect().height);
     if (height === 0) return;
 

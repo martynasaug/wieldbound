@@ -11417,6 +11417,39 @@ measured cost, not a guess, but "measured a real cost and cut it" is not
 the same claim as "this is what choppy felt like." The next reading is
 what answers that.
 
+**Phase 70 M70.67 — riverAt confirmed gone; the HUD's own layout reads
+took its place.** The next recording (still choppy, per report) confirmed
+M70.66 worked: `riverAt` dropped from 775ms/5.7% to 74ms/0.6% self-time —
+the throttle did exactly what it was supposed to. But it moved the
+Bottom-Up ranking rather than emptying it. New leaders: `WebGLRenderer.render`
+at 66.4% self-time (8.4s of the recording — the actual GPU submission
+cost, expected and not a bug on its own), then a cluster that IS a bug:
+"Layout shift cluster" (1.1s), "set textContent" (1.05s), `Layout hud.ts:609`
+(416ms), `Recalculate style hud.ts:609` (287ms) — nearly 3.5s of forced
+DOM layout thrashing. Line 609 is `Hud3D.syncLayout()`, called
+unconditionally every frame from `Game.ts:4028`. It reads
+`frameEl.getBoundingClientRect()` — a forced synchronous layout — in the
+same frame where HP/MP/XP bar widths and clock text are being written
+elsewhere, which is the textbook shape of layout thrashing: write, read,
+write, read, each read flushing the browser's pending layout instead of
+letting it batch once per frame. The frame's actual height only changes
+when a row appears/disappears (equip, level-up, target frame toggling),
+so this tolerates the same kind of staleness the terrain rings do. Added
+a 150ms throttle (`nextSyncAt`), matching the `GroundRing` pattern.
+Separately, `setClock()` (hud.ts:571) was already skipping its icon
+`innerHTML` write when unchanged, but NOT its two `textContent` writes —
+those ran unconditionally every frame even though the clock string is
+usually identical frame-to-frame (game time moves far slower than real
+time). Gave `clockPhase`/`clockTime` the same "skip if unchanged" guard
+the icon already had. `setHp`/`setMana`/`setXp` were checked too — they're
+event-driven (network state syncs), not per-frame, so left alone.
+`npx tsc --noEmit` clean, Vite hot-reloaded `hud.ts` with no console
+errors. Not yet confirmed live. `WebGLRenderer.render`'s 66% self-time is
+the next candidate if this doesn't fully resolve it — but that number
+reflects actual draw-call/triangle submission cost, which needs a
+scene-complexity investigation (draw call counts, instancing), not a
+JS-side throttle, so it isn't being touched speculatively.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two
