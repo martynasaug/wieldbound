@@ -11450,6 +11450,41 @@ reflects actual draw-call/triangle submission cost, which needs a
 scene-complexity investigation (draw call counts, instancing), not a
 JS-side throttle, so it isn't being touched speculatively.
 
+**Phase 70 M70.68 — the actual dominant riverAt caller was never
+GroundRing.** A second recording, longer and reportedly still choppy, put
+`riverAt` right back at 1,521ms/5.2% self-time — worse proportionally
+than the ORIGINAL unfixed reading, despite M70.66's 30Hz throttle on
+`GroundRing.set()` still being intact and correct (checked directly).
+That was the tell: something else, unthrottled, was calling it far more
+than a handful of rings ever could. It was `Mist.update()`
+(`mist.ts:315`), called once every frame unconditionally whenever mist is
+visible — and `mistStrengthForHour` (mist.ts:185) makes that true for a
+large fraction of the day/night cycle: the dawn window, the dusk window,
+AND overnight. Inside, a loop over all 165 pooled mist sheets called
+`mistAt()` (→ `riverAt` + `terrainHeight` + `forestStrengthAt`) AND
+`groundAt()` (→ `riverAt` again, for the sheet's resting height) for
+EVERY sheet, EVERY frame — up to 330 riverAt calls a frame, nonstop, for
+however long mist stayed on screen. GroundRing, by comparison, was at
+most a handful of throttled rings; this dwarfed it and was never
+throttled at all. This also explains the session's original "laggy
+sometimes, not always" reports far better than anything fixed so far —
+mist visibility is tied to game time of day, not to combat or movement.
+Fixed with a round-robin sample slice rather than a flat time throttle,
+because unlike a ring there are 165 independent moving points and a
+single last-sample timestamp can't serve all of them: added `local` and
+`groundY` caches to each pooled sheet, and `SAMPLE_SLICE = 4` so each
+frame only 1/4 of the pool actually calls `mistAt`/`groundAt` — the other
+3/4 reuse last frame's cached values. A sheet drifts at most a fifth of a
+unit a second (mist "has weight; it does not gust", per the file's own
+comment), so being up to 4 frames stale is invisible. The one exception:
+a sheet that just respawned (`place()` called this frame, fresh position)
+always samples immediately regardless of whose turn it is in the
+rotation — reusing a stale cache from its OLD position would show the
+wrong mist density for a few frames right after a visible pop. Cuts the
+worst-case riverAt-from-mist load to roughly a quarter. `npx tsc --noEmit`
+clean, Vite hot-reloaded `mist.ts` with no console errors. Not yet
+confirmed live.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two

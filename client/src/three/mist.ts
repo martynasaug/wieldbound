@@ -57,6 +57,19 @@ const RADIUS = 62;
  * opacity is a flat veil, and six at a sixth of it is weather.
  */
 const COUNT = 165;
+// Every sheet's mist strength and ground height came from riverAt/terrainHeight/
+// forestStrengthAt — real terrain sampling, not a lookup — and update() was
+// calling both for all 165 sheets on every single frame whenever mist was
+// visible at all (most of the day/night cycle: dawn, dusk, and overnight — see
+// mistStrengthForHour). That dwarfed every other terrain-sampling cost in this
+// codebase combined, and unlike a UI element it isn't rare: it is running
+// nonstop during the exact hours mist is on screen. A sheet drifts at most a
+// fifth of a unit a second, so its terrain rarely changes meaningfully within
+// a few frames — cycling through a slice of the pool each frame instead of the
+// whole thing every frame keeps every sheet's data at most SAMPLE_SLICE frames
+// stale, which is invisible on something this soft and slow, while cutting the
+// sampling cost by the same factor.
+const SAMPLE_SLICE = 4;
 
 const VERT = /* glsl */ `
   #ifdef USE_FOG
@@ -209,9 +222,13 @@ export class Mist {
     size: number;
     lift: number;
     live: boolean;
+    // Cached results of the last real sample — see SAMPLE_SLICE.
+    local: number;
+    groundY: number;
   }[] = [];
   private cx = 0;
   private cz = 0;
+  private frameIndex = 0;
 
   constructor() {
     // Flat on the ground. A plane is born standing up, so it is laid down once
@@ -275,6 +292,8 @@ export class Mist {
         size: 14 + Math.random() * 26,
         lift: 0.25 + Math.random() * 0.9,
         live: false,
+        local: 0,
+        groundY: 0,
       });
     }
     this.seeds.needsUpdate = true;
@@ -361,14 +380,24 @@ export class Mist {
     }
     const wholesale = stranded > COUNT * 0.5;
 
+    this.frameIndex++;
     for (let i = 0; i < COUNT; i++) {
       const s = this.sheets[i];
-      if (!s.live) this.place(i, true);
+      const fresh = !s.live;
+      if (fresh) this.place(i, true);
       s.x += dx;
       s.z += dz;
-      if (Math.hypot(s.x - this.cx, s.z - this.cz) > RADIUS) this.place(i, wholesale);
+      const respawned = Math.hypot(s.x - this.cx, s.z - this.cz) > RADIUS;
+      if (respawned) this.place(i, wholesale);
 
-      const local = mistAt(s.x, s.z);
+      // Real terrain sampling — see SAMPLE_SLICE. A respawned sheet has no
+      // usable cache (it is at a brand new position), so it always samples on
+      // its placement frame regardless of whose turn it is.
+      if (fresh || respawned || (i + this.frameIndex) % SAMPLE_SLICE === 0) {
+        s.local = mistAt(s.x, s.z);
+        s.groundY = this.groundAt(s.x, s.z);
+      }
+      const local = s.local;
       // The sheet's own opacity is where it is lying. A sheet on a dry ridge is
       // still there and still drifting; it is simply not visible, which is what
       // lets a bank thin out as it climbs out of a hollow instead of ending.
@@ -386,7 +415,7 @@ export class Mist {
         continue;
       }
 
-      this.pos.set(s.x, this.groundAt(s.x, s.z) + s.lift, s.z);
+      this.pos.set(s.x, s.groundY + s.lift, s.z);
       // A very slow turn on top of the drift, so two overlapping sheets are
       // never the same picture twice.
       this.euler.set(0, s.spin + timeSeconds * 0.008 * (i % 2 ? 1 : -1), 0);
