@@ -33,6 +33,7 @@ import { seededRandom } from "../../../shared/rng";
 import { findClip, instantiate } from "./assets";
 import { buildGroundCover } from "./scatter";
 import { createTerrainMaterial } from "./terrain";
+import { QUALITY, loadQuality } from "./quality";
 import { DayNight } from "./daynight";
 import { terrainHeight } from "./World";
 
@@ -164,7 +165,10 @@ export class LoginBackdrop {
       pos.setZ(i, terrainHeight(pos.getX(i) + 400, -pos.getY(i) + 260) * 0.55);
     }
     geo.computeVertexNormals();
-    const ground = new THREE.Mesh(geo, createTerrainMaterial(span));
+    // Same saved preference the game itself reads — a machine set to
+    // Performance because it cannot afford full anisotropy in play cannot
+    // afford it here either, and this is the very first frame it draws.
+    const ground = new THREE.Mesh(geo, createTerrainMaterial(span, QUALITY[loadQuality()].anisotropyCap));
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);

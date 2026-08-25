@@ -388,7 +388,7 @@ export class World {
     geo.setAttribute("aWet", new THREE.BufferAttribute(wet, 1));
     geo.computeVertexNormals();
 
-    const ground = new THREE.Mesh(geo, createTerrainMaterial(span));
+    const ground = new THREE.Mesh(geo, createTerrainMaterial(span, QUALITY[this.quality].anisotropyCap));
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);

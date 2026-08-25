@@ -63,6 +63,7 @@ function loadSurface(
   name: string,
   repeat: number,
   withNormal: boolean,
+  anisotropy: number,
 ): { map: THREE.Texture; normal: THREE.Texture | null; arm: THREE.Texture } {
   const loader = new THREE.TextureLoader();
   const get = (suffix: string, srgb: boolean) => {
@@ -78,8 +79,13 @@ function loadSurface(
     // the case where anisotropy is the difference between crisp and smeared.
     // Sixteen rather than eight now that the tile is half the size: a smaller
     // tile is a steeper gradient in UV space, and that is what anisotropy is
-    // measured against.
-    t.anisotropy = 16;
+    // measured against. Tied to quality (see quality.ts's anisotropyCap) since
+    // that gradient-sharpening cost is paid per sample on the largest, most
+    // grazing-angle surface on screen, on every one of up to twelve terrain
+    // textures — the ground plane is built once, so there is nothing to update
+    // live if the setting changes; it takes effect on the next load same as
+    // antialias does.
+    t.anisotropy = anisotropy;
     return t;
   };
   return {
@@ -135,12 +141,12 @@ const NOISE_GLSL = /* glsl */ `
  * a tile count — set on the textures rather than in the shader, so three's own
  * uv transform does the work and `vMapUv` arrives already tiled.
  */
-export function createTerrainMaterial(spanUnits: number): THREE.MeshStandardMaterial {
+export function createTerrainMaterial(spanUnits: number, anisotropy: number): THREE.MeshStandardMaterial {
   const repeat = spanUnits / TILE_UNITS;
-  const grass = loadSurface("grass", repeat, true);
-  const dirt = loadSurface("dirt", repeat, true);
-  const dry = loadSurface("drygrass", repeat, false);
-  const gravel = loadSurface("gravel", repeat, false);
+  const grass = loadSurface("grass", repeat, true, anisotropy);
+  const dirt = loadSurface("dirt", repeat, true, anisotropy);
+  const dry = loadSurface("drygrass", repeat, false, anisotropy);
+  const gravel = loadSurface("gravel", repeat, false, anisotropy);
 
   const material = new THREE.MeshStandardMaterial({
     map: grass.map,

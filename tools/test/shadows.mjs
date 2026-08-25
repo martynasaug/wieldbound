@@ -103,6 +103,11 @@ section("3. the levels that use it");
   }
   check("Performance also drops MSAA — full-scene fill-rate work, same tier as shadows", QUALITY.performance.antialias === false);
   check("High keeps it, unchanged from before this knob existed", QUALITY.high.antialias === true);
+  for (const level of QUALITY_ORDER) {
+    check(`${level} declares anisotropyCap`, typeof QUALITY[level].anisotropyCap === "number");
+  }
+  check("Performance halves anisotropy rather than dropping it — filtering degrades gracefully", QUALITY.performance.anisotropyCap === 8);
+  check("High and Balanced keep full anisotropy, unchanged from before this knob existed", QUALITY.high.anisotropyCap === 16 && QUALITY.balanced.anisotropyCap === 16);
 }
 
 section("4. no knob that silently does nothing");

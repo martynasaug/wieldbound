@@ -11379,6 +11379,38 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.46 — the ground plane's anisotropy was the same story as
+M70.45's MSAA, one file over.** Same sweep, same shape of bug: `terrain.ts`
+set `t.anisotropy = 16` unconditionally on up to twelve ground textures,
+outside the quality-tier system, on the exact surface its own comment
+already says is worst-case for the cost — "seen at a grazing angle almost
+everywhere." Threaded an `anisotropy` parameter through `loadSurface` and
+`createTerrainMaterial`, added `anisotropyCap` to `QualitySettings` (16 for
+High/Balanced — unchanged — 8 for Performance, halved rather than dropped
+since filtering degrades gracefully). Read once at ground-mesh construction
+rather than wired into `applyQuality`: unlike antialias this ISN'T a WebGL
+constraint — anisotropy can change on a live texture — but the ground plane
+itself is only ever built once per session, so there is nothing to update
+live either way, and the simpler treatment is the honest one.
+Found a second, independent call site while fixing the type signature:
+`LoginBackdrop.ts` builds its own small terrain patch behind the login
+form with a SEPARATE `WebGLRenderer({ antialias: true, ... })`, also
+unconditional. Wired its ground to the same saved `loadQuality()`
+preference for anisotropy — a machine set to Performance because it
+cannot afford full filtering in play cannot afford it on the login screen
+either, and that is the very first frame the game ever draws. Left its own
+`antialias: true` alone for now: it already has its own independently-
+reasoned, tighter pixel-ratio cap for a screen shown for a few seconds,
+and extending the exact same treatment there is a smaller, separate
+decision this round did not need to make to answer the question asked.
+`tools/test/shadows.mjs` extended with the same per-level shape checks
+M70.45 added for antialias. Full suite unchanged from the prior entry;
+`camps.mjs`'s intermittent flake (noted last entry) did not reproduce in
+this round's runs, consistent with it being pre-existing test noise rather
+than anything in this diff.
+Same caveat as M70.45, stated once for both: reasoned from code, not
+measured on the actual weaker hardware that started this thread.
+
 **Phase 70 M70.45 — MSAA was never a quality knob.** Asked to optimise
 further for a lower-end machine that could not be tested live this round
 (the reports so far are all from a 60Hz/powerful and a 144Hz/weaker

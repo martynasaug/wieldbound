@@ -57,6 +57,15 @@ export interface QualitySettings {
    * page reloads, since WebGL cannot change sample count on an open context.
    */
   antialias: boolean;
+  /**
+   * Terrain texture anisotropy. Same "read once" treatment as antialias, for
+   * a simpler reason: the ground plane is built once for the life of the
+   * world, not rebuilt on a quality switch, so there is nothing to update
+   * live even though the GPU-side value itself could change at any time.
+   * Sampled at a grazing angle across most of the screen (see terrain.ts),
+   * which is exactly where anisotropy cost is highest and most visible.
+   */
+  anisotropyCap: number;
   shadows: boolean;
   shadowMapSize: number;
   /** Multiplies the ground-cover and tree cull radii. */
@@ -81,6 +90,7 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     label: "High",
     pixelRatioCap: 2,
     antialias: true,
+    anisotropyCap: 16,
     shadows: true,
     shadowMapSize: 2048,
     cullScale: 1,
@@ -92,6 +102,7 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     label: "Balanced",
     pixelRatioCap: 1.5,
     antialias: true,
+    anisotropyCap: 16,
     shadows: true,
     shadowMapSize: 1024,
     cullScale: 0.8,
@@ -103,10 +114,14 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
   // full-scene fill-rate work paid on every pixel of every frame, which is
   // exactly the kind of fixed tax a machine that cannot hold a frame cannot
   // afford, and losing it here costs a soft edge rather than a system.
+  // Anisotropy halves rather than drops to one: this is the near-field ground
+  // the player is looking at for the whole session, and filtering degrades
+  // gracefully — eight is a softer grazing edge, not a swimming one.
   performance: {
     label: "Performance",
     pixelRatioCap: 1,
     antialias: false,
+    anisotropyCap: 8,
     shadows: false,
     shadowMapSize: 512,
     cullScale: 0.62,
