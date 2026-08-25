@@ -81,6 +81,37 @@ export class Effects {
     this.base.magFilter = THREE.LinearFilter;
   }
 
+  /**
+   * Kept alive for the life of this object — same reasoning as
+   * `SkillFx.warmed`/`Projectiles.warmed`, and the most important instance
+   * of it: `play()` is the hit-impact flash, which fires on every landed
+   * swing in the game, far more often than any single skill. Every one of
+   * its materials is disposed the moment its ~460ms lifetime ends
+   * (`update()`), and three.js deletes a compiled program the instant the
+   * last material referencing its cache key is disposed — so a fight with
+   * any gap between hits cycles this program compiled/destroyed/compiled
+   * again, which is exactly the oscillation the F3 diagnostic caught live.
+   */
+  private warmed: THREE.Mesh | null = null;
+
+  /** Uploads and compiles the one material shape `play()` ever builds — see
+   *  `warmed`'s own comment for why keeping the material referenced matters
+   *  as much as compiling it once. Called once, off-screen, alongside
+   *  `SkillFx.prewarm`/`Projectiles.prewarm`. */
+  prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
+    const material = new THREE.MeshBasicMaterial({
+      map: this.base,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      fog: false,
+    });
+    const mesh = new THREE.Mesh(this.geometry, material);
+    this.warmed = mesh;
+    void world.warmUp(mesh).then(() => world.warmBuffers(mesh, "effects"));
+  }
+
   play(name: EffectName, x: number, y: number, z: number, opts: EffectOptions = {}): void {
     const row = FX_ROW[name];
     const texture = this.base.clone();
@@ -96,6 +127,14 @@ export class Effects {
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       color: opts.tint ?? 0xffffff,
+      // Every sibling combat/skill effect (attacks.ts, skillfx.ts) disables
+      // fog for the same stated reason — "a spell is exactly the thing that
+      // should stay legible at range" — and this is the same kind of thing,
+      // just missed when this file was written first. Left on, this also
+      // meant every hit-impact flash (the single most frequent effect in
+      // the game — one per swing, not per cast) compiled a DIFFERENT
+      // program from every other combat effect for no visual reason.
+      fog: false,
     });
 
     const mesh = new THREE.Mesh(this.geometry, material);

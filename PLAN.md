@@ -11379,6 +11379,35 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.57 — M70.56 fixed the doors it had found; there was a
+fourth one.** Reported still churning after M70.56, keys attached again —
+and the removed key was a `sprite`... no, a `basic` material with `fog`
+genuinely SET, unlike anything in `skillfx.ts`/`attacks.ts`, which are all
+`fog: false`. Grepped every `new THREE.MeshBasicMaterial` in the client
+rather than assume the two files already fixed were the whole list, and
+found it in `effects.ts`: `Effects.play()`, the hit-impact flash — the
+14-school atlas system, ~460ms lifetime, disposed on `update()` same as
+every other combat effect — never had `fog: false` set at all, and was
+never warmed, because M70.54/56 only ever looked at `skillfx.ts` and
+`attacks.ts`. This is the one that actually mattered most: `play()` fires
+on every landed swing in the game, not once per skill cast — far more
+frequent than anything already fixed, which is exactly why a Slime fight
+(plain auto-attacks, no skills) still showed the churn after two rounds of
+fixes aimed at skills and weapon-attack VFX specifically.
+Two changes, same file: added `fog: false` (every sibling effect already
+disables it for the same stated reason — a spell should stay legible at
+range — and there is no reason this one shouldn't too, independent of the
+performance angle), and `Effects.prewarm()` following M70.56's exact
+"permanently referenced, not just built once" pattern — a `THREE.Mesh`
+held on `this.warmed` for the object's whole life, so the one material
+shape `play()` ever builds can never hit zero users.
+Also checked `indicators.ts` (persistent, toggled visible/invisible, never
+disposed — not the same bug class, confirmed by grepping for `.dispose()`
+and finding none) and `drops.ts` (same dispose-per-event pattern, but loot
+drops are once-per-kill rather than once-per-swing — left for a follow-up
+rather than scope-creep this entry, since `effects.ts` is the dominant
+case by a wide margin). Not yet confirmed live.
+
 **Phase 70 M70.56 — found it: a warm-up that was not staying warm.** The
 cache-key diagnostic reported back with real keys attached — long,
 near-identical strings differing only in a couple of packed bits at the
