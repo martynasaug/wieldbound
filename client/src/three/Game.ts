@@ -58,6 +58,7 @@ import {
   talentPassives,
   applyAttackSpeed,
   applyDamagePercent,
+  isEnraged,
   weaponDef,
   xpBonusPercent,
   xpToNextLevel,
@@ -325,6 +326,9 @@ interface MonsterVisual {
   moving: boolean;
   /** Previous opening flag, so the log line fires on the edge not every tick. */
   recovering?: boolean;
+  /** Previous enrage flag, so the log line fires on the edge not every tick
+   *  the monster spends past its own threshold. */
+  enraged?: boolean;
 }
 
 // How far a snapshot-driven actor must travel between snapshots to count as
@@ -1572,6 +1576,18 @@ export class Game {
         this.combatLog.push(`The ${MONSTER_LABELS[vis.kind]} breaks and runs!`, "#ffa63d");
       }
       vis.fleeing = s.fleeing;
+
+      // The opposite of fleeing: derived from hp/maxHp exactly like the
+      // server derives it, rather than a wire flag — see `isEnraged`. Same
+      // once-on-the-edge treatment as every other real turn in the fight.
+      const enraged = isEnraged(s.hp, s.maxHp, MONSTER_STATS[vis.kind].enrageThreshold);
+      if (enraged && !vis.enraged) {
+        playSfx("alert", 0.9);
+        vis.actor.flash(0xd6247f, 260);
+        this.combatLog.push(`The ${MONSTER_LABELS[vis.kind]} enrages!`, "#ff4d6a");
+      }
+      vis.actor.setEnraged(enraged);
+      vis.enraged = enraged;
 
       const nowDead = s.status === "dead";
       if (nowDead && !vis.dead) {

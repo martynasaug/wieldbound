@@ -98,6 +98,9 @@ import {
   playerMinHit,
   regenAmountForVitality,
   resolveHit,
+  isEnraged,
+  enragedWindupMs,
+  enragedIntervalMs,
   isRetreating,
   castMsFor,
   CAST_CANCEL_PX,
@@ -3984,12 +3987,21 @@ setInterval(() => {
   for (const monster of monsters) {
     if (monster.status !== "alive") continue;
     const stats = MONSTER_STATS[monster.kind];
+    // See `isEnraged` — derived fresh each tick from the same hp/maxHp the
+    // client already receives, rather than tracked as state of its own, so
+    // there is nothing here that could fall out of sync with what a player
+    // sees on the health bar.
+    const enraged = isEnraged(monster.hp, monster.maxHp, stats.enrageThreshold);
+    const attackIntervalMs = enragedIntervalMs(stats.attackIntervalMs, enraged, stats.enrageIntervalScale);
 
     // Telegraphed attackers resolve on a separate clock: they announce the
     // swing, then land it wherever they are standing when it completes. The
     // whole point is that the gap between those two moments is long enough
     // to walk out of, so this must NOT re-check range at wind-up time.
-    const windupMs = stats.windupMs;
+    const windupMs =
+      stats.windupMs === undefined
+        ? undefined
+        : enragedWindupMs(stats.windupMs, enraged, stats.enrageWindupScale);
     // Hoisted into a local because TypeScript cannot keep the narrowing on
     // `stats.slamRadiusPx` alive inside the closure below.
     const slamRadius = stats.slamRadiusPx;
@@ -3999,14 +4011,14 @@ setInterval(() => {
         if (now < landsAt) continue;
         monsterWindupAt.delete(monster.id);
         monster.windingUp = false;
-        monsterAttackAt.set(monster.id, now + stats.attackIntervalMs);
+        monsterAttackAt.set(monster.id, now + attackIntervalMs);
         resolveSlam(monster, slamRadius, stats.slamDamageMultiplier ?? 1, now);
         continue;
       }
 
       const due = monsterAttackAt.get(monster.id);
       if (due === undefined) {
-        monsterAttackAt.set(monster.id, now + stats.attackIntervalMs);
+        monsterAttackAt.set(monster.id, now + attackIntervalMs);
         continue;
       }
       if (now < due) continue;
@@ -4024,7 +4036,7 @@ setInterval(() => {
 
     const dueAt = monsterAttackAt.get(monster.id);
     if (dueAt === undefined) {
-      monsterAttackAt.set(monster.id, now + stats.attackIntervalMs);
+      monsterAttackAt.set(monster.id, now + attackIntervalMs);
       continue;
     }
     if (now < dueAt) continue;
@@ -4042,7 +4054,7 @@ setInterval(() => {
     }
     if (!victimId) continue;
 
-    monsterAttackAt.set(monster.id, now + stats.attackIntervalMs);
+    monsterAttackAt.set(monster.id, now + attackIntervalMs);
     const attrs = attributes.get(victimId) ?? EMPTY_ATTRS;
     const equipped = equippedItems.get(victimId);
     const defPassives = passivesOf(victimId);

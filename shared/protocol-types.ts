@@ -1175,6 +1175,35 @@ export interface MonsterStats {
    *  guaranteed escape; a player who keeps pressing still catches it. */
   fleeSpeedMultiplier?: number;
   /**
+   * The opposite kind of low-health answer from `fleeThreshold`: below this
+   * fraction of max HP, a boss gets MORE dangerous rather than running.
+   *
+   * Reserved for the guaranteed-drop kinds — troll, golem, dragon — the ones
+   * a player commits real time to and that already telegraph a slam. Every
+   * one of them already asks "can you read the wind-up and reposition"; this
+   * asks the same question under worse terms, once the fight has gone on
+   * long enough that the answer stops being free. Not band 1-3: the whole
+   * point of an early kind is that the rhythm you learn on it stays true for
+   * the entire fight, and a shorter fuse for those would be a game teaching
+   * itself wrong to new players who cannot yet read a wind-up at all.
+   *
+   * Derivable from `hp`/`maxHp` alone, both already on every `MonsterState`
+   * snapshot — so unlike `windingUp` this needs no wire field of its own;
+   * server and client compute the same boolean from the same two numbers,
+   * the same reasoning that keeps class derived from equipped gear rather
+   * than cached.
+   */
+  enrageThreshold?: number;
+  /** Multiplies `windupMs` while enraged. Below 1: the slam is harder to
+   *  read, not just more frequent — the wind-up itself is what a player
+   *  answers with movement, so this is where "more dangerous" has to land
+   *  to mean anything mechanically rather than just cosmetically. */
+  enrageWindupScale?: number;
+  /** Multiplies `attackIntervalMs` while enraged. Below 1: it swings faster.
+   *  Applies to ordinary swings too, not only the slam cycle, for kinds
+   *  without a wind-up in the first place. */
+  enrageIntervalScale?: number;
+  /**
    * What hurts it, and what it shrugs off.
    *
    * At most one resistance and one vulnerability per kind, and both follow from
@@ -1343,6 +1372,14 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     //
     //     x3.4 16%    x4.2 21%    x5.0 27%    x5.8 32%    x6.6 38%
     slamDamageMultiplier: 5.8,
+    // A troll under a third of its own health stops lumbering and starts
+    // fighting for real — the wind-up drops from 900ms to 630, the slam
+    // cycle from 3000ms to 2400. Still readable (630ms is Dragon's OWN base
+    // wind-up, not some impossible flicker), which is the point: not a stat
+    // check, a harder version of the same read the whole fight already was.
+    enrageThreshold: 0.3,
+    enrageWindupScale: 0.7,
+    enrageIntervalScale: 0.8,
     // Hide like bark and it knits itself back together — unless you burn it,
     // which is the one thing everyone has always known about trolls.
     resist: { physical: 25, nature: 25, fire: -45 },
@@ -1608,6 +1645,15 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     //
     //     x3.4 19%    x4.2 25%    x5.0 31%    x5.8 37%    x6.6 43%
     slamDamageMultiplier: 5.0,
+    // The turret fires faster once cracked — 1100ms wind-up down to 825, the
+    // cycle from 3200ms to 2720. Gentler than the troll's cut on purpose: a
+    // golem is already the hardest single hit in the world below the dragon,
+    // and it still cannot chase you even enraged — speedPxPerSec never
+    // changes, so the escape this creature always offered (walk away, it
+    // cannot catch you) stays true in both halves of the fight.
+    enrageThreshold: 0.3,
+    enrageWindupScale: 0.75,
+    enrageIntervalScale: 0.85,
     // Stone: it does not care about blades and it does not care about heat.
     // Lightning is the seam, and it is the only creature in the world that
     // gives Chain Lightning a reason to exist.
@@ -1665,6 +1711,16 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     leapSpeedMultiplier: 2.8,
     leapDurationMs: 500,
     leapCooldownMs: 9000,
+    // THE APEX EARNS THE STEEPEST CUT IN THE TABLE, because it is the one
+    // fight in the game already built around "no single answer is enough" —
+    // the wind-up falls to 620ms (faster than anything else's BASE wind-up)
+    // and the cycle to 1950ms, on top of a creature that already leaps. A
+    // higher threshold than troll or golem's 0.3, too: the apex fight runs
+    // longer, and the harder half earning more of it is the apex staying the
+    // apex all the way down rather than only at the very end.
+    enrageThreshold: 0.35,
+    enrageWindupScale: 0.65,
+    enrageIntervalScale: 0.75,
     // The apex resists what it breathes and folds to the opposite of it, so the
     // hardest thing in the world still has an answer you can go and find.
     resist: { fire: 50, physical: 15, frost: -30 },
@@ -1672,6 +1728,29 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     inflicts: { status: "burning", chance: 0.4 },
   },
 };
+
+/**
+ * Whether a monster is past its own enrage threshold, purely from the two
+ * numbers every `MonsterState` already carries. Server and client both call
+ * this rather than either broadcasting or re-deriving the boolean its own
+ * way, so the wind-up a player sees and the wind-up the server times can
+ * never disagree about whether the fight is in its enraged half.
+ */
+export function isEnraged(hp: number, maxHp: number, threshold: number | undefined): boolean {
+  if (threshold === undefined || maxHp <= 0) return false;
+  return hp / maxHp <= threshold;
+}
+
+/** `stats.windupMs`, shortened once enraged. Falls back to the base value
+ *  for a kind with no wind-up at all, or no `enrageWindupScale` set. */
+export function enragedWindupMs(baseWindupMs: number, enraged: boolean, scale: number | undefined): number {
+  return enraged && scale !== undefined ? baseWindupMs * scale : baseWindupMs;
+}
+
+/** `stats.attackIntervalMs`, shortened once enraged — see `enragedWindupMs`. */
+export function enragedIntervalMs(baseIntervalMs: number, enraged: boolean, scale: number | undefined): number {
+  return enraged && scale !== undefined ? baseIntervalMs * scale : baseIntervalMs;
+}
 
 // --- Skills ---------------------------------------------------------------
 // Each class has its own tree of seven: five actives and two passives,

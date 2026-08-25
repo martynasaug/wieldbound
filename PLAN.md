@@ -11379,6 +11379,58 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.48 — the enrage phase: a boss's own opposite of a goblin
+breaking and running.** Asked to work on combat/monster AI directly and
+told to improvise, rather than told to fix something specific. Looked for
+the gap the existing system already argues for rather than inventing one:
+`fleeThreshold` already gives goblins a low-health answer ("this kind was
+never a solo threat, so it breaks once it is fighting alone and losing"),
+and the three guaranteed-drop bosses (troll, golem, dragon) already
+telegraph a slam and are the only kinds a player commits real time to —
+but nothing in the whole bestiary got MORE dangerous as a long fight wore
+on, which every one of those three fights already implicitly promises by
+being long enough to have a "wearing on" in the first place.
+`enrageThreshold`/`enrageWindupScale`/`enrageIntervalScale` added to
+`MonsterStats`, set only on the three bosses, each tuned to its own
+existing character rather than one number copied three times: the troll's
+wind-up drops to 630ms (matches DRAGON's own base wind-up — still
+comfortably readable, not a stat check dressed up as a mechanic); the
+golem keeps a gentler cut because it is already the hardest single hit
+below the dragon and — the deliberate exception — its `speedPxPerSec`
+never changes even enraged, so the escape that creature always offered
+(it cannot catch you) stays true in both halves of its fight; the dragon
+gets the steepest cut and a higher threshold (0.35 not 0.3) since "the
+apex fight runs longer and the harder half should be more of it" is the
+same idea M70's own framing of the apex already argues.
+DERIVED, NOT BROADCAST — the same principle that keeps `class` computed
+from equipped gear rather than cached. `isEnraged(hp, maxHp, threshold)`
+is a pure function of the two numbers already on every `MonsterState`
+snapshot, called identically by the server (to scale `windupMs` and
+`attackIntervalMs` in the counter-attack tick) and the client (to decide
+the visual and the one-time combat-log line), so there is no wire field
+that could fall out of sync with the health bar a player is looking at.
+Feedback follows the established "SAID ONCE, ON THE EDGE" idiom this file
+already uses for wind-ups, shouts, breaking-and-running and the
+overcommit window: a flash, a bark, one combat-log line the instant the
+threshold is crossed, then a steady pulsing magenta tint for the rest of
+the fight — `Actor.setEnraged`, slotted into the existing emissive
+priority list `setChilled`/`setBurning`/`setPoisoned`/`setRecovering`
+already maintain, magenta specifically so it is never mistaken for an
+existing burn (red) or bleed (darker red) already on the same body.
+New `tools/test/enrage.mjs`, pure-Node like `bodies.mjs`: exercises the
+threshold boundary in both directions, confirms scaling is a no-op until
+actually enraged, and sweeps the WHOLE bestiary for the design rule this
+entry states above — enraged reserved for guaranteed-drop bosses, every
+boss has one, nothing else does, every enraged wind-up stays above a
+400ms readability floor. Full suite green otherwise (the four pre-existing
+failures unchanged; `camps.mjs`'s known intermittent flake reproduced
+once, unrelated — nothing in this diff touches monster movement or
+separation, learned from M70.44's near-miss to leave that code alone this
+round). Not yet confirmed live: getting an actual troll under 30% health
+in a real fight and watching the wind-up visibly shorten was not done this
+round — the pure-function coverage plus a clean full suite is real
+confidence, not a substitute for watching it happen.
+
 **Phase 70 M70.47 — a stencil buffer nobody asked for, on every frame.**
 Third pass of the same lower-end-machine sweep, different shape of find:
 not a taste/cost tradeoff this time, a feature paid for and never used.

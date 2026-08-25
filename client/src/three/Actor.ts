@@ -643,6 +643,7 @@ export class Actor {
   private poisoned = false;
   private bleeding = false;
   private recovering = false;
+  private enraged = false;
   private emissiveApplied = -1;
   /** Every material this actor owns and must free. All of them are owned: see
    *  the clone in `buildBody`. */
@@ -1569,6 +1570,22 @@ export class Actor {
     this.recovering = recovering;
   }
 
+  /**
+   * A boss past its own enrage threshold — see `MonsterStats.enrageThreshold`.
+   *
+   * Steady rather than pulsing at first glance would say "condition, not
+   * event," the same rule `setChilled` follows — except this genuinely IS an
+   * event that keeps mattering for the rest of the fight, not a passive
+   * debuff, so it gets `recovering`'s pulse instead: a heartbeat that never
+   * calms down is exactly what "this thing just got more dangerous and stays
+   * that way" should look like. Its own colour — magenta rather than any
+   * existing red — so it is never mistaken for a burn or a bleed already on
+   * the same body.
+   */
+  setEnraged(enraged: boolean): void {
+    this.enraged = enraged;
+  }
+
   private applyEmissive(): void {
     const flashing = performance.now() < this.flashUntil;
     // Ordered by urgency: a hit landing right now beats the window it landed
@@ -1594,9 +1611,16 @@ export class Actor {
     // A darker, slower-feeling red than burn's — physical rather than fire,
     // and a cut is not a flame.
     const bleed = this.bleeding ? 0x000000 | (Math.round(0x70 + pulse * 0x40) << 16) : -1;
+    // Red and blue both, so it reads as magenta rather than as a stronger
+    // burn — the whole point is that this is a different kind of danger, not
+    // more of the same one.
+    const enrage = this.enraged
+      ? (Math.round(0x90 + pulse * 0x6f) << 16) | Math.round(0x20 + pulse * 0x30)
+      : -1;
     const want =
       flashing ? this.flashColor
       : opening !== -1 ? opening
+      : enrage !== -1 ? enrage
       : burn !== -1 ? burn
       : poison !== -1 ? poison
       : bleed !== -1 ? bleed
