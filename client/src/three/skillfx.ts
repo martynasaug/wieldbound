@@ -166,6 +166,9 @@ interface Live {
    * both came out white instead of blue and gold.
    */
   peakOpacity: number;
+  /** Which of `SkillFx`'s pools `material` was borrowed from, so `update()`
+   *  can return it to the right one instead of disposing it. */
+  pool: "additive" | "normal" | "mark";
 }
 
 interface LiveLight {
@@ -263,39 +266,44 @@ export class SkillFx {
   }
 
   /**
-   * Kept alive for the life of the object, not disposed of once `prewarm`
-   * returns — every one of `nova`/`ground`/`cone`/`mark`/`strike`/`pillar`/
-   * `rain`'s OWN materials gets `.dispose()`d the moment its effect ends
-   * (see `update()`), and three.js's own program cache DELETES and
-   * DESTROYS a compiled program the instant the last material using its
-   * exact cache key is disposed (`WebGLPrograms.releaseProgram`, `--
-   * usedTimes === 0`). Warming once and letting the warm material be
-   * garbage-collected would not survive a real fight: the moment between
-   * two casts where nothing of that shape happens to be alive, the
-   * program is deleted, and the NEXT cast recompiles it cold anyway — a
-   * program is warm only as long as SOMETHING keeps it referenced. This
-   * array is that something.
+   * Three fixed pools, never disposed — the same fix `effects.ts` and
+   * `attacks.ts` were given, after their own "keep one extra warm
+   * material referenced" attempt (this file's own former `warmed` array)
+   * was confirmed live, via `[dispose-trace]` stack traces landing here —
+   * `skillfx.ts:480` — to not actually stop three.js deleting the
+   * compiled program the moment the last REAL material was disposed. The
+   * only fix that cannot fail that way is to never create or destroy the
+   * material at all.
+   *
+   * Three pools rather than one, matching the three program variants
+   * `material()` can produce: `additive` (no map, additive blending —
+   * `nova`/`cone`/`strike`/`pillar`/`rain`, the overwhelming majority),
+   * `normal` (no map, normal blending — `ground` only), `mark` (textured,
+   * additive — `mark` only). Geometry is independent of which pool a
+   * material comes from — `additive` materials get handed to whichever of
+   * `ring`/`wedge`/`streak` the calling shape actually uses.
+   *
+   * `additive` is sized well past the others: `rain` alone can have up to
+   * sixteen streaks live from one cast, and several players can be
+   * casting at once. A missed effect on overflow is silently dropped —
+   * see each acquire site — the same call `lightPool.ts` makes for
+   * exactly this reason.
    */
-  private readonly warmed: THREE.Mesh[] = [];
+  private static readonly ADDITIVE_POOL_SIZE = 48;
+  private static readonly NORMAL_POOL_SIZE = 16;
+  private static readonly MARK_POOL_SIZE = 16;
+  private readonly additivePool: THREE.MeshBasicMaterial[] = [];
+  private readonly normalPool: THREE.MeshBasicMaterial[] = [];
+  private readonly markPool: THREE.MeshBasicMaterial[] = [];
+  private readonly freeAdditive: THREE.MeshBasicMaterial[] = [];
+  private readonly freeNormal: THREE.MeshBasicMaterial[] = [];
+  private readonly freeMark: THREE.MeshBasicMaterial[] = [];
 
   /**
-   * Uploads every shape's geometry and compiles every material variant this
-   * class ever builds, before any of the twenty-seven skills gets to be the
-   * first one cast in a session.
-   *
-   * Every call above builds a fresh `MeshBasicMaterial` and hands it one of
-   * four SHARED geometries (`ring`/`disc`/`streak`/`wedge`) — the
-   * geometries only need their buffers uploaded once each, ever, but
-   * nothing before this ever did that, and no model-warming path
-   * (`World.warmUp`/`warmBuffers`) ever reached this file, because none of
-   * this is a loaded model. Three axes actually vary the compiled program
-   * rather than just a uniform: `map` presence (only `mark` passes one),
-   * additive vs. normal blending (only `ground` uses normal) — kept in
-   * case it turns out to matter to the cache key, since getting this
-   * wrong silently is worse than one redundant mesh — and the geometry
-   * itself, which needs its OWN buffer regardless of which program draws
-   * it. Eight throwaway-but-kept meshes, not the twenty-seven this table
-   * has rows for.
+   * Fills all three pools and uploads/compiles what they hold, before any
+   * of the twenty-seven skills gets to be the first one cast in a
+   * session. No model-warming path (`World.warmUp`/`warmBuffers`) ever
+   * reached this file on its own, because none of this is a loaded model.
    *
    * Called once, off-screen, from wherever the background gear-warming
    * queue already runs (see `warmer.ts`) — the same "nobody is looking"
@@ -303,23 +311,44 @@ export class SkillFx {
    */
   prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
     const group = new THREE.Group();
-    for (const geo of [this.ring, this.disc, this.streak, this.wedge]) {
-      for (const additive of [true, false]) {
-        const mesh = new THREE.Mesh(geo, this.material(0xffffff, 1, additive));
-        this.warmed.push(mesh);
-        group.add(mesh);
-      }
+    const geos = [this.ring, this.disc, this.streak, this.wedge];
+    for (let i = 0; i < SkillFx.ADDITIVE_POOL_SIZE; i++) {
+      const m = this.material(0xffffff, 1, true);
+      this.additivePool.push(m);
+      this.freeAdditive.push(m);
+      group.add(new THREE.Mesh(geos[i % geos.length], m));
     }
-    const marked = new THREE.Mesh(this.ring, this.material(0xffffff, 1, true, particleTexture("ring")));
-    this.warmed.push(marked);
-    group.add(marked);
-    group.visible = true;
+    for (let i = 0; i < SkillFx.NORMAL_POOL_SIZE; i++) {
+      const m = this.material(0xffffff, 1, false);
+      this.normalPool.push(m);
+      this.freeNormal.push(m);
+      group.add(new THREE.Mesh(this.disc, m));
+    }
+    for (let i = 0; i < SkillFx.MARK_POOL_SIZE; i++) {
+      const m = this.material(0xffffff, 1, true, particleTexture("ring"));
+      this.markPool.push(m);
+      this.freeMark.push(m);
+      group.add(new THREE.Mesh(this.ring, m));
+    }
     void world.warmUp(group).then(() => world.warmBuffers(group, "skillfx"));
+  }
+
+  /** Borrows an additive material for the caller's own shape/geometry, or
+   *  `null` on exhaustion — see `additivePool`'s own comment. Resets colour
+   *  and opacity, since a pooled material carries whatever its last use
+   *  faded it to. */
+  private acquireAdditive(color: number): THREE.MeshBasicMaterial | null {
+    const mat = this.freeAdditive.pop();
+    if (!mat) return null;
+    mat.color.set(color);
+    mat.opacity = 1;
+    return mat;
   }
 
   /** A ring racing outward along the ground. */
   nova(x: number, y: number, z: number, radius: number, color: number, durationMs = 520): void {
-    const mat = this.material(color, 0.95);
+    const mat = this.acquireAdditive(color);
+    if (!mat) return;
     const mesh = new THREE.Mesh(this.ring, mat);
     mesh.rotation.x = -Math.PI / 2;
     // Just clear of the ground: at exactly y=0 it z-fights with the terrain.
@@ -328,13 +357,16 @@ export class SkillFx {
     this.scene.add(mesh);
     this.live.push({
       object: mesh, material: mat, startedAt: performance.now(),
-      durationMs, fromRadius: radius * 0.15, toRadius: radius, spin: 0, peakOpacity: 0.7,
+      durationMs, fromRadius: radius * 0.15, toRadius: radius, spin: 0, peakOpacity: 0.7, pool: "additive",
     });
   }
 
   /** A disc that lands and lingers, for ground-targeted areas. */
   ground(x: number, y: number, z: number, radius: number, color: number, durationMs = 900): void {
-    const mat = this.material(color, 0.4, false);
+    const mat = this.freeNormal.pop();
+    if (!mat) return;
+    mat.color.set(color);
+    mat.opacity = 1;
     const mesh = new THREE.Mesh(this.disc, mat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(x, y + 0.04, z);
@@ -342,7 +374,7 @@ export class SkillFx {
     this.scene.add(mesh);
     this.live.push({
       object: mesh, material: mat, startedAt: performance.now(),
-      durationMs, fromRadius: radius * 0.7, toRadius: radius, spin: 0.4, peakOpacity: 0.4,
+      durationMs, fromRadius: radius * 0.7, toRadius: radius, spin: 0.4, peakOpacity: 0.4, pool: "normal",
     });
   }
 
@@ -352,7 +384,8 @@ export class SkillFx {
     facing: number, reach: number, color: number,
     durationMs = 340,
   ): void {
-    const mat = this.material(color, 0.7);
+    const mat = this.acquireAdditive(color);
+    if (!mat) return;
     const mesh = new THREE.Mesh(this.wedge, mat);
     mesh.position.set(x, y + 0.07, z);
     mesh.rotation.y = facing;
@@ -360,7 +393,7 @@ export class SkillFx {
     this.scene.add(mesh);
     this.live.push({
       object: mesh, material: mat, startedAt: performance.now(),
-      durationMs, fromRadius: reach * 0.35, toRadius: reach, spin: 0, peakOpacity: 0.42,
+      durationMs, fromRadius: reach * 0.35, toRadius: reach, spin: 0, peakOpacity: 0.42, pool: "additive",
     });
   }
 
@@ -381,7 +414,10 @@ export class SkillFx {
     // only `nova` and the rest keep the flat fill, since a rune circle on a
     // physical shockwave like Earthshatter would be describing a school the
     // skill does not have.
-    const mat = this.material(color, 0.9, true, particleTexture("ring"));
+    const mat = this.freeMark.pop();
+    if (!mat) return;
+    mat.color.set(color);
+    mat.opacity = 1;
     const mesh = new THREE.Mesh(this.ring, mat);
     mesh.position.set(x, y, z);
     mesh.renderOrder = 3;
@@ -389,7 +425,7 @@ export class SkillFx {
     this.live.push({
       object: mesh, material: mat, startedAt: performance.now(),
       // Inward, and fast. A condition lands; it does not bloom.
-      durationMs, fromRadius: 2.0, toRadius: 0.75, spin: -0.9, peakOpacity: 0.85,
+      durationMs, fromRadius: 2.0, toRadius: 0.75, spin: -0.9, peakOpacity: 0.85, pool: "mark",
     });
   }
 
@@ -401,7 +437,8 @@ export class SkillFx {
       [0.25, 1.5, 0.95, 0.9],
       [0.1, 0.9, 0.55, 0.7],
     ] as const) {
-      const mat = this.material(color, peak);
+      const mat = this.acquireAdditive(color);
+      if (!mat) continue;
       const mesh = new THREE.Mesh(this.ring, mat);
       mesh.position.set(x, y, z);
       mesh.scale.setScalar(width);
@@ -409,14 +446,15 @@ export class SkillFx {
       this.scene.add(mesh);
       this.live.push({
         object: mesh, material: mat, startedAt: performance.now(),
-        durationMs, fromRadius: from, toRadius: to, spin: 2.4, peakOpacity: peak,
+        durationMs, fromRadius: from, toRadius: to, spin: 2.4, peakOpacity: peak, pool: "additive",
       });
     }
   }
 
   /** Light stabbing up from someone's feet. */
   pillar(x: number, y: number, z: number, color: number, durationMs = 620): void {
-    const mat = this.material(color, 0.8);
+    const mat = this.acquireAdditive(color);
+    if (!mat) return;
     const mesh = new THREE.Mesh(this.ring, mat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(x, y + 0.05, z);
@@ -424,7 +462,7 @@ export class SkillFx {
     this.scene.add(mesh);
     this.live.push({
       object: mesh, material: mat, startedAt: performance.now(),
-      durationMs, fromRadius: 1.4, toRadius: 0.35, spin: 1.6, peakOpacity: 0.7,
+      durationMs, fromRadius: 1.4, toRadius: 0.35, spin: 1.6, peakOpacity: 0.7, pool: "additive",
     });
   }
 
@@ -432,9 +470,10 @@ export class SkillFx {
   rain(x: number, y: number, z: number, radius: number, color: number, count = 16): void {
     const now = performance.now();
     for (let i = 0; i < count; i++) {
+      const mat = this.acquireAdditive(color);
+      if (!mat) continue;
       const a = (i / count) * Math.PI * 2 + Math.random();
       const r = Math.sqrt(Math.random()) * radius;
-      const mat = this.material(color, 0.85);
       const mesh = new THREE.Mesh(this.streak, mat);
       mesh.position.set(x + Math.cos(a) * r, y + 7, z + Math.sin(a) * r);
       mesh.renderOrder = 3;
@@ -443,7 +482,7 @@ export class SkillFx {
         object: mesh, material: mat,
         // Staggered, so it falls as a volley rather than as one curtain.
         startedAt: now + i * 26,
-        durationMs: 420, fromRadius: 1, toRadius: 1, spin: 0, peakOpacity: 0.85,
+        durationMs: 420, fromRadius: 1, toRadius: 1, spin: 0, peakOpacity: 0.85, pool: "additive",
         fallFrom: y + 7, fallTo: y + 0.2,
       });
     }
@@ -477,7 +516,7 @@ export class SkillFx {
       const k = age / fx.durationMs;
       if (k >= 1) {
         this.scene.remove(fx.object);
-        fx.material.dispose();
+        this.releaseMaterial(fx);
         this.live.splice(i, 1);
         continue;
       }
@@ -520,16 +559,34 @@ export class SkillFx {
     }
   }
 
+  /** Returns a finished effect's material to whichever pool it was
+   *  borrowed from — dispatched by `Live.pool` since a bare
+   *  `THREE.Material` reference carries no record of that on its own. */
+  private releaseMaterial(fx: Live): void {
+    if (fx.pool === "additive") this.freeAdditive.push(fx.material as THREE.MeshBasicMaterial);
+    else if (fx.pool === "normal") this.freeNormal.push(fx.material as THREE.MeshBasicMaterial);
+    else this.freeMark.push(fx.material as THREE.MeshBasicMaterial);
+  }
+
   dispose(): void {
     for (const fx of this.live) {
       this.scene.remove(fx.object);
-      fx.material.dispose();
     }
     for (const l of this.lights) {
       this.lightPool.release(l.light);
     }
     this.live.length = 0;
     this.lights.length = 0;
+    // The whole pools, not just what was live — the free lists hold the
+    // rest, and skipping them here would leak exactly what pooling was
+    // supposed to stop leaking.
+    for (const pool of [this.additivePool, this.normalPool, this.markPool]) {
+      for (const m of pool) m.dispose();
+      pool.length = 0;
+    }
+    this.freeAdditive.length = 0;
+    this.freeNormal.length = 0;
+    this.freeMark.length = 0;
     this.ring.dispose();
     this.disc.dispose();
     this.streak.dispose();

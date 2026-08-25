@@ -11379,6 +11379,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.63 — the third and last file, confirmed by the same trace
+that closed the first two.** Confirmed live: after M70.62, both
+`effects.ts` and `attacks.ts` were gone from the dispose trace entirely —
+every remaining line was `SkillFx.update` (`skillfx.ts:480`), the one
+file still running M70.54/56's original "keep one warm decoy referenced"
+approach, now proven insufficient twice over on its siblings. Same
+real-pool treatment: three fixed pools (`additive` 48 slots — the
+overwhelming majority of calls: `nova`/`cone`/`strike`/`pillar`/`rain`;
+`normal` 16 — `ground` only, the one shape using non-additive blending;
+`mark` 16 — the one shape passing a texture), built once in `prewarm()`
+and never disposed. `additive` sized well past the others because `rain`
+alone can have sixteen streaks live from a single cast.
+Simpler to pool correctly than `attacks.ts` was: skillfx's spin animation
+lives on the MESH's own `rotation.z` (a fresh object every cast, discarded
+without needing a reset), not on the material the way a bolt's spinning
+sprite does — only `color` and `opacity` needed resetting on every
+acquire, both of which every shape method now does explicitly. A `pool`
+tag added to the `Live` interface so `update()`'s cleanup knows which of
+the three free-lists to return a finished effect's material to, since a
+bare material reference carries no record of that on its own.
+This closes the file list M70.60's grep opened: every material-
+constructing file in the client has now either never been a dispose-churn
+candidate (confirmed by reading its own code) or been converted to a real
+pool. Not yet confirmed live — but this is the third fix in the row that
+started with a stack trace instead of a guess, and the first two both
+held.
+
 **Phase 70 M70.62 — the weapon-attack half gets the same pool.** Confirmed
 live: after M70.61, `effects.ts` never appeared in a dispose trace again —
 every trace left was `Projectiles.update` (`attacks.ts:543`), exactly the
