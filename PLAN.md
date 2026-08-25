@@ -11379,6 +11379,34 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.50 — the wolf's own line, finally paid off.** Its comment
+has said "a death by a thousand cuts pack fight" since it was written, and
+it was the only band-3-or-higher kind in the whole table with no
+`inflicts` of its own — every other kind at its tier or above already has
+one. `bleeding` was sitting unused for exactly this: `on: "any"`, and its
+own blurb is "a cut that will not close on its own," which is the DOT
+already worded for an animal's bite rather than an element. Added at
+0.2 chance rather than the 0.25-0.4 range every other inflictor uses,
+because the comparison that matters is proc chance PER SECOND, not per
+swing — wolf's 1400ms cadence is the fastest in the game, so the same
+0.3 troll/cactoro use would refresh bleeding roughly twice as often per
+second on something already read as "many small hits."
+No new code at all — `inflicts` is already fully generic
+(`server/src/index.ts:4098`), and `bleeding` was already wired end-to-end
+on the client (local player, remote players, AND monsters, since
+something already inflicts it the other direction) from `Actor.setBleeding`
+down to the status bar. This is purely a data-table addition activating an
+already-built pipeline, which is why it needed no test of its own beyond
+the existing suite.
+Full suite green; `fighting.mjs` flaked across three different failure
+signatures in a row on this run (0 damage vs. a goblin, then vs. an
+unidentified kind, then 3-vs-11 while retreating against a slime) before
+passing clean on a fourth — worth noting because none of the three
+involved a wolf or bleeding at all, which is good evidence this test's
+flakiness is broader than the "picked a keep-away monster" case the
+decisions log currently documents, not something worth chasing in this
+entry.
+
 **Phase 70 M70.49 — a mark on the bar for where M70.48 kicks in.** The
 enrage phase shipped with a reveal (flash, bark, log line, tint) for the
 MOMENT it happens, but nothing telling a player it was coming — the same

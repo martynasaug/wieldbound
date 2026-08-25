@@ -1330,6 +1330,20 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     leapSpeedMultiplier: 3.4,
     leapDurationMs: 420,
     leapCooldownMs: 7000,
+    // "A DEATH BY A THOUSAND CUTS" MADE LITERAL, and the last piece of a kind
+    // whose own comment already promised it — every other band-3-and-up kind
+    // has an `inflicts` of its own, and this was the one left silent. Bites
+    // rather than burns or poisons, which is the one DOT already worded for
+    // an animal rather than an element (`bleeding`'s own blurb: "a cut that
+    // will not close").
+    //
+    // 0.2 rather than the 0.25-0.4 every other inflictor uses, because this
+    // is the fastest attack cadence in the game (1400ms) and the comparison
+    // that matters is proc chance PER SECOND, not per swing: at 0.3 (cactoro
+    // and troll's own number) a wolf would refresh bleeding roughly twice as
+    // often per second as either of them, for a monster already read as
+    // "many small hits" rather than "one big one."
+    inflicts: { status: "bleeding", chance: 0.2 },
   },
   troll: {
     band: 4,
