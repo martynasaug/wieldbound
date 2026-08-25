@@ -11379,6 +11379,44 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.66 — F4 made no difference, which is what pointed off the
+GPU entirely.** Reported still choppy after every fix through M70.65, on
+strong hardware, with a clean F3 reading — the first real signal that
+whatever remained was outside anything the in-game profiler, or any of
+this thread's GPU-side fixes, could see. Chrome's own Performance panel
+(a real recording, not a guess) said two things worth trusting:
+`WebGLRenderer.render` at 52% self-time (expected, already-optimised) and
+INP at 390ms (a real, bad, measured Core Web Vital — should be under
+200). Then the test that actually redirected this: switching to
+Performance graphics quality (F4) — which controls literally every GPU
+knob this whole thread has touched, pixel ratio through shadows through
+MSAA — changed nothing. That rules out the GPU side entirely and points
+at CPU-bound JavaScript running every frame regardless of quality.
+The recording's own Bottom-Up view named it: `riverAt` (5.7% of the WHOLE
+recording, the single largest non-render cost), alongside
+`distanceToRoad`/`forestStrengthAt`/`baseHeight` — none of them GPU work,
+all of them terrain-sampling functions. Traced to `Indicators`'
+`GroundRing.set()`: every target/lock/hover/reach/danger ring calls
+`surfaceHeight()` for 128 vertices on every frame its position changes at
+all — which during actual movement is every single frame, since the
+existing exact-equality guard ("standing still costs nothing") almost
+never fires while anything is moving. `surfaceHeight` chases 3-4 calls
+into `terrainHeight`, which calls `carveRiver` (a `riverAt` bucket
+search) and walks every `FLAT_SPOTS` entry — all per vertex, all
+regardless of graphics quality, because none of it draws anything.
+Throttled to 30Hz (`SAMPLE_INTERVAL_MS = 33`): a ring's own visual job
+tolerates real staleness — it is a large, slow-moving overlay, not a
+precision gameplay element, the same reasoning that already lets remote
+actors interpolate through a coarser update than 60Hz without complaint.
+Halves this specific cost outright, invisibly. Confirmed the one-time
+version of these same functions (baked into the ground mesh's vertex
+attributes at world-build time, `World.ts:377-385`) is NOT the same bug —
+computed once, not per frame, correctly left alone.
+Not yet confirmed live — this is a real, evidence-backed fix for a real,
+measured cost, not a guess, but "measured a real cost and cut it" is not
+the same claim as "this is what choppy felt like." The next reading is
+what answers that.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two

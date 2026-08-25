@@ -57,6 +57,30 @@ const SEGMENTS = 64;
  * `innerFrac` of 0 makes it a disc, which is how the slam's fill and its edge
  * are one class rather than two.
  */
+/**
+ * Ground rings follow something that is usually MOVING — the reach ring
+ * follows the player, the target/danger rings follow whatever they are
+ * marking — so the exact-position guard in `set()` almost never fires
+ * during actual play: real movement changes x/z by more than a float's
+ * worth of nothing every single frame. Recorded live, in Chrome's own
+ * Performance panel, with graphics quality (F4) already at Performance and
+ * making no difference — the bottleneck this throttle exists for is CPU
+ * terrain sampling, not GPU fill-rate: `surfaceHeight` chases three or four
+ * calls into `terrainHeight`, which calls `carveRiver` (`riverAt`, a
+ * bucket-search) and walks every `FLAT_SPOTS` entry, ALL per vertex, 128
+ * vertices per ring, for however many rings are active — every frame,
+ * regardless of Performance mode, because none of that is drawing.
+ * `riverAt` alone showed as 5.7% of a whole 21-second recording's total
+ * time — the single largest non-render cost in it.
+ *
+ * A ring's own visual job tolerates real staleness: it is a large, softly
+ * moving overlay, not a precision gameplay element, and remote ACTORS
+ * already interpolate through a coarser update than this without
+ * complaint. Sampling terrain at 30Hz instead of every frame halves this
+ * cost outright and is not something a player can see.
+ */
+const SAMPLE_INTERVAL_MS = 33;
+
 class GroundRing {
   readonly mesh: THREE.Mesh;
   private readonly position: THREE.BufferAttribute;
@@ -64,6 +88,8 @@ class GroundRing {
   private atX = NaN;
   private atZ = NaN;
   private atRadius = NaN;
+  /** See `SAMPLE_INTERVAL_MS`'s own comment. */
+  private nextSampleAt = 0;
 
   constructor(
     private readonly innerFrac: number,
@@ -120,6 +146,14 @@ class GroundRing {
     // hundred and twenty-eight vertices a frame for a ring that has not changed
     // is the same waste the soundscape's ramps were guarded against.
     if (x === this.atX && z === this.atZ && radius === this.atRadius) return;
+    // The common case the moment anything IS moving — see `SAMPLE_INTERVAL_MS`.
+    // `atX`/`atZ`/`atRadius` are deliberately left stale here rather than
+    // updated: the next call that clears the throttle picks up whatever the
+    // caller is asking for AT THAT POINT, not a value frozen from the frame
+    // that got skipped.
+    const now = performance.now();
+    if (now < this.nextSampleAt) return;
+    this.nextSampleAt = now + SAMPLE_INTERVAL_MS;
     this.atX = x;
     this.atZ = z;
     this.atRadius = radius;
