@@ -11379,6 +11379,38 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.52 — the mystery stall gets a name, and the name it gets is
+"not this."** M70.41 left one stall unexplained: `[hitch] Nms BETWEEN
+frames — nothing of ours ran in it: a garbage collection, or a file being
+parsed inside a loader callback,` with the loader half of that sentence
+unfalsifiable — `.load()` fetches and parses in one call with no seam to
+time either half separately. Reported still happening live, on the strong
+60Hz machine, at 655ms.
+`loadModel` now fetches by hand and calls the loader's own `.parse()`
+directly — the exact same call `.load()` makes internally, timed as
+`loaderParse:<name>`, changing nothing about what gets built. High risk
+for a small instrumentation change: this is the load path for every
+character, monster, tree and gear model in the game, and none of
+`tools/test/*.mjs` touches a browser at all — a fact worth writing down
+here, because it means this diff had genuinely zero automated coverage
+and needed a live check before it could ship. Confirmed live: game loads,
+renders, no new console errors.
+AND THE ANSWER: the hitch line still reads "nothing of ours ran in it,"
+unnamed, on the very next reading after this shipped. If the parse were
+the cause, `loaderParse:<name>` would now be the named worst section — it
+is not, so the loader half of M70.41's sentence is eliminated. What is
+left is genuine browser GC, a stop-the-world pause outside anything
+JavaScript can time or directly control. That is a real, negative
+conclusion instrumentation earns, not a guess — and it changes what
+"chasing this further" would even mean: not finding one function to fix,
+but reducing allocation rate broadly enough that GC pauses shorten or
+space out, a much bigger and lower-confidence undertaking. Left there:
+already down from 5000ms+ (M70.41's own reading) to the 650ms range
+across several rounds of unrelated fixes, and now understood rather than
+merely smaller. The instrumentation itself stays regardless of this
+particular stall — any future model-load-caused hitch will read
+`loaderParse:<name>` instead of anonymous from here on.
+
 **Phase 70 M70.51 — an undefined map, passed on purpose by omission.**
 Reported live, on the strong 60Hz machine this time — `THREE.Material:
 parameter 'map' has value of undefined`, repeated, from `skillfx.ts:244`.

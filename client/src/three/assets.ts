@@ -258,40 +258,71 @@ export function loadModel(name: string): Promise<THREE.Group> {
         endLoad();
         reject(new Error(`failed to load ${name}: ${String(err)}`));
       };
-      if (isGltf) {
-        gltfLoader.load(
-          url,
-          (gltf) => {
-            const group = gltf.scene as THREE.Group;
-            // three keeps animations on the parsed result, not the scene graph,
-            // so they have to be carried across or instantiate() finds none.
-            group.animations = gltf.animations;
-            profiler.begin("parse:" + name);
-            dressGltf(group);
-            profiler.end("parse:" + name);
-            endLoad();
-            resolve(group);
-          },
-          undefined,
-          fail,
-        );
-      } else {
-        fbxLoader.load(
-          url,
-          (group) => {
+      // Fetched by hand rather than through `loader.load(url, ...)`, which
+      // does exactly this same fetch-then-parse internally but never lets
+      // either half be timed separately — every "BETWEEN frames" stall this
+      // project has chased back to a model load (M70.39-41) had to stop at
+      // "the loader's own parse is not [timed], and cannot be from outside
+      // it," because `.load()` gives no seam to time across. `.parse()` is
+      // the same call `.load()` makes internally, so this changes nothing
+      // about what gets built — only what can now be measured about it.
+      const path = THREE.LoaderUtils.extractUrlBase(url);
+      fetch(url)
+        .then((res) => {
+          if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+          return res.arrayBuffer();
+        })
+        .then((buffer) => {
+          if (isGltf) {
+            profiler.begin("loaderParse:" + name);
+            try {
+              gltfLoader.parse(
+                buffer,
+                path,
+                (gltf) => {
+                  profiler.end("loaderParse:" + name);
+                  const group = gltf.scene as THREE.Group;
+                  // three keeps animations on the parsed result, not the
+                  // scene graph, so they have to be carried across or
+                  // instantiate() finds none.
+                  group.animations = gltf.animations;
+                  profiler.begin("dress:" + name);
+                  dressGltf(group);
+                  profiler.end("dress:" + name);
+                  endLoad();
+                  resolve(group);
+                },
+                (err) => {
+                  profiler.end("loaderParse:" + name);
+                  fail(err);
+                },
+              );
+            } catch (err) {
+              // parse() can also throw synchronously rather than reaching
+              // its own error callback — the section must close either way
+              // or it is still open when the next frame starts reading it.
+              profiler.end("loaderParse:" + name);
+              fail(err);
+            }
+          } else {
+            profiler.begin("loaderParse:" + name);
+            let group: THREE.Group;
+            try {
+              group = fbxLoader.parse(buffer, path);
+            } finally {
+              profiler.end("loaderParse:" + name);
+            }
             // Dressed before the load is counted off, because dressing is what
             // discovers the textures — counting first would let the total
             // momentarily equal the done count and settle the loader early.
-            profiler.begin("parse:" + name);
+            profiler.begin("dress:" + name);
             dressFbx(group);
-            profiler.end("parse:" + name);
+            profiler.end("dress:" + name);
             endLoad();
             resolve(group);
-          },
-          undefined,
-          fail,
-        );
-      }
+          }
+        })
+        .catch(fail);
     });
     modelCache.set(name, p);
   }
