@@ -636,6 +636,12 @@ export class Game {
   >();
 
   private localActor: Actor | null = null;
+  /** Next time `updateMinimap` is allowed to rebuild its snapshot. See its
+   *  own call site — the canvas redraw was already throttled (M70.71), but
+   *  the five fresh arrays built to feed it were not, and building them 60 to
+   *  144 times a second for a widget that only actually redraws 20 of those
+   *  times a second was allocation work spent for nothing. */
+  private nextMinimapAt = 0;
   private readonly keys = new Set<string>();
   private readonly clock = new THREE.Clock();
   private readonly raycaster = new THREE.Raycaster();
@@ -3964,7 +3970,11 @@ export class Game {
     );
     this.updateForges();
     this.profiler.begin("minimap");
-    this.updateMinimap();
+    const nowMs = performance.now();
+    if (nowMs >= this.nextMinimapAt) {
+      this.nextMinimapAt = nowMs + 50;
+      this.updateMinimap();
+    }
     this.profiler.end("minimap");
     // Derived before anything draws, so the ring, the frame and the nameplate
     // all agree within a single frame.

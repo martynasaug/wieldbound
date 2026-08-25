@@ -11687,6 +11687,61 @@ counterpart to test against). Not yet confirmed live, but this is the
 first fix all session backed by an actual observed correlation instead
 of a guess at what might be expensive.
 
+**Phase 70 M70.74 — a full pass over every per-frame subsystem in
+`loopBody`, on request ("continue going through everything").** Read
+through the remaining unexamined callers one at a time rather than
+guessing at a single next candidate:
+- `drawPlates` — delegates to `hud.plate()`, which has no
+  `getBoundingClientRect()` or other forced-layout read (unlike the
+  `syncLayout`/`setClock` bugs M70.67 already fixed); F3's own "plates"
+  reading was already sub-millisecond. Clean.
+- `pickMonsterAt` — raycasts under the cursor every frame the pointer is
+  over the canvas, but already uses a sphere test against a
+  distance-filtered candidate list rather than a triangle-exact skinned
+  raycast, with a comment citing its own prior fix (45ms spikes from
+  walking a SkinnedMesh's posed vertices every frame). Already fixed,
+  predates this session.
+- `fadeOccluders` — a single bounded raycast against nearby occluder
+  candidates, using persistent scratch vectors rather than allocating.
+  Clean.
+- `updatePresence`/`updateContacts` — both clear and reuse a persistent
+  array (`this.marks.length = 0`, `this.contactList.length = 0`) rather
+  than allocating fresh ones, and both distance-cull before pushing.
+  Already following the exact scratch-array pattern `fadeOccluders`'
+  own comment argues for. Clean.
+- `river.update` — one uniform write. `tickGearAura` — already
+  staggered per actor with its own cooldown map; the small per-frame
+  array allocation for a player with no glowing gear is real but bounded
+  by player count, which every reading this session has shown to be
+  tiny (0-4). Left alone.
+- WebGL context-loss handling (`World.ts`, `webglcontextlost`/
+  `webglcontextrestored`) — already correctly calls `preventDefault()`
+  and reuploads bone textures/texture flags on restore, a real fix from
+  an earlier phase (M70.22/M70.23) for a documented "character slides
+  with a frozen pose" bug. Checked because context loss would explain
+  hardware-independent randomness better than almost anything else — but
+  none of tonight's console dumps ever showed its
+  `[world] WebGL context lost` line, so there is no evidence it is
+  actively firing. Worth remembering, not chasing further without that
+  evidence.
+- **`updateMinimap` — a real, previously-missed gap.** M70.71 throttled
+  the Canvas2D redraw inside `Minimap.setSnapshot`, but the CALLER —
+  `updateMinimap()` in `Game.ts`, which builds five fresh arrays (drops,
+  monsters, nodes, stations, players) from scratch every call — was still
+  invoked unconditionally every frame regardless. The draw got cheaper;
+  the allocation feeding it did not. Every frame the minimap doesn't
+  actually redraw was still doing full allocation work for nothing —
+  exactly the "collector pressure that shows up as a pause BETWEEN
+  frames" `fadeOccluders`' own comment already names as a real,
+  documented class of stutter in this codebase. Added a 50ms throttle
+  around the call itself (`nextMinimapAt`), same interval as the draw it
+  feeds, so a skipped frame now skips the allocation too, not just the
+  canvas paint.
+`npx tsc --noEmit` clean, Vite hot-reloaded `Game.ts` cleanly. Not yet
+confirmed live. Everything else read in this pass was already either
+fixed by an earlier phase or already following the reuse/cull patterns
+this session has been enforcing elsewhere — this was the one gap.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two
