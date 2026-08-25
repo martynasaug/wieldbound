@@ -233,6 +233,12 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({
       antialias: QUALITY[this.quality].antialias,
       powerPreference: "high-performance",
+      // Nothing here ever writes or tests against a stencil buffer — the
+      // outline/silhouette passes use render order and depthFunc tricks
+      // instead (see Actor.ts). three.js allocates one by default on every
+      // framebuffer regardless; turning it off is free bandwidth back on
+      // every frame, for a feature that was never used.
+      stencil: false,
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     // Pixel ratio, shadow map size and shadow filter are all set by

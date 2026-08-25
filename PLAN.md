@@ -11379,6 +11379,23 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.47 — a stencil buffer nobody asked for, on every frame.**
+Third pass of the same lower-end-machine sweep, different shape of find:
+not a taste/cost tradeoff this time, a feature paid for and never used.
+Neither renderer (`World.ts`'s or `LoginBackdrop.ts`'s own separate one)
+ever writes or tests a stencil value — grepped for
+`stencilWrite`/`stencilFunc`/`stencilRef`/`stencilZPass` across every
+client file and found nothing; the outline/silhouette passes use render
+order and `depthFunc` tricks instead (Actor.ts). three.js allocates a
+stencil buffer on the default framebuffer regardless, since `stencil:
+true` is the constructor's own default. Passed `stencil: false` at both
+construction sites. No quality tier involved — there is no visual
+tradeoff to make, so unlike M70.45/46 this is on for every level,
+including High.
+Full suite unchanged from M70.46; `fighting.mjs` hit its documented
+keep-away flake, unrelated to a renderer config flag by construction.
+Same live-measurement caveat as the two entries before it.
+
 **Phase 70 M70.46 — the ground plane's anisotropy was the same story as
 M70.45's MSAA, one file over.** Same sweep, same shape of bug: `terrain.ts`
 set `t.anisotropy = 16` unconditionally on up to twelve ground textures,

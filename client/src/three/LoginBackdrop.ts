@@ -92,7 +92,10 @@ export class LoginBackdrop {
   private angle = 0;
 
   constructor(private readonly container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    // stencil: false for the same reason World.ts sets it — nothing in this
+    // scene ever reads or writes a stencil buffer, and three.js allocates one
+    // by default regardless.
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, stencil: false });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     // Capped harder than the game's renderer. This runs while somebody is
     // reading two lines of text, so a retina display should not be asked for
