@@ -1370,6 +1370,7 @@ export class Game {
           this.world.scene.add(built.root);
           await this.world.warmUp(built.root);
           built.root.visible = true;
+          this.world.warmBuffers(built.root, "player");
         });
       }
       // Remote players are dressed from the same `Appearance` the local player
@@ -1486,6 +1487,7 @@ export class Game {
           this.world.scene.add(actor.root);
           await this.world.warmUp(actor.root);
           actor.root.visible = true;
+          this.world.warmBuffers(actor.root, s.kind);
         })
         .finally(() => {
           this.actorBuildsInFlight--;

@@ -11379,6 +11379,40 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.53 — a real gap, confirmed real, confirmed not the one
+being chased.** `warmUp`'s own comment says it compiles shader PROGRAMS
+and does not touch buffers — verified against three.js's own
+`compileAsync` source, which only calls `prepareMaterial()` per mesh and
+never touches `object.geometry`. M70.40 fixed that gap once, for the
+whole STATIC world, with one throwaway full-scene render under the
+loading screen. It never covered a monster or remote player arriving
+mid-session — every one of those still paid its own buffer upload on the
+first frame it was actually drawn, a frame the player is looking at.
+New `World.warmBuffers(object, label)`: renders a newly-arrived actor once
+into a throwaway 4x4 offscreen target, with frustum culling temporarily
+disabled so it uploads regardless of where the camera is pointed. Called
+right after `warmUp` and right before `.visible = true`, at both call
+sites (monster spawn, remote player spawn).
+Labeled from the start (`warmBuffers:<kind>`) rather than left anonymous,
+specifically so it could be told apart from the still-active mystery
+stall rather than adding a second unattributed cost next to the first —
+and that labeling is what let this get a definitive answer instead of a
+guess: reported live, twice, and the `render`-section spikes (100-220ms)
+that prompted this entry never once carried a `warmBuffers:` label. The
+fix is real and correctly implemented — confirmed to run, confirmed not
+to break anything — it is simply not the cause of what was reported. Kept
+anyway: it closes a real gap regardless of whether it explains this
+particular symptom, the same standard the loading-screen fix it mirrors
+was held to.
+Leading suspect now: skill and attack VFX (`skillfx.ts`, `attacks.ts`).
+Their geometries and materials are built once in memory but never run
+through ANY warm-up path, unlike every model in the game — so the first
+cast of a given shape in a session could still be paying a cold
+shader-compile or buffer-upload cost live, mid-fight, which lines up with
+the combat log timing at every reported spike (`You cast Arcane Bolt`
+lands right beside them). Not yet investigated in code — the next entry,
+if it pans out.
+
 **Phase 70 M70.52 — the mystery stall gets a name, and the name it gets is
 "not this."** M70.41 left one stall unexplained: `[hitch] Nms BETWEEN
 frames — nothing of ours ran in it: a garbage collection, or a file being

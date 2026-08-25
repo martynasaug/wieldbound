@@ -2,6 +2,7 @@
 // Everything that is "the place", as opposed to the things moving around in it.
 
 import * as THREE from "three";
+import { profiler } from "./profiler";
 import { instantiate } from "./assets";
 import { createTerrainMaterial } from "./terrain";
 import { buildGroundCover } from "./scatter";
@@ -884,6 +885,59 @@ export class World {
     } catch {
       // Older drivers, a lost context mid-compile. The object still renders.
     }
+  }
+
+  /** A throwaway target so `warmBuffers` never draws anything the player
+   *  can see — 4x4 rather than 1x1 purely so nothing in the pipeline treats
+   *  a zero-area target as degenerate and skips the draw. */
+  private readonly bufferWarmTarget = new THREE.WebGLRenderTarget(4, 4);
+
+  /**
+   * Uploads an object's geometry buffers BEFORE it is first drawn on screen.
+   *
+   * `warmUp` compiles shader PROGRAMS; it does not touch buffers — WebGL
+   * uploads a geometry's vertex and skin data the first time it is actually
+   * DRAWN, which M70.40 found and fixed for the whole STATIC world at load
+   * time (see `Game.ts`'s "one full frame, with everything still visible,
+   * to upload it"). That fix ran once, over everything that already existed
+   * when the world was built. It never covered a monster or a remote player
+   * arriving mid-session — every one of those still paid its own buffer
+   * upload on the first frame it was actually visible, which is a frame the
+   * player is looking at, and which read on the profiler as an unexplained
+   * `render`-section spike with nothing else to blame.
+   *
+   * Rendered into a throwaway 4x4 target instead of the screen — the same
+   * trick M70.40 used once for the whole world, made reusable per actor.
+   * `object` is passed as the render's own root rather than `this.scene`,
+   * so this costs one small draw call per mesh in the actor rather than a
+   * full second submission of everything already on screen — the same
+   * "object as scene" call `compileAsync` above already makes, for the same
+   * reason. Frustum culling is turned off for the duration: a monster that
+   * just spawned behind the player, or a remote player far off camera,
+   * would otherwise be skipped by the very camera test this bypasses the
+   * screen to avoid depending on.
+   */
+  warmBuffers(object: THREE.Object3D, label = "actor"): void {
+    // Named per call rather than one shared label, matching `rig:<name>` —
+    // called from a promise continuation rather than inside the main loop,
+    // so this is the only way its own cost can be attributed to anything at
+    // all instead of silently inflating the next "BETWEEN frames" gap the
+    // same unnamed way the mystery stall this was built to investigate did.
+    label = "warmBuffers:" + label;
+    profiler.begin(label);
+    const wasCulled: [THREE.Object3D, boolean][] = [];
+    object.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        wasCulled.push([child, child.frustumCulled]);
+        child.frustumCulled = false;
+      }
+    });
+    const prevTarget = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this.bufferWarmTarget);
+    this.renderer.render(object, this.camera);
+    this.renderer.setRenderTarget(prevTarget);
+    for (const [child, culled] of wasCulled) child.frustumCulled = culled;
+    profiler.end(label);
   }
 
   render(): void {
