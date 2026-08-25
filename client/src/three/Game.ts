@@ -1126,6 +1126,7 @@ export class Game {
       rim: 0.5,
       // And the body is coloured from the name. See `tintBody` in Actor.ts.
       identity: this.name,
+      warmUp: (object) => this.world.warmUp(object),
     });
     this.localActor.setAppearance(this.appearance);
 
@@ -1404,6 +1405,7 @@ export class Game {
           height: PLAYER_HEIGHT,
           rim: 0.3,
           identity: s.name,
+          warmUp: (object) => this.world.warmUp(object),
         });
         this.players.set(s.id, actor);
         this.playerMotion.set(s.id, { x: s.x, y: s.y, moving: false });

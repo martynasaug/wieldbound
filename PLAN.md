@@ -11515,6 +11515,58 @@ for what the 13 errors are, since a jump from 3 to 13 is a real signal
 worth explaining rather than folding into "it's the extensions" without
 checking.
 
+**Phase 70 M70.70 — the error badge was our own diagnostics, not a bug;
+found a genuine unwarmed-shader gap in gear swaps.** The Incognito
+Console tab answered M70.69's open question directly: the "13 errors"
+badge was never a crash count. It's four real console entries (a
+`THREE.Clock` deprecation notice, an `FBXLoader` skin-weight warning, and
+the game's own two informational `[world]` load lines) plus this
+session's OWN `[hitch]` diagnostics, which are logged as `console.warn`
+and so count toward the badge — not evidence of anything broken. The
+badge dropping from 13 to 10 between the two readings is just fewer
+hitches being logged in a shorter/different play session, not a fix or a
+regression either way.
+Two of those hitch lines were the real finding: `214ms frame — worst
+section: render 212.0ms` and `219ms frame — worst section: render
+217.6ms`, both with nothing outside the timed sections — the exact
+signature `World.warmUp`'s own doc comment already names ("every monster
+arriving in view paid for its own shaders in the middle of a frame").
+But every existing warm-up call only covers an actor's FIRST spawn
+(Game.ts's three `new Actor()` sites hide the whole root, await
+`world.warmUp`, then reveal it). Nothing covered a LATER appearance
+change on an already-visible actor: `Actor.applyAppearance` (Actor.ts:951)
+parents a new weapon or armour piece the instant its model/mesh is built,
+with no compile step — so a player (local or remote) equipping a weapon
+or armour rarity/style combination nobody has rendered yet this session
+hit the exact same synchronous-compile stall, just with no `rig:` name
+attached to blame, because no new MODEL was loading — only a new
+material. Given `sameAppearance` (fixed in M70.65) already gates this to
+real gear changes only, this isn't rare during actual play.
+Fixed by giving `ActorOptions` an optional `warmUp` callback (dependency
+injection rather than handing `Actor` a `World` reference outright) and
+wiring it from both actor-construction sites that ever call
+`setAppearance` after the initial spawn (`this.localActor` and remote
+`syncPlayers`; monsters never call `setAppearance`, so left alone). Held
+items already loaded asynchronously — the `.then()` now awaits
+`warmUp(held.object)` before parenting instead of parenting immediately.
+Armour pieces build synchronously (they're generated meshes, not loaded
+models), so those needed restructuring: build the whole outfit into a
+list first, batch it into one throwaway `THREE.Group` for a single
+`compileAsync` call, empty the group, then parent the real pieces — one
+compile per outfit change instead of one per piece. Both paths re-check
+`generation !== this.dressGeneration` after the await, same guard the
+held-item path already had, so a second rapid gear change mid-compile
+doesn't parent stale pieces. The visible cost: a newly-equipped piece
+with a genuinely new material combo now appears a beat later than before,
+same tradeoff `Game.ts`'s spawn path already made and already comments on
+("the monster appears a beat later... no frame is spent on it") — an
+already-compiled combo (the overwhelming majority, once anyone has worn
+it once) resolves the promise close to instantly.
+`npx tsc --noEmit` clean, Vite hot-reloaded `Actor.ts`/`Game.ts` cleanly,
+`node tools/test/smoke.mjs` passed. Not yet confirmed live — this needs
+an actual gear swap in front of the profiler to know whether it closes
+those two hitch lines.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two

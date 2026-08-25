@@ -544,6 +544,25 @@ export interface ActorOptions {
    * exactly like every other copy of its model.
    */
   identity?: string;
+
+  /**
+   * Compiles an object's shaders off the main thread before it is added to
+   * the scene graph — see `World.warmUp`.
+   *
+   * The initial dress (spawn or first load) already goes through this path
+   * one level up, in Game.ts, by holding the WHOLE actor invisible until it
+   * resolves. A LATER gear swap — an already-visible actor equipping a
+   * weapon or armour piece nobody has worn yet this session — had no
+   * equivalent: `applyAppearance` parented each new piece the instant its
+   * model finished loading, and three.js compiles a program synchronously
+   * the first time a material is actually drawn. That showed up on a
+   * profiler as a render-only hitch with no `rig:` name to blame, because
+   * no new MODEL was loading — just a material combination nobody had
+   * rendered before. Optional and best-effort: a caller that never passes
+   * it (or a compile that fails) still gets the piece, just without the
+   * warm-up.
+   */
+  warmUp?: (object: THREE.Object3D) => Promise<void>;
 }
 
 export class Actor {
@@ -977,8 +996,13 @@ export class Actor {
     ];
     for (const [baseId, rarity, hand] of hands) {
       if (!baseId) continue;
-      void buildHeldItem(baseId, rarity ?? "honed", hand).then((held) => {
+      void buildHeldItem(baseId, rarity ?? "honed", hand).then(async (held) => {
         if (!held || generation !== this.dressGeneration) return;
+        // See ActorOptions.warmUp — compiled before it ever touches the
+        // scene graph, so it never draws on the frame that would have to
+        // compile it inline.
+        await this.options.warmUp?.(held.object);
+        if (generation !== this.dressGeneration) return; // swapped again mid-compile
         const socket = this.bones.get(held.bone) ?? (hand === "right" ? this.weaponSocket : null);
         if (!socket) return;
         socket.add(held.object);
@@ -991,6 +1015,11 @@ export class Actor {
       ItemSlot,
       { style: GearStyle; rarity: ItemRarity } | undefined,
     ][];
+    // Built synchronously (armour pieces are generated meshes, not loaded
+    // models) but PARENTED only after warming — same reasoning as the held
+    // item above, just batched into one compile instead of one per piece
+    // since a whole outfit can change in the same call.
+    const built: { object: THREE.Object3D; holder: THREE.Object3D }[] = [];
     for (const [slot, layer] of layers) {
       if (!layer) continue;
       for (const piece of buildArmour(slot, layer.style, layer.rarity)) {
@@ -1003,11 +1032,27 @@ export class Actor {
           ? (this.bones.get(piece.bone) ?? null)
           : this.holderFor(piece.bone);
         if (!holder) continue;
-        holder.add(piece.object);
-        this.worn.push(piece.object);
-        this.trackMaterials(piece.object);
+        built.push({ object: piece.object, holder });
       }
     }
+    if (built.length === 0) return;
+    void (async () => {
+      if (this.options.warmUp) {
+        // A throwaway bundle purely to hand the whole outfit to compileAsync
+        // in one call — never added to the actor, so there is nothing to undo
+        // beyond emptying it again before the real parenting below.
+        const bundle = new THREE.Group();
+        for (const p of built) bundle.add(p.object);
+        await this.options.warmUp(bundle);
+        while (bundle.children.length > 0) bundle.remove(bundle.children[0]);
+      }
+      if (generation !== this.dressGeneration) return; // swapped again mid-compile
+      for (const p of built) {
+        p.holder.add(p.object);
+        this.worn.push(p.object);
+        this.trackMaterials(p.object);
+      }
+    })();
   }
 
   /** Registers an object's materials as this actor's own — they carry its
