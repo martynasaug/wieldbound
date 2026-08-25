@@ -63,6 +63,15 @@ export class Profiler {
   /** A line under the title — the graphics level, so a reading is never
    *  ambiguous about which settings produced it. */
   private label = "";
+  /**
+   * What the player was doing, refreshed once a frame by the owner — see
+   * `setContext`. Folded into every `[hitch]` line so "it stutters randomly"
+   * stops being something a player has to notice and describe: the log line
+   * itself says whether it was moving, in town, or near monsters the moment
+   * it happened, without the overlay needing to be open or a recording
+   * running. Empty until the first frame sets it.
+   */
+  private context = "";
   /** Timestamps of recent stutters, trimmed to `HITCH_WINDOW_MS`. */
   private hitches: number[] = [];
   /** The worst frame in the last ten seconds, which is what a player who says
@@ -197,6 +206,12 @@ export class Profiler {
     this.label = label;
   }
 
+  /** See `context`. Cheap (one string, replaced not appended) and kept live
+   *  whether or not the overlay is open, same reasoning as section timing. */
+  setContext(context: string): void {
+    this.context = context;
+  }
+
   /**
    * Sections are timed WHETHER OR NOT the overlay is open.
    *
@@ -256,7 +271,8 @@ export class Profiler {
           (this.betweenWorst_
             ? `worst: ${this.betweenWorst_}`
             : "nothing of ours ran in it: a garbage collection, or a file " +
-              "being parsed inside a loader callback."),
+              "being parsed inside a loader callback.") +
+          (this.context ? ` [${this.context}]` : ""),
       );
     }
     if (ms >= HITCH_MS) {
@@ -280,7 +296,8 @@ export class Profiler {
       for (const sec of this.sections.values()) accounted += sec.frameMs;
       console.warn(
         `[hitch] ${ms.toFixed(0)}ms frame — worst section: ${worstLabel}, ` +
-          `${(ms - accounted).toFixed(0)}ms outside the timed sections`,
+          `${(ms - accounted).toFixed(0)}ms outside the timed sections` +
+          (this.context ? ` [${this.context}]` : ""),
       );
     }
     while (this.hitches.length && now - this.hitches[0] > HITCH_WINDOW_MS) {

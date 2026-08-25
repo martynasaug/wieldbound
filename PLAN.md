@@ -11605,6 +11605,49 @@ a genuinely rare event (equipping/looting), not a per-frame tax, so left
 alone rather than chased for diminishing returns.
 Not yet confirmed live.
 
+**Phase 70 M70.72 — six real, verified fixes and the report came back
+"exactly the same," so the instrument itself needed to get smarter.**
+Reported unchanged after M70.66 through M70.71 (terrain-ring throttle,
+HUD layout throttle, mist sampling, ambience sampling, gear-swap
+warming, minimap throttle) — all individually confirmed by their own
+before/after profiler readings, so this was not "the fixes didn't work,"
+it was "none of them were the thing." Asked when it happens; the answer
+was "randomly — exiting town, near monsters, attacking, or just
+running," which rules nothing in or out. Checked the F3 baseline
+directly: a resting snapshot showed a genuinely healthy state (60fps,
+5.93ms frame avg, 0 stutters/10s, divisor 1 on a matched 61Hz display) —
+so whatever this is, the profiler is not currently blind to hitches in
+general, it simply had not caught one in that particular ten-second
+window. Read through the local player's own movement and camera-follow
+code (`stepMovement`, `Actor.setTargetPosition`, `World.follow`) looking
+for a logic bug that would produce a constant "laggy" feel independent of
+frame cost — none found: local position is copied exactly with no
+easing, camera follow is a standard dt-independent lerp.
+Rather than guess at a seventh per-frame system with no new evidence,
+made the game's own `[hitch]` diagnostic answer "when" automatically.
+Added `Profiler.setContext()` (same pattern as the existing `setLabel`/
+`setStats`, but — critically — called unconditionally every frame, NOT
+gated behind `profiler.enabled` the way the F3-only renderer-info block
+is, because hitches are logged whether or not the overlay is open and a
+context that only existed while F3 was open would miss the exact reports
+this is for. Wired from `Game.ts`'s `loopBody`, right before
+`frameEnd()`: whether the player is moving (from the same key set
+`stepMovement` reads), in town or in the field (`TOWN_RADIUS_PX` against
+`TOWN_CENTER`, the same shared constant `town.ts`/`heightfield.ts`
+already use), how many monsters are within 2000px, and whether currently
+engaged in combat. Both `[hitch]` lines in profiler.ts — the "BETWEEN
+frames" one and the "frame — worst section" one — now append this in
+brackets. Every future hitch line answers "was it moving, in town, near
+what, fighting" by itself, without the player needing to notice, describe,
+or screenshot anything — the log has been carrying this information all
+along and simply never wrote it down.
+`npx tsc --noEmit` clean, Vite hot-reloaded `profiler.ts`/`Game.ts`
+cleanly, `node tools/test/smoke.mjs` passed. This is a diagnostic
+improvement, not a performance fix — nothing about frame cost changed.
+The next thing to do with it is simple: play normally, and whenever it
+feels choppy, the `[hitch]` lines already in the console from that
+moment will name the circumstance without any extra step.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two

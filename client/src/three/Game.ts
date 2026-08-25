@@ -178,6 +178,7 @@ import {
   NPC_TETHER_PX,
   TOWN_CENTER,
   TOWN_NAME,
+  TOWN_RADIUS_PX,
   resolveTownCollision,
 } from "../../../shared/town";
 import {
@@ -4097,6 +4098,33 @@ export class Game {
         "tree chunks": this.world.culler.perTier.get("trees") ?? 0,
         "chunks total": this.world.culler.totalChunks,
       });
+    }
+    // Unconditional — unlike the block above, hitches are logged whether or
+    // not F3 is open (see profiler.ts), so this cannot live behind the same
+    // `enabled` gate or the very reports this exists to explain would go back
+    // to saying nothing about what the player was doing. "It stutters
+    // randomly" is real information every time it happens; the player just
+    // has no way to hand it over. This folds it into the hitch line itself.
+    {
+      const moving =
+        this.keys.has("w") ||
+        this.keys.has("a") ||
+        this.keys.has("s") ||
+        this.keys.has("d") ||
+        this.keys.has("arrowup") ||
+        this.keys.has("arrowdown") ||
+        this.keys.has("arrowleft") ||
+        this.keys.has("arrowright");
+      const townDist = Math.hypot(this.playerX - TOWN_CENTER.x, this.playerY - TOWN_CENTER.y);
+      let nearMonsters = 0;
+      for (const v of this.monsters.values()) {
+        if (Math.hypot(v.state.x - this.playerX, v.state.y - this.playerY) < 2000) nearMonsters++;
+      }
+      this.profiler.setContext(
+        `${moving ? "moving" : "idle"} ${townDist < TOWN_RADIUS_PX ? "town" : "field"} ` +
+          `monsters=${nearMonsters}/${this.monsters.size} players=${this.players.size} ` +
+          `engaged=${this.engagedId ? "yes" : "no"}`,
+      );
     }
     this.profiler.frameEnd();
   }
