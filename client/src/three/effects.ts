@@ -82,34 +82,47 @@ export class Effects {
   }
 
   /**
-   * Kept alive for the life of this object — same reasoning as
-   * `SkillFx.warmed`/`Projectiles.warmed`, and the most important instance
-   * of it: `play()` is the hit-impact flash, which fires on every landed
-   * swing in the game, far more often than any single skill. Every one of
-   * its materials is disposed the moment its ~460ms lifetime ends
-   * (`update()`), and three.js deletes a compiled program the instant the
-   * last material referencing its cache key is disposed — so a fight with
-   * any gap between hits cycles this program compiled/destroyed/compiled
-   * again, which is exactly the oscillation the F3 diagnostic caught live.
+   * A fixed pool of materials, never disposed, for the exact reason
+   * `lightPool.ts` gives for pooling `THREE.PointLight`s rather than
+   * `new`-ing one per effect: adding or removing a GPU resource changes
+   * what the renderer has to keep compiled for it, and `play()` is the
+   * hit-impact flash — one per landed swing, far more frequent than any
+   * skill — so a fresh `.dispose()`d material every ~460ms meant three.js
+   * was deleting and recompiling this shader on a cycle tied to combat's
+   * own tempo. M70.54-58 tried keeping ONE extra warm instance alive
+   * alongside the real, disposable ones; that did not survive contact with
+   * a real fight (confirmed live, twice), which is the same lesson
+   * `lightPool.ts` already learned the first time: the fix is to never
+   * create or destroy the resource at all, not to keep a decoy breathing
+   * next to the ones that still churn.
+   *
+   * Sized generously rather than exactly — a missed flash on the rare
+   * overflow frame is a cosmetic nothing; the alternative (falling back to
+   * `new THREE.MeshBasicMaterial()`) would reintroduce the exact bug this
+   * pool exists to remove, for whichever hit happened to be the 25th.
    */
-  private warmed: THREE.Mesh | null = null;
+  private readonly materialPool: THREE.MeshBasicMaterial[] = [];
+  private readonly freeMaterials: THREE.MeshBasicMaterial[] = [];
+  private static readonly POOL_SIZE = 32;
 
-  /** Uploads and compiles the one material shape `play()` ever builds — see
-   *  `warmed`'s own comment for why keeping the material referenced matters
-   *  as much as compiling it once. Called once, off-screen, alongside
-   *  `SkillFx.prewarm`/`Projectiles.prewarm`. */
+  /** Fills the pool and uploads/compiles it — called once, off-screen,
+   *  alongside `SkillFx.prewarm`/`Projectiles.prewarm`. */
   prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
-    const material = new THREE.MeshBasicMaterial({
-      map: this.base,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      fog: false,
-    });
-    const mesh = new THREE.Mesh(this.geometry, material);
-    this.warmed = mesh;
-    void world.warmUp(mesh).then(() => world.warmBuffers(mesh, "effects"));
+    const group = new THREE.Group();
+    for (let i = 0; i < Effects.POOL_SIZE; i++) {
+      const material = new THREE.MeshBasicMaterial({
+        map: this.base,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      this.materialPool.push(material);
+      this.freeMaterials.push(material);
+      group.add(new THREE.Mesh(this.geometry, material));
+    }
+    void world.warmUp(group).then(() => world.warmBuffers(group, "effects"));
   }
 
   play(name: EffectName, x: number, y: number, z: number, opts: EffectOptions = {}): void {
@@ -120,22 +133,16 @@ export class Effects {
     texture.wrapT = THREE.ClampToEdgeWrapping;
     texture.repeat.set(1 / FX_COLS, 1 / FX_ROWS);
 
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      color: opts.tint ?? 0xffffff,
-      // Every sibling combat/skill effect (attacks.ts, skillfx.ts) disables
-      // fog for the same stated reason — "a spell is exactly the thing that
-      // should stay legible at range" — and this is the same kind of thing,
-      // just missed when this file was written first. Left on, this also
-      // meant every hit-impact flash (the single most frequent effect in
-      // the game — one per swing, not per cast) compiled a DIFFERENT
-      // program from every other combat effect for no visual reason.
-      fog: false,
-    });
+    // Borrowed rather than built: see `materialPool`'s own comment. A pool
+    // this size running dry means over thirty hits are mid-flash at once,
+    // which is a busier fight than this game's own aggro caps allow —
+    // dropping the flash silently is the right failure, the same call
+    // `lightPool.ts` makes when its own pool is exhausted.
+    const material = this.freeMaterials.pop();
+    if (!material) return;
+    material.map = texture;
+    material.color.set(opts.tint ?? 0xffffff);
+    material.opacity = 1;
 
     const mesh = new THREE.Mesh(this.geometry, material);
     const scale = opts.scale ?? 1.6;
@@ -182,7 +189,13 @@ export class Effects {
 
       if (t >= 1) {
         this.scene.remove(fx.mesh);
-        fx.material.dispose();
+        // Handed back to the pool rather than disposed — see
+        // `materialPool`'s own comment. The texture is still disposed:
+        // it is a fresh clone every `play()`, cheap, and swapping which
+        // one a pooled material's `.map` points to costs nothing to the
+        // compiled program either way (`map` presence is the define, not
+        // the texture's identity).
+        this.freeMaterials.push(fx.material);
         fx.texture.dispose();
         this.live.splice(i, 1);
         continue;
@@ -212,10 +225,15 @@ export class Effects {
   dispose(): void {
     for (const fx of this.live) {
       this.scene.remove(fx.mesh);
-      fx.material.dispose();
       fx.texture.dispose();
     }
     this.live.length = 0;
+    // The whole pool, not just what was active — `freeMaterials` holds the
+    // rest, and skipping them here would leak exactly what pooling was
+    // supposed to stop leaking.
+    for (const m of this.materialPool) m.dispose();
+    this.materialPool.length = 0;
+    this.freeMaterials.length = 0;
     this.geometry.dispose();
     this.base.dispose();
   }

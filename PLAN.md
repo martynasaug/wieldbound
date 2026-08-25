@@ -11379,6 +11379,37 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.61 — the fix was never "keep a decoy warm," it was "stop
+disposing at all."** The corrected tracer fired, live, with real stack
+traces: `Projectiles.update` (`attacks.ts:543`) and `Effects.update`
+(`effects.ts:185`) — the exact two files M70.54/56/57 already tried to
+fix by holding one extra permanently-referenced material alongside the
+real, disposable ones. Confirmed live, twice, that dispose still reaches
+these files regardless — which means the warm decoy's cache key likely
+never matched what a real cast produces closely enough for the program
+cache to treat them as the same entry, and no amount of further guessing
+at that mismatch was going to be more reliable than removing the need to
+match anything at all.
+So: `effects.ts`'s `Effects` — confirmed the more frequent of the two
+(the hit-impact flash fires on every landed swing, not once per skill) —
+now holds a fixed pool of 32 materials, built once and NEVER disposed,
+following `lightPool.ts`'s own precedent for exactly this reasoning
+("adding or removing a GPU resource changes what the renderer has to keep
+compiled for it"). `play()` borrows a free one and resets its `.map`/
+`.color`/`.opacity`; `update()` returns it to the pool instead of calling
+`.dispose()` when an effect's lifetime ends. Pool exhaustion (more than
+32 flashes alive at once) drops the effect silently — a missed flash is a
+cosmetic nothing, and the alternative of falling back to `new
+MeshBasicMaterial()` would reintroduce the exact bug this exists to
+remove, for whichever hit happened to be the 33rd.
+`attacks.ts`'s `Projectiles` (bolt/beam/wisp) gets the identical
+treatment next — deferred to its own round rather than rushed alongside
+this one, since pooling it correctly means resetting per-cast mutable
+state (`SpriteMaterial.rotation` accumulated by the spin animation,
+`opacity` animated by the fade) on every reuse, and a missed reset there
+is a real visual bug, not just a missed cosmetic flash. Not yet confirmed
+live for `effects.ts` either — this is the fix, not yet the confirmation.
+
 **Phase 70 M70.60 — the tracer's own filter was built on a misread.**
 M70.59 shipped and never fired. Re-reading three.js's `getParameters`
 source (not the cache-key builder this time, the params it consumes)
