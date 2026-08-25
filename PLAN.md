@@ -11648,6 +11648,45 @@ The next thing to do with it is simple: play normally, and whenever it
 feels choppy, the `[hitch]` lines already in the console from that
 moment will name the circumstance without any extra step.
 
+**Phase 70 M70.73 — the context line worked on the first try: every big
+hitch was a dense pack fight, and one real cause found in the despawn
+logic.** A console dump from live play, minutes after M70.72 shipped,
+showed the pattern immediately: the two worst render-only hitches
+(211ms, 219ms) and three `net:ITEMS_UPDATE` hitches (109ms, 62ms, 61ms)
+all carried `monsters=13/13` through `monsters=20/20` and
+`engaged=yes` — every monster the client was tracking was within
+2000px, all while actively fighting. Not "random" at all once the
+context line existed to say so.
+`syncMonsters` (Game.ts:1551) despawns any monster past
+`MONSTER_DESPAWN_RADIUS_PX` (1550px) with no exception — including the
+monster the player is actively fighting. A big pack fight has the
+player kiting AND the pack repositioning at the same time, and the two
+together cross a fixed 400px hysteresis band (1150-1550) far more
+readily than a single walk-up approach ever does, which the band was
+originally sized for. That means the monster most likely to be torn
+down and rebuilt mid-fight — full teardown, requeue, skeleton clone,
+warm-up, first real draw — was specifically the one being fought,
+which is exactly the moment a rebuild's cost is most visible as a hit.
+Exempted the engaged and locked target from the despawn check, bounded
+by a new `MONSTER_HARD_DESPAWN_RADIUS_PX` (4000px) so the exemption
+cannot leak: `engagedId` falls back to a stale `lockedId` even out of
+reach (`updateTargeting`'s documented case 3, "the locked target even
+out of reach, so walking toward something you chose keeps showing it
+as yours"), so a lock left on something the player has since walked
+far away from must still let go of its actor eventually, or a long
+session accumulates one abandoned rig per forgotten lock.
+This does not explain the `net:ITEMS_UPDATE` hitches during the same
+fights — those are the local player's own item-panel rebuild
+(`onItemsChanged`), unrelated to monster despawning, and likely just
+sharing the same busy moment (loot drops, GC pressure from a big fight)
+rather than a direct cause. Left alone for now: a one-off cost on a
+real event, not yet worth its own investigation.
+`npx tsc --noEmit` clean, Vite hot-reloaded `Game.ts` cleanly,
+`node tools/test/smoke.mjs` passed (this logic has no server-side
+counterpart to test against). Not yet confirmed live, but this is the
+first fix all session backed by an actual observed correlation instead
+of a guess at what might be expensive.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two

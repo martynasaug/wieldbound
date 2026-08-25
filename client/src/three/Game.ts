@@ -252,6 +252,11 @@ const MAX_ACTOR_BUILDS_IN_FLIGHT = 2;
 const MAX_SPAWNS_PER_FRAME = 3;
 const MONSTER_SPAWN_RADIUS_PX = 1150;
 const MONSTER_DESPAWN_RADIUS_PX = 1550;
+/** Despawns the engaged/locked target anyway past this distance, so a lock
+ *  left on a monster the player has since walked away from cannot keep its
+ *  actor alive forever. Well past any real reach or engage radius — this is
+ *  a leak guard, not something a fight should ever actually reach. */
+const MONSTER_HARD_DESPAWN_RADIUS_PX = 4000;
 
 // How long after a monster's swing starts its hit is considered to land.
 // Without a beat the damage number appears on the same frame as the wind-up,
@@ -1557,6 +1562,27 @@ export class Game {
         // whenever its turn comes.
         if (!this.pendingMonsterSpawns.has(s.id)) this.monsterSpawnQueue.push(s.id);
         this.pendingMonsterSpawns.set(s.id, s);
+        continue;
+      } else if (
+        distance > MONSTER_DESPAWN_RADIUS_PX &&
+        distance <= MONSTER_HARD_DESPAWN_RADIUS_PX &&
+        (s.id === this.engagedId || s.id === this.lockedId)
+      ) {
+        // NOT while it is the thing being fought or the thing selected. A big
+        // pack fight has the player kiting and the pack repositioning at the
+        // same time, and the two together cross a fixed 400px hysteresis band
+        // far more than a single approach ever does — so the monster actually
+        // being fought was the one most likely to get torn down and rebuilt
+        // mid-swing, which is exactly the moment a rebuild's cost (skeleton
+        // clone, warm-up, first-draw pipeline finalization) is most visible as
+        // a hitch.
+        //
+        // Bounded by `MONSTER_HARD_DESPAWN_RADIUS_PX` rather than exempted
+        // outright: `engagedId` falls back to a stale `lockedId` even out of
+        // reach (see `updateTargeting`'s case 3), so a lock left on something
+        // the player has since walked well away from must still let go of its
+        // actor eventually, or a long session accumulates one abandoned rig
+        // per forgotten lock.
         continue;
       } else if (distance > MONSTER_DESPAWN_RADIUS_PX) {
         vis.actor.dispose();
