@@ -623,6 +623,9 @@ export class Game {
    *  compile can be caught by name-adjacent evidence instead of guessed at.
    *  `null` means "no reading yet" — the first frame is never a delta. */
   private lastProgramCount: number | null = null;
+  /** Previous frame's program cache keys, so a count change can name what
+   *  moved rather than just that something did. */
+  private lastProgramKeys: Set<string> = new Set();
   /** Chooses how many display refreshes each frame lasts. See pacer.ts. */
   private readonly pacer = new FramePacer();
   // Watchdog bookkeeping — see `watchForSlide`. Held on the instance rather
@@ -4018,13 +4021,27 @@ export class Game {
       // guessing which one. If it did NOT, shader compilation is eliminated
       // as a cause entirely, the same way M70.52 eliminated the loader.
       const programCount = info.programs?.length ?? 0;
+      // The count alone says something churns; the keys say WHAT — the
+      // string three.js hashes a material's defines into, which is what
+      // actually decides whether two materials share a program or each pay
+      // for their own. Computed every frame (cheap: at most ~70 short
+      // strings) but only ever LOGGED on the frames where the count moved,
+      // diffed against the previous frame's set rather than dumped
+      // wholesale, so a stack of ninety keys does not bury the one or two
+      // that actually changed.
+      const keys = new Set((info.programs ?? []).map((p) => p.cacheKey));
       if (this.lastProgramCount !== null && programCount !== this.lastProgramCount) {
+        const added = [...keys].filter((k) => !this.lastProgramKeys.has(k));
+        const removed = [...this.lastProgramKeys].filter((k) => !keys.has(k));
         console.warn(
           `[programs] ${this.lastProgramCount} -> ${programCount} this frame ` +
-            `(${programCount - this.lastProgramCount > 0 ? "+" : ""}${programCount - this.lastProgramCount})`,
+            `(${programCount - this.lastProgramCount > 0 ? "+" : ""}${programCount - this.lastProgramCount})` +
+            (added.length ? `\n  +added: ${added.join(" | ")}` : "") +
+            (removed.length ? `\n  -removed: ${removed.join(" | ")}` : ""),
         );
       }
       this.lastProgramCount = programCount;
+      this.lastProgramKeys = keys;
       this.profiler.setLabel(
         `quality ${this.world.qualityLabel} (F4)  ·  ` +
           `${this.pacer.refreshHz.toFixed(0)}Hz display, 1 frame per ` +

@@ -11379,6 +11379,32 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.55 — the program count does not just grow, it OSCILLATES.**
+M70.54's diagnostic reported live within the hour, and it is a bigger find
+than a late compile: `[programs] 64 -> 65 (+1)`, `65 -> 71 (+6)`, `71 -> 68
+(-3)`, `68 -> 70 (+2)`, `70 -> 73 (+3)`, `73 -> 71 (-2)` — EVERY SINGLE
+FRAME, for a dozen frames running, during an active fight (Armabee,
+repeated attacks and misses in the log). A count that only grows is a cold
+compile. A count that grows AND shrinks, continuously, while combat is
+live, is programs being compiled and evicted on a cycle — closer in shape
+to the exact bug class M70.43 fixed for the road's torches (a changing
+light count forcing recompiles) than to a one-time missed warm-up, and
+worth taking as seriously.
+Checked `WebGLLights.setup()` in three.js's own source first, since the
+obvious next suspect was whether `lightPool.ts`'s intensity-based
+toggling (M70.43's own fix, reused everywhere since) has the same gap
+`.visible` did: it does not — the light-uniform loop processes every light
+already gathered into the render state regardless of `intensity`, so an
+intensity-0 pooled light still counts toward `NUM_POINT_LIGHTS` the same
+as any other. That specific mechanism is not the cause here.
+Extended the diagnostic rather than guess again: it now diffs the actual
+`cacheKey` strings between frames, not just the count, and logs exactly
+which program(s) were added or removed on any frame the count moves —
+three.js hashes a material's defines into that string, so this names the
+shader rather than the number. Zero behaviour change, same as M70.54's
+first version. Not yet observed live with keys attached — that reading is
+what turns "something churns" into "this specific material churns."
+
 **Phase 70 M70.54 — two more real gaps closed, two more confirmed not the
 one being chased, and one instrument that stops the guessing.**
 `SkillFx`/`Projectiles` (every skill's shape — rings, novas, wedges — and
