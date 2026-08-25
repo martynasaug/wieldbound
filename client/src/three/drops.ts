@@ -56,8 +56,41 @@ interface DropVisual {
 export class Drops {
   private readonly visuals = new Map<string, DropVisual>();
   private readonly seen = new Set<string>();
+  /** Kept alive for the life of this object — same reasoning as
+   *  `Effects.warmed`. Every drop's own disc/beam material is disposed the
+   *  moment it is picked up or expires (`dispose()`), and three.js deletes
+   *  a compiled program the instant the last material referencing its
+   *  cache key is disposed — so a quiet stretch between two rare drops
+   *  cycles the beam's own program compiled/destroyed/compiled again. */
+  private readonly warmed: THREE.Mesh[] = [];
 
   constructor(private readonly scene: THREE.Scene) {}
+
+  /** Uploads and compiles the disc every drop gets, and the beam the top two
+   *  qualities add — see `warmed`'s own comment for why the reference has
+   *  to outlive this call, not just the compile. Called once, off-screen,
+   *  alongside `SkillFx.prewarm` and its siblings. */
+  prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
+    const group = new THREE.Group();
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(0.42, 20),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.34, depthWrite: false }),
+    );
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 0.3, 3.2, 8, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.16,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    this.warmed.push(disc, beam);
+    group.add(disc, beam);
+    void world.warmUp(group).then(() => world.warmBuffers(group, "drops"));
+  }
 
   /**
    * Reconciles against the snapshot: adds what is new, removes what is gone.

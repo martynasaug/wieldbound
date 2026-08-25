@@ -11379,6 +11379,33 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.58 — the SAME two keys, bit for bit, after M70.57.** The
+tell was numeric: `8388608,8389633` and `8388608,8393729` again, identical
+to the reading BEFORE `effects.ts` was fixed — not similar, identical —
+which means `effects.ts` was not this particular churn's source either
+(it may still have been a real, separate one; M70.57's fix stands on its
+own merits regardless). Stopped fixing one file at a time and grepped
+every `new THREE.Mesh*Material`/`Sprite*Material`/etc. construction across
+the entire client in one pass, then ruled files out by their OWN dispose
+pattern rather than by guessing: `ambience.ts`'s two materials are `fog:
+true` ON PURPOSE (own comment: keeps distant fireflies from punching
+through) and built once in `build()`, never disposed — not a candidate.
+`indicators.ts` has no `.dispose()` call anywhere in the file — also not a
+candidate. That left `drops.ts`: a disc every drop gets and a beam the top
+two rarities add, fresh `MeshBasicMaterial`s per drop, disposed on pickup
+or expiry (`dispose()`), missing `fog: false`... except unlike every
+combat-effect file, drops SHOULD keep `fog: true` — a beam of light fading
+into the distance is correct for a world object sitting on the ground, not
+a bug to fix the way it was in `effects.ts`. So only the warming half
+applies here, not the fog half: new `Drops.prewarm()`, same permanently-
+referenced pattern as every prior warm-up this thread has built, with
+`fog: true` preserved to match what a real drop actually uses.
+Every material-constructing file in the client has now been read and
+either fixed or confirmed not to match this bug's shape. Not yet confirmed
+live — and given M70.57 already turned out to not be the whole story
+despite equally strong reasoning, this entry makes no claim beyond "every
+known door is now closed."
+
 **Phase 70 M70.57 — M70.56 fixed the doors it had found; there was a
 fourth one.** Reported still churning after M70.56, keys attached again —
 and the removed key was a `sprite`... no, a `basic` material with `fog`

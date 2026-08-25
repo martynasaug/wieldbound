@@ -1158,6 +1158,7 @@ export class Game {
     this.skillFx.prewarm(this.world);
     this.projectiles.prewarm(this.world);
     this.effects.prewarm(this.world);
+    this.drops.prewarm(this.world);
     this.socket.connect();
 
     // The town is generated rather than downloaded, so it costs a few
