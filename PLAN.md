@@ -11567,6 +11567,44 @@ it once) resolves the promise close to instantly.
 an actual gear swap in front of the profiler to know whether it closes
 those two hitch lines.
 
+**Phase 70 M70.71 — the two render-only hitches turned out to predate this
+whole thread; a genuinely new cost found instead.** The next live
+recording confirmed M70.70's hitches were the wrong target: the two
+`render`-only frames were paired with `rig:Orc.gltf`/`rig:Demon.gltf`
+every time — that's a monster's FIRST spawn, which already had its own
+warm-up path (`World.warmUp`/`warmBuffers`) before this session started,
+not a gear re-equip. Read three.js's own `compileAsync` source to check
+why an already-correct warm-up path could still stall on the real
+`render()` call: it depends on `KHR_parallel_shader_compile`, and even
+with that extension, some drivers only fully finalize a shader's graphics
+pipeline on the object's first REAL draw, no matter how far ahead a
+"compile" call was made — a documented three.js/WebGL limitation, not
+something fixable from this codebase's JS.
+Separately, ruled out `shadowEveryNFrames` throttling as a periodic-spike
+cause: on `high` quality (`quality.ts`) the interval is 1, meaning shadows
+already re-render every frame with no throttling to concentrate cost into
+one, so that mechanism can't be what's producing an occasional large
+spike on High.
+What WAS a real, previously-unexamined cost: `Minimap.draw()`
+(`Minimap.ts:425`) — a Canvas2D redraw (grid, every node/station/monster
+dot, `fillText` labels on guide arrows) that `setSnapshot()` ran
+unconditionally on every single frame, for a small corner overview widget
+that does not need 60-144Hz freshness to read as live. Consistently
+750-800ms self-time across three separate live recordings and never
+investigated before now. Throttled to 20Hz (50ms) the same way as every
+other per-frame system this session: `setSnapshot()` still records the
+latest data every call so nothing reads stale state, only the actual
+canvas redraw is rationed. The settings-panel resize/zoom path
+(`Minimap.ts:346`) calls `draw()` directly and was left unthrottled, so
+changing a minimap setting still redraws immediately.
+`npx tsc --noEmit` clean, Vite hot-reloaded `Minimap.ts` cleanly. Also
+looked at the `net:ITEMS_UPDATE 55ms` hitch from the same recording
+(`onItemsChanged` rebuilding several UI panels plus `setAppearance`'s
+synchronous `buildArmour`/`clearGear` work) — real but a one-off cost on
+a genuinely rare event (equipping/looting), not a per-frame tax, so left
+alone rather than chased for diminishing returns.
+Not yet confirmed live.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two

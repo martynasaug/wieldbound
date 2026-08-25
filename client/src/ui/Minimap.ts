@@ -162,6 +162,8 @@ export class Minimap {
   private snapshot: MinimapSnapshot | null = null;
   /** Device-pixel scale the backing store was last sized for. */
   private ratio = 1;
+  /** Next time `setSnapshot` is allowed to actually redraw the canvas. */
+  private nextDrawAt = 0;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement("div");
@@ -416,9 +418,19 @@ export class Minimap {
     ctx.fillText(label, px, py + 7);
   }
 
-  /** Replaces the world state the map draws. Called once a frame. */
+  /**
+   * Replaces the world state the map draws. Called once a frame — but the
+   * canvas itself is a Canvas2D redraw (grid, every node/station/monster dot,
+   * a `fillText` label per guide arrow), and a corner overview map doesn't
+   * need that redone 60 to 144 times a second to read as live. Throttled to
+   * 20Hz: the snapshot is kept current every call so nothing reads stale
+   * data, only the actual `draw()` — the expensive part — is rationed.
+   */
   setSnapshot(snapshot: MinimapSnapshot): void {
     this.snapshot = snapshot;
+    const now = performance.now();
+    if (now < this.nextDrawAt) return;
+    this.nextDrawAt = now + 50;
     this.draw();
   }
 
