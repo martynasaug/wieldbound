@@ -11742,6 +11742,49 @@ confirmed live. Everything else read in this pass was already either
 fixed by an earlier phase or already following the reuse/cull patterns
 this session has been enforcing elsewhere — this was the one gap.
 
+**Phase 70 M70.75 — a wider pass, at the user's explicit request to check
+everything "relevant to performance," turned up a second real terrain-
+sampling bug, this time in npcs.ts.** Continued past the loopBody
+subsystems into the UI layer and the town's own update code, since
+"everything" meant the full performance-relevant surface, not only the
+render loop's direct callees:
+- `town.ts`'s `update()` — bounded loops over lanterns/glass panes, all
+  simple property writes (light intensity, emissive, flicker sines). No
+  terrain sampling, no allocation, no DOM. Clean.
+- `hotbar.ts`'s `update()` — style/text writes on every slot every
+  frame, unguarded, but these are cooldown countdowns that GENUINELY
+  change on most active frames (unlike the clock text M70.67 fixed) —
+  not wasted work, so left alone.
+- `StatusBar.ts` — has a `getBoundingClientRect()` (`publishHeight`),
+  but it's called from `set()`, the event-driven rebuild triggered by a
+  server message, not from the per-frame `update()`. The per-frame path
+  is pure conic-gradient/classList writes, no layout reads. Already
+  guards its CSS write on an unchanged height, the same pattern M70.67
+  added to hud.ts. Clean.
+- `floaters.ts` — bounded by the live floater count (only nonzero
+  during actual combat), pure style writes, no layout reads. Clean.
+- **`npcs.ts`'s `updateNpcs()` — a second real bug, the same shape as
+  mist/ambience.** `vis.actor.snapTo(wx, surfaceHeight(wx, wz), wz)` ran
+  for every townsperson, every frame, unconditionally — the exact same
+  terrain-sampling chain (`terrainHeight`, `riverAt`, `FLAT_SPOTS`) that
+  turned out to be the session's dominant per-frame cost, now paid by
+  every NPC standing in town whether or not they had moved a pixel since
+  the last frame. An idle NPC — which is nearly always, since a five-
+  person town is mostly standing still between patrol beats — was
+  re-sampling ground it already knew the answer to, sixty to a hundred
+  and forty-four times a second, for the entire time the player was
+  anywhere near town. This lines up with "exit town" being one of the
+  named trigger circumstances from earlier tonight.
+  Fixed with an exact-equality cache (`lastPoseX`/`lastPoseY`/`groundY`
+  on `NpcVisual`) rather than a time throttle: unlike a continuously-
+  moving player, an idle NPC's `pose.x`/`pose.y` is not merely slow-
+  changing, it is usually bit-for-bit IDENTICAL frame to frame, so exact
+  equality is the correct and sufficient guard, not an approximation —
+  `surfaceHeight` is only ever recomputed on the frame a beat actually
+  moves the NPC.
+`npx tsc --noEmit` clean, Vite hot-reloaded `npcs.ts` cleanly,
+`node tools/test/smoke.mjs` passed. Not yet confirmed live.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two

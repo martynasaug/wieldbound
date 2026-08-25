@@ -63,6 +63,13 @@ export interface NpcVisual {
    *  it exists so the standing heading is applied on arrival and then let go —
    *  see `updateNpcs`. */
   walking: boolean;
+  /** The `pose.x`/`pose.y` and resulting ground height `surfaceHeight` last
+   *  answered for, so an NPC standing still — which is nearly always, since a
+   *  town of five people mostly is not mid-patrol — does not pay for the same
+   *  terrain sample over again on every frame it has not moved. */
+  lastPoseX: number;
+  lastPoseY: number;
+  groundY: number;
 }
 
 /**
@@ -103,7 +110,8 @@ export async function buildNpcs(scene: THREE.Scene): Promise<Map<string, NpcVisu
       const pose = npcPoseAt(def);
       const px = toWorldX(pose.x);
       const pz = toWorldZ(pose.y);
-      actor.snapTo(px, surfaceHeight(px, pz), pz);
+      const groundY = surfaceHeight(px, pz);
+      actor.snapTo(px, groundY, pz);
       // Server bearings are measured in the XY plane where +y is south, and
       // south is +z here — so a bearing turns into a direction with no sign
       // flip at all. Getting this wrong leaves everyone facing out of town,
@@ -122,7 +130,16 @@ export async function buildNpcs(scene: THREE.Scene): Promise<Map<string, NpcVisu
       }
 
       scene.add(actor.root);
-      out.set(def.id, { def, actor, x: pose.x, y: pose.y, walking: pose.walking });
+      out.set(def.id, {
+        def,
+        actor,
+        x: pose.x,
+        y: pose.y,
+        walking: pose.walking,
+        lastPoseX: pose.x,
+        lastPoseY: pose.y,
+        groundY,
+      });
     }),
   );
 
@@ -156,7 +173,20 @@ export function updateNpcs(npcs: Map<string, NpcVisual>, nowMs = Date.now()): vo
     // Emberhold is levelled, so this is 0 for all five of them today — but it
     // is the ground's answer rather than an assumption, and it stops being 0
     // the first time anybody's beat crosses the wall.
-    vis.actor.snapTo(wx, surfaceHeight(wx, wz), wz);
+    //
+    // Only resampled on the frames where `pose` actually moved: an NPC's own
+    // beat is idle far more often than not, and `surfaceHeight` is the same
+    // terrain-sampling chain (bilinear `terrainHeight`, a `riverAt` bucket
+    // search, a `FLAT_SPOTS` scan) that turned out to be the dominant per-frame
+    // cost in `mist.ts`/`ambience.ts` earlier this session — paid here on
+    // every standing townsperson, every frame, for an answer that cannot have
+    // changed since the last one.
+    if (pose.x !== vis.lastPoseX || pose.y !== vis.lastPoseY) {
+      vis.lastPoseX = pose.x;
+      vis.lastPoseY = pose.y;
+      vis.groundY = surfaceHeight(wx, wz);
+    }
+    vis.actor.snapTo(wx, vis.groundY, wz);
     // Server bearings are XY with +y south, and south is +z here, so a bearing
     // becomes a direction with no sign flip — the same conversion the initial
     // facing uses, and the same one that leaves everybody staring out of town
