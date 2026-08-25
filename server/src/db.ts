@@ -17,8 +17,6 @@ import {
   type ItemRarity,
   type ItemSlot,
   type ItemInstance,
-  type GatherableResource,
-  type MonsterKind,
   maxManaFor,
   CLASSES,
   type WeaponType,
@@ -319,24 +317,7 @@ const setManaStmt = db.prepare("UPDATE characters SET mana = ? WHERE id = ?");
 const selectHp = db.prepare("SELECT hp FROM characters WHERE id = ?");
 const setHpStmt = db.prepare("UPDATE characters SET hp = ? WHERE id = ?");
 const setHpAndPositionStmt = db.prepare("UPDATE characters SET hp = ?, x = ?, y = ? WHERE id = ?");
-const selectForOffline = db.prepare(
-  "SELECT wood, ore, herb, gatherLevel, lastSeenAt, offlineGatherResource, offlineBattleMonsterKind FROM characters WHERE id = ?",
-);
-const applyOfflineWoodStmt = db.prepare(
-  "UPDATE characters SET wood = wood + ?, lastSeenAt = ?, offlineGatherResource = NULL, offlineBattleMonsterKind = NULL WHERE id = ?",
-);
-const applyOfflineOreStmt = db.prepare(
-  "UPDATE characters SET ore = ore + ?, lastSeenAt = ?, offlineGatherResource = NULL, offlineBattleMonsterKind = NULL WHERE id = ?",
-);
-const applyOfflineHerbStmt = db.prepare(
-  "UPDATE characters SET herb = herb + ?, lastSeenAt = ?, offlineGatherResource = NULL, offlineBattleMonsterKind = NULL WHERE id = ?",
-);
-const clearOfflineStmt = db.prepare(
-  "UPDATE characters SET lastSeenAt = ?, offlineGatherResource = NULL, offlineBattleMonsterKind = NULL WHERE id = ?",
-);
-const markDisconnectedStmt = db.prepare(
-  "UPDATE characters SET lastSeenAt = ?, offlineGatherResource = ?, offlineBattleMonsterKind = ? WHERE id = ?",
-);
+const markDisconnectedStmt = db.prepare("UPDATE characters SET lastSeenAt = ? WHERE id = ?");
 const setWeaponStmt = db.prepare("UPDATE characters SET weaponRarity = ? WHERE id = ?");
 const setArmorStmt = db.prepare("UPDATE characters SET armorRarity = ? WHERE id = ?");
 const setBootsStmt = db.prepare("UPDATE characters SET bootsRarity = ? WHERE id = ?");
@@ -467,12 +448,8 @@ export function applyDamage(
   return { hp, defeated: false };
 }
 
-export function markDisconnected(
-  id: string,
-  gatheringResource: GatherableResource | null,
-  battleMonsterKind: MonsterKind | null,
-): void {
-  markDisconnectedStmt.run(Date.now(), gatheringResource, battleMonsterKind, id);
+export function markDisconnected(id: string): void {
+  markDisconnectedStmt.run(Date.now(), id);
 }
 
 // Offline progress used to live here: on reconnect it simulated whatever

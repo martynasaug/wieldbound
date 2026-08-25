@@ -3421,7 +3421,7 @@ wss.on("connection", (socket) => {
 
     // Nothing to resume on reconnect any more, so the disconnect record no
     // longer needs to remember what the player was busy with.
-    markDisconnected(id, null, null);
+    markDisconnected(id);
 
     console.log(`[disconnect] ${p?.name ?? id}`);
     // Anything this player had aggro on falls back to walking home.
