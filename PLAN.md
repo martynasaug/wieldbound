@@ -11379,6 +11379,28 @@ rarities), multiple crafting stations. Not committing to order yet.
 ## Current status
 Phase 0 through 70 complete (2026-08-24).
 
+**Phase 70 M70.60 — the tracer's own filter was built on a misread.**
+M70.59 shipped and never fired. Re-reading three.js's `getParameters`
+source (not the cache-key builder this time, the params it consumes)
+found why: `parameters.fog` there is `!! scene.fog` — a SCENE-WIDE flag —
+and `useFog: material.fog === true` is the material-specific one. The
+tracer was checking `material.fog`, which corresponds to the bit I had
+backwards; `scene.fog` is set once in `World.ts`'s constructor and never
+reassigned (only its colour is mutated in place by `daynight.ts`), so it
+cannot be the source of a per-frame flip either — that theory is also
+closed. What actually still varies between the two recurring keys is
+`flipSided` (`material.side === BackSide`), and the one and only place in
+the client that uses `BackSide` is `Actor.ts`'s outline hull material —
+which carries a `customProgramCacheKey` ("outline-" + width) that gets
+APPENDED to, not substituted for, the auto-generated key array, meaning
+its full string should be distinguishable by that suffix — except
+DevTools was visibly truncating every logged key in every screenshot so
+far, so that suffix may have been sitting past what any screenshot could
+show. Removed the (now known-wrong) filter entirely: the tracer fires on
+EVERY `MeshBasicMaterial`/`SpriteMaterial` dispose, unconditionally, with
+a short stack trace — reading the actual call site directly rather than
+inferring a fifth time from a number.
+
 **Phase 70 M70.59 — stopped inferring, started tracing.** Reported still
 churning after M70.58, the exact same two keys AGAIN — four rounds now
 (M70.54 skill/attack VFX, M70.56 keeping warm materials referenced,

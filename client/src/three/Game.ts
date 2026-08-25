@@ -363,15 +363,15 @@ let disposeTracerInstalled = false;
 /**
  * TEMPORARY DIAGNOSTIC. M70.54-58 chased the shader-recompile churn the F3
  * overlay's `[programs]` count exposed through four files by inferring the
- * culprit from cache-key numbers — three wrong guesses in a row that were
- * each individually well-reasoned and confirmed live as real bugs, none of
- * them THE bug. This ends the guessing: `THREE.Material.prototype.dispose`
- * is patched once to print a stack trace whenever a `MeshBasicMaterial` or
- * `SpriteMaterial` with `fog === true` is disposed — `fog: true` is the one
- * property every combat-effect file this thread has already checked does
- * NOT have (all of them explicitly set `fog: false`), so a trace firing at
- * all means the material came from somewhere none of M70.54-58 looked.
- * Remove once the actual source is found and fixed.
+ * culprit from cache-key numbers, each a real bug fixed by reading actual
+ * code, none of them THE bug. The `fog === true` filter this carried
+ * originally was itself a misread of the cache key — `parameters.fog` in
+ * three.js's own `getParameters` is `!!scene.fog` (a scene-wide flag), not
+ * `material.fog` (that one is `useFog`) — so it could never have fired on
+ * the right thing. No filter this time: every `MeshBasicMaterial`/
+ * `SpriteMaterial` dispose gets a short trace, unconditionally, so the
+ * actual call site is read directly off the stack rather than inferred a
+ * fifth time. Remove once the real source is found and fixed.
  */
 function installDisposeTracer(): void {
   if (disposeTracerInstalled) return;
@@ -379,9 +379,9 @@ function installDisposeTracer(): void {
   const proto = THREE.Material.prototype as THREE.Material & { dispose(): void };
   const original = proto.dispose;
   proto.dispose = function (this: THREE.Material) {
-    const m = this as THREE.MeshBasicMaterial | THREE.SpriteMaterial;
-    if ((m.type === "MeshBasicMaterial" || m.type === "SpriteMaterial") && m.fog === true) {
-      console.warn(`[dispose-trace] ${m.type} fog=true disposed:`, new Error().stack);
+    if (this.type === "MeshBasicMaterial" || this.type === "SpriteMaterial") {
+      const stack = new Error().stack?.split("\n").slice(1, 6).join("\n") ?? "(no stack)";
+      console.warn(`[dispose-trace] ${this.type} disposed:\n${stack}`);
     }
     original.call(this);
   };
