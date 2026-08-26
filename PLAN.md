@@ -11954,7 +11954,72 @@ genuine, currently-irreducible-without-a-rendering-architecture-change
 allocation rate (the `WebGLRenderer.render` draw-call volume noted
 earlier).
 
-**Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
+**Phase 70 M70.79 — self-driving the game with Playwright to gather real
+data without the user, and a genuine gap found in an existing fix.**
+Asked directly whether there's a way to verify performance without the
+user's screenshots. There was: launched the actual client in a real
+(headed, GPU-accelerated) Chromium via Playwright, logged in, drove the
+character with real keyboard input, and captured every console line —
+including this session's own `[hitch]` context lines — the same way a
+human tester would, but self-contained. Took several rounds to get the
+test harness itself right (a rotating N/E/S/W pattern cancels into a
+closed loop and never leaves town; a canvas click does not move DOM
+focus off a still-focused `<input>`, so keys were silently swallowed by
+Game.ts's own "don't steal keystrokes from a text field" guard; one
+long held diagonal has no way to route around a single obstacle it
+walks into; and reading `window.__wieldbound.playerX/Y` — a debug
+handle `Game.ts:1084` already exposes, TypeScript `private` being
+compile-time only — turned out to be the actual fix once combined with
+taking and reading its own screenshots to verify state rather than
+trusting the text log). Final version: steer east by position feedback
+toward the nearest camp (confirmed via `ringPack`'s own formula in
+`server/src/index.ts`, and the geometry matches exactly), then wander
+locally so real combat happens.
+The resulting console capture reproduced real combat (screenshots
+show "The Slime hits you for 2", HP dropping, multiple monster
+plates) and caught something new: three ~1050-1120ms render-only
+hitches (fully accounted for as `render`, not a mystery gap) with
+**zero monsters present** — while the character was moving through a
+forest zone ("The Weeping Wood") for the first time that session. That
+directly contradicts the session's earlier working theory that these
+big render-only stalls track monster COUNT specifically; the real
+common factor is more likely "any large batch of geometry made visible
+for the first time this session," which forests are just as much an
+instance of as a monster camp.
+Traced it to a genuine, specific gap in an ALREADY-EXISTING, carefully
+documented fix (`Game.ts:1281-1313`, `warmUp()` + one full frame render
+under the loading screen, explicitly written to prevent exactly this
+symptom — its own comment cites "a 496ms frame whose worst section was
+render... the single worst frame of a session"). That fix compiles
+every material and uploads every geometry buffer in the WHOLE scene —
+but the SHADOW pass is a separate program variant that three.js only
+finalizes for whatever actually falls inside the shadow camera's
+frustum at the moment of that one warmup render, and `World.follow`'s
+own shadow extent is deliberately small and centred on the player
+(sized off camera distance, not the world). A forest built at load time
+far from spawn has its main color-pass material warmed by that fix, but
+never gets its shadow-pass variant compiled or its shadow-map buffers
+uploaded until a player's dynamically-sized shadow frustum actually
+reaches it for the first time — which is exactly what "The Weeping
+Wood, entered for the first time" reproduced.
+Deliberately NOT fixed tonight. A real fix means temporarily moving the
+camera/sun/shadow frustum to each of `FORESTS`' six wood centres during
+the loading sequence to force their shadow buffers too, the same shape
+as the existing warmup but reaching further — and that means touching
+the exact camera/shadow state `World.follow` manages very carefully.
+Getting the save/restore wrong risks a visible camera glitch on the
+FIRST frame of every session, which is worse than the rare, one-time-
+per-forest hitch it would fix, and unlike everything else fixed
+tonight, "does this look right" is a much weaker thing for me to verify
+myself than "did the hitch happen" — the self-driving harness can
+confirm the hitch is gone, but is a poor judge of a subtle framing bug.
+Documented instead of attempted blind; a good candidate for the next
+session with the user able to actually look at the result.
+Server was already running throughout (`npm run dev`, confirmed via
+`curl` against both ports before starting). No client/server code
+changed this entry — this was pure investigation using the newly-built
+self-driving harness (`drive.mjs`, scratchpad-only, not part of the
+repo). — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two
 already-understood, already-benign hitch classes (occasional cold rig
