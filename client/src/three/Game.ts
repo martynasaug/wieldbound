@@ -172,7 +172,7 @@ import { currentWind, updateWind } from "./wind";
 import { NORTH_TOWN_NAME, NORTH_TOWN_SITE } from "../../../shared/road";
 import { resolveRiverCollision } from "../../../shared/river";
 import { placeNameAt } from "../../../shared/places";
-import { forestStrengthAt } from "../../../shared/forests";
+import { forestStrengthAt, FORESTS } from "../../../shared/forests";
 import {
   NPC_TALK_RANGE_PX,
   NPC_TETHER_PX,
@@ -1311,6 +1311,20 @@ export class Game {
     // never frees them, so this is paid once per session rather than per
     // chunk-first-seen. Expensive, and it happens under the loading screen.
     this.world.render();
+
+    // AND THE SHADOW OF EACH WOOD, SEPARATELY — see `World.primeShadowsAt`'s
+    // own comment for the mechanism. The frame above compiles and uploads the
+    // COLOR pass for the whole scene at once because the camera can see the
+    // whole scene from spawn; it cannot get the SHADOW pass the same way,
+    // because the shadow frustum is deliberately small and only ever covers
+    // what is near wherever the camera is standing. A forest far from spawn
+    // never falls inside it during that one frame, so without this its
+    // shadow buffers and shadow program stayed uncompiled until a player's
+    // own frustum reached it mid-session — caught live as three ~1100ms
+    // render-only hitches with no monsters anywhere near, entering a wood
+    // for the first time. One extra offscreen render per wood, all of it
+    // still under the loading screen.
+    for (const f of FORESTS) this.world.primeShadowsAt(toWorldX(f.x), toWorldZ(f.y));
 
     this.loop();
   }

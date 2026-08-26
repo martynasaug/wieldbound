@@ -12007,19 +12007,73 @@ camera/sun/shadow frustum to each of `FORESTS`' six wood centres during
 the loading sequence to force their shadow buffers too, the same shape
 as the existing warmup but reaching further — and that means touching
 the exact camera/shadow state `World.follow` manages very carefully.
-Getting the save/restore wrong risks a visible camera glitch on the
-FIRST frame of every session, which is worse than the rare, one-time-
-per-forest hitch it would fix, and unlike everything else fixed
-tonight, "does this look right" is a much weaker thing for me to verify
-myself than "did the hitch happen" — the self-driving harness can
-confirm the hitch is gone, but is a poor judge of a subtle framing bug.
-Documented instead of attempted blind; a good candidate for the next
-session with the user able to actually look at the result.
+Initially deferred over a feared camera glitch, then IMPLEMENTED once
+the risk turned out to be avoidable: `World.primeShadowsAt(x, z)` moves
+the camera/sun/shadow frustum to a point, renders, and restores every
+value it touched — but renders into the SAME throwaway 4x4 offscreen
+target `warmBuffers` already uses, so the visible canvas never updates
+while it runs and there is no frame on which a player could see the
+moved camera at all. That removes the whole class of risk the deferral
+was about. Called once per entry in `FORESTS` (six woods) from the
+loading sequence in `Game.ts`, immediately after the existing
+whole-scene `warmUp()` + one-full-frame render, so all of it stays
+under the loading screen. `shadowMap.needsUpdate` is set both before
+each priming render (so three.js actually redraws the shadow pass
+rather than reusing the last one) and once after the restore (the real
+position's shadow map is stale after six foreign renders, and the next
+real frame — still under the loading screen — has to redraw it before
+the player sees anything).
+Verified with the harness: `npx tsc --noEmit` clean, Vite hot-reloaded
+both files cleanly, load-to-playable measured at ~3.0-3.5s across
+several runs (no meaningful regression from the six extra offscreen
+renders), zero console errors, and screenshots after load show a normal
+scene. A follow-up driven session reproduced real combat and logged no
+forest-entry hitch — though that particular run's random wander never
+re-entered a cold wood, so this is "nothing broke and the mechanism is
+sound", not yet "the hitch is confirmed gone."
 Server was already running throughout (`npm run dev`, confirmed via
-`curl` against both ports before starting). No client/server code
-changed this entry — this was pure investigation using the newly-built
+`curl` against both ports before starting), using the newly-built
 self-driving harness (`drive.mjs`, scratchpad-only, not part of the
-repo). — the churn hunt closed live; a real, separate gear bug
+repo).
+
+**Phase 70 M70.80 — the same root cause has a SECOND instance in
+`warmBuffers`, deliberately left alone for a real correctness reason.**
+The post-fix driven session logged two more ~1080ms render-only hitches
+(`render 1079.7ms` / `render 1081.4ms`, nothing outside the timed
+sections) with `monsters=16/16 engaged=yes` — the same signature as the
+forest ones, so the earlier "it tracks monster count" reading was not
+wrong so much as incomplete: monsters and forests are two instances of
+one root cause, "geometry whose SHADOW pass has never been compiled or
+uploaded being drawn for the first time".
+`warmBuffers` (`World.ts:920`, the per-actor warm-up every monster and
+remote player goes through on spawn) has exactly the gap
+`primeShadowsAt` just closed for forests: it renders the actor into the
+offscreen target, which warms the COLOR pass, but never sets
+`shadowMap.needsUpdate`. On the DEFAULT quality tier (`balanced`,
+`shadowEveryNFrames: 2`) `shadowMap.autoUpdate` is off and the shadow
+pass only runs on scheduled frames — so an actor's shadow-pass program
+and shadow buffers are very likely never touched by its own warm-up at
+all, on the tier most players actually run.
+NOT fixed, and the reason is specific rather than caution for its own
+sake: the shadow map is an internal render target three.js owns, and it
+is NOT redirected by the `setRenderTarget(bufferWarmTarget)` call that
+makes the rest of `warmBuffers` invisible. Forcing a shadow update while
+rendering ONE actor as its own scene root would therefore write the real,
+player-visible shadow map from a scene containing only that actor —
+every other caster's shadow missing — until the next scheduled shadow
+frame corrects it. That is a real, if brief, visible artifact, and
+unlike the forest case there is no offscreen trick that avoids it,
+because the shadow target cannot be redirected. Fixing it properly
+means either rendering the WHOLE scene (not just the actor) during the
+warm-up — which is the expensive thing the warm-up exists to avoid — or
+restructuring how the shadow schedule interacts with warm-ups, which is
+a real design change rather than a one-line fix.
+Left documented rather than attempted: the failure mode of getting it
+wrong (every monster spawn briefly blanking the world's shadows) is
+worse and more visible than the hitch it fixes, and it is exactly the
+kind of thing a screenshot at a random moment would not catch.
+
+**Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two
 already-understood, already-benign hitch classes (occasional cold rig
