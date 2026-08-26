@@ -3468,6 +3468,7 @@ wss.on("connection", (socket) => {
     attributes.delete(id);
     equippedItems.delete(id);
     lastRegenAt.delete(id);
+    standingAt.delete(id);
   });
 });
 

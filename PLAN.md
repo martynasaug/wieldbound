@@ -11883,6 +11883,77 @@ that size. The systematic sweep found what there was to find; nothing
 checked this pass points at a bigger leak than what M70.76 already
 uncovered.
 
+**Phase 70 M70.78 — a live heap snapshot comparison, walked through
+together, and a real leak found on the SERVER instead of the client.**
+Guided an actual DevTools Memory-tab comparison (two heap snapshots a
+few minutes apart, sorted by growth) rather than guessing further from
+code alone. The top growers were almost entirely `blink::*`/`SVG*`/
+`Layers`/`PaintLayer` — browser-internal SVG and CSS-animation
+bookkeeping, not application objects. Traced two of the biggest
+individually (`Layers`, then `SVGAnimatedString`) through the Retainers
+panel; both led to entirely legitimate, singly-created, permanent
+objects (a `world.groundCover` InstancedMesh, and the minimap's own
+settings-cog icon, built once in its constructor) — confirming these
+aren't leaks at all, just Blink's internal SVG wrapper churn as a side
+effect of the UI's continuously-updating progress bars and cooldown
+sweeps (already confirmed legitimate, continuous work in M70.75).
+On request ("continue looking for similar things" / "EVERYTHING"),
+widened the audit past the client into code not previously touched
+tonight: `setInterval`/`setTimeout` usage (clean — no recurring timer
+ever left running, all one-shot or already-tracked), every remaining
+`new THREE.*Material` site (`contact.ts`, `presence.ts`, `gear.ts`,
+`Game.ts`'s station embers — all either one-time world-build or
+correctly disposed through the existing `ownedMaterials`/`clearGear`
+path), `gear.ts`'s procedural armour geometry (explicitly documented
+and confirmed as a shared, style-keyed cache — correctly never disposed
+per-piece, same reasoning as a body's own geometry), the WebSocket
+reconnect path in `socket.ts` (each reconnect builds a fresh `WebSocket`
+rather than re-attaching to the old one, so no listener stacking), and
+`Actor.update()` itself — the single hottest per-actor per-frame
+function in the game — which allocates nothing at all, mutating
+`this.root.position`/`this.pivot.rotation` in place throughout.
+Then crossed into the SERVER for the first time this session (all prior
+fixes were client-only) and found a real one: `standingAt`
+(`server/src/index.ts:2600`, `Map<string, string | null>` — which
+landmark ring each player is currently standing in, for waystone
+objective credit) is `.set()` on every player who enters a waystone's
+ring and was never once `.delete()`d anywhere in the file — not in the
+otherwise very thorough ~30-entry disconnect cleanup block, not
+anywhere else. Cross-checked every other player-keyed `Map` declared in
+`index.ts` against that disconnect block first (`weaponXpCache`/
+`talentCache`/`nextGatherAt` looked uncovered at a glance but are
+actually all cleaned together through the existing `clearCombatClocks`
+helper, already called there) before concluding this one was the actual
+gap. Fixed with `standingAt.delete(id)` added to the same disconnect
+block. Server-side, so its growth is bounded by unique CHARACTER ids
+across the server process's whole lifetime rather than per-session —
+harmless for a single dev-testing session with a handful of characters,
+but a genuine correctness bug for anything longer-lived.
+Also checked the main server tick loop (`setInterval` at `TICK_MS =
+100`, ~750 lines) for two different failure classes: an O(monsters ×
+players) nearest-target scan exists (every ~200-300 monster checks
+against every connected player, every 100ms) but is trivial in absolute
+terms at this game's actual scale, not flagged as a bug; and confirmed
+`savePosition` (`better-sqlite3`, synchronous by design) is already
+throttled per-player via `SAVE_INTERVAL_MS`/`lastSavedAt`, not called
+unconditionally every tick for every player — so no per-tick blocking
+database-write risk found.
+`npx tsc --noEmit -p server/tsconfig.json` clean, `node
+tools/test/smoke.mjs` passed. Not yet confirmed live. Honest summary of
+where the memory-leak thread now stands: three real, code-verified
+leaks found and fixed across the whole session (`flinchReadyAt`,
+`silhouetteMaterial`, `standingAt`), and two live-guided heap
+comparisons that both led to false leads on legitimate objects rather
+than a fourth. The systematic sweep, now spanning client AND server, has
+covered every category of leak this investigation knows how to look
+for from static reading and one live heap comparison; further progress
+on the specific 653ms-class pause most likely needs either a heap
+comparison taken with these three fixes already live, or accepting that
+some portion of it is ordinary browser GC behaviour under this game's
+genuine, currently-irreducible-without-a-rendering-architecture-change
+allocation rate (the `WebGLRenderer.render` draw-call volume noted
+earlier).
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two
