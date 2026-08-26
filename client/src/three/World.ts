@@ -934,7 +934,29 @@ export class World {
     });
     const prevTarget = this.renderer.getRenderTarget();
     this.renderer.setRenderTarget(this.bufferWarmTarget);
-    this.renderer.render(object, this.camera);
+    // THE REAL SCENE WHEN THE OBJECT IS IN IT, not the object on its own.
+    //
+    // Passing `object` as the render's own root was cheaper and it was
+    // WRONG, in a way that made this whole function a no-op for the thing it
+    // exists to prevent: an object rendered as its own scene has no lights in
+    // it, and a program is keyed on the light counts. So this compiled a
+    // zero-light variant nothing will ever draw, while the real
+    // one-directional-and-forty-five-point variant was still left to compile
+    // inline on the first frame the actor was actually visible. The proof was
+    // in the `[programs]` dump: a `physical` entry whose light counts read
+    // `0,0,0,...` sitting beside the ones that read `1,45,0,0,2,...`.
+    //
+    // Callers add the actor to the scene before warming it (see `syncMonsters`
+    // and `syncPlayers`), so the scene render below includes it and produces
+    // the variant that will actually be used. An object with no parent — the
+    // pooled effect groups, which warm themselves before they are ever
+    // attached — keeps the old cheap path, which is correct for them: they
+    // are unlit materials whose programs do not depend on the light counts.
+    if (object.parent) {
+      this.renderer.render(this.scene, this.camera);
+    } else {
+      this.renderer.render(object, this.camera);
+    }
     this.renderer.setRenderTarget(prevTarget);
     for (const [child, culled] of wasCulled) child.frustumCulled = culled;
     profiler.end(label);

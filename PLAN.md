@@ -15988,3 +15988,47 @@ further additions in that space, pausing only for the user to eyeball the
 browser at testable milestones (I can't see the canvas myself), not for
 go-ahead permission on what to build next. No committed next phase — see
 Phase 35+ candidates above.
+
+**Phase 70 M70.82 — `warmBuffers` was warming the WRONG shader all along,
+and the framerate question turns out to be the monitor.** Reported after
+M70.81 that occasional slowness remained and "fps could also be a lot
+better" — two different problems, so both were measured directly rather
+than guessed at, by sampling the F3 overlay's own readout during driven
+play.
+**The remaining stalls.** `warmBuffers` rendered the actor as its own
+scene root (`renderer.render(object, camera)`), which is cheaper and is
+wrong in the one way that made the whole function a no-op for its own
+purpose: an object rendered as its own scene contains NO LIGHTS, and a
+program's cache key includes the light counts. So every monster and
+remote player spawn compiled a zero-light variant nothing would ever
+draw, while the real `1 directional, 45 point` variant was still left to
+compile inline on the first frame the actor was actually visible. The
+proof was already sitting in the `[programs]` dumps from M70.81 and had
+been read past: one `physical` entry whose light counts read
+`0,0,0,...`, beside all the others reading `1,45,0,0,2,...`.
+Fixed by rendering the real scene when the object is already parented
+into it (which is what `syncMonsters`/`syncPlayers` do before warming),
+and keeping the cheap object-only path for the pooled effect groups,
+which warm themselves before they are ever attached and whose unlit
+materials genuinely do not depend on the light counts.
+Measured, driven session, before -> after: `worst /10s` **1038.2ms ->
+8.4-45.8ms**, and the program count stopped growing mid-session
+(pinned at 111 across every sample, where before it climbed as new
+material/geometry pairings were first drawn). Caveat on rigour: the
+after-run's random wander did not travel as far as the before-run
+(x=9209 vs x=16000), so the routes are not identical — the stable
+program count is the stronger evidence, not the distance covered.
+**The framerate.** Not a game problem at all, on this machine. The
+overlay reads `60Hz display, 1 frame per 1 refresh = 60fps target` and
+`fps 60.0` — the display is 60Hz and the game is hitting its ceiling
+exactly. Frame avg is 4.7-6.9ms against a 16.7ms budget, i.e. the game
+finishes each frame in about a third of the time available and then
+waits ~13ms for the monitor (`between frames 12.9ms`). There is no
+throughput problem to fix here: the same frames would run at 140-200fps
+on a display that could show them, which is what the 144Hz machine
+should already see. Draw calls (150-360) and triangles (0.96-1.4M) are
+well within budget and are NOT what to attack — the earlier plan to
+thin ground cover would have cost picture quality for frames that are
+already idle a third of every refresh.
+`npx tsc --noEmit` clean; smoke plus the render-related suite
+(`shadows`, `warmup`, `culling`, `pacing`, `forests`) all pass.
