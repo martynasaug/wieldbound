@@ -11828,6 +11828,61 @@ session (mist, ambience, minimap, npcs, the HUD, terrain rings); a full
 elimination of browser GC pauses was never on the table, only fewer and
 smaller ones.
 
+**Phase 70 M70.77 — a systematic leak audit, on request ("continue
+looking for similar things").** Enumerated every `Map<string, ...>` in
+the client (`grep "= new Map<string"` across `client/src`) and checked
+each one's cleanup path individually rather than guessing which might
+matter:
+- `drops.ts`'s `visuals`, `indicators.ts`'s `dangerZones`, `hud.ts`'s
+  `plates` — all three already use the correct `seen`-set reconciliation
+  pattern (`syncPlayers`'s own shape): cleared and rebuilt from the
+  current snapshot every sync, with anything not re-marked explicitly
+  disposed and deleted. Clean.
+- `CraftPanel.ts`'s `chosenRune`/`chosenOver`/`chosenDraw` — genuinely
+  unbounded (item instance ids, never revisited once an item is
+  consumed), unlike `flinchReadyAt`'s bounded spawn-point keys. Left
+  alone: each entry is a single string pair, not a GPU resource, and
+  even thousands of them over a very long session amounts to kilobytes,
+  not a credible GC-pause contributor.
+- `gear.ts`'s `heldCache`, `assets.ts`'s `modelCache`/`textureCache`,
+  `town.ts`'s `signTextures` — all keyed by a bounded catalogue id
+  (item/model/texture name), explicitly documented prototype caches, not
+  per-instance state. Clean by construction.
+- `wardrobe.ts`'s `loaded` — a local variable scoped inside a one-time
+  `loadWardrobe()` initialization pass, not a persistent field. Not a
+  leak candidate at all.
+- Every `addEventListener` call in the client (16 files) — checked the
+  pattern rather than each call site individually: listeners are either
+  one-time setup on persistent panels, or attached to elements created
+  by the same code that already properly `.remove()`s or
+  `innerHTML = ""`s them on rebuild (`InventoryPanel.render`,
+  `hud.ts`'s plates, `StatusBar.build`) — which is sufficient in a
+  modern engine, since a removed DOM node with no remaining references
+  is collected together with its listeners. No manual
+  `removeEventListener` bookkeeping missing anywhere checked.
+- **`Actor.ts`'s `silhouetteMaterial` — a second real, smaller leak.**
+  Created once per actor (`if (!this.silhouetteMaterial)` in
+  `buildSilhouette`) and never added to `ownedMaterials`, the set
+  `dispose()` actually iterates — so it was never disposed on actor
+  teardown at all. Smaller in practice than `flinchReadyAt`: monsters
+  pass `silhouette: false` and never allocate one, so this only ever
+  fires on a REMOTE PLAYER disconnecting, which happens far less often
+  than the constant monster spawn/despawn churn a camp produces. Fixed
+  with an explicit `this.silhouetteMaterial?.dispose()` in `dispose()`
+  — deliberately NOT added to `ownedMaterials`, because that set is
+  bulk-disposed on every mid-lifetime BODY rebuild (a weapon-class
+  change), while this material is specifically cached to survive across
+  rebuilds; putting it there would have disposed a material still in
+  active use the next time the rig changed.
+`npx tsc --noEmit` clean. Both fixes are real and confirmed by reading,
+not by guessing — but stated honestly, neither one, alone or together,
+is a strong candidate for the 653ms pause: the spawn-point-bounded
+`flinchReadyAt` and the players-only, disconnect-only
+`silhouetteMaterial` are both too small or too rare to explain a stall
+that size. The systematic sweep found what there was to find; nothing
+checked this pass points at a bigger leak than what M70.76 already
+uncovered.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two

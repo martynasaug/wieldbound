@@ -2115,6 +2115,16 @@ export class Actor {
     this.root.removeFromParent();
     for (const m of this.ownedMaterials) m.dispose();
     this.ownedMaterials.clear();
+    // NOT in `ownedMaterials`: that set is bulk-disposed on every BODY
+    // rebuild (a weapon-class change, mid-lifetime), while this material is
+    // deliberately cached and reused ACROSS rebuilds (see the `if (!this.
+    // silhouetteMaterial)` guard in `buildSilhouette`) — putting it there
+    // would dispose a material still in active use the next time the rig
+    // changed. Disposed here instead, once, only on the actor's own final
+    // teardown. Monsters never allocate one at all (`silhouette: false`), so
+    // this only ever matters for a player disconnecting.
+    this.silhouetteMaterial?.dispose();
+    this.silhouetteMaterial = null;
     // Geometry is deliberately NOT disposed: `SkeletonUtils.clone` shares it
     // with the cached prototype, so freeing it here would force every future
     // actor of the same model to re-upload its buffers — and monsters are torn
