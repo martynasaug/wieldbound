@@ -1593,6 +1593,7 @@ export class Game {
       } else if (distance > MONSTER_DESPAWN_RADIUS_PX) {
         vis.actor.dispose();
         this.monsters.delete(s.id);
+        this.flinchReadyAt.delete(s.id);
         // The server would still happily resolve a skill against something the
         // player can no longer see, so drop the selection with the model.
         if (this.lockedId === s.id) this.setTarget(null);

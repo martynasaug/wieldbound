@@ -11785,6 +11785,49 @@ render loop's direct callees:
 `npx tsc --noEmit` clean, Vite hot-reloaded `npcs.ts` cleanly,
 `node tools/test/smoke.mjs` passed. Not yet confirmed live.
 
+**Phase 70 M70.76 — a real leak found chasing the 653ms GC pause, sized
+honestly rather than oversold.** A live console dump caught a 653ms
+"BETWEEN frames" hitch while standing completely idle in town — "nothing
+of ours ran in it," meaning no instrumented section could have caused
+it, which leaves garbage collection or something outside the loop
+entirely as the only candidates. Asked directly whether it could be
+fixed. Went looking for an actual memory leak rather than more per-frame
+throttling, since a stall that size while doing NOTHING doesn't fit a
+per-frame-cost story — it fits a heap that has grown large enough for a
+major collection to take real time.
+Found one: `flinchReadyAt` (a `Map<string, number>` cooldown gate on the
+"hit" flinch animation) is `.set()` on every real blow landed or taken
+and was never once `.delete()`d — not on monster despawn, not anywhere.
+Every monster id that has ever dealt or taken a hit this session left a
+permanent entry.
+Checked how bad that actually is before calling it the cause: read the
+server's monster roster (`server/src/index.ts:672`, built from
+`ringPack(...)` calls at startup) and confirmed monster ids are STABLE,
+reused slot names across every death/respawn cycle, not fresh unique ids
+per spawn — so this map's growth is capped at the total number of
+monster spawn points in the whole game world, a few hundred at most, not
+something that climbs without bound over a session. Real bug, worth
+fixing, but too small on its own to be a credible explanation for a
+653ms pause — said so plainly rather than claiming a fix for something
+this size probably wasn't it. Also checked whether `this.monsters`
+itself could leak stale Actors for ids that silently drop out of the
+server's snapshot without an explicit despawn — same stable-id roster
+means a "dead" monster's id always reappears (revives), so `syncMonsters`
+never actually loses track of one; the existing distance-based despawn
+path is sufficient and there is no missing "monster removed entirely
+from the world" cleanup pass the way `syncPlayers`' `seen`-set pattern
+has for players leaving.
+Fixed the one confirmed gap: `this.flinchReadyAt.delete(s.id)` added
+alongside the existing `this.monsters.delete(s.id)` at the distance-
+despawn site.
+`npx tsc --noEmit` clean. Not yet confirmed live, and — stated
+honestly — this alone probably will not make the 653ms class of pause go
+away. What actually reduces GC pause frequency/size is cutting overall
+allocation RATE, which is what M70.66 through M70.75 have been doing all
+session (mist, ambience, minimap, npcs, the HUD, terrain rings); a full
+elimination of browser GC pauses was never on the table, only fewer and
+smaller ones.
+
 **Phase 70 M70.65 — the churn hunt closed live; a real, separate gear bug
 found while looking for its cause.** Confirmed live, after M70.64: zero
 `[dispose-trace]` and zero `[programs]` lines at all — only the two
