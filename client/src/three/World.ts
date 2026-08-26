@@ -941,74 +941,52 @@ export class World {
   }
 
   /**
-   * Uploads the SHADOW-pass buffers and compiles the shadow-pass program for
-   * whatever falls near one point, before a player's own shadow frustum ever
-   * reaches it.
+   * Draws EVERY mesh in the world once, with frustum culling off, so that any
+   * shader program which only comes into existence when an object is actually
+   * DRAWN is created here rather than mid-session.
    *
-   * `warmUp` + the one full frame in `Game.ts`'s loading sequence already
-   * compile every material and upload every geometry buffer for the COLOR
-   * pass, across the entire scene, once — but the shadow pass is a separate
-   * program variant, and three.js only finalizes it for whatever actually
-   * falls inside the shadow camera's frustum at the moment a shadow render
-   * happens. `follow`'s shadow frustum is deliberately small and centred on
-   * the player (sized off camera distance, not the world), so anything built
-   * far from spawn — a forest on the far side of the map — never gets its
-   * shadow buffers touched by that one warm frame at all. The first time a
-   * player's own frustum reaches it, THAT is where the upload and the
-   * compile both happen, mid-session, on a frame the player is looking at —
-   * caught live as three ~1100ms render-only hitches with zero monsters
-   * anywhere near, entering a wood for the first time.
+   * `compileAsync(scene, ...)` prepares each material, and the load sequence's
+   * plain `render()` draws what the camera can see — but a normal render is
+   * frustum-culled, and at load the camera sees a few dozen metres of a world
+   * four hundred wide. A program is keyed on the material AND on the geometry
+   * it is drawn with (`vertexUv1s` and friends are per-attribute-set), so a
+   * foliage species that never entered the load camera's frustum could still
+   * have a program left to create the first time the player walked into it.
+   * That was measured: a `[programs]` count that only ever GREW mid-session,
+   * two `wieldbound-wind-v2` entries appearing in the same millisecond as a
+   * 1211ms `render`-only frame, with no mesh added to the scene beforehand
+   * and no dispose anywhere near it.
    *
-   * Rendered into the same throwaway offscreen target `warmBuffers` already
-   * uses rather than the screen, so moving the camera and sun here to prime
-   * a distant point never touches what is actually on screen — the visible
-   * canvas simply does not update while this runs, the same reason
-   * `warmBuffers` itself is invisible. Restoring every value it touched
-   * before returning, rather than leaving the camera at the primed point for
-   * three.js's own next frame to fix, because the loading screen may finish
-   * and a real frame may render before this function's caller gets back
-   * control.
+   * Rendered into the throwaway 4x4 target, so nothing reaches the screen and
+   * the fill cost is negligible; the real cost is vertex and draw-call work,
+   * paid once, under the loading screen.
    */
-  primeShadowsAt(x: number, z: number): void {
-    const savedLookTarget = this.lookTarget.clone();
-    const savedCameraPos = this.camera.position.clone();
-    const savedSunPos = this.sun.position.clone();
-    const savedSunTargetPos = this.sun.target.position.clone();
-
-    const groundY = surfaceHeight(x, z) + 1.0;
-    this.lookTarget.set(x, groundY, z);
-    this.camera.position.set(
-      this.lookTarget.x + this.cameraDir.x * this.distance,
-      this.lookTarget.y + this.cameraDir.y * this.distance,
-      this.lookTarget.z + this.cameraDir.z * this.distance,
-    );
-    this.camera.lookAt(this.lookTarget);
-
-    const dir = this.dayNight.lightDirection;
-    this.sun.position.set(
-      this.lookTarget.x + dir.x * 42,
-      dir.y * 42,
-      this.lookTarget.z + dir.z * 42,
-    );
-    this.sun.target.position.set(this.lookTarget.x, 0, this.lookTarget.z);
-    this.sun.target.updateMatrixWorld();
-
+  warmWholeScene(): void {
+    const wasCulled: [THREE.Object3D, boolean][] = [];
+    // ONE INSTANCE EACH, not all eighty-two thousand plants. A program is
+    // keyed on the material, the geometry and the defines — never on how many
+    // instances are drawn — so a single instance creates exactly the same
+    // program the full chunk would, for a tiny fraction of the vertex work.
+    // Drawing every instance measured at +7.6s of load; this keeps the
+    // coverage and gives that back.
+    const wasCount: [THREE.InstancedMesh, number][] = [];
+    this.scene.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      wasCulled.push([child, child.frustumCulled]);
+      child.frustumCulled = false;
+      const instanced = child as THREE.InstancedMesh;
+      if (instanced.isInstancedMesh && instanced.count > 1) {
+        wasCount.push([instanced, instanced.count]);
+        instanced.count = 1;
+      }
+    });
     const prevTarget = this.renderer.getRenderTarget();
     this.renderer.setRenderTarget(this.bufferWarmTarget);
-    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(prevTarget);
-
-    this.lookTarget.copy(savedLookTarget);
-    this.camera.position.copy(savedCameraPos);
-    this.camera.lookAt(this.lookTarget);
-    this.sun.position.copy(savedSunPos);
-    this.sun.target.position.copy(savedSunTargetPos);
-    this.sun.target.updateMatrixWorld();
-    // The real position's shadow map is stale after all that — the next
-    // real frame (still under the loading screen at this point in the
-    // sequence) has to redraw it before the player ever sees it.
-    this.renderer.shadowMap.needsUpdate = true;
+    for (const [child, culled] of wasCulled) child.frustumCulled = culled;
+    for (const [mesh, count] of wasCount) mesh.count = count;
   }
 
   render(): void {

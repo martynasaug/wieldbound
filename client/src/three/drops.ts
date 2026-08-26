@@ -84,9 +84,21 @@ export class Drops {
 
   constructor(private readonly scene: THREE.Scene) {}
 
+  /**
+   * Kept from `prewarm` so `create` can warm a DROPPED MODEL before it is
+   * parented — see the note there. Optional only because `prewarm` is a
+   * separate call from the constructor: a Drops that was never prewarmed
+   * still works, it just pays the compile inline the way it always did.
+   */
+  private warmer: {
+    warmUp(o: THREE.Object3D): Promise<void>;
+    warmBuffers(o: THREE.Object3D, label?: string): void;
+  } | null = null;
+
   /** Fills both pools and uploads/compiles what they hold. Called once,
    *  off-screen, alongside `SkillFx.prewarm` and its siblings. */
   prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
+    this.warmer = world;
     const group = new THREE.Group();
     for (let i = 0; i < Drops.DISC_POOL_SIZE; i++) {
       const m = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.34, depthWrite: false });
@@ -188,8 +200,20 @@ export class Drops {
     // else drops as a pouch.
     const wants = base.slot === "weapon" || base.slot === "offhand";
     if (wants) {
-      void buildHeldItem(base.id, drop.item.rarity).then((held) => {
+      void buildHeldItem(base.id, drop.item.rarity).then(async (held) => {
         if (!held || !root.parent) return;
+        // COMPILED BEFORE IT IS PARENTED, never after. A weapon model is a
+        // `MeshStandardMaterial` — the `physical` program, which is the
+        // biggest shader in the game and takes roughly half a second to
+        // translate and link on ANGLE/D3D11. Parenting it first and letting
+        // the next frame compile it inline is exactly what the F3
+        // `[programs]` diagnostic caught red-handed: two `physical` programs
+        // appearing in the same millisecond as a 1058ms frame whose whole
+        // cost was `render`, during a fight, with loot on the ground. Actors
+        // and their gear were given this treatment in M70.40/M70.70; drops
+        // are the same shape of bug and were simply missed.
+        await this.warmer?.warmUp(held.object);
+        if (!root.parent) return; // picked up or expired while compiling
         // The grip transform places it in a hand; on the ground it wants to be
         // centred on its own middle instead, so it turns about itself rather
         // than swinging around a point off to one side.
@@ -209,7 +233,7 @@ export class Drops {
     } else {
       // The extension is load-bearing: `loadModel` picks the parser from it, and
       // an extensionless name falls through to the FBX loader.
-      void instantiate("props/Pouch_Large.gltf", 0.5).then((inst) => {
+      void instantiate("props/Pouch_Large.gltf", 0.5).then(async (inst) => {
         if (!root.parent) return;
         inst.object.position.y = -0.25;
         // Materials are CLONED, because `instantiate` shares them with the
@@ -224,6 +248,13 @@ export class Drops {
             ? mesh.material.map((m) => m.clone())
             : mesh.material.clone();
         });
+        // Warmed AFTER the clone, not before: a clone is a different material
+        // object, and three.js keys its program cache on the material's own
+        // parameters — so warming the prototype and then swapping in a fresh
+        // clone would compile the right shader for the wrong object and still
+        // stall on the first real frame. See the held-item path above.
+        await this.warmer?.warmUp(inst.object);
+        if (!root.parent) return; // picked up or expired while compiling
         pivot.add(inst.object);
       });
     }

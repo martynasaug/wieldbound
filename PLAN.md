@@ -11954,6 +11954,79 @@ genuine, currently-irreducible-without-a-rendering-architecture-change
 allocation rate (the `WebGLRenderer.render` draw-call volume noted
 earlier).
 
+**Phase 70 M70.81 — the ~1100ms stalls, found and fixed: a shader program
+is keyed on the GEOMETRY it is drawn with, and the load-time warm render
+is frustum-culled.** Four theories were tested and three were wrong; all
+three wrong ones were reverted rather than left in as "probably helps".
+What the evidence actually showed, in order:
+- **Not shadows.** A driven session forced to `quality: "performance"`
+  (`shadows: false`) still produced 1137ms and 1135ms render-only
+  hitches, against 1081/1083ms with shadows on. M70.79's
+  `primeShadowsAt` and M70.80's analysis were built on this and are
+  **reverted**; the mechanism they describe is real (three.js does not
+  warm shadow depth materials) but it is not what was stalling.
+- **Not shader-program CHURN.** The `[programs]` counter only ever GREW
+  across a whole session (92 -> 105) — a released-and-recompiled program
+  would show a drop first. A per-model "keeper" that held one material
+  set alive forever to stop `releaseProgram` was written, measured to
+  change nothing, and **reverted**.
+- **Not drops.** `drops.ts` did parent a loaded item model into the live
+  scene with no `warmUp` — a real instance of the same bug M70.70 fixed
+  for gear, and it is **kept fixed** — but the stalls survived it, so it
+  was not the cause either.
+- **What it actually was.** `[programs]` and `[hitch]` share a
+  millisecond, every time: two `physical` (MeshStandardMaterial)
+  programs appearing inside a 1.0-1.2s `render`. Not first sight of an
+  object — nothing was added to the scene beforehand, and the
+  `[add-trace]` diagnostic written for this (the mirror of the existing
+  dispose tracer) stayed silent through the stalls. The materials
+  already existed; only their PROGRAM did not. Three.js keys a program
+  on the material AND on the geometry it is drawn with (`vertexUv1s` and
+  the rest of the attribute set), and it creates one only when that
+  pairing is actually DRAWN. `compileAsync(scene)` at load prepares
+  materials, and the load `render()` draws — but a render is
+  frustum-culled, and at load the camera sees a few dozen metres of a
+  four-hundred-unit world. Every foliage species outside that first view
+  still had a program waiting for the moment the player walked into it,
+  which is exactly what the last two entries showed: two
+  `wieldbound-wind-v2` programs in the same millisecond as a 1211ms
+  frame.
+Fixed with `World.warmWholeScene()`: one render with `frustumCulled`
+forced off on every mesh, into the same throwaway 4x4 offscreen target
+`warmBuffers` uses, under the loading screen. Instance counts are
+temporarily set to 1 for the pass — a program does not depend on how
+many instances are drawn, so one instance creates exactly the same
+program that all 82,287 plants would.
+Measured, driven sessions of the same length and route:
+- render-only stalls: **1093, 1096, 1211, 1177 and 513ms -> none at
+  all.** The only hitches left are 62/68/69ms `BETWEEN frames`, all
+  network or cold model loads, none of them `render`.
+- programs compiled by the time play starts: 92 -> 106.
+- load: 12.1s -> 19.1s. That +7s IS the fifteen shader programs, at
+  roughly half a second each on ANGLE/D3D11 — the cost was always
+  there, it was just being paid in one-second pieces during play. This
+  is the same trade the warm render above it already argues for: a
+  pause under the loading screen is what the loading screen is for.
+  Worth revisiting if load becomes the complaint — compiling them in
+  parallel through `KHR_parallel_shader_compile` (which this machine
+  has) rather than serially through one render is the obvious next
+  lever.
+Temporary diagnostics (`[add-trace]`, and the dispose tracer's widening
+to MeshStandardMaterial) removed again now that they have done their
+job. `npx tsc --noEmit` clean on client and server; full test suite run
+— the only failures are the pre-existing ones (`brace`/`casting`/
+`slaying` need seeded characters, `throwers` is the documented open AI
+bug, `camps` is timing-flaky and passes on re-run).
+
+> **CORRECTION (see M70.81 above): the shadow theory in M70.79 and M70.80
+> is DISPROVEN.** A driven session with shadows turned off entirely
+> (`quality: "performance"`, `shadows: false`) still produced the same
+> ~1135ms render-only hitches. Whatever causes them, it is not
+> shadow-pass work. The mechanism described below is real (three.js
+> genuinely does not warm shadow depth materials) but it is NOT the
+> cause of the stalls it was written to explain. Read both entries with
+> that in mind.
+
 **Phase 70 M70.79 — self-driving the game with Playwright to gather real
 data without the user, and a genuine gap found in an existing fix.**
 Asked directly whether there's a way to verify performance without the

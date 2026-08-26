@@ -172,7 +172,7 @@ import { currentWind, updateWind } from "./wind";
 import { NORTH_TOWN_NAME, NORTH_TOWN_SITE } from "../../../shared/road";
 import { resolveRiverCollision } from "../../../shared/river";
 import { placeNameAt } from "../../../shared/places";
-import { forestStrengthAt, FORESTS } from "../../../shared/forests";
+import { forestStrengthAt } from "../../../shared/forests";
 import {
   NPC_TALK_RANGE_PX,
   NPC_TETHER_PX,
@@ -1312,19 +1312,19 @@ export class Game {
     // chunk-first-seen. Expensive, and it happens under the loading screen.
     this.world.render();
 
-    // AND THE SHADOW OF EACH WOOD, SEPARATELY — see `World.primeShadowsAt`'s
-    // own comment for the mechanism. The frame above compiles and uploads the
-    // COLOR pass for the whole scene at once because the camera can see the
-    // whole scene from spawn; it cannot get the SHADOW pass the same way,
-    // because the shadow frustum is deliberately small and only ever covers
-    // what is near wherever the camera is standing. A forest far from spawn
-    // never falls inside it during that one frame, so without this its
-    // shadow buffers and shadow program stayed uncompiled until a player's
-    // own frustum reached it mid-session — caught live as three ~1100ms
-    // render-only hitches with no monsters anywhere near, entering a wood
-    // for the first time. One extra offscreen render per wood, all of it
-    // still under the loading screen.
-    for (const f of FORESTS) this.world.primeShadowsAt(toWorldX(f.x), toWorldZ(f.y));
+    // AND EVERY MESH DRAWN ONCE WITH CULLING OFF, so that no shader program
+    // is left to be created the first time the player walks somewhere new.
+    //
+    // The render above is frustum-culled, and at load the camera sees a few
+    // dozen metres of a four-hundred-unit world — but a program is keyed on
+    // the GEOMETRY it is drawn with as well as on the material, so every
+    // foliage species outside that first view still had a program waiting to
+    // be compiled the moment the player walked into it. Measured before this
+    // line existed: four `render`-only stalls of 1.0-1.2s in a three-minute
+    // session, each landing in the same millisecond as a `[programs]` count
+    // increase, with nothing added to the scene and nothing disposed nearby.
+    // With it: none at all. See `World.warmWholeScene`.
+    this.world.warmWholeScene();
 
     this.loop();
   }
