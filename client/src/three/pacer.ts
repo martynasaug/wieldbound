@@ -68,6 +68,29 @@ const SETTLE_MS = 900;
  */
 const PROBE_INTERVAL_MS = 3000;
 
+/**
+ * How many clean samples make the refresh rate KNOWN, after which probing
+ * this often costs more than it is worth.
+ *
+ * The note above argues one dropped frame in four hundred is below what a
+ * player can see. That argument has a hole in it, and it is the reason this
+ * exists: a dropped frame is invisible to every INSTRUMENT here — `onRaf`
+ * still fires on the skipped frame, the frame-time distribution stays a flat
+ * 16.7ms, and the profiler reads a healthy 60fps — while the eye sees the
+ * picture hold still for two refreshes instead of one. And it lands on a
+ * THREE SECOND BEAT, forever. A rhythmic hitch is far easier to notice than a
+ * random one of the same size; the eye locks onto the period. Reported as
+ * "60fps but it looks choppy", which is exactly what this would produce and
+ * exactly what no reading here could contradict.
+ *
+ * A display's refresh rate does not drift. Eight agreeing samples settle it,
+ * and after that the probe drops to a slow background re-check — enough to
+ * notice a window dragged onto a different monitor, ten times fewer dropped
+ * frames than probing every three seconds forever.
+ */
+const PROBE_SETTLED_SAMPLES = 8;
+const PROBE_INTERVAL_SETTLED_MS = 30000;
+
 export class FramePacer {
   /** Measured, not assumed: `screen.refreshRate` does not exist on the web, so
    *  the only way to know is to watch how fast rAF is called. */
@@ -115,7 +138,13 @@ export class FramePacer {
       if (this.cleanDeltas.length > 24) this.cleanDeltas.shift();
     }
 
-    if (ts - this.lastProbeAt >= PROBE_INTERVAL_MS) {
+    // See PROBE_SETTLED_SAMPLES: often until the display is known, rarely
+    // after, because every probe is a frame the player does not get to see.
+    const probeInterval =
+      this.cleanDeltas.length >= PROBE_SETTLED_SAMPLES
+        ? PROBE_INTERVAL_SETTLED_MS
+        : PROBE_INTERVAL_MS;
+    if (ts - this.lastProbeAt >= probeInterval) {
       this.lastProbeAt = ts;
       this.probeArmed = true;
     }
