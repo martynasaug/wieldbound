@@ -16537,3 +16537,30 @@ Findings this pass:
   measures.
 - Nothing else unambiguous in those six scenes. Said plainly rather than
   padded out.
+
+**Phase 70 M70.98 — second visual sweep: the Coldwater, spell effects, and
+one candidate run down to nothing.** Continued the M70.97 practice into
+the two things it had not covered: water, and effects in flight.
+- The Coldwater bridge at noon and at dawn: planks, rails, water and the
+  place name all read correctly, no seams or z-fighting on the deck.
+- Spell effects mid-cast (frostbolt, arcane missiles, storm bolt): impact
+  flashes, floating damage numbers, CRIT styling, XP and essence popups
+  all render as intended.
+- The character's boots looked at first like pale slivers poking through
+  the deck. They are cyan BOOTS, matching the rest of the gear set, seen
+  at the camera's minimum zoom. Not an artifact, and worth recording so
+  the next sweep does not re-flag it.
+One real candidate came out of reading the combat log rather than the
+picture: `Frostbolt finds nothing` while a slime stood in contact and
+another attack landed on it the same second. Chased it: the message comes
+from the CLIENT (`Game.ts`) when the SERVER returned zero hits, and
+`useSkill` already falls back to the nearest living enemy in range when
+nothing is selected — with a comment arguing that refusing to cast at
+something you are standing in front of is friction nobody would defend.
+The log order settles it: `+1 essence` and `You defeated the Slime`
+bracket that cast, so the spell fired at a target that had just died,
+which is the case the client code explicitly exists to draw. Correct
+behaviour, not a bug. Recorded because "spell says it found nothing while
+an enemy is touching you" is exactly the sort of thing that looks broken
+and will be re-reported.
+No code changed in this entry.
