@@ -16509,3 +16509,31 @@ meant to remove an inconsistency, not to turn the effect up.
 Verified by eye, same camera, clock frozen at noon so the lighting is
 identical either side: the ragged halo is gone and the figure reads as a
 clean model. `outline`, `bodies` and `animation` suites pass.
+
+**Phase 70 M70.97 — visual QA made part of the loop, after a fair
+criticism.** Pulled up on the fact that the outline bug of M70.96 was
+visible in screenshots that had already been captured and looked at —
+"you should be able to find these bugs yourself since you're playing."
+That is true and worth writing down: the driven harness had been used as
+a stall detector, with screenshots read for HUD numbers and otherwise
+skimmed, so a rendering defect sitting in plain sight in the frame went
+past several times.
+Added a deliberate sweep (`visualqa.mjs` in the scratchpad, not part of
+the repo): teleport to a spread of places at chosen times — town at
+midnight and at noon, open field, deep forest on the North Road, the road
+at dusk, a monster camp — with the day/night clock frozen so lighting is
+reproducible rather than whatever the session happened to be at, and look
+at each frame.
+Findings this pass:
+- The M70.96 outline fix holds up everywhere: clean, even edges at every
+  distance and light level, no ragged halo. Confirmed rather than assumed.
+- Monster meshes visibly interpenetrate the player — a slime drawn
+  through the character's legs. Checked against the numbers rather than
+  the eye: a mushnub is `bodyRadiusPx: 16` (0.4 units) against a cap that
+  measures about 0.85 units across, so separation is close to right but
+  slightly tighter than the art. Recorded, not "fixed": whether the
+  bodies or the models are the authority here is a design call, and
+  widening every radius would change how packs crowd, which `camps.mjs`
+  measures.
+- Nothing else unambiguous in those six scenes. Said plainly rather than
+  padded out.
