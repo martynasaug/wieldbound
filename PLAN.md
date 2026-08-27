@@ -16215,3 +16215,40 @@ suspicion. If a recompile stall ever shows up in a `render` section
 again, that is the first thing to reach for.
 No client or server code changed in this entry; the fix was to the
 harness, and the value is knowing the skill path is now covered.
+
+**Phase 70 M70.89 — the day/night theory, tested and DISPROVEN, and what
+that leaves.** Still reported as occasional spikes while the driven runs
+came back clean, so the question became what a four-minute test cannot
+reach. The best candidate was the clock: three things are shown and
+hidden by the hour — the mist bank (`mist.ts`), the star dome
+(`daynight.ts`) and the town's lantern glows (`town.ts`) — and
+`warmWholeScene` cannot warm what is hidden, because three.js skips an
+invisible object and its whole subtree before any per-object work. Load
+in daylight and none of them are drawn by the warm pass; a full day is
+twenty-four minutes, so the first dusk lands long after any test run has
+ended. It fit the shape of the complaint exactly: tracks the clock, not
+anything the player did.
+It is wrong. Tested by freezing the cycle (`DayNight.freeze`, which
+exists for this) and stepping noon -> dawn -> dusk -> midnight -> noon,
+with and without the fix:
+  without: programs 112 at every step, no hitches
+  with:    programs 114 at every step, no hitches
+So the transition compiles nothing either way, and the two extra
+programs the fix warms are ones that never came up in play. The mist and
+the stars were evidently already covered — `warmUp`'s `compileAsync`
+traverses regardless of visibility, which is enough for these.
+The change is KEPT anyway, and the reason is worth being precise about
+rather than dressing up: it costs one flag per object during a warm that
+already runs, it demonstrably widens coverage (112 -> 114), and "warm
+everything, including what happens to be hidden right now" is the
+correct statement of what that function is for. But it fixed nothing
+measurable, and this entry says so rather than letting a later reader
+assume the spikes were this.
+What that leaves: the game is clean under every instrumented run —
+constant movement, real skills, real loot, real panels, a full day/night
+sweep — while the spikes persist in the player's own browser. The
+largest untested difference is now the ENVIRONMENT rather than the game.
+An earlier Chrome Performance recording in this same investigation
+showed the Sider extension's `content-all.js` wrapping 78.7% of total
+scripting time, which is not something any amount of work in this
+codebase can fix.

@@ -1004,7 +1004,25 @@ export class World {
     // Drawing every instance measured at +7.6s of load; this keeps the
     // coverage and gives that back.
     const wasCount: [THREE.InstancedMesh, number][] = [];
+    // AND EVERYTHING MADE VISIBLE, which is the other half of the coverage.
+    //
+    // three.js skips an invisible object and its whole subtree before any
+    // per-object work, so a warm render draws nothing that happens to be
+    // hidden at load — and three things in this game are hidden or shown by
+    // the TIME OF DAY: the mist bank (`mist.ts`), the star dome
+    // (`daynight.ts`) and the town's lantern glows (`town.ts`). Load in
+    // daylight and none of them are drawn here, so each one compiles its
+    // shader hours later, at dusk, in the middle of a frame the player is
+    // looking at. A full day is twenty-four minutes, which is why it reads as
+    // an occasional spike with no obvious trigger: it tracks the clock, not
+    // anything the player did. Every driven test run so far was far too short
+    // to cross that boundary and so never saw it.
+    const wasVisible: [THREE.Object3D, boolean][] = [];
     this.scene.traverse((child) => {
+      if (!child.visible) {
+        wasVisible.push([child, child.visible]);
+        child.visible = true;
+      }
       const mesh = child as THREE.Mesh;
       if (!mesh.isMesh) return;
       wasCulled.push([child, child.frustumCulled]);
@@ -1021,6 +1039,11 @@ export class World {
     this.renderer.setRenderTarget(prevTarget);
     for (const [child, culled] of wasCulled) child.frustumCulled = culled;
     for (const [mesh, count] of wasCount) mesh.count = count;
+    // Hidden again before anything the player can see is drawn. The mist and
+    // the stars decide for themselves every frame from the hour, so this only
+    // has to hold until the next `update`, but leaving a star dome switched on
+    // at noon for even one frame would be a visible bug.
+    for (const [child, visible] of wasVisible) child.visible = visible;
   }
 
   render(): void {
