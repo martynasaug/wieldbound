@@ -1342,7 +1342,9 @@ export class Game {
     // session, each landing in the same millisecond as a `[programs]` count
     // increase, with nothing added to the scene and nothing disposed nearby.
     // With it: none at all. See `World.warmWholeScene`.
-    this.world.warmWholeScene();
+    //
+    // Called AFTER the monster prewarm below rather than before it, so that
+    // the one warm draw covers the monsters too — see the note there.
 
     // AND EVERY MONSTER'S SHADER, IN THE BACKGROUND, ONCE.
     //
@@ -1386,7 +1388,16 @@ export class Game {
           // Parented so `compileAsync` sees the scene's real lighting, then
           // hidden — an invisible object still holds its materials, which is
           // all the keep-alive needs, and costs nothing to draw.
-          actor.root.visible = false;
+          // VISIBLE, and added BEFORE the whole-scene warm below runs. A
+          // program is only created when something is actually DRAWN —
+          // `compileAsync` prepares the material but does not produce the
+          // program the real draw ends up using, which is the entire reason
+          // `warmWholeScene` had to exist in the first place. So an actor
+          // added after that warm, or added invisible, is never drawn and
+          // never warmed, and pays for its shader the first time it is really
+          // seen. That is exactly what came back the moment the driven test
+          // started moving continuously instead of standing still.
+          actor.root.visible = true;
           this.world.scene.add(actor.root);
           await this.world.warmUp(actor.root);
           this.monsterShaderKeepAlive.push(actor.root);
@@ -1396,6 +1407,13 @@ export class Game {
         }
       }),
     );
+
+    // ONE WARM DRAW, covering the world AND every monster now standing in it.
+    // This is the pass that actually creates the programs; everything above
+    // only arranged for the right things to be present when it happens.
+    this.world.warmWholeScene();
+    // Out of sight again, but never disposed — see `monsterShaderKeepAlive`.
+    for (const root of this.monsterShaderKeepAlive) root.visible = false;
 
     this.loop();
   }

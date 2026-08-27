@@ -16147,3 +16147,41 @@ Worth knowing when testing: an Incognito window does not keep the GPU
 cache, so it pays the cold cost on every single run. Several readings
 earlier in this investigation were taken in Incognito precisely to avoid
 extension noise, which means their load figures were all worst-case.
+
+**Phase 70 M70.87 — standing still was hiding the bug; the prewarmed
+monsters were never actually DRAWN.** Challenged on the driven-play
+harness again, and correctly: "you actually have to be doing stuff in
+game to notice laggs — you're just standing still for the most part."
+That was literally true and it was invalidating the results. The loop
+clicked a monster and then pressed nine keys with 330ms between them,
+which is about three seconds motionless per engagement; the previous
+"clean" five-minute run recorded all seven of its frame gaps at ONE
+position, because that is where it stood. Rewritten so movement runs
+CONCURRENTLY with casting (`Promise.all` of the keypress and a strafe)
+and so travel legs are long enough to cross real ground.
+The moment it moved like a player, the stalls came back: three
+`render`-only frames of 1171ms, 1300ms and 546ms, each landing in the
+same millisecond as a `[programs]` increase, all while `moving`.
+**The cause was an ordering mistake in M70.84's own fix.** A shader
+program is only created when something is actually DRAWN —
+`compileAsync` prepares the material but does not produce the program the
+real draw ends up using, which is the whole reason `warmWholeScene` had
+to exist at all. The monster prewarm added its Actors to the scene
+INVISIBLE and AFTER `warmWholeScene` had already run, so the one warm
+draw never covered them: they were loaded, tracked, kept alive against
+disposal, and still had no program. Reordered so the prewarmed Actors are
+added VISIBLE first, `warmWholeScene` runs once over the world and every
+monster standing in it, and only then are they hidden again (never
+disposed — see `monsterShaderKeepAlive`).
+Measured, same driven route, constant movement throughout:
+  before the reorder: 3 `render` stalls (1171ms, 1300ms, 546ms)
+  after the reorder:  0
+Full suite run; failures are the known set (`brace`/`casting`/`slaying`
+need seeded characters, `throwers` is the documented open AI bug, and
+`camps`/`fighting` are timing-flaky — both pass on re-run, checked).
+Still not covered by the harness, and worth saying rather than implying
+otherwise: the hotbar is populated from talents, which `tools/seed.mjs`
+deliberately does not spend, so most skill EFFECTS still go untested. The
+run learns one talent by clicking the panel and gets `concuss` into slot
+two; the other eight slots stay empty. Projectile and spell-impact
+materials therefore remain the least-tested surface in the game.
