@@ -16127,3 +16127,23 @@ stalls and NO `warmBuffers` stalls at all. Every remaining entry over
 "idle" — browser throttling of an unfocused window, a harness artifact,
 not the game.
 `npx tsc --noEmit` clean; `outline`, `bodies` and `animation` suites pass.
+
+**Phase 70 M70.86 — the load-time cost is paid ONCE per machine, not once
+per session.** M70.81 through M70.84 moved every shader compile in the
+game to the loading screen, and the honest cost recorded there was load
+going from about 12s to 19.8s. That number was measured on a fresh
+browser profile every time, which is the worst case and not the case a
+player is in. Chrome keeps a GPU program cache on disk, so a compiled
+shader survives the tab being closed.
+Measured properly, same profile, two consecutive loads:
+  first load, cold shader cache:  21.8s
+  second load, warm shader cache:  5.0s
+So the whole-scene warm and the monster prewarm cost about seventeen
+seconds ONCE, on a machine that has never run the game, and after that
+the loading screen is FASTER than it was before any of this work — five
+seconds against the twelve it took when the same shaders were being
+compiled during play instead. The trade is far better than it looked.
+Worth knowing when testing: an Incognito window does not keep the GPU
+cache, so it pays the cold cost on every single run. Several readings
+earlier in this investigation were taken in Incognito precisely to avoid
+extension noise, which means their load figures were all worst-case.
