@@ -2698,6 +2698,15 @@ wss.on("connection", (socket) => {
       manaBalances.set(id, startMana);
       setMana(id, startMana);
       lastManaRegenAt.set(id, Date.now());
+      // And the same for HEALTH, which never had it. `maxHpOf` reads gear
+      // passives exactly as `maxManaOf` does, so the identical stale-pool case
+      // applies — and until the equip path was fixed to clamp when the ceiling
+      // moves (not only when the CLASS does), characters were actively being
+      // SAVED in that state. Observed on a real save: 750 hp against a maximum
+      // of 710, which no later update corrected because every other path
+      // clamps against a maximum it assumes is already respected. Safe here
+      // because equipment loaded above, so the ceiling is the real one.
+      hpBalances.set(id, Math.min(character.hp, maxHpOf(id, attrs)));
       console.log(`[connect] ${character.name} (${id}) at (${character.x}, ${character.y})`);
 
       const welcome: ServerToClientMessage = {
@@ -2713,8 +2722,19 @@ wss.on("connection", (socket) => {
           battlePowerLevel: character.battlePowerLevel,
           xp: character.xp,
           level: character.level,
-          hp: character.hp,
-          maxHp: maxHpForLevel(character.level, character.vitality) + CLASSES[classOf(id)].baseHpBonus,
+          // `hpBalances`, not `character.hp` — the load clamp above may have
+          // just corrected a stored pool that sat above the ceiling, and
+          // sending the raw stored value would put the bad number straight
+          // back on the player's bar.
+          hp: hpBalances.get(id) ?? character.hp,
+          // THROUGH `maxHpOf`, like every other place in the file. Spelling
+          // the formula out here a second time quietly dropped the
+          // `passivesOf(...).maxHpBonus` term that `maxHpOf` includes, so the
+          // maximum the client was handed at login ignored gear entirely
+          // while the server's own idea of it did not — a character wearing a
+          // breastplate that grants health logged in with a bar whose maximum
+          // was too low, and every later update disagreed with it.
+          maxHp: maxHpOf(id, attrs),
           strength: character.strength,
           agility: character.agility,
           vitality: character.vitality,
@@ -2883,6 +2903,11 @@ wss.on("connection", (socket) => {
       // Nothing is gated: any character can equip any weapon, because doing so
       // IS the class change. What used to be a rejection is now the feature.
       const before = classOf(id);
+      // The CEILINGS as they stand before the swap, not just the class. See
+      // the clamp below for why both are needed.
+      const attrsBefore = attributes.get(id) ?? EMPTY_ATTRS;
+      const maxHpBefore = maxHpOf(id, attrsBefore);
+      const maxManaBefore = maxManaOf(id, attrsBefore);
       const offhandBefore = equippedItems.get(id)?.offhand ?? null;
       const weaponBefore = equippedItems.get(id)?.weapon ?? null;
       const result = equipItem(id, msg.payload.itemId);
@@ -2925,14 +2950,20 @@ wss.on("connection", (socket) => {
       if (live) live.appearance = appearanceOf(id);
 
       const after = classOf(id);
-      if (after !== before) {
-        // Changing class moves the HP and mana ceilings, and both pools can
-        // now sit above their maximum (a mage's robe-sized mana pool does not
-        // survive picking up an axe). Clamp and push both, or the bars show
-        // impossible numbers until the next unrelated update.
-        const attrs = attributes.get(id) ?? EMPTY_ATTRS;
-        const maxHp = maxHpOf(id, attrs);
-        const maxMana = maxManaOf(id, attrs);
+      // CLAMP WHEN THE CEILING MOVED, not only when the CLASS did.
+      //
+      // This used to be `after !== before` alone, and that misses the commoner
+      // case by far: `maxHpOf` reads `passivesOf(...).maxHpBonus`, which comes
+      // off EQUIPPED GEAR, so taking off a breastplate that granted maximum
+      // health lowers the ceiling without touching what class you are. The
+      // pool was then left sitting above it — observed directly as a player on
+      // 750 hp out of a maximum of 710, which the bar has no way to draw
+      // honestly and which no later update corrects, because every other path
+      // clamps against a maximum it assumes is already respected.
+      const attrs = attributes.get(id) ?? EMPTY_ATTRS;
+      const maxHp = maxHpOf(id, attrs);
+      const maxMana = maxManaOf(id, attrs);
+      if (after !== before || maxHp !== maxHpBefore || maxMana !== maxManaBefore) {
         // addHp(0) is the clamp-and-persist path: it stores min(current, max).
         const hp = addHp(id, 0, maxHp);
         const mana = Math.min(manaBalances.get(id) ?? maxMana, maxMana);
@@ -2942,7 +2973,13 @@ wss.on("connection", (socket) => {
         sendStatsUpdate(socket, attrs, maxHp, maxMana);
         sendHpUpdate(socket, hp, maxHp, false);
         sendManaUpdate(socket, mana, maxMana);
-        sendInfo(socket, `${WEAPONS[weaponTypeOf(id) ?? "fist"].name} in hand — you fight as a ${CLASSES[after].name}.`, "#ffd479");
+        // Only when the CLASS actually changed. The clamp above now also runs
+        // for an ordinary armour swap that moved the ceiling, and announcing
+        // "you fight as a Warrior" every time somebody changes boots would be
+        // noise about something that did not happen.
+        if (after !== before) {
+          sendInfo(socket, `${WEAPONS[weaponTypeOf(id) ?? "fist"].name} in hand — you fight as a ${CLASSES[after].name}.`, "#ffd479");
+        }
       }
       return;
     }

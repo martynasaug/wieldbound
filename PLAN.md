@@ -16328,3 +16328,44 @@ found no monsters to fight (`fights=0`), so it verifies travel rather
 than combat; the combat path was verified clean separately in M70.90.
 Suite failures are the usual seeded-character three (`brace`, `casting`,
 `slaying`); `camps`, `fighting` and `throwers` all passed this time.
+
+**Phase 70 M70.92 — two real gameplay bugs, caught by asserting invariants
+instead of looking for them.** Asked to hunt gameplay bugs alongside lag,
+so the driven harness was given invariant checks that run every tick — hp
+within max, mana within max, no negative hp, xp never falling at the same
+level, bag within cap. The run itself was a dud for lag purposes (it got
+wedged against the town fence, `fights=0`, because the stuck-detection
+from the earlier scripts had not been carried over into this one), but
+the assertions fired anyway and found two genuine bugs.
+**HP above maximum: 750/710.** `maxHpOf` includes
+`passivesOf(playerId).maxHpBonus`, which comes off EQUIPPED GEAR, but the
+equip handler only clamped the pools `if (after !== before)` — that is,
+only when the CLASS changed. Taking off a breastplate that granted
+maximum health lowers the ceiling without touching what class you are, so
+the pool was left sitting above it, and no later path corrects it because
+every other one clamps against a maximum it assumes is already respected.
+Now clamped whenever the ceiling actually moved, with the "you fight as a
+X" line kept behind the class check so an ordinary boot swap does not
+announce a class change that did not happen.
+**A second bug underneath it: the WELCOME payload computed `maxHp` by
+spelling the formula out again** —
+`maxHpForLevel(level, vitality) + CLASSES[...].baseHpBonus` — which
+quietly drops the `passivesOf(...).maxHpBonus` term `maxHpOf` includes.
+So at login the client was handed a maximum that ignored gear entirely
+while the server's own idea of it did not, and the two disagreed until
+some unrelated update happened to resync them. Now goes through
+`maxHpOf`, like every other call site in the file, and sends the CLAMPED
+`hpBalances` value rather than the raw stored one.
+Also added the clamp on LOAD, mirroring the one mana already had, so
+characters already saved in the bad state repair themselves on next
+login rather than staying broken forever.
+Verified: 26 consecutive gear swaps, 0 violations (reproducible before).
+Login went 750/710 -> 715/775 — the pool inside the ceiling, and the
+ceiling finally counting the armour.
+The `BAG OVER CAP: 37` the same run reported was a FALSE POSITIVE in the
+harness, not a bug: the cap is enforced on SLOTS through `bagSlotsUsed`
+(stacks count once) and against unequipped items, and the check compared
+a raw `items.length`. Recorded so nobody re-investigates it.
+Suite: the usual seeded-character three fail (`brace`, `casting`,
+`slaying`); `camps` and `fighting` pass on re-run; `throwers` remains the
+documented open AI bug, unchanged by any of this.
