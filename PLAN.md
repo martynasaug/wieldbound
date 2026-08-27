@@ -16185,3 +16185,33 @@ deliberately does not spend, so most skill EFFECTS still go untested. The
 run learns one talent by clicking the panel and gets `concuss` into slot
 two; the other eight slots stay empty. Projectile and spell-impact
 materials therefore remain the least-tested surface in the game.
+
+**Phase 70 M70.88 — skills finally tested, and the picture is clean.**
+The gap left open in M70.87 was that the hotbar fills from talents and
+`tools/seed.mjs` deliberately does not spend them, so every previous run
+pressed mostly empty slots and no spell effect ever fired. The panel
+clicking that was supposed to fix it managed exactly one talent, for a
+dull reason: learning re-renders the panel, so every element handle taken
+before a successful click is stale. Re-querying `button.talent-node`
+before each click, and picking one whose `title` says "click to learn",
+spends the lot — eight points, giving `attack / concuss / shockwave /
+shieldwall / stagger`.
+Driven run with those actually firing, movement concurrent with casting
+throughout: 35 engagements, 315 casts.
+  render-only stalls: 0
+  worst real hitch:   211ms, `warmBuffers:player` — the local player's
+                      own gear warming once, off the visible frame
+  everything else:    two ~1000ms `net:STATE_SNAPSHOT` gaps while the
+                      driven window sat unfocused, i.e. browser
+                      throttling in the harness, not the game
+Worth recording because it is NOT yet a problem but might become one:
+the `[programs]` count moves both ways during play (111 -> 117 -> 119 ->
+113 -> ... -> 127 -> 121), so programs are still being released by
+material disposal and rebuilt afterwards. None of it produced a visible
+stall in this run — the rebuilds land inside `warmBuffers`/`compileAsync`
+rather than in a drawn frame — so the bounded per-model "keeper" that was
+tried and reverted in M70.81 is deliberately NOT being re-added on
+suspicion. If a recompile stall ever shows up in a `render` section
+again, that is the first thing to reach for.
+No client or server code changed in this entry; the fix was to the
+harness, and the value is knowing the skill path is now covered.
