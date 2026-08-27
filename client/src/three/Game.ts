@@ -456,6 +456,24 @@ const NODE_HEIGHTS: Record<ResourceNodeState["kind"], [number, number]> = {
 
 export class Game {
   private readonly world: World;
+  /**
+   * One instance of every monster model, compiled early and then KEPT.
+   *
+   * Two problems, one object. A shader program is only created when a
+   * material is drawn, and it is DESTROYED again the moment the last material
+   * referencing it is disposed — which happens constantly, because monsters
+   * are torn down whenever the player walks away from a camp. So a wolf's
+   * shader was compiled at the first wolf, freed when the last wolf despawned,
+   * and compiled again at the next one, at roughly half a second each on
+   * ANGLE/D3D11. Holding one instance of each model forever pins every one of
+   * those programs: never freed, so never recompiled. Bounded by the number of
+   * MODELS (about fifteen), not by how many monsters have ever spawned.
+   *
+   * Never added to the scene, so it costs nothing to draw — `compileAsync`
+   * takes the real scene as its lighting context regardless, which is what
+   * makes the program it builds the one an actual spawn will use.
+   */
+  private readonly monsterShaderKeepAlive: THREE.Object3D[] = [];
   private readonly hud: Hud;
   private readonly floaters: Floaters;
   private readonly drops: Drops;
@@ -1325,6 +1343,59 @@ export class Game {
     // increase, with nothing added to the scene and nothing disposed nearby.
     // With it: none at all. See `World.warmWholeScene`.
     this.world.warmWholeScene();
+
+    // AND EVERY MONSTER'S SHADER, IN THE BACKGROUND, ONCE.
+    //
+    // Deliberately not awaited and deliberately not part of the load: this
+    // goes through `compileAsync`, which uses KHR_parallel_shader_compile
+    // (present on this hardware — checked) so the DRIVER builds these on its
+    // own threads while the player is already walking around, instead of the
+    // main thread stopping dead for half a second at the first sight of each
+    // kind. The keep-alive array is what stops them being freed again — see
+    // its own comment.
+    // A REAL `Actor`, not a raw `instantiate`. The first version of this
+    // warmed the bare model and did not work, and the reason is the whole
+    // point: an Actor does not draw the model as it comes off disk. It clones
+    // every material, tints the body, and hangs an OUTLINE HULL off each mesh
+    // with its own `customProgramCacheKey` — so the set of programs a spawned
+    // monster actually uses is not the set a bare model uses, and warming the
+    // bare one left the real ones to compile at first sight anyway. Measured
+    // in geared play: `warmBuffers:armabee 1149ms` and `warmBuffers:slime
+    // 535ms`, each landing exactly on a `[programs]` increase.
+    // IN PARALLEL AND AWAITED, not sequential and detached. Sequentially and
+    // in the background it lost a race it cannot win: monsters spawn about two
+    // seconds after login, and fifteen models warmed one after another are
+    // nowhere near done by then — the measured stalls came in a cluster in the
+    // first three seconds for exactly that reason. `compileAsync` hands the
+    // work to the driver's own threads (KHR_parallel_shader_compile), so
+    // starting all of them at once is far faster than the sum of the parts,
+    // and doing it here puts what remains under the loading screen where a
+    // pause is expected.
+    await Promise.all(
+      Object.values(MONSTER_MODELS).map(async (spec) => {
+        try {
+          const actor = new Actor({
+            model: spec.model,
+            height: spec.height,
+            idleGlance: true,
+            // Matching `syncMonsters` exactly, because any option that changes
+            // which materials are built changes which programs are needed.
+            silhouette: false,
+          });
+          await actor.load();
+          // Parented so `compileAsync` sees the scene's real lighting, then
+          // hidden — an invisible object still holds its materials, which is
+          // all the keep-alive needs, and costs nothing to draw.
+          actor.root.visible = false;
+          this.world.scene.add(actor.root);
+          await this.world.warmUp(actor.root);
+          this.monsterShaderKeepAlive.push(actor.root);
+        } catch {
+          // A model that will not load or will not compile fails again at
+          // spawn, where there is already a path for it.
+        }
+      }),
+    );
 
     this.loop();
   }

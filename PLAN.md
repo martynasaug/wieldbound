@@ -16032,3 +16032,55 @@ thin ground cover would have cost picture quality for frames that are
 already idle a third of every refresh.
 `npx tsc --noEmit` clean; smoke plus the render-related suite
 (`shadows`, `warmup`, `culling`, `pacing`, `forests`) all pass.
+
+**Phase 70 M70.84 — testing it as a PLAYER rather than a pedestrian, which
+found the stalls the walking probe never could.** Challenged directly on
+the driven-play harness: it was walking in straight lines into the town
+fence, and "you literally know the exact position of every object — why
+is it so hard to make a coherent gameplay test". Both fair. Three
+separate faults in the harness, not the game:
+- The stuck-detector sampled position AFTER moving instead of before, so
+  every check looked motionless and it detoured forever, straight past
+  the camps. Fixed by comparing before/after each move.
+- It targeted the nearest monster and walked at it in a straight line
+  through the palisade. There is no pathfinding; it needs to clear town
+  first, then seek.
+- Most importantly it was logging in as a FRESH LEVEL 1 CHARACTER. The
+  screenshot showed the whole hotbar empty but slot one — so "80 skill
+  casts" were eighty presses of an empty bar, and every spell effect,
+  projectile, gear model and loot drop went untested. `tools/seed.mjs`
+  has existed since Phase 50 for exactly this ("the things it exists to
+  test are the things nobody can reach by playing for ten minutes") and
+  had not been used once in this whole investigation.
+Seeded a level 40 character with a full endgame kit, restarted the
+server, and drove real combat: 26 engagements, 234 skill presses, real
+crits, real loot. That immediately exposed what walking could not —
+`[programs]` climbing 112 -> 127 mid-fight, with stalls landing on the
+increases: `warmBuffers:armabee 1149ms`, `warmBuffers:slime 535ms`, and
+a 1030ms `render`.
+**The fix, in two corrections of my own earlier attempt.** First, warming
+a raw `instantiate` of each monster model does not work, and the reason
+is the point: an `Actor` clones every material, tints the body, and hangs
+an outline hull off each mesh with its own `customProgramCacheKey`, so
+the programs a spawned monster actually uses are not the programs the
+bare model uses. Warm a real `Actor` per kind instead. Second, doing that
+sequentially in the background loses a race it cannot win — monsters
+spawn about two seconds after login and fifteen models warmed one after
+another are nowhere near done, which is exactly why the measured stalls
+came in a cluster in the first three seconds. Now all fifteen start at
+once through `compileAsync` (KHR_parallel_shader_compile, present on this
+hardware) and are awaited before the loading screen lifts.
+Measured across three geared runs of the same route, the last being the
+most intense of the three (26 fights / 234 casts vs 21 / 189):
+  raw-model prewarm, background:  7 hitches, 4 over 150ms, worst 1151ms
+  Actor prewarm, background:      5 hitches, 4 over 150ms, worst 1094ms
+  Actor prewarm, parallel+awaited: 3 hitches, 1 over 150ms, worst 496ms
+No second-long freezes left in geared combat. Load, measured properly
+this time (Play click until the `#loading` element clears, not until
+`__wieldbound` exists — that appears long before the warm finishes):
+19.8s, of which the monster prewarm is only about 0.7s; the bulk is
+M70.81's whole-scene warm. The remaining 496ms is a `mushnub` first
+spawn, i.e. the same class of cost, not yet fully covered.
+Full suite run: the only failures are the pre-existing ones
+(`brace`/`casting`/`slaying` need seeded characters, `throwers` is the
+documented open AI bug, `camps` is timing-flaky and passes on re-run).
