@@ -16451,3 +16451,31 @@ that distance — and it has not been chased down here.
 No regressions: `camps` (which the earlier attempt broke) passes,
 `aggro` passes, `fighting` passes. Suite is back to its known baseline —
 `brace`, `casting`, `slaying` (seeded characters) and `throwers`.
+
+**Phase 70 M70.95 — the aggro question answered, and a clean close-out
+audit.** Followed up the loose end from M70.94: whether the monster
+`throwers.mjs` follows is failing to notice the probe. It is not an aggro
+bug. `AGGRO_RANGE_PX` is 260 and the probe stands at about 213, well
+inside it — but `MONSTER_LEASH_PX` is 520 measured FROM HOME, and a chase
+dragged past that turns into `return`. A monster walking back to its post
+is exactly what "settled at 211px, out of reach" looks like from the
+outside, and it is the leash working as designed rather than anything
+broken. Recorded so the next reader does not re-open it as an aggro
+failure; what `throwers.mjs` actually needs is to account for the leash,
+which is a change to the test rather than to the game and was not made
+here.
+Close-out audit with the thrower cap in place — 37 engagements, 333 casts
+of frostbolt / arcane missiles / frost nova / storm bolt, loot, movement
+concurrent with casting, invariants checked every tick:
+    frame gaps over 120ms: 0
+    `[hitch]` lines:       0
+    invariant violations:  0
+The in-game combat log was captured this time as well as the console, and
+it shows monsters acting on the player normally ("The Spiky Blob hits you
+for 1", interleaved with misses) — the check that a monster which never
+attacks would fail outright.
+It also settled the `BAG OVER CAP: 37` false positive from M70.92 from
+the game's own mouth: the log carries `Bag is full (30/30 slots) —
+salvage something`, so the cap is enforced on SLOTS exactly as that entry
+concluded, and the raw `items.length` of 37 counts equipped gear and
+stacks that share a slot.
