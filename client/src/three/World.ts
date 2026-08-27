@@ -952,11 +952,23 @@ export class World {
     // pooled effect groups, which warm themselves before they are ever
     // attached — keeps the old cheap path, which is correct for them: they
     // are unlit materials whose programs do not depend on the light counts.
-    if (object.parent) {
-      this.renderer.render(this.scene, this.camera);
-    } else {
-      this.renderer.render(object, this.camera);
-    }
+    // THE OBJECT ALONE, which is all this needs to do now.
+    //
+    // M70.82 made this render the whole scene, because an object rendered as
+    // its own scene has no lights in it and so warmed a zero-light program
+    // that nothing would ever draw. That was true, but it fixed it in the
+    // expensive place: a full scene render on EVERY spawn, which also meant
+    // any unrelated compile triggered during it was billed to this actor —
+    // "warmBuffers:mushnub 488ms" was very likely foliage, not a mushnub.
+    //
+    // The programs are handled properly now, and earlier: `warmUp`
+    // (`compileAsync` with the real scene as its lighting context) runs on
+    // every spawn, and M70.84 warms a real `Actor` of every monster kind
+    // before the loading screen even lifts. So by the time anything gets
+    // here its program already exists, and the only job left is what this
+    // function is named for — uploading the geometry's buffers, which does
+    // not care about lighting at all.
+    this.renderer.render(object, this.camera);
     this.renderer.setRenderTarget(prevTarget);
     for (const [child, culled] of wasCulled) child.frustumCulled = culled;
     profiler.end(label);

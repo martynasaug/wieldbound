@@ -1134,7 +1134,19 @@ export class Actor {
       // shadow of it would be a second character on the ground.
       ghost.castShadow = false;
       ghost.receiveShadow = false;
-      ghost.frustumCulled = false;
+      // THE SAME ANSWER AS THE BODY IT MIRRORS, never a different one.
+      //
+      // This was an unconditional `false` while the source mesh keeps normal
+      // frustum culling, which means the two can DISAGREE: on any frame the
+      // camera test rejects the body, the ghost is drawn anyway — and the
+      // ghost is a full second copy of the character, in flat blue, drawn
+      // through scenery. A skinned mesh is culled on a bounding volume taken
+      // from its bind pose, so that disagreement is likeliest exactly when
+      // the character is moving fast or the camera is lagging behind it,
+      // which is when a stall has just ended. Reported as the character
+      // "blinking" and "duplicating" during a lag spike, and as a "mirage
+      // duplicate while running" at the very start of this investigation.
+      ghost.frustumCulled = mesh.frustumCulled;
       // Parented to the SOURCE's parent and given its transform, so anything
       // the original inherits — the armature's scale, most of all — comes with
       // it without being recomputed here.
@@ -1491,7 +1503,10 @@ export class Actor {
     out.renderOrder = OUTLINE_RENDER_ORDER;
     out.castShadow = false;
     out.receiveShadow = false;
-    out.frustumCulled = false;
+    // Matching the source, for the same reason the silhouette does — see the
+    // note there. A hull that survives a frame the body was culled on is a
+    // second copy of the figure drawn on its own.
+    out.frustumCulled = mesh.frustumCulled;
     out.position.copy(mesh.position);
     out.quaternion.copy(mesh.quaternion);
     out.scale.copy(mesh.scale);

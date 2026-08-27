@@ -16084,3 +16084,46 @@ spawn, i.e. the same class of cost, not yet fully covered.
 Full suite run: the only failures are the pre-existing ones
 (`brace`/`casting`/`slaying` need seeded characters, `throwers` is the
 documented open AI bug, `camps` is timing-flaky and passes on re-run).
+
+**Phase 70 M70.85 — the "blinking / duplicating character", and a
+`warmBuffers` that had been made expensive in the wrong place.**
+Two things, both from real reports rather than inference.
+**The duplicate.** Reported as the character "blinking" and
+"duplicating" during a heavy lag spike — which is the same thing as the
+"mirage duplicate while running" that opened this whole investigation,
+finally described precisely enough to find. A player is drawn as THREE
+copies by design: the body, the through-walls silhouette
+(`buildSilhouette`, flat blue, `depthFunc: GreaterDepth`), and the
+outline hull (`rimFor`, `BackSide`). Both extra copies were built with
+an unconditional `frustumCulled = false` while the source mesh they
+mirror keeps normal culling — so the three can DISAGREE, and on any
+frame the camera test rejects the body, a full second copy of the
+character is still drawn on its own. A skinned mesh is culled on a
+bounding volume taken from its BIND POSE, so that disagreement is
+likeliest exactly when the character is moving fast or the camera is
+lagging behind it — which is the frame after a stall ends. Both now
+inherit `frustumCulled` from the mesh they copy, so a body and its
+ghosts are never separately visible.
+Stated honestly: this is a real inconsistency and it fits the report
+closely, but it has NOT been reproduced on camera — a duplicate frame
+during a stall is a hard thing to catch in a screenshot, and the fix
+was made on the strength of the code being wrong rather than on a
+picture of it being wrong.
+**The `warmBuffers` walk-back.** M70.82 made this render the WHOLE SCENE
+on every actor spawn, because an object rendered as its own scene has no
+lights and so warmed a zero-light program nothing would draw. The
+diagnosis was right and the fix was in the expensive place: a full scene
+render per spawn, which also billed any unrelated compile triggered
+during it to that actor — "warmBuffers:mushnub 488ms" was very likely
+foliage, not a mushnub. It is not needed any more: `warmUp`
+(`compileAsync` against the real scene's lighting) runs on every spawn,
+and M70.84 warms a real `Actor` of every monster kind before the loading
+screen lifts, so the program always exists by the time anything reaches
+`warmBuffers` and the only job left is the buffer upload its name refers
+to. Back to the cheap object-only render.
+Measured after both: a geared run with real combat shows NO `render`
+stalls and NO `warmBuffers` stalls at all. Every remaining entry over
+150ms is a ~1000ms `net:STATE_SNAPSHOT` gap while the driven window sat
+"idle" — browser throttling of an unfocused window, a harness artifact,
+not the game.
+`npx tsc --noEmit` clean; `outline`, `bodies` and `animation` suites pass.
