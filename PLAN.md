@@ -16369,3 +16369,49 @@ a raw `items.length`. Recorded so nobody re-investigates it.
 Suite: the usual seeded-character three fail (`brace`, `casting`,
 `slaying`); `camps` and `fighting` pass on re-run; `throwers` remains the
 documented open AI bug, unchanged by any of this.
+
+**Phase 70 M70.93 — the throwers mechanism found (fix attempted and
+reverted), a stuck-in-geometry spot, and a clean combat audit.**
+**Throwers, understood but not fixed.** `tools/test/throwers.mjs` has
+been failing since it was written, with a cactoro settling around 208px
+against its own 185px reach. The arithmetic is now pinned exactly:
+`stopAt = max(contact, attackRangePx * 0.8 + overflow *
+MELEE_RING_STEP_PX)`, and for a cactoro at overflow rank 1 that is
+148 + 60 = 208 — the failing number itself. The melee queue ranks
+EVERY chaser by distance, throwers included, so a thrower handed an
+overflow slot is parked outside the range it can actually attack from
+and stands there.
+The obvious fix — exempt throwers from the melee queue entirely, and
+filter them out of it so they cannot consume a contact slot a wolf could
+use — was written, and it made the number WORSE: 208px became 280px. So
+the overflow ring is not the only thing holding them out, and the model
+is still incomplete. Reverted rather than shipped; `throwers` stays an
+open bug, but with a named formula and a measured counter-result instead
+of "monsters flee weirdly". Verified after reverting that the baseline
+is back (213px) and that M70.92's HP fixes, which live in the same file,
+survived the checkout.
+**A stuck-in-geometry spot.** Every audit run was returning `fights=0`,
+and looking at the actual screen rather than the counters showed why: the
+character was embedded in the palisade fence inside town, drawn as its
+own through-walls silhouette, and ten seconds of holding east moved it
+67px — it was being pushed back almost exactly as fast as it walked.
+This instance was self-inflicted (the shader work teleports the player by
+writing `playerX`/`playerY`, which can land inside a collider), so it is
+NOT evidence of a bug players hit by walking. What it does show is that
+there is no escape once inside: `resolveTownCollision` pushes clear of
+buildings, props and the palisade band, but the player here sat at
+r=620 from the town centre — inside the ring, not in the wall band — and
+wedged between colliders. Worth knowing, since a dash or a knockback
+could put somebody in the same state. Recorded rather than fixed: a
+collision rewrite on the strength of a self-inflicted repro would be
+guessing.
+**The audit, once started from open ground.** 39 engagements, 351 casts
+of frostbolt / arcane missiles / frost nova / storm bolt, loot, movement
+concurrent with casting, plus invariant checks every tick (hp and mana
+within max, no negative hp, bag slots within cap):
+    frame gaps over 120ms: 0
+    `[hitch]` lines:       0
+    invariant violations:  0
+    programs compiled:     6, none of which produced a stall
+The HP fix from M70.92 shows up here directly: the character now reads
+775/775 where it read 750/710 before.
