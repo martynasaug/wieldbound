@@ -16415,3 +16415,39 @@ within max, no negative hp, bag slots within cap):
     programs compiled:     6, none of which produced a stall
 The HP fix from M70.92 shows up here directly: the character now reads
 775/775 where it read 750/710 before.
+
+**Phase 70 M70.94 — a thrower's ring now stays inside its own reach, and
+the reason the last attempt backfired is understood.** Rather than guess
+a third time, a temporary `[thrower]` trace was added to the AI printing
+what a cactoro actually decides each tick — distance, rank, overflow,
+`stopAt`, state and branch — the same "read it off the machine rather
+than off the formula" approach that cracked the shader stalls. Removed
+again once it had answered.
+It answered immediately. Four cactoros chasing one player rank 0-3:
+    rank 0-2, overflow 0: d = 148-154   (inside the 185px reach — fine)
+    rank 3,   overflow 1: d = 194-209   (outside it, orbiting uselessly)
+So the pack was not "fleeing". Everything but the back of the queue was
+fighting correctly, and the overflow ring — a MELEE idea, press a few
+into contact and hold the rest wider — was parking the last one where it
+could do nothing at all.
+It also explains M70.93's failed fix. Exempting throwers from the queue
+put every one of them at rank 0, and NOTHING orbits at rank 0: they
+bunched onto a single approach line and shoved each other outward
+through body collision, which is why the tracked one went from 208px to
+280px. The ring and the orbit are what spread a pack around a player;
+they were never the problem. Only the ring's SIZE was.
+Fixed by capping a keep-away monster's `stopAt` at
+`attackRangePx * 0.95` while leaving the ring and orbit untouched.
+Traced after: rank 3 holds `stopAt=176` and sits at d=156-159 — inside
+its reach, still orbiting, now able to act.
+`throwers.mjs` STILL FAILS, and it is worth being exact about why rather
+than claiming the fix did not work. It picks the nearest thrower, walks
+to just outside its reach, and watches that ONE monster; it reports 211px
+while the trace shows every chasing cactoro at 147-159px. The trace only
+prints monsters in the `chase` state, so the one the test follows is most
+likely not aggroed onto the probe at all and is simply standing near its
+post. That is a different question — whether aggro is taken reliably at
+that distance — and it has not been chased down here.
+No regressions: `camps` (which the earlier attempt broke) passes,
+`aggro` passes, `fighting` passes. Suite is back to its known baseline —
+`brace`, `casting`, `slaying` (seeded characters) and `throwers`.

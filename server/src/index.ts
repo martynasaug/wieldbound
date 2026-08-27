@@ -3646,10 +3646,31 @@ setInterval(() => {
         // every tick — the pair would jitter against each other instead of
         // squaring up.
         const contact = separationFor(PLAYER_BODY_RADIUS_PX, stats.bodyRadiusPx);
-        const stopAt = Math.max(
+        let stopAt = Math.max(
           contact,
           stats.attackRangePx * 0.8 + overflow * MELEE_RING_STEP_PX,
         );
+        // A THROWER'S RING NEVER LEAVES ITS OWN REACH.
+        //
+        // The overflow ring is a melee idea: press a few into contact and hold
+        // the rest wider until a slot opens. For something that fights from
+        // range it means the back of the queue is parked where it cannot do
+        // anything at all — traced live, four cactoros on one player sat at
+        // ranks 0-2 around d=148-154, comfortably inside their 185px reach,
+        // while rank 3 held d=194-209 and just orbited, out of range, for the
+        // whole fight. That is what `tools/test/throwers.mjs` has been
+        // reporting as "fleeing rather than fighting" since it was written.
+        //
+        // Capping rather than exempting, and the difference matters: an
+        // earlier attempt removed throwers from the queue entirely, which put
+        // every one of them at rank 0 where NOTHING orbits, so they bunched on
+        // a single approach line and shoved each other outward through body
+        // collision — the tracked one ended up at 280px, worse than the 208 it
+        // started from. The ring and the orbit are what spread a pack out; all
+        // they needed was to stay inside the range the creature can act from.
+        if (stats.keepAwayPx !== undefined) {
+          stopAt = Math.min(stopAt, stats.attackRangePx * 0.95);
+        }
 
         // Leap: the gap-closer. Triggered from mid-range and only by front
         // rank monsters, so a pack doesn't all pounce at once. While
