@@ -16479,3 +16479,33 @@ the game's own mouth: the log carries `Bag is full (30/30 slots) —
 salvage something`, so the cap is enforced on SLOTS exactly as that entry
 concluded, and the raw `items.length` of 37 counts equipped gear and
 stacks that share a slot.
+
+**Phase 70 M70.96 — "the character looks weird and blurs while running":
+the outline was 103x thicker on some pieces than others.** Reported as a
+visual problem rather than a stall, so it was chased with screenshots
+rather than the profiler: zoom the camera all the way in, capture the
+figure running and standing, and look. Both showed the same thing, which
+already ruled out motion — a thick, ragged, cream-white fringe around
+parts of the character and none around others.
+`makeOutline` expands each vertex along its normal by a fixed `0.022`,
+and `transformed` is OBJECT space — so the width that actually reaches
+the screen is `0.022 * the piece's world scale`. Measured on a dressed
+character, the sixteen outline hulls carry world scales of 0.62 (x6),
+0.228, 0.216 and 0.006 (x8): a spread of **103x**. The large pieces got a
+heavy outline and eight small ones got an offset of about a
+ten-thousandth of a unit, which is nothing. What the effect drew was
+therefore a heavy fringe on some parts of the body and none on others,
+and which parts face the camera changes constantly as the rig animates —
+so it shimmers while running, which is what "blurring" describes.
+Fixed in the shader by dividing the width by the piece's own world scale
+(`length(modelMatrix[0].xyz)`, guarded against a degenerate zero), so
+every part of the figure gets the same thickness on screen.
+The width was also lowered from 0.022 to 0.0136 at the same time, and
+that number is not arbitrary: the old fixed offset was only ever VISIBLE
+on the pieces at scale 0.62, so what the outline looked like in play was
+`0.022 * 0.62 = 0.0136` world units. Keeping 0.022 after the division
+would have made it noticeably heavier than it has ever been — the fix is
+meant to remove an inconsistency, not to turn the effect up.
+Verified by eye, same camera, clock frozen at noon so the lighting is
+identical either side: the ragged halo is gone and the figure reads as a
+clean model. `outline`, `bodies` and `animation` suites pass.

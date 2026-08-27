@@ -447,10 +447,32 @@ function makeOutline(material: THREE.MeshBasicMaterial, width: number): void {
     shader.vertexShader = shader.vertexShader.replace(
       "#include <begin_vertex>",
       "#include <begin_vertex>\n" +
+        // DIVIDED BY THE PIECE'S OWN SCALE, so the outline is the same
+        // thickness on every part of the figure.
+        //
+        // `transformed` is OBJECT space, so a fixed offset here becomes
+        // `width * worldScale` once the model matrix is applied — and the
+        // pieces a dressed character is made of do not share a scale even
+        // slightly. Measured on a geared player: the sixteen outline hulls
+        // carried world scales from 0.006 to 0.62, a spread of 103x. The
+        // large pieces got a heavy outline, eight small ones got an offset of
+        // about a ten-thousandth of a unit, which is nothing at all — so what
+        // the effect actually drew was a thick ragged fringe on some parts of
+        // the body and none on others, and it shimmers as the rig animates
+        // because which parts face the camera keeps changing. Reported as the
+        // character looking "weird" and "blurring" while running.
+        //
+        // `modelMatrix[0].xyz` is the first basis column; its length is the
+        // object's world scale on X. These rigs scale uniformly (the armature
+        // carries one number), so one axis is the whole answer, and the guard
+        // keeps a degenerate zero-scale piece from producing a division by
+        // zero rather than an outline.
+        "  float wbOutlineScale = length( modelMatrix[ 0 ].xyz );\n" +
+        "  float wbOutlineWidth = " + width.toFixed(4) + " / max( wbOutlineScale, 0.0001 );\n" +
         "#if defined( USE_ENVMAP ) || defined( USE_SKINNING )\n" +
-        "  transformed += normalize( objectNormal ) * " + width.toFixed(4) + ";\n" +
+        "  transformed += normalize( objectNormal ) * wbOutlineWidth;\n" +
         "#else\n" +
-        "  transformed += normalize( normal ) * " + width.toFixed(4) + ";\n" +
+        "  transformed += normalize( normal ) * wbOutlineWidth;\n" +
         "#endif\n",
     );
   };
@@ -1443,7 +1465,13 @@ export class Actor {
       // rig — the hood over the head, a bracer over a forearm — to clear the
       // part beside it and draw its own loop. One outline round a person; not
       // eleven round the eleven meshes a person is made of.
-      makeOutline(this.outlineMaterial, 0.022);
+      // 0.0136, not 0.022: the old fixed OBJECT-space offset only ever showed on
+      // the largest pieces, whose world scale is about 0.62, so what the effect
+      // actually looked like in play was 0.022 * 0.62 world units. Now that the
+      // shader divides by scale and every piece gets the same world thickness,
+      // keeping 0.022 would have made the outline noticeably heavier than it has
+      // ever been. This is the width it already had where it was visible.
+      makeOutline(this.outlineMaterial, 0.0136);
       this.ownedMaterials.add(this.outlineMaterial);
     }
 
