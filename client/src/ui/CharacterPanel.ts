@@ -149,8 +149,16 @@ export class CharacterPanel {
     return this.overlay.classList.contains("open");
   }
 
+  /** See `setEquipped` — an update that arrived while this was closed is
+   *  redrawn once here rather than on the update itself. */
+  private stale = false;
+
   open(): void {
     this.overlay.classList.add("open");
+    if (this.stale) {
+      this.stale = false;
+      this.setEquipped(this.equipped);
+    }
   }
 
   close(): void {
@@ -230,8 +238,17 @@ export class CharacterPanel {
     }
   }
 
+  /**
+   * Only redrawn while on screen, same guard as `InventoryPanel.setItems` and
+   * `CraftPanel` — this rebuilds every gear slot's markup and the set-bonus
+   * list, and it is called on every equip and every loot pickup.
+   */
   setEquipped(items: ItemInstance[]): void {
     this.equipped = items;
+    if (!this.isOpen) {
+      this.stale = true;
+      return;
+    }
     this.refreshWeaponName();
     this.renderSets();
     for (const slot of ITEM_SLOTS) {

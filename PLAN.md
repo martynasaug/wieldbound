@@ -16252,3 +16252,37 @@ An earlier Chrome Performance recording in this same investigation
 showed the Sider extension's `content-all.js` wrapping 78.7% of total
 scripting time, which is not something any amount of work in this
 codebase can fix.
+
+**Phase 70 M70.90 — the loot stutter: two panels rebuilding themselves
+while nobody was looking at them.** Kept hunting on the report that
+spikes remained. Ruled out two more candidates first, both by
+measurement rather than argument: equipping a different weapon compiles
+NOTHING (`programs` 113 -> 112 across every weapon in the bag, so the
+held models were already covered), and the indicator rings, though they
+all start `visible = false` and so were skipped by every warm before
+M70.89, are `MeshBasicMaterial` — the cheap kind, whose compiles have
+never once produced a hitch in any log here.
+What the gear-swap test did surface was real and had nothing to do with
+shaders: `net:ITEMS_UPDATE` at 68-126ms, a visible stutter, every single
+time. `ITEMS_UPDATE` arrives on every equip AND on every loot pickup, so
+this was firing constantly in normal play. `Game.onItemsChanged` fans out
+to four panels, and two of them redrew unconditionally: `InventoryPanel`
+rebuilt thirty bag cells, each with an icon and a tooltip, and
+`CharacterPanel` rebuilt every gear slot's markup plus the set-bonus
+list — whether or not either was on screen. `CraftPanel` already had the
+right guard (`if (this.isOpen) this.render()`) and was the precedent;
+these two simply never got it. Both now redraw only while open and mark
+themselves stale otherwise, redrawing once when opened.
+Measured. With the bag OPEN (where the work is legitimate) the swap cost
+fell from 126ms to 85ms worst. The real win is with panels closed, which
+is how the game is actually played:
+  150s of magic combat — 25 engagements, 225 casts of frostbolt /
+  arcane missiles / frost nova / storm bolt, loot dropping, movement
+  concurrent with casting throughout:
+      frame gaps over 120ms: 0
+      `[hitch]` lines:       0
+      `net:ITEMS_UPDATE`:    no longer appears at all
+That run is also the first to exercise the projectile and area-effect
+materials, since the character had swapped to a magic weapon — so the
+surface flagged as least-tested in M70.88 is now covered, and clean.
+`items` and `bag` suites pass, smoke passes.

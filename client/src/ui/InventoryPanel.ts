@@ -94,8 +94,16 @@ export class InventoryPanel {
     return this.overlay.classList.contains("open");
   }
 
+  /** Set when an update arrived while the panel was closed, so opening it
+   *  redraws once instead of the update redrawing a panel nobody can see. */
+  private stale = false;
+
   open(): void {
     this.overlay.classList.add("open");
+    if (this.stale) {
+      this.stale = false;
+      this.render();
+    }
   }
 
   close(): void {
@@ -107,9 +115,20 @@ export class InventoryPanel {
     else this.open();
   }
 
+  /**
+   * ONLY REDRAWN WHILE IT IS ON SCREEN — the same guard `CraftPanel` already
+   * keeps for the same reason.
+   *
+   * `ITEMS_UPDATE` arrives on every equip AND on every loot pickup, and this
+   * rebuilt thirty bag cells, each with an icon and a tooltip, whether or not
+   * the bag was open. Measured: `net:ITEMS_UPDATE` at 68-126ms, i.e. a
+   * visible stutter every time something was picked up mid-fight, spent
+   * entirely on DOM nobody was looking at.
+   */
   setItems(items: ItemInstance[]): void {
     this.items = items;
-    this.render();
+    if (this.isOpen) this.render();
+    else this.stale = true;
   }
 
   setMaterials(m: Record<Material, number>): void {
