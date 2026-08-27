@@ -16286,3 +16286,45 @@ That run is also the first to exercise the projectile and area-effect
 materials, since the character had swapped to a magic weapon — so the
 surface flagged as least-tested in M70.88 is now covered, and clean.
 `items` and `bag` suites pass, smoke passes.
+
+**Phase 70 M70.91 — the shadow pass was never warmed, and this time the
+cache key proved it.** M70.79/M70.80 guessed at shadow-pass programs and
+M70.89 recorded the day/night version of that guess as disproven. Both
+were reasoning from symptoms. This one is from the cache key itself.
+A 1176ms `render` stall was caught at the far east edge of the map with
+no monsters anywhere near, so a fast reproduction was built — teleport
+the player around the map corners by writing `playerX`/`playerY`
+directly and watch `renderer.info.programs` — which reproduces it in
+seconds instead of five-minute play sessions. Dumping the cache key of
+each newly-appeared program and decoding it against three.js's own
+`getProgramCacheKeyParameters` field order gave the answer outright:
+  toneMapping   4 -> 0
+  depthPacking  0 -> 3200   (`THREE.BasicDepthPacking`)
+`depthPacking` is only ever set on a DEPTH material, which is what
+`WebGLShadowMap.getDepthMaterial` builds for the shadow pass — a
+different material from the object's own, and therefore a different
+program that `compileAsync` never touches and that the warm render was
+not producing either. The reason it was not: on the default Balanced
+quality `shadowMap.autoUpdate` is OFF (shadows run on a schedule, see
+`World.render`), so a warm render that never asks for a shadow update
+skips the shadow pass completely. Every depth program was left to
+compile the first time its object entered the sun's shadow frustum —
+and that frustum is a window a few dozen metres wide that FOLLOWS THE
+PLAYER, which is why it kept happening in new places rather than once.
+Fixed by setting `shadowMap.needsUpdate` before the warm render in
+`warmWholeScene`. Frustum culling is already disabled for that pass, so
+one shadow render there covers every caster in the world rather than the
+few near spawn.
+Measured with the teleport harness, same three corners:
+  before: +1 program at the east edge, +1 at the north-west, ~1s stalls
+  after:  +0 at both; programs at load 112 -> 117, i.e. those five now
+          compile under the loading screen
+  the single `+1` left at spawn has every light count at zero, which is
+  the harmless variant `warmBuffers` makes by rendering an object as its
+  own scene — known, and not a stall
+A four-minute driven traversal after the fix: 0 hitches, 0 program
+changes, 0 frame gaps over 120ms. Stated honestly, that particular run
+found no monsters to fight (`fights=0`), so it verifies travel rather
+than combat; the combat path was verified clean separately in M70.90.
+Suite failures are the usual seeded-character three (`brace`, `casting`,
+`slaying`); `camps`, `fighting` and `throwers` all passed this time.

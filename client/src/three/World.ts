@@ -1035,8 +1035,28 @@ export class World {
     });
     const prevTarget = this.renderer.getRenderTarget();
     this.renderer.setRenderTarget(this.bufferWarmTarget);
+    // AND THE SHADOW PASS WITH IT.
+    //
+    // A shadow is drawn with a DEPTH material, which is a different material
+    // from the object's own and therefore a different program — three.js
+    // builds it in `WebGLShadowMap.getDepthMaterial`, and `compileAsync` never
+    // touches it. On the default Balanced quality `shadowMap.autoUpdate` is
+    // off (shadows run on a schedule, see `render`), so a warm render that
+    // does not ask for one skips the shadow pass completely and every depth
+    // program is left to compile the first time its object falls inside the
+    // sun's shadow frustum — which is a moving window a few dozen metres wide
+    // that follows the player, so it happens again and again as they travel.
+    // Caught by decoding the cache key of a program that appeared mid-session:
+    // `depthPacking` 3200 (`BasicDepthPacking`) and `toneMapping` 0, which is
+    // a depth material and nothing else. Frustum culling is already off for
+    // this pass, so asking for one shadow render here covers every caster in
+    // the world rather than the handful currently near the player.
+    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(prevTarget);
+    // The real shadow map is whatever that warm left behind, so the next real
+    // frame has to redraw it before the player sees anything.
+    this.renderer.shadowMap.needsUpdate = true;
     for (const [child, culled] of wasCulled) child.frustumCulled = culled;
     for (const [mesh, count] of wasCount) mesh.count = count;
     // Hidden again before anything the player can see is drawn. The mist and
