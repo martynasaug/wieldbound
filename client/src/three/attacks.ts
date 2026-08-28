@@ -160,6 +160,10 @@ interface LiveProjectile {
  *  shape never changes — only the core and glow did, and both are billboarded
  *  sprites now rather than geometry, so there is nothing to share for them. */
 const BOLT_TRAIL_GEO = new THREE.ConeGeometry(0.3, 2.2, 10, 1, true);
+/** Unit-length beam parts, scaled per cast — see `beamMesh`. One geometry
+ *  each for the whole game rather than two per beam fired. */
+const BEAM_CORE_GEO = new THREE.CylinderGeometry(0.075, 0.075, 1, 6);
+const BEAM_GLOW_GEO = new THREE.CylinderGeometry(0.26, 0.26, 1, 8);
 
 /**
  * A travelling bolt: a hot core, a glow around it, a tapered trail behind, and
@@ -234,6 +238,9 @@ const ARROW_MODEL = "Ranger_Arrow";
 // defeats the point of firing one. Readability wins over proportion here, the
 // same trade every game with this camera makes.
 const ARROW_LENGTH_UNITS = 1.0;
+/** The arrow trail, built once rather than per arrow fired — see `beamMesh`
+ *  for the measurement that found this class of leak. */
+const ARROW_TRAIL_GEO = new THREE.ConeGeometry(0.17, ARROW_LENGTH_UNITS * 2.2, 8, 1, true);
 
 let arrowProto: Promise<THREE.Object3D> | null = null;
 
@@ -278,7 +285,7 @@ function arrowPrototype(): Promise<THREE.Object3D> {
       // the bolt's is: what a fast thing leaves behind is wider where it has
       // been.
       const trail = new THREE.Mesh(
-        new THREE.ConeGeometry(0.17, ARROW_LENGTH_UNITS * 2.2, 8, 1, true),
+        ARROW_TRAIL_GEO,
         new THREE.MeshBasicMaterial({
           map: particleTexture("trail"),
           color: 0xffe6a8,
@@ -316,10 +323,23 @@ function beamMesh(
   // one-pixel core inside a two-pixel glow, which is a hairline rather than a
   // zap. Cylinders rather than boxes so the glow has no flat sides to catch
   // the light wrong as the camera turns with the beam.
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, length, 6), coreMat);
+  // UNIT-LENGTH GEOMETRY, SCALED — not a fresh cylinder per beam.
+  //
+  // These were built at the beam's actual length, which meant a new
+  // `BufferGeometry` for every single cast. M70.62 pooled the MATERIALS here
+  // and left the geometry alone, and nothing disposes it, so each beam leaked
+  // two geometries for the life of the session. Measured over a driven run:
+  // `renderer.info.memory.geometries` climbed from 332 to 811 in four and a
+  // half minutes and kept going, in a straight line, while the actor count sat
+  // flat — the sort of slope that costs nothing for ten minutes and then
+  // starts to matter. A unit cylinder scaled on Z is the same picture with one
+  // geometry for the whole game.
+  const core = new THREE.Mesh(BEAM_CORE_GEO, coreMat);
   core.rotation.x = Math.PI / 2;
-  const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, length, 8), glowMat);
+  core.scale.set(1, length, 1);
+  const glow = new THREE.Mesh(BEAM_GLOW_GEO, glowMat);
   glow.rotation.x = Math.PI / 2;
+  glow.scale.set(1, length, 1);
   const group = new THREE.Group();
   group.add(glow, core);
   group.renderOrder = 10;

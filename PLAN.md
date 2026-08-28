@@ -16586,3 +16586,50 @@ Recorded because it is now covered: death, respawn, the post-death
 debuff, and the fact that a geared character genuinely cannot be killed
 by low-band monsters standing still, which is worth knowing before
 somebody reads it as broken aggro.
+
+**Phase 70 M70.100 — the long-session leak, and why every short test
+missed it.** Reported still lagging while every instrumented run came
+back clean. The one variable never varied was TIME: every run so far was
+two to five minutes, and the report is about longer sessions. So a
+fifteen-minute driven run was added, sampling every thirty seconds —
+frame-time p50/p95/p99/max, JS heap, shader programs, geometry and
+texture counts, draw calls, actors, drops.
+Frame time never moved (p50 16.7, p99 16.9 for the whole quarter hour)
+and the heap oscillated healthily between 105 and 140MB, which is why
+every short run looked fine. But:
+    t=0s    geo=333   tex=232
+    t=451s  geo=1038  tex=719
+    t=871s  geo=1767  tex=1182
+Both climbing in a straight line with no plateau, while the actor count
+stayed flat around twenty and draw calls did not grow. Geometries 5.3x
+and textures 5.1x in fifteen minutes — GPU resources accumulating,
+which costs nothing early and starts to matter once the driver is under
+pressure. That is a leak a five-minute test cannot see and a real session
+can, which is the whole explanation for the gap between the reports and
+the measurements.
+**Two independent leaks, both found and fixed.**
+1. *Skeletons.* `SkeletonUtils.clone` shares geometry but builds a NEW
+   `Skeleton` per clone — it must, since two actors playing different
+   animations cannot share a bone graph — and three.js gives each skeleton
+   a GPU bone texture, freed only by `Skeleton.dispose`, which nothing
+   called. Monsters are built and torn down continuously as the player
+   walks past camps: one leaked texture per spawn, forever. `Actor.dispose`
+   now collects the distinct skeletons under its root (a Set, because the
+   silhouette and outline hulls bind the SAME skeleton as the mesh they
+   copy) and disposes them. Textures went from climbing to flat: 226 -> 245
+   over the same window.
+2. *Projectile geometry.* `beamMesh` built `new CylinderGeometry(..., length, ...)`
+   twice per beam, and the arrow trail built a fresh `ConeGeometry` per
+   arrow. M70.62 pooled the MATERIALS here and left the geometry alone,
+   and nothing disposes it — so every cast leaked. Replaced with
+   unit-length module constants scaled per use (`BEAM_CORE_GEO`,
+   `BEAM_GLOW_GEO`, `ARROW_TRAIL_GEO`): the same picture, one geometry
+   each for the whole game.
+Measured after both, same route and duration:
+    geometries at t=271s: 811 -> 360, and flat rather than climbing
+    textures:             flat
+    growth rate:          ~1.77/s -> ~0.08/s, a 22x reduction, and what
+                          is left is new monster models loading
+    hitches over 87 fights: 0
+Suite at its known baseline (`brace`, `casting`, `slaying` need seeded
+characters; `throwers` is the documented open bug).

@@ -2172,6 +2172,31 @@ export class Actor {
     // with the cached prototype, so freeing it here would force every future
     // actor of the same model to re-upload its buffers — and monsters are torn
     // down and rebuilt constantly as the player walks past their camps.
+    //
+    // THE SKELETON IS A DIFFERENT MATTER, and it was leaking.
+    //
+    // `SkeletonUtils.clone` shares the geometry but builds a NEW `Skeleton`
+    // for every clone — it has to, since two actors playing different
+    // animations cannot share one bone graph. three.js then allocates that
+    // skeleton a BONE TEXTURE on the GPU the first time it is skinned, and
+    // frees it only from `Skeleton.dispose`, which nothing here ever called.
+    // Monsters are built and torn down continuously as the player walks past
+    // camps, so that is one leaked GPU texture per spawn, forever.
+    // Measured over a fifteen-minute driven session: textures climbed from
+    // 232 to 1182 and geometries from 333 to 1767, both rising in a straight
+    // line with no sign of levelling off, while the actor count stayed flat
+    // at about twenty and frame time never moved. That is the shape of a leak
+    // that a five-minute test cannot see and a long play session can.
+    //
+    // Collected into a Set first because the silhouette and the outline hulls
+    // bind the SAME skeleton as the mesh they copy (see `buildSilhouette` and
+    // `rimFor`), so a naive traverse would dispose it several times over.
+    const skeletons = new Set<THREE.Skeleton>();
+    this.root.traverse((child) => {
+      const skinned = child as THREE.SkinnedMesh;
+      if (skinned.isSkinnedMesh && skinned.skeleton) skeletons.add(skinned.skeleton);
+    });
+    for (const skeleton of skeletons) skeleton.dispose();
   }
 }
 
