@@ -16564,3 +16564,25 @@ behaviour, not a bug. Recorded because "spell says it found nothing while
 an enemy is touching you" is exactly the sort of thing that looks broken
 and will be re-reported.
 No code changed in this entry.
+
+**Phase 70 M70.99 — death and respawn, never tested before now, work.**
+Continued into another path the harness had never touched. Killing the
+seeded level 57 turned out to be impossible by standing still: parked
+among thirteen monsters at the dragon ring for a full minute it lost
+about seven hit points total and REGENERATED faster than they could hurt
+it (859 -> 862 -> 864 -> 865). That is a fair result for a fully geared
+endgame character against a band it has outgrown, not a bug — but it
+does mean the test needed a different subject.
+Used the fresh level 1 instead, and the whole flow is correct:
+  60/60 at spawn -> teleported to the dragons -> 1/60 within seconds
+  -> defeated -> back at Emberhold (8075, 6130) with health restored
+  and regenerating
+The combat log carries it end to end: "The Dragon burned you for 59",
+"You were defeated.", "Defeated — you feel weakened." — so the death, the
+respawn at town and the Weakened debuff that follows it all fire. No
+console errors, fps 59.9 and 0 stutters throughout, including across the
+death itself.
+Recorded because it is now covered: death, respawn, the post-death
+debuff, and the fact that a geared character genuinely cannot be killed
+by low-band monsters standing still, which is worth knowing before
+somebody reads it as broken aggro.
