@@ -96,6 +96,24 @@ export function playSfx(name: SfxName, volumeScale = 1): void {
   gain.gain.value = Math.max(0, Math.min(1, (VOLUME[name] ?? 0.4) * volumeScale));
   src.connect(gain);
   gain.connect(dest);
+  // TAKEN BACK OUT OF THE GRAPH WHEN IT FINISHES.
+  //
+  // Every sound builds a source and a gain and wires them to the bus, and
+  // nothing ever unwired them: measured over four minutes of ordinary combat,
+  // 755 gain nodes and 715 source nodes created and ZERO disconnects. That is
+  // about three a second while fighting, so a half-hour session leaves
+  // thousands of dead nodes hanging off the mixer. A finished source can be
+  // collected once nothing references it, but a gain still connected to the
+  // destination is still part of the graph the audio thread walks every
+  // render quantum — and all of it lives in native memory, which is exactly
+  // why the JS heap looked flat while this was happening.
+  //
+  // `onended` fires once, after the buffer has played out, which is the
+  // earliest moment either node is safe to drop.
+  src.onended = () => {
+    src.disconnect();
+    gain.disconnect();
+  };
   src.start();
 }
 

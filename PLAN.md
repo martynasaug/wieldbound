@@ -16633,3 +16633,40 @@ Measured after both, same route and duration:
     hitches over 87 fights: 0
 Suite at its known baseline (`brace`, `casting`, `slaying` need seeded
 characters; `throwers` is the documented open bug).
+
+**Phase 70 M70.101 — the leak fixes hold over twenty minutes, and a third
+one found in the audio graph.** Extended the long-run harness to twenty
+minutes and added DOM node, combat-log line and nameplate counts to the
+sampling, to check both that M70.100 held and that nothing was
+accumulating on the DOM side instead.
+It holds. Over the run:
+    geometries  362 -> 408   (+46 in fourteen minutes; was ~1.77 PER SECOND)
+    textures    237 -> 247   flat
+    heap        120-137MB    flat, oscillating
+    DOM nodes   711-878      oscillating, no growth
+    log lines   40           capped, as `CombatLog.MAX_ENTRIES` promises
+    frame p99   16.8ms       unchanged from the first sample to the last
+350 fights, 8 hitches in twenty minutes. Every one of the eight is a
+`BETWEEN frames` gap of 150-996ms whose named section took 0-11ms — so
+almost none of the gap was our code. That is garbage collection or
+OS/browser scheduling, not game logic, and it is the residue this
+investigation has been circling since the beginning.
+**The third leak: the audio graph.** `playSfx` builds a
+`BufferSourceNode` and a `GainNode` per sound, wires both to the bus, and
+never unwired either. Measured before changing anything, over four
+minutes of ordinary combat: **755 gain nodes and 715 source nodes
+created, and zero disconnects** — about three a second while fighting, so
+a half-hour session leaves thousands of dead nodes hanging off the mixer.
+A finished source can be collected once nothing holds it, but a gain
+still connected to the destination remains part of the graph the audio
+thread walks every render quantum. All of it is NATIVE memory, which is
+precisely why the JS heap looked flat while it was happening — the same
+blind spot that hid the skeleton textures.
+Fixed with an `onended` that disconnects both, which is the earliest
+moment either is safe to drop. After: 451 sources against 446
+disconnects, the five outstanding being sounds still playing. Gain count
+stays higher than source count because the ambient soundscape builds
+long-lived gains on purpose; those are meant to persist.
+`soundscape` suite passes; the rest is the known baseline (`brace`,
+`casting`, `slaying` need seeded characters, `throwers` is the open bug,
+`camps` is timing-flaky and passes on re-run).
