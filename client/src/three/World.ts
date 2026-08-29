@@ -567,7 +567,7 @@ export class World {
     // than one shared number: a clover and a pine stop mattering at very
     // different distances, and one cut for both would either hold the grass too
     // long or pop the trees.
-    this.culler.add(this.groundCover, COVER_CULL_UNITS, "cover");
+    this.culler.add(this.groundCover, COVER_CULL_UNITS, "cover", true);
     this.culler.add(this.forests, TREE_CULL_UNITS, "trees");
     console.info(
       `[world] forests: ${woods.trees} trees and ${woods.undergrowth} undergrowth ` +
@@ -843,6 +843,7 @@ export class World {
     // player on a zoom and a wall clamp, and culling off it would re-evaluate
     // the whole field for a movement the player did not make. What the cut is
     // really about is where the player is standing.
+    this.culler.setShadowWindow(this.shadowExtent);
     this.culler.update(this.lookTarget.x, this.lookTarget.z);
   }
 

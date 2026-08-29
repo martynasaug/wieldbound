@@ -16981,3 +16981,50 @@ exactly the two settle checks. Verified live — the sequence is now a single
 `balanced -> high` with ONE line in the log, settling at High on divisor 1,
 where before it was Performance then Balanced.
 Suite green; `fighting` failed once and passed on re-run, as recorded.
+
+**Phase 70 M70.108 — ground cover was casting shadows into a window it stands
+tens of units outside.** Asked to make the performance call rather than bring
+it back for a decision, so this is one made on the evidence available and with
+its limits stated.
+The constraint is M70.106: milliseconds cannot be measured on this machine.
+Draw calls and triangle counts can, they are deterministic, and they are what
+`render` — 9.20ms of an 11.68ms frame — is actually made of. So the target was
+chosen as work that is provably invisible rather than work that is merely
+cheap-looking, because that is the only kind of cut that can be justified
+without a stopwatch.
+**THE ARGUMENT.** The sun's shadow map is an orthographic box around the
+player, `max(11, min(34, distance * 1.85))` half-extent — 16.6 units on a
+normal camera, so a 33-unit window. Ground cover is DRAWN out to
+`COVER_CULL_UNITS = 78`. Every grass chunk between those two numbers was being
+submitted to the depth pass to cast a shadow with nowhere to land: cover is at
+most a metre tall, its own shadow is a few centimetres long, and it stands
+tens of units outside the only region the shadow map records.
+**THE MEASUREMENT**, taken with the sun frozen and the loop stopped so the
+shadow frustum could not drift between readings — and with the control run
+twice, which is what makes it trustworthy:
+    cover casting from everywhere   813 draw calls   2,722,801 triangles
+    limited to the shadow window    758 draw calls   2,492,621 triangles
+    control, restored               813 draw calls   2,722,801 triangles
+**55 draw calls and 230,180 triangles, 6.8% of the frame's submissions, for
+no change to the picture at all.** Confirmed by eye at an identical camera and
+a frozen clock: near grass still casts exactly as before, and the tree, the
+character and the building all keep their shadows.
+The radius is not a magic number. It is the shadow box's own half-extent taken
+from the camera (so zoom cannot invalidate it), times root two because a chunk
+can sit off the corner of a square box and still be inside it, plus a 6-unit
+margin — which is the longest shadow a one-unit plant can throw at a low sun.
+Generous on purpose: what is saved is a draw call and what is risked is a
+visible hole.
+**WHAT WAS CONSIDERED AND REJECTED.** A blunt size threshold on all shadow
+casters was measured first and is much larger — 542 draw calls down to 408, a
+25% cut — but the 273 objects it silences are chosen by a radius constant with
+no argument behind it, it catches saplings along with grass, and the loss is
+real if subtle. The bigger prize is bigger still: the shadow pass overall is
+3.69ms and 357 of 706 calls, and 184 of those come from 2,775 static props and
+buildings. Both are being left alone deliberately. Their shadows are wanted,
+the per-category TIMINGS came back with negative savings (headless noise here
+is +/-2ms, larger than the effects being separated), and trading picture for
+frames on a measurement this machine cannot make would be M70.106's mistake
+with the sign flipped. Recorded with its numbers so the decision can be taken
+properly the day there is a real frame timer.
+Full suite 37/37, including `culling`, which exercises this file directly.

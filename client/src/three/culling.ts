@@ -42,6 +42,15 @@ interface Tier {
   group: THREE.Object3D;
   radius: number;
   label: string;
+  /**
+   * Whether this tier's shadow casting is limited to the shadow window.
+   *
+   * Only ground cover opts in, and the reason is a size argument rather than a
+   * taste one - see `setShadowWindow`. A wood does not: a tree is tall enough
+   * that its shadow reaches a long way from its trunk, so a tree standing
+   * outside the window can legitimately darken ground inside it.
+   */
+  shadowLimited?: boolean;
 }
 
 /**
@@ -58,6 +67,8 @@ export class DistanceCuller {
   private tiers: Tier[] = [];
   private lastX = Infinity;
   private scale = 1;
+  /** Half-width of the sun's shadow box, or 0 before the world reports one. */
+  private shadowWindow = 0;
   private lastZ = Infinity;
   /** Chunks left visible at the last evaluation, for the profiler. */
   visibleChunks = 0;
@@ -67,8 +78,8 @@ export class DistanceCuller {
    *  still worth attacking. */
   readonly perTier = new Map<string, number>();
 
-  add(group: THREE.Object3D, radius: number, label: string): void {
-    this.tiers.push({ group, radius, label });
+  add(group: THREE.Object3D, radius: number, label: string, shadowLimited = false): void {
+    this.tiers.push({ group, radius, label, shadowLimited });
     this.lastX = Infinity; // force the next update to do the work
   }
 
@@ -81,6 +92,33 @@ export class DistanceCuller {
    * proportions at every level. `Performance` closes the world in around the
    * player; it does not re-decide which things matter to it.
    */
+  /**
+   * The half-extent of the sun's orthographic shadow box, in world units.
+   *
+   * THE SHADOW MAP ONLY COVERS A WINDOW AROUND THE PLAYER - 11 to 34 units
+   * depending on camera distance (see `World.follow`) - while ground cover is
+   * DRAWN out to 78. Every grass chunk between those two numbers was being
+   * submitted to the depth pass to cast a shadow that has nowhere to land: its
+   * own shadow is a few centimetres long, and it stands tens of units outside
+   * the only region the shadow map records. Measured on a settled frame with
+   * the sun held still, cover casting from everywhere cost 762 draw calls
+   * against 693 limited to the window - about a tenth of the whole frame's
+   * submissions, spent on pixels that provably cannot exist.
+   *
+   * This is NOT the same trade as turning grass shadows off. Cover near the
+   * player still casts exactly as it did; what stops is cover that could never
+   * have contributed. The radius comes from the shadow camera rather than a
+   * constant so it stays correct when zoom resizes the window, and the diagonal
+   * is used because a chunk can sit off the corner of a square box and still be
+   * inside it.
+   */
+  setShadowWindow(halfExtent: number): void {
+    const next = halfExtent * Math.SQRT2 + SHADOW_WINDOW_MARGIN;
+    if (Math.abs(next - this.shadowWindow) < 0.5) return;
+    this.shadowWindow = next;
+    this.lastX = Infinity; // the cut changed, so it has to be re-decided now
+  }
+
   setScale(scale: number): void {
     if (scale === this.scale) return;
     this.scale = scale;
@@ -142,6 +180,13 @@ export class DistanceCuller {
           // Thin what survived, by distance. Only ground cover opts in (it is
           // the only thing that records a `fullCount`); a wood drawn with a
           // third of its trees missing would be a different wood.
+          // AND WHETHER IT IS WORTH CASTING A SHADOW AT ALL. Cheap: one
+          // boolean per surviving chunk, decided from the distance already
+          // computed above, and only re-run when the viewer has actually moved.
+          if (tier.shadowLimited && this.shadowWindow > 0) {
+            const cast = this.shadowWindow + bound.radius;
+            child.castShadow = cx * cx + cz * cz <= cast * cast;
+          }
           const full = child.userData.fullCount as number | undefined;
           if (full !== undefined) {
             const d = Math.sqrt(cx * cx + cz * cz);
@@ -161,6 +206,11 @@ export class DistanceCuller {
  *  that a chunk can never pop in late — the radii above have far more slack
  *  than this — and large enough that standing still costs nothing. */
 const RE_EVALUATE_UNITS = 2;
+
+/** Slack on the shadow window, so a chunk can never stop casting while any
+ *  part of its shadow could still reach inside it. Generous on purpose: what
+ *  is saved is a draw call and what is risked is a visible hole. */
+const SHADOW_WINDOW_MARGIN = 6;
 
 /**
  * The distance a ground-cover species stops being worth drawing, from how tall
