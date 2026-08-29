@@ -16868,3 +16868,61 @@ Two harness findings worth keeping, both of which cost real time:
   every target and circled it until the timeout. Every NPC in town then
   "stopped answering a click", and it looked exactly like a regression I had
   just caused. Both numbers now derive from the speed actually observed.
+
+**Phase 70 M70.106 — the idle stall was headless Chromium, and the control
+that proved it had to be load-matched.** M70.105 closed with a confident
+claim: an empty page in the same browser holds 60fps with zero frames over
+100ms while the game idles at 47fps with 48 of them in thirty seconds,
+therefore the stall is real and in the game. **That claim was wrong**, and the
+way it was wrong is the most useful thing in this entry.
+The investigation ran properly right up to the end. Chrome's own timeline —
+not a sampler, because a sampler answers "where did time go on average" and
+this needed "what was the browser doing for that one 200ms window" — named the
+cost outright: every long task was a `GPUTask`, up to 285.6ms, while
+`FireAnimationFrame` never exceeded 19.6ms and every GC event in thirty
+seconds totalled 50ms with a 2.3ms maximum. So: not our JavaScript, not
+garbage collection, not layout. The long tasks arrived **once per second**
+(gaps clustering at 0.97s) with GPU memory swinging 48-63MB in steps of
+almost exactly 4.096MB, which is a 1024x1024 RGBA texture.
+Three hypotheses were formed from that and all three were killed by
+measurement rather than by argument, which is the part that went right:
+- *The day/night cycle*, because a full day is 24 minutes and so one game
+  minute is one real second — a very good fit for a 1Hz period. Freezing the
+  clock changed nothing (24 stalls -> 22).
+- *Shadows*, because of the 4MB texture steps. The scene has 45 point lights;
+  **none of them cast shadows**, and the stall count was identical at High,
+  Balanced and Performance (17/17/16) and with `shadowMap.enabled = false`.
+- *One bad object*, found by binary-searching the 156 top-level children of
+  the scene. It converged on a group of 4 meshes and 4088 triangles — and
+  hiding that group outright changed nothing (16 -> 15). The bisection had
+  been walking noise, because its premise (a single culprit) was false.
+What was true was that hiding HALF the scene took the stalls to zero, which
+reads as a load threshold and is what finally suggested the right control.
+**THE CONTROL THAT SETTLED IT.** A synthetic page in the same headless
+browser, containing no game code at all — raw WebGL2, one shader, a vertex
+buffer and a loop of `drawArrays`:
+    50 draw calls x 1k triangles     59.5fps   0 frames over 80ms   max   34ms
+    330 calls x 3.6k  (~= the game)  39.0fps  14 frames over 80ms   max  534ms
+    900 calls x 3.6k                 23.9fps   9 frames over 80ms   max 1408ms
+The game submits 332 draw calls. It sits exactly in the band where headless
+Chromium's GPU path starts producing multi-hundred-millisecond tasks, and the
+synthetic page reproduces the pathology — the periodicity, the magnitude, the
+fps deficit — with nothing of ours running at all.
+**So the frame-pacing measurements in M70.105 are void.** Not the resource
+trends, the invariants, the gameplay coverage or the visual findings; those
+are all still good, and geometries plateauing at 370 over twenty minutes is a
+real result. But every fps, p99 and hitch number from a headless run is a
+measurement of the harness.
+The lesson, stated as a rule because this thread has now made the same class
+of error three times (M70.42's alt-tab gaps, M70.103's 1fps occluded window,
+this): **a control has to be as loaded as the thing it is controlling for.**
+An empty page proved only that an empty page is cheap. The blank-canvas
+control in M70.105 was not wrong, it was irrelevant, and it was believed
+because it agreed with what the numbers already seemed to say.
+Where this leaves frame rate: **it cannot be measured from this machine at
+all.** Headed is throttled to 1Hz by an occluded window and headless stalls
+under the game's own draw-call count. The next real reading has to come from
+the player's own F3 overlay on the 144Hz display — which is also the only
+place the adaptive-quality branch from M70.105 does anything, since headless
+reports a 60Hz display where a ~10ms frame fits at divisor 1.
+No code changed in this entry. Nothing was wrong with the game.
