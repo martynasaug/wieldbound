@@ -17841,3 +17841,46 @@ The worst frame left in the circuit is `npcs 134ms`, which is a different
 system and a much smaller number; recorded as the next thread rather than
 chased here.
 Suite 38/38.
+
+**Phase 70 M70.127 — a soak to check the last six changes, and one negative
+result re-tested rather than assumed.** M70.120 through M70.126 changed the
+scene graph (detaching culled chunks and the treeline), the warm order and the
+FX pools, and none of it had been run for longer than a few minutes. This is
+the validation, plus an honest correction to a number.
+**FIFTEEN MINUTES, 674 FIGHTS, EVERYTHING FLAT:**
+    geometries   336 -> 336
+    textures     241 -> 241
+    heap        110.6MB -> 110.6MB
+    DOM nodes    742 -> 773   (oscillating, no growth)
+    invariant violations  0
+    console errors        0
+So detaching thousands of objects from the scene graph every time the player
+moves — the thing that made M70.122 and M70.123 work — leaks nothing over a
+quarter of an hour, which was the risk worth checking.
+**THE ONE REAL EVENT, AND IT WAS MINE.** Programs jumped 129 -> 174 in a single
+burst between t=91s and t=120s and then never moved again. That is the adaptive
+controller stepping down to Performance, whose `shadows: false` invalidates
+every material — and it stepped down because I was running a second browser
+against the same GPU at the time, which pushed the frame past its budget. Not a
+fault, but worth writing down: a background benchmark is enough to make the
+game adapt, so any run that leaves adaptation on is measuring two things.
+**AND M70.118's FIX IS DOING ITS JOB.** That same switch, measured directly:
+    -> High         +0 programs    block 14ms
+    -> Balanced     +0 programs    block  9ms
+    -> Performance  +43 programs   block 110ms   (was 14,931ms before M70.118)
+High and Balanced are free because they share a shadow model; only Performance
+pays, and it now pays 110ms of held picture instead of fifteen seconds of dead
+browser.
+**THE NEGATIVE RESULT, RE-TESTED.** M70.118 tried warming every quality level
+under the loading screen and found it did not cover the actors. Enough has
+changed since — the FX pools, the faded occluders — that it was worth trying
+again rather than trusting the old answer. It is still wrong: Performance still
+costs the same +43 programs, and the load went from **27.0s to 36.3s** for it.
+Reverted. Recorded as re-verified rather than remembered.
+**AND A CORRECTION.** M70.123 claimed a 6.2ms frame. Re-measured three times on
+a machine with nothing else running, it is **5.9 / 5.7 / 5.5ms**. The earlier
+figure was taken with a background job competing for the GPU, and a reading
+taken during the soak said 7.6ms for the same reason. The honest number at the
+benchmark spot, at Balanced, is about **5.7ms against a 6.94ms budget** — the
+conclusion stands and the number was soft.
+No code changed in this entry.
