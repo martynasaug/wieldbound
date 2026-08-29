@@ -8,6 +8,7 @@
 // fight just looked like it hit unfairly hard.
 
 import * as THREE from "three";
+import { TERRAIN_STEP } from "./heightfield";
 import { surfaceHeight } from "./World";
 
 // --- A ring that is actually ON the ground -----------------------------------
@@ -161,6 +162,23 @@ class GroundRing {
     const inner = radius * this.innerFrac;
     const outer = radius * this.outerFrac;
     const arr = this.position.array as Float32Array;
+    // ONE SAMPLE PER ANGLE WHEN THE BAND IS THINNER THAN A TERRAIN QUAD.
+    //
+    // Every ring here is a thin annulus: the reach ring spans 0.97 to 1.00 of
+    // its radius, the lock and hover rings 0.08 of it, a danger edge 0.06. At
+    // the radii these are drawn at that is 0.05 to 0.36 world units, against a
+    // terrain quad of `TERRAIN_STEP` - about 1.33. Both ends of the band sit
+    // inside ONE quad, where the mesh has no detail to find, so sampling them
+    // separately asked the same question twice.
+    // It is not a free question: `surfaceHeight` chases through
+    // `terrainHeight` into `carveRiver` (a `riverAt` bucket search) and walks
+    // every `FLAT_SPOTS` entry, which is why M70.66 had to throttle this to
+    // 30Hz at all. Profiled in combat, terrain sampling was still 6.3% of the
+    // frame, with the reach ring rebuilding on 62% of frames.
+    // The DISC is the exception and keeps both: `disc()` builds it with
+    // innerFrac 0, so its band is the whole radius and the ground genuinely
+    // does change across it.
+    const shareSample = outer - inner < TERRAIN_STEP;
     for (let i = 0; i < SEGMENTS; i++) {
       const a = (i / SEGMENTS) * Math.PI * 2;
       const cos = Math.cos(a);
@@ -170,11 +188,12 @@ class GroundRing {
       const ox = x + cos * outer;
       const oz = z + sin * outer;
       const o = i * 6;
+      const iy = surfaceHeight(ix, iz) + this.lift;
       arr[o] = ix;
-      arr[o + 1] = surfaceHeight(ix, iz) + this.lift;
+      arr[o + 1] = iy;
       arr[o + 2] = iz;
       arr[o + 3] = ox;
-      arr[o + 4] = surfaceHeight(ox, oz) + this.lift;
+      arr[o + 4] = shareSample ? iy : surfaceHeight(ox, oz) + this.lift;
       arr[o + 5] = oz;
     }
     this.position.needsUpdate = true;

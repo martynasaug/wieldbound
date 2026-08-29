@@ -488,7 +488,11 @@ function rampToBridge(x: number, z: number, h: number): number {
  */
 export const TERRAIN_SPAN = Math.max(WORLD_UNITS_W, WORLD_UNITS_H) + 90;
 export const TERRAIN_SEGMENTS = 300;
-const TERRAIN_STEP = TERRAIN_SPAN / TERRAIN_SEGMENTS;
+/** The width of one terrain quad, in world units — about 1.33.
+ *  Exported because it is the natural threshold for "are these two points far
+ *  enough apart for the ground to be able to differ between them": below it,
+ *  the mesh itself carries no detail to find. */
+export const TERRAIN_STEP = TERRAIN_SPAN / TERRAIN_SEGMENTS;
 const TERRAIN_HALF = TERRAIN_SPAN / 2;
 
 /**

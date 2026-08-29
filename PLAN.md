@@ -17562,3 +17562,46 @@ rather than at the test that had just passed green.**
 Both would have shipped on the test alone: it reported "settings window works",
 seven checks green, zero console errors, while the thing was unreadable.
 Full suite 38/38, `npx tsc --noEmit` clean.
+
+**Phase 70 M70.120 — the ground rings were asking the terrain the same question
+twice.** Profiled combat rather than an idle spawn, which is where every
+decision in this thread has been made from and is the easy case. Two things
+show up in a fight that never show up standing still:
+    getProgramInfoLog   11.85%   (shaders still linking mid-fight)
+    terrain sampling     6.3%    (riverAt 4.0%, forestStrengthAt, baseHeight,
+                                  terrainHeight)
+**THE RINGS.** Counted over 1,339 combat frames, `showReach` rebuilt on 62% of
+them and `showTarget` on 29%, and each rebuild sampled `surfaceHeight` for 128
+vertices — an inner and an outer point at each of 64 angles. But every ring
+here is a THIN ANNULUS: the reach ring spans 0.97 to 1.00 of its radius, the
+lock and hover rings 0.08 of it, a danger edge 0.06. At the radii these are
+drawn at that is **0.05 to 0.36 world units, against a terrain quad
+(`TERRAIN_STEP`) of about 1.33**. Both ends of the band sit inside ONE quad,
+where the mesh has no detail to find — so the second sample could only ever
+return what the first one did.
+It is not a free question to ask: `surfaceHeight` chases through
+`terrainHeight` into `carveRiver` (a `riverAt` bucket search) and walks every
+`FLAT_SPOTS` entry, which is the whole reason M70.66 had to throttle this to
+30Hz in the first place. Now one sample per angle when the band is thinner than
+a quad, halving it to 64. The DISC keeps both, and that exception is the point:
+`disc()` builds it with innerFrac 0, so its band is the whole radius and the
+ground genuinely does change across it.
+**Stated exactly: the sample count is halved by arithmetic, and the
+millisecond win was NOT isolated.** Two attempts failed and are worth
+recording. Comparing CPU-profile percentages across runs is meaningless here —
+the second run happened to compile no shaders, so `getProgramInfoLog` went from
+11.85% to zero and inflated every other line, making `riverAt` look like it had
+gone UP. And a micro-benchmark of the rebuild measured 400 calls at 0.3ms
+total, which is not the work: `SAMPLE_INTERVAL_MS` throttles rebuilds to 30Hz,
+so a tight loop measures the throttle. What IS established is that the change
+costs nothing visually — verified by eye on the river bank, the steepest ground
+a fight can happen on, where the reach and target rings still lie flat on the
+slope.
+**And a process note, because it nearly shipped as a lie.** The patch script
+that applied this threw on a later step, so `indicators.ts` was never written —
+while an earlier step HAD written `heightfield.ts`. The benchmark, the
+screenshots and the suite all then ran against unchanged code and all looked
+fine. `git diff --stat` is what caught it: two files changed, one insertion in
+`indicators.ts`, where the change is twenty lines. Check the diff, not the
+test, when the question is "did the edit land".
+Full suite 38/38, `npx tsc --noEmit` clean.
