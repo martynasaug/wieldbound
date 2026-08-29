@@ -1089,6 +1089,9 @@ export class Actor {
       // kind of attachment is outlined by construction rather than by memory.
       // Without it the figure was outlined as the bare rig it is underneath.
       this.rimFor(o as THREE.Mesh);
+      // And its through-walls ghost, for exactly the same reason. Without this
+      // the silhouette was the bare rig standing inside the armour.
+      this.ghostFor(o as THREE.Mesh);
     });
   }
 
@@ -1141,16 +1144,38 @@ export class Actor {
       if (mesh.isMesh) sources.push(mesh);
     });
 
-    for (const mesh of sources) {
-      const skinned = mesh as THREE.SkinnedMesh;
-      let ghost: THREE.Mesh;
-      if (skinned.isSkinnedMesh) {
-        const s = new THREE.SkinnedMesh(skinned.geometry, this.silhouetteMaterial);
-        s.bind(skinned.skeleton, skinned.bindMatrix);
-        ghost = s;
-      } else {
-        ghost = new THREE.Mesh(mesh.geometry, this.silhouetteMaterial);
-      }
+    for (const mesh of sources) this.ghostFor(mesh);
+  }
+
+  /**
+   * One through-walls ghost for one mesh.
+   *
+   * Split out of `buildSilhouette` for the same reason M70.42 split `rimFor`
+   * out of `buildRim`, and to fix the same bug one pass later. That entry
+   * found the OUTLINE tracing the naked rig because `finishBody` handed
+   * `buildRim` `instance.object`; `buildSilhouette` is called from the same
+   * line with the same argument, and nobody checked the sibling.
+   * Measured on a dressed character: 2 through-walls ghosts against 32 meshes
+   * drawn normally, the 32 including `gear_armor_scale`, `gear_boots_tall`
+   * and `held_thunderhead`. So the figure you saw through a wall was NAKED
+   * and UNARMED while the real one wore plate and carried a mace — and the
+   * silhouette exists precisely to answer "where am I", which it was answering
+   * with the wrong shape.
+   * `clearGear` already skipped `silhouetteMaterial` "shared by every hull it
+   * owns", so the tear-down for this was written before the build-up was.
+   */
+  private ghostFor(mesh: THREE.Mesh): void {
+    if (!this.silhouetteMaterial) return;
+    const skinned = mesh as THREE.SkinnedMesh;
+    let ghost: THREE.Mesh;
+    if (skinned.isSkinnedMesh) {
+      const s = new THREE.SkinnedMesh(skinned.geometry, this.silhouetteMaterial);
+      s.bind(skinned.skeleton, skinned.bindMatrix);
+      ghost = s;
+    } else {
+      ghost = new THREE.Mesh(mesh.geometry, this.silhouetteMaterial);
+    }
+    {
       ghost.renderOrder = SILHOUETTE_RENDER_ORDER;
       // Never a shadow caster: the silhouette is a view-space cheat and a
       // shadow of it would be a second character on the ground.
@@ -1582,6 +1607,8 @@ export class Actor {
       // The hulls left with their gear; drop the references so repeated equip
       // changes cannot grow this list for the life of the actor.
       this.rims = this.rims.filter((r) => r.parent !== null);
+      // The same for the silhouette ghosts, which are now children of gear too.
+      this.silhouettes = this.silhouettes.filter((g) => g.parent !== null);
     }
     this.held = [];
     this.worn = [];

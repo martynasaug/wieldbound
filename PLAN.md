@@ -17148,3 +17148,55 @@ that never happened. It now needs to be both not converging AND not moving.
 And it has no pathfinding at all, so a route starting inside the palisade walks
 into a fence panel and stays there; the visual checks are routed through a
 waypoint outside the wall. Both cost real time and neither was the game.
+
+**Phase 70 M70.111 — two players in one world, and the silhouette was showing
+a naked man.** Drove the thing the whole architecture exists for and had never
+been driven: two headless clients, two characters, one server.
+**MULTIPLAYER WORKS.** Both clients hold the other player, both remote models
+finish building, movement propagates (B walked and A's copy of B moved 21.9
+world units), both clients see the same monsters (11 shared ids), the
+leaderboard lists every character on the server, and neither client logged a
+single console error. Recorded as covered.
+**AND THE SCREENSHOT FROM IT SHOWED SOMETHING ELSE.** With A standing behind
+the palisade, the through-walls silhouette read as cyan scribble rather than a
+figure. Chased with a controlled capture — behind the town statue, clock frozen
+at noon, camera walked in — and at close range it IS a readable person, so the
+rim itself is fine. What was not fine was what it was a person OF:
+    meshes drawn normally: 32   (including gear_armor_scale,
+                                 gear_boots_tall, held_thunderhead)
+    through-walls ghosts :  2   (Head, and one SkinnedMesh)
+**The silhouette was the naked rig.** Behind a wall the game drew an unarmoured,
+unarmed body while the real character wore plate and carried a mace — and the
+silhouette exists precisely to answer "where am I", which it was answering with
+the wrong shape.
+This is M70.42's bug, one pass later. That entry found the OUTLINE tracing the
+body under the armour because `finishBody` handed `buildRim` `instance.object`,
+the naked rig — and fixed it by splitting the per-mesh hull out as `rimFor` and
+calling it from `trackMaterials`, "the single path every worn and held piece
+already takes". `buildSilhouette` is called from the same line with the same
+argument and nobody looked at the sibling. The giveaway was sitting in
+`clearGear` the whole time: it already skips `silhouetteMaterial` because it is
+"shared by every hull it owns" — the tear-down for gear-borne ghosts was
+written before the build-up ever was.
+Fixed the same way: `ghostFor(mesh)` split out of `buildSilhouette`, called
+from `trackMaterials` beside `rimFor`, and `silhouettes` pruned in `clearGear`
+exactly as `rims` already were so repeated equip changes cannot grow the list
+for the life of the actor. Ghosts went 2 -> 15, now including `WeaponR`, and
+the picture confirms it: the figure behind the statue is armoured and holding
+its hammer where before it was bare-handed.
+`outline`, `bodies` and `animation` all pass — the layering M70.42 locked is
+untouched. Full suite 38/38.
+**Also this round: the harness can finally leave town.** The palisade had
+broken three separate tests by then — a visual sweep that photographed the
+inside of a fence, a run reporting "0 dragons in client" from 2,000px away, and
+the first two-client attempt whose second player never moved. `walkTo` presses
+keys toward a point and has no pathfinding, so a route starting inside the wall
+walks into a panel and stays there. `leaveTown` now aims at whichever of the
+three gates in `TOWN_GATES` best matches the heading wanted, `skirtTown` adds a
+waypoint when a journey PASSES the town rather than leaving it (a run from the
+dragons to the golems goes straight through Emberhold and was finishing 1,942px
+short against the outside of the same fence), and `travelTo` retries with a
+sidestep — because different journeys failed on different runs from the same
+start, which rules out fixed geometry and points at monsters and combat
+bumping the character off line. Three long cross-map routes now arrive within
+170px, every time.
