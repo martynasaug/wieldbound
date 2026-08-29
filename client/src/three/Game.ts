@@ -1482,6 +1482,15 @@ export class Game {
     // ONE WARM DRAW, covering the world AND every monster now standing in it.
     // This is the pass that actually creates the programs; everything above
     // only arranged for the right things to be present when it happens.
+    // ONE OF EVERY EFFECT, PLAYED IN THE DARK, before the warm draw below.
+    //
+    // The FX pools warm the materials they BUILD; `play` sets flags they do
+    // not, so the first real hit of a session was still compiling. Playing
+    // them here puts those programs in front of `warmWholeScene`, which is
+    // already drawing everything once — so they cost nothing extra and they
+    // cost it under the loading screen. See `Effects.warmByPlaying`.
+    this.effects.warmByPlaying();
+    this.skillFx.warmByPlaying();
     await this.world.warmWholeScene();
     // Out of sight again, but never disposed — see `monsterShaderKeepAlive`.
     for (const root of this.monsterShaderKeepAlive) root.visible = false;

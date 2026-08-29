@@ -125,6 +125,30 @@ export class Effects {
     void world.warmUp(group).then(() => world.warmBuffers(group, "effects"));
   }
 
+  /**
+   * Play one of every effect, off in the dark, so the FIRST one a player sees
+   * is not the one that compiles it.
+   *
+   * The pool above warms the materials this file BUILDS, and that turned out
+   * not to be the same set as the ones it USES: measured, pressing the attack
+   * key for the first time in a session still created new programs on a
+   * 1,999ms frame, and their cache keys differed from every warmed one in the
+   * boolean block — `opaque` and `flipSided`, which is to say transparency and
+   * winding that `play` sets and `prewarm` did not.
+   * Rather than chase which flag it is a fourth time, this exercises the real
+   * path. It is the same lesson M70.70 wrote down about warming a bare model
+   * instead of a real `Actor`: "the set of programs a spawned monster actually
+   * uses is not the set a bare model uses, and warming the bare one left the
+   * real ones to compile at first sight anyway."
+   * Played far below the world and reaped on the normal schedule, under the
+   * loading screen where nothing is on screen to see them.
+   */
+  warmByPlaying(): void {
+    for (const name of Object.keys(FX_ROW) as EffectName[]) {
+      this.play(name, 0, -400, 0, { scale: 0.01 });
+    }
+  }
+
   play(name: EffectName, x: number, y: number, z: number, opts: EffectOptions = {}): void {
     const row = FX_ROW[name];
     const texture = this.base.clone();

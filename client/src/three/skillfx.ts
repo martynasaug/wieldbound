@@ -346,6 +346,31 @@ export class SkillFx {
   }
 
   /** A ring racing outward along the ground. */
+  /**
+   * Play one of every shape, far below the world, so the first cast of a
+   * session is not the one that compiles it.
+   *
+   * `prewarm` above fills the material pools and warms what it BUILDS, and
+   * that is not the same set the shapes actually USE — measured, the first
+   * press of a skill still created two programs on a ~1,950ms frame, with
+   * cache keys differing only in the boolean block. This exercises the real
+   * calls instead of a stand-in, which is the same correction M70.70 made
+   * about warming a bare model rather than a real `Actor`.
+   * Called under the loading screen, where nothing is on screen to see them,
+   * and reaped by `update` on the ordinary schedule.
+   */
+  warmByPlaying(): void {
+    const y = -400;
+    this.nova(0, y, 0, 1, 0xffffff, 1);
+    this.ground(0, y, 0, 1, 0xffffff, 1);
+    this.cone(0, y, 0, 0, 1, 0xffffff, 1);
+    this.mark(0, y, 0, 0xffffff, 1);
+    this.strike(0, y, 0, 0xffffff, 1);
+    this.pillar(0, y, 0, 0xffffff, 1);
+    this.rain(0, y, 0, 1, 0xffffff, 1);
+    this.flash(0, y, 0, 0xffffff, 0, 1);
+  }
+
   nova(x: number, y: number, z: number, radius: number, color: number, durationMs = 520): void {
     const mat = this.acquireAdditive(color);
     if (!mat) return;

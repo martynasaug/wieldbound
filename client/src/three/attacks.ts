@@ -221,7 +221,23 @@ function boltMesh(
 
   const group = new THREE.Group();
   group.add(glow, spark, trail);
-  if (light) group.add(light);
+  // THE LIGHT STAYS ON THE SCENE ROOT, and this is where the first shot of a
+  // session used to freeze for two seconds.
+  //
+  // three.js counts the lights it finds while walking the scene, and that
+  // COUNT is part of every program's cache key - a scene with 45 point lights
+  // and the same scene with 44 need two different builds of every material
+  // that draws. `projectObject` skips anything not in the graph, so moving a
+  // pooled light into a per-bolt group takes it out of the count for as long
+  // as the group is unparented, and adding the group puts the count back up.
+  // Every visible material is then rebuilt, inline, on the next draw.
+  // Measured: one press of the attack key created THREE new programs on a
+  // 1,999ms frame, and their cache keys differed from the warmed ones in
+  // exactly one field - the light count, "44" against "45".
+  // `lightPool` was built precisely to hold that count still ("added to the
+  // scene ONCE ... 'off' is intensity 0 rather than removed") and this one
+  // call site quietly defeated it. The light is moved in world space by the
+  // update loop instead, alongside the bolt's own position.
   group.renderOrder = 10;
   return {
     object: group,
@@ -603,7 +619,12 @@ export class Projectiles {
         // Brightest in the middle of the flight: it winds up out of the hand
         // and is spent by the time it lands, where the impact burst takes over.
         const swell = Math.sin(Math.min(1, t) * Math.PI);
-        if (p.light) p.light.intensity = 3 + swell * 6;
+        if (p.light) {
+          // The light follows in WORLD SPACE rather than by being parented to
+          // the bolt - see the note in the bolt builder about the light count.
+          p.light.position.copy(p.object.position);
+          p.light.intensity = 3 + swell * 6;
+        }
         const glow = p.materials[1] as THREE.SpriteMaterial;
         if (glow) glow.opacity = 0.4 + swell * 0.35;
       } else if (p.kind === "wisp") {

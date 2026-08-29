@@ -17719,3 +17719,52 @@ the horizon at all (it sits 22 units out looking down), and at the east edge
 the Thornwood is fully present: 236 trees attached against 4 at mid-map, with
 trunks, foliage and shadows all where they were.
 Full suite green; `fighting` flaked once and passed on re-run, as recorded.
+
+**Phase 70 M70.124 — hunting the freezes, and finding the light count.**
+Asked to keep hunting lag and freezes. Freezes first, since a two-second frame
+is worse than a slow one.
+**RULED OUT: THE SERVER.** Nothing in this session had looked at it. Snapshot
+arrival, measured at the client against `TICK_MS = 100`:
+    idle open field   p50 109ms  p99 123ms  max 128ms  gaps over 300ms: 0
+    town              p50 109ms  p99 133ms  max 135ms  gaps over 300ms: 0
+    mid-fight         p50 110ms  p99 123ms  max 130ms  gaps over 300ms: 0
+Steady to within a few milliseconds and identical whether idle or fighting. The
+server is not a source of lag and a whole class is closed.
+**THE FREEZES ARE SHADER LINKS, AND THE CAUSE IS THE LIGHT COUNT.** A circuit
+of all twelve camps produced eleven long frames, the worst three being
+**6,386ms, 1,757ms and 1,057ms — all of them `render`, with nothing outside the
+timed sections.** Watching every frame from inside the page and recording what
+changed across each stall showed it outright: **every stall over 250ms
+coincided with new PROGRAMS, and with nothing else** — no new geometry, no new
+textures, no new actors.
+Decoding the cache keys against three.js's own bit tables named the field:
+    field 34:  "44"  ->  "45"
+That is the scene's point-light count. `attacks.ts` acquires a pooled light and
+then does `group.add(light)`, moving it out of the scene root and into the
+per-bolt Group — and `projectObject` does not count a light that is not in the
+graph, so the count falls to 44 and springs back to 45 when the group is
+parented. The light count is part of EVERY program's cache key, so every
+visible material needs a second build, compiled inline on the next draw.
+`lightPool.ts` exists precisely to hold that count still — "a fixed pool of
+lights added to the scene ONCE keeps the count constant ... 'off' is intensity
+0 rather than removed" — and this one call site quietly defeated it. The light
+now stays on the scene root and is moved in world space by the update loop,
+beside the bolt's own position.
+**AND WARMING BY PLAYING, which is a partial fix and is reported as one.** The
+FX pools warm the materials they BUILD, and that is not the set `play` USES —
+the keys differed in `opaque` and `flipSided`, flags the play path sets and the
+pool did not. `Effects.warmByPlaying` and `SkillFx.warmByPlaying` now run one
+of every effect and every shape far below the world under the loading screen,
+exercising the real path rather than a stand-in — the same correction M70.70
+made about warming a bare model instead of a real `Actor`.
+    stalls over 250ms in a six-camp fight:   6  ->  2
+    the small (~250ms) light-count stalls:   gone
+    two ~2,000ms first-compile stalls:       REMAIN
+**Stated plainly: this is not finished.** Two programs still compile on first
+use in a session, about two seconds each, and warming off-screen cannot
+reproduce every render-state combination that produces them — the pair that
+survives moves between the basic attack and a skill depending on which monster
+is in front of the player. What would actually close it is intercepting the
+moment three.js decides to build a program and doing it asynchronously, which
+is not reachable from outside the library. Recorded rather than claimed fixed.
+Load 25.6s, nothing left parked below the world, no console errors, suite 38/38.
