@@ -16926,3 +16926,58 @@ the player's own F3 overlay on the 144Hz display — which is also the only
 place the adaptive-quality branch from M70.105 does anything, since headless
 reports a 60Hz display where a ~10ms frame fits at divisor 1.
 No code changed in this entry. Nothing was wrong with the game.
+
+**Phase 70 M70.107 — what the frame is actually made of, and a settle period
+for the thing M70.105 shipped.** With frame timing unmeasurable from here
+(M70.106), the useful question is not "how many fps" but "what is the frame
+spending itself on", and that IS measurable: draw calls and triangle counts
+are deterministic, and `renderer.info` does not care what browser it is in.
+**THE NUMBER THAT MATTERS.** The F3 overlay, read on a settled session:
+    60Hz display, 1 frame per 1 refresh = 60fps target
+    frame avg 11.68ms      render 9.20ms
+    draw calls 661         triangles 1,342,088
+`render` is 9.20ms of an 11.68ms frame — four fifths of it — and everything
+else the game does in a frame adds up to under 2.5ms (`world` 1.18ms,
+`occluders` 0.55ms, and nothing else above 0.3ms). So the JavaScript is not
+the problem and has not been for some time; the frame is GPU submission.
+**On a 144Hz display the budget at divisor 1 is 6.94ms.** A 9.20ms render
+cannot fit it, which is exactly why the pacer picks divisor 2 there and why
+the report from that machine is "should be 120fps not 60". Nothing is broken;
+the scene is simply more than a 6.94ms budget buys at the moment.
+**Where the render goes**, measured by rendering one top-level group at a time
+and reading `renderer.info` — the only honest way, since frustum culling
+decides most of it and only the renderer knows what survived:
+    one group      167 calls  1,034,360 triangles   (trees/foliage)
+    another        123 calls     33,044 triangles   (ground cover chunks)
+    a third         28 calls     34,954 triangles
+    ~20 more         2 calls each                   (buildings and props)
+And the shadow pass, isolated by rendering with and without it:
+    with shadows     10.69ms   706 calls   1,496,130 tris
+    without           7.00ms   349 calls   1,294,829 tris
+    the pass costs    3.69ms   357 calls
+So the shadow pass is **a third of the render and half the draw calls**, and
+184 of those calls come from 2,775 static props and buildings. That is the
+largest single lever available, and it is being recorded rather than pulled:
+their shadows are visible and wanted, the per-category TIMINGS came back with
+negative savings (the headless noise of M70.106 is ±2ms, larger than the
+effects being separated), and shipping a visual regression on the strength of
+a measurement this machine cannot make would be the M70.106 mistake again with
+the sign flipped. The call and triangle counts above are solid; the
+millisecond attribution of any FIX to them is not, from here.
+**A REAL FLAW IN M70.105's OWN FEATURE, found by reading its own output.** The
+F3 screenshot carried two lines in the combat log: "Graphics set to
+Performance to hold 60Hz" and then, seconds later, "Graphics set to Balanced".
+Adaptation was churning during the first seconds of play — which is the one
+stretch that is not representative of play at all: monster rigs are still
+building, buffers are still being uploaded the first time each chunk is drawn,
+and the pacer's own cost estimate has not converged. The controller was
+measuring the machine while it was still standing up.
+Fixed with `AUTO_SETTLE_MS = 20000`, timed from the first frame the controller
+ever sees rather than from `performance.now()` — which is already ~35 seconds
+old by the time the loading screen lifts, so a deadline measured against it
+would be over before the game had drawn anything. Three more checks in
+`autoquality.mjs` (16 total), mutation-tested: removing the guard fails
+exactly the two settle checks. Verified live — the sequence is now a single
+`balanced -> high` with ONE line in the log, settling at High on divisor 1,
+where before it was Performance then Balanced.
+Suite green; `fighting` failed once and passed on re-run, as recorded.

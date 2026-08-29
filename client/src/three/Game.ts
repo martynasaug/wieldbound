@@ -4040,6 +4040,7 @@ export class Game {
    */
   private adaptQuality(now: number): void {
     this.autoQuality ??= newAutoQuality(this.world.qualityLevel);
+    this.autoQuality.startedAt ??= now;
     const next = autoQualityDecision(
       this.autoQuality,
       { divisor: this.pacer.divisor, costMs: this.pacer.frameCostMs, refreshMs: this.pacer.refreshIntervalMs },

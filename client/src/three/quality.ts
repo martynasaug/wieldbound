@@ -223,6 +223,18 @@ export const AUTO_HOLD_MS = 8000;
  *  Deliberately generous: stepping up is optional and stepping back down is
  *  visible, so it should only happen when there is real room. */
 export const AUTO_UP_HEADROOM = 0.6;
+/**
+ * How long after the loop starts before the level may move at all.
+ *
+ * The first seconds of play are not representative of play: monster rigs are
+ * still being built, buffers are still being uploaded the first time each
+ * chunk is drawn, and the pacer's cost estimate is still converging. Adapting
+ * from that produced a real and visible churn the first time this ran - the
+ * log read "Graphics set to Performance" and then, seconds later, "Graphics
+ * set to Balanced", which is the machine being measured while it is still
+ * standing up. Nothing is decided until it has settled.
+ */
+export const AUTO_SETTLE_MS = 20000;
 
 export interface AutoQualityState {
   level: QualityLevel;
@@ -237,12 +249,14 @@ export interface AutoQualityState {
    */
   ceiling: QualityLevel;
   changedAt: number;
+  /** When the controller first saw a frame, for AUTO_SETTLE_MS. */
+  startedAt: number | null;
   /** The player pressed F4. Their choice is final. */
   manual: boolean;
 }
 
 export function newAutoQuality(level: QualityLevel): AutoQualityState {
-  return { level, ceiling: "high", changedAt: 0, manual: false };
+  return { level, ceiling: "high", changedAt: 0, startedAt: null, manual: false };
 }
 
 const rank = (l: QualityLevel): number => QUALITY_ORDER.indexOf(l);
@@ -264,6 +278,11 @@ export function autoQualityDecision(
   // Nothing has been measured yet. The pacer reports refreshMs 0 until its
   // first probe lands, and a decision from no data is a guess.
   if (measured.refreshMs <= 0 || measured.costMs <= 0) return null;
+  // The settle period runs from the first frame this ever saw, not from page
+  // load: `performance.now()` is already ~35 seconds old by the time the
+  // loading screen lifts, so a deadline measured against it would be over
+  // before the game had drawn anything.
+  if (s.startedAt === null || now - s.startedAt < AUTO_SETTLE_MS) return null;
   if (now - s.changedAt < AUTO_HOLD_MS) return null;
 
   const budget = measured.refreshMs;
