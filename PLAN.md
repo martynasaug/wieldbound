@@ -17464,3 +17464,59 @@ the least visible third of the pass is a different proposition from cutting the
 most visible half of it, and the second one wants a real frame timer and a
 human eye, not another median.
 Full suite 38/38.
+
+**Phase 70 M70.118 — the feature written to rescue a slow machine was hanging
+it for fifteen seconds.** Found in a soak test, not by looking for it: a sample
+at t=124s read `prog=118 -> 156` and `max=22354ms`. Thirty-eight new shader
+programs and a twenty-two-second frame, in the middle of play, on a build whose
+load had just been fixed.
+**IT WAS THE ADAPTIVE QUALITY CONTROLLER FROM M70.105.** `applyQuality` sets
+`needsUpdate` on EVERY material in the scene when the shadow model changes —
+its own comment admits the cost, "that rebuild is a stall of a second or more".
+Measured properly by switching level in front of monsters it is far worse:
+    -> performance   +36 programs   17,764ms frame
+Every invalidated program relinked serially on the main thread at the next
+draw, which is exactly the failure M70.115 had just removed from the load.
+And the level that triggers it is **Performance** — the one a struggling
+machine wants, and the one the adaptive controller walks to BY ITSELF after
+twenty seconds of missing its budget. So on precisely the computers the feature
+exists to help, it froze the browser for fifteen to twenty-two seconds,
+unprompted. Reported symptoms of "the game freezes" almost certainly include
+this.
+**TWO FIXES TRIED; THE FIRST DID NOT WORK AND IS WORTH RECORDING.** Warming
+every quality level under the loading screen — apply the level, `compileAsync`,
+render, restore — looked exact and still paid **+30 programs** on the real
+switch. The reason is structural: the actors and monsters standing in front of
+the player when the switch happens did not exist when the world was warmed, and
+their variants are most of the cost. No load-time warm can cover them.
+**What works is making the switch itself asynchronous.** `applyQuality` now
+kicks off `compileAsync` after invalidating the materials, and `World.render`
+HOLDS THE LAST FRAME until it resolves rather than drawing into programs that
+are not linked yet:
+    switch to Performance   worst main-thread block  14,931ms -> 72ms
+    worst frame the game reported     15,087ms -> none at all
+    picture held                      7.0s, with the browser fully responsive
+                                      (8ms round trips throughout)
+    every later switch                instant — the programs are cached
+Seven seconds of still picture with a live game behind it is confusing unless
+somebody says so, so it says so: a toast and a combat-log line explaining that
+the shaders are being rebuilt and the picture will pause. It happens once per
+session at most.
+Load is unchanged by all this — 21.2s to playable, 3.5s total blocked — and the
+full suite is 38/38.
+**Also this round, two measurements that changed nothing and should stop the
+next reader repeating them:**
+- *Static scenery's 231 shadow calls.* Silencing every static caster beyond
+  200, 120, 80, 60, 45 and 35 units changes the shadow pass NOT AT ALL
+  (253 calls each time). three.js is already culling them; the 253 are genuinely
+  near the player and their shadows genuinely land in view. M70.117's decision
+  to leave them alone now rests on evidence rather than caution.
+- *Cover geometry is extraordinarily dense* — 622 triangles for a tall wispy
+  grass, 880 for a common mushroom, **3,216 for a Laetiporus** — and ground
+  cover is 1.85M triangles, **79% of everything the frame draws**. Retiring
+  expensive species earlier (cull radius scaled by `(200/tris)^0.25`) cut cover
+  triangles 19% and measured **7.1ms -> 7.0ms**, i.e. nothing, while visibly
+  thinning the field. Rejected: a visible change for an unmeasurable gain is
+  the M70.106 mistake with the sign flipped. The real fix, if geometry ever
+  proves to be the bottleneck on a weaker GPU, is lower-poly source art rather
+  than a cull-distance trick.

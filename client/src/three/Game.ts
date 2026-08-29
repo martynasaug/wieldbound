@@ -3204,6 +3204,7 @@ export class Game {
         // shown; it has no business overriding one they just made.
         this.autoQuality = { ...(this.autoQuality ?? newAutoQuality(q.level)), level: q.level, manual: true };
         this.hud.toast(`Graphics: ${q.label}`, "#8fd15a");
+        this.noteQualityWarm();
         this.combatLog.push(`Graphics quality set to ${q.label}. F4 to cycle, F3 for the frame cost.`, "#8fd15a");
         return;
       }
@@ -4115,9 +4116,30 @@ export class Game {
     this.lastAutoStepUpTo = wentDown ? null : next.level;
     const q = this.world.setQuality(next.level);
     this.hud.toast(`Graphics: ${q.label} (auto)`, "#8fd15a");
+    this.noteQualityWarm();
     this.combatLog.push(
       `Graphics set to ${q.label} to hold ${this.pacer.refreshHz.toFixed(0)}Hz. F4 to choose yourself.`,
       "#8fd15a",
+    );
+  }
+
+  /**
+   * Says so when a quality change is repainting the world's shaders.
+   *
+   * Turning shadows on or off invalidates every program in the scene, and
+   * `World.render` holds the last frame while the replacements link in
+   * parallel rather than letting them link serially on this thread — which
+   * used to be a fifteen-second freeze of the whole browser. The hold is about
+   * seven seconds the first time and nothing on every switch after it, but a
+   * still picture with a live game behind it needs a word or the player will
+   * think it has crashed.
+   */
+  private noteQualityWarm(): void {
+    if (!this.world.warmingQuality) return;
+    this.hud.toast("Applying graphics settings…", "#c9b47a");
+    this.combatLog.push(
+      "Rebuilding shaders for the new graphics level — the picture pauses for a moment.",
+      "#c9b47a",
     );
   }
 

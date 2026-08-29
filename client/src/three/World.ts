@@ -10,6 +10,7 @@ import { buildForests } from "./forest";
 import { COVER_CULL_UNITS, DistanceCuller, TREE_CULL_UNITS } from "./culling";
 import {
   QUALITY,
+  QUALITY_ORDER,
   loadQuality,
   nextQuality,
   saveQuality,
@@ -191,6 +192,9 @@ export class World {
   private quality: QualityLevel = loadQuality();
   /** 0 = shadows off, 1 = every frame, N = every Nth. See `render`. */
   private shadowInterval = 1;
+  /** Set while a quality change's programs are still linking. See
+   *  `applyQuality`; `render` holds the last frame until it clears. */
+  private qualityWarm: Promise<void> | null = null;
   private shadowTick = 0;
 
   private readonly sun: THREE.DirectionalLight;
@@ -717,6 +721,31 @@ export class World {
           m.needsUpdate = true;
         }
       });
+      // AND LINK THE REPLACEMENTS IN PARALLEL, holding the picture still until
+      // they are ready.
+      //
+      // The line above invalidates every program in the scene, and the next
+      // `render` would rebuild all of them the way the loading screen used to:
+      // serially, on first draw, on the main thread. Measured by switching
+      // level in front of monsters, that is **+30 programs and a 15,087ms
+      // frame** — fifteen seconds during which the whole browser is gone.
+      // The adaptive controller (M70.105) reaches Performance on its own on
+      // exactly the machines least able to survive that, so the feature
+      // written to rescue a slow computer was hanging it.
+      // Warming every level under the loading screen was tried first and does
+      // not work: the actors and monsters standing there when the switch
+      // happens did not exist when the world was warmed, and their variants
+      // are most of the cost.
+      // So the switch itself becomes asynchronous. `render` holds the last
+      // frame while this runs — the picture pauses for a moment instead of the
+      // machine stopping, and the game, the network and the interface all keep
+      // running underneath it.
+      this.qualityWarm = this.renderer
+        .compileAsync(this.scene, this.camera)
+        .catch(() => undefined)
+        .then(() => {
+          this.qualityWarm = null;
+        });
     }
 
     this.culler.setScale(q.cullScale);
@@ -739,6 +768,19 @@ export class World {
   }
 
   /** The level in force. Read by the adaptive controller in Game. */
+  /**
+   * Whether a quality change is still linking its replacement programs.
+   *
+   * True for as long as `render` is holding the last frame — about seven
+   * seconds the first time a session reaches Performance, and nothing at all
+   * afterwards, since the programs are then cached. Read so the interface can
+   * say what is happening: a picture that stops for seven seconds while the
+   * game stays responsive is confusing unless somebody explains it.
+   */
+  get warmingQuality(): boolean {
+    return this.qualityWarm !== null;
+  }
+
   get qualityLevel(): QualityLevel {
     return this.quality;
   }
@@ -1098,6 +1140,8 @@ export class World {
     // amount of compiling the scene's own materials will create. See M70.91.
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
+
+
     this.renderer.setRenderTarget(prevTarget);
     // The real shadow map is whatever that warm left behind, so the next real
     // frame has to redraw it before the player sees anything.
@@ -1112,6 +1156,12 @@ export class World {
   }
 
   render(): void {
+    // HOLD THE PICTURE WHILE A QUALITY CHANGE RELINKS. See `applyQuality`:
+    // drawing now would force every invalidated program to link serially on
+    // this thread, which is the fifteen-second freeze this exists to avoid.
+    // The last frame stays on screen for a moment; everything else — input,
+    // network, game logic — keeps running.
+    if (this.qualityWarm) return;
     // The shadow map, on its own schedule.
     //
     // With `autoUpdate` off, three.js re-renders the shadow pass only on a
