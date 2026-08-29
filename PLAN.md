@@ -17279,3 +17279,46 @@ Verified from 538px away: `["You are too far from the workbench."]` where the
 same request returned an empty array before. The smithy still works end to end
 in range (potion crafted, ingot 1000 -> 1001, recipes 6 -> 7).
 Full suite green; `fighting` flaked once and passed on re-run, as recorded.
+
+**Phase 70 M70.114 — skills and talents driven at last, and three things that
+looked wrong turned out to be right.** No game bug this round. Recording it
+anyway, because "we looked and it holds" is worth as much in this file as a
+fix, and because the reason nobody had looked was a fault in the harness that
+had been quietly weakening every combat run in this session.
+**THE HARNESS HAD NEVER LEARNED A SKILL.** A screenshot habit paid out again:
+across a dozen captures the hotbar showed slot 1 filled and nine empty, on a
+level 71 character. Investigated, and the character had **14 unspent talent
+points and not one active skill** — `spendTalents` was taking
+`button.talent-node:not([disabled])` and clicking index 0 forty times. A talent
+node is NEVER disabled: the panel marks state with `maxed`, `learned` and
+`unavailable` classes instead. So forty presses all landed on Dead Weight, six
+counted, thirty-four did nothing, and **every driven fight so far — including
+the 692-fight run in M70.105 — was fought with the basic swing alone.** Fixed
+to read the classes and to prefer nodes that unlock SKILLS over passives, since
+a passive is invisible to anything a test can see.
+**WITH THAT FIXED, THE SKILL PATH IS CLEAN.** 13 points spent unlocked Concuss,
+Shockwave, Shield Wall, War Cry, Stagger and Follow Through; then 60 seconds of
+goblins:
+    56 skill keys pressed -> 56 SKILL_RESULT replies, one for one
+    "You shocked the Goblin for 865 (CRIT)", "You defeated the Goblin"
+    cooldowns reported and respected ("Shield Wall — cooling down")
+    loot, XP floaters and essence all arriving
+    0 console errors
+**THREE FALSE LEADS, all chased to the bottom and all correct behaviour**,
+recorded so they are not re-opened:
+- *Does a newly learned skill reach the bar?* Yes, automatically. Learning
+  Concuss took the layout from `["attack", null...]` to
+  `["attack", "concuss", ...]` and `skillForKey("2")` answered immediately. A
+  player never has to know about dragging.
+- *Does clicking a maxed node waste a round trip?* No. The client guards it and
+  sends NOTHING — verified on the wire — while the node carries `maxed` and
+  `unavailable` classes for the eye. This is the same shape as M70.112's bug
+  and it is the correct version of it.
+- *The tall purple column through the middle of a fight.* It is the loot beam
+  (`BEAM_GEO` in `drops.ts`, "a beam for the top two qualities only"), which is
+  exactly what an epic drop is supposed to look like.
+The lesson worth keeping is the first one: **a harness that silently does less
+than it claims makes every result it produces weaker, and nothing fails.** The
+combat runs were not wrong, they were narrower than they read — and the only
+thing that exposed it was looking at a picture of the hotbar rather than at the
+numbers underneath it.
