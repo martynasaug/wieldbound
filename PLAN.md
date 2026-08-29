@@ -17909,3 +17909,31 @@ point light the town raises at night on purpose — "a town that only lights up
 once you are inside it is a town with nothing to walk toward". Recorded so the
 next sweep does not re-open it.
 No code changed in this entry.
+
+**Phase 70 M70.129 — every smithy action executed, not just listed.** M70.112
+reported the smithy "works end to end", and that was true of Craft, Refine and
+Salvage. The other four had only ever been LISTED: the tabs rendered their rows
+with real costs, which is not the same as the button doing anything. Driven
+through the real buttons with the socket watched, so a silent refusal cannot
+pass for success:
+- **Forge** — refused first, and correctly: `FORGE_ITEM` came back with
+  `Bag is full (30/30 slots) — salvage something first`, which is the server
+  doing its job and is only visible because the wire was being read. Salvaged
+  four items and forged again: `ITEMS_UPDATE` + `MATERIALS_UPDATE`, bag 33 ->
+  34, an Apprentice's Staff in it.
+- **Reforge** — `ITEMS_UPDATE`, `MATERIALS_UPDATE`, and
+  `Reforged: Tempered Oaken Stave of the Hawk`.
+- **Draw a rune** — which is not in the Etch tab at all; the panel's own text
+  says where it lives ("Draw one out of something in the Salvage tab"), and it
+  is there. `ITEMS_UPDATE` + `RUNES_UPDATE` and
+  `Drew Supple out of Honed Supple Apprentice's Staff. Nothing else survived.`
+  Runes 0 -> 1.
+- **Etch** — every row's button is disabled while you hold no rune, with the
+  reason written out ("No rune you hold fits. It would take Keen, Swift,
+  Heavy..."), which is why this could not be driven before the draw. With the
+  rune in hand: `Etched: Honed Supple Leather Hood`, runes 1 -> 0.
+So the full chain — take an item apart for its rune, put that rune on something
+else — works end to end, and the crafting system has no undriven path left.
+No bugs found. Recorded because "the panel lists it" was standing in for "the
+button works" in this file, and those are different claims.
+Suite 38/38.
