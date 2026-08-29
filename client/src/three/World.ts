@@ -720,6 +720,7 @@ export class World {
     }
 
     this.culler.setScale(q.cullScale);
+    this.culler.setShadowsAllowed(q.coverShadows);
   }
 
   /** Steps to the next level, saves it, and says which one it landed on so the

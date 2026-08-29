@@ -69,6 +69,8 @@ export class DistanceCuller {
   private scale = 1;
   /** Half-width of the sun's shadow box, or 0 before the world reports one. */
   private shadowWindow = 0;
+  /** Whether the shadow-limited tier may cast at all. See `coverShadows`. */
+  private shadowsAllowed = true;
   private lastZ = Infinity;
   /** Chunks left visible at the last evaluation, for the profiler. */
   visibleChunks = 0;
@@ -112,6 +114,14 @@ export class DistanceCuller {
    * is used because a chunk can sit off the corner of a square box and still be
    * inside it.
    */
+  /** Turns the shadow-limited tier's casting on or off wholesale, for the
+   *  quality setting. Cheaper than any window: it is nothing at all. */
+  setShadowsAllowed(allowed: boolean): void {
+    if (allowed === this.shadowsAllowed) return;
+    this.shadowsAllowed = allowed;
+    this.lastX = Infinity; // the cut changed, so it has to be re-decided now
+  }
+
   setShadowWindow(halfExtent: number): void {
     const next = halfExtent * Math.SQRT2 + SHADOW_WINDOW_MARGIN;
     if (Math.abs(next - this.shadowWindow) < 0.5) return;
@@ -185,7 +195,8 @@ export class DistanceCuller {
           // computed above, and only re-run when the viewer has actually moved.
           if (tier.shadowLimited && this.shadowWindow > 0) {
             const cast = this.shadowWindow + bound.radius;
-            child.castShadow = cx * cx + cz * cz <= cast * cast;
+            child.castShadow =
+              this.shadowsAllowed && cx * cx + cz * cz <= cast * cast;
           }
           const full = child.userData.fullCount as number | undefined;
           if (full !== undefined) {

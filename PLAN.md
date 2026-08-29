@@ -17420,3 +17420,47 @@ attempts:
 What remains is a floor rather than waste: 8.3 seconds of the load is the main
 thread IDLE while the driver links shaders on its own threads, which is the
 thing that used to be a frozen browser. Full suite 38/38.
+
+**Phase 70 M70.117 — grass shadows are a High-only feature now, and the
+shadow-pass decision M70.108 deferred is made.** M70.108 recorded the numbers
+and explicitly left the call for "the day there is a real frame timer". Asked
+to make it anyway, so it was made on measurement rather than on the timer that
+is not available.
+**FIRST, A BETTER MEASUREMENT.** M70.108 could not separate per-category
+shadow costs because headless noise (M70.106) is +/-2ms and swamped the
+effect. Using MEDIANS over sixty interleaved A/B renders instead of means
+fixes that outright — a median ignores the multi-hundred-millisecond GPU tasks
+completely — and the readings became stable and repeatable:
+    quality      render+shadow   render only   the shadow pass
+    high              6.9ms          4.5ms          2.4ms
+    balanced          6.7ms          4.5ms          2.2ms
+    performance       4.3ms          4.3ms             0
+So the shadow pass is **a third of the render and 384 of 703 draw calls — more
+submissions than the main pass itself.**
+**WHERE THOSE 383 CALLS COME FROM**, by switching each class of caster off and
+counting (deterministic, unlike the timings):
+    231  static scenery — town, props, rocks (2,775 casters)
+    136  ground cover (266 chunks)
+     16  actors (50)
+      0  trees and forest (433) — already outside the window
+**THE DECISION: ground cover stops casting below High.** Grass is a third of a
+unit across; on Balanced's 1024 map over a 33-unit window that is about nine
+texels, most of which PCF blurs away, so what it buys is a faint darkening at
+the base of a tuft. Compared side by side at an identical camera and a frozen
+sun, the tree, the character, the buildings and the bushes keep their shadows
+EXACTLY; the grass sits a little flatter and nothing else changes. Measured at
+the default quality:
+    draw calls   696 -> 559   (-137, and -20% of the whole frame)
+    render      6.4ms -> 5.5ms  (-14%)
+It is tiered rather than removed, which is what `quality.ts` already does with
+shadow map size, pixel ratio and cull scale — `coverShadows` is true at High,
+the level that means "everything", and false below it. Anyone who wants the
+effect is one press of F4 away, and the adaptive controller from M70.105 will
+find the level that fits their machine on its own.
+**The static scenery's 231 calls are still NOT cut**, and that stays a
+deliberate no. Those are the shadows of buildings and props — the ones a player
+would actually miss, and the ones that make the town read as a place. Cutting
+the least visible third of the pass is a different proposition from cutting the
+most visible half of it, and the second one wants a real frame timer and a
+human eye, not another median.
+Full suite 38/38.

@@ -68,6 +68,20 @@ export interface QualitySettings {
   anisotropyCap: number;
   shadows: boolean;
   shadowMapSize: number;
+  /**
+   * Whether ground cover casts shadows.
+   *
+   * The least visible shadow in the game and one of the most expensive. Grass
+   * is a third of a unit across; on Balanced's 1024 map over a 33-unit window
+   * that is about nine texels, most of which PCF blurs away — so what it buys
+   * is a faint darkening at the base of a tuft. Measured standing in open
+   * field it cost **121 draw calls, 18% of the whole frame's submissions**,
+   * out of 383 in the shadow pass. Compared side by side at a frozen sun the
+   * tree, the character, the buildings and the bushes keep their shadows
+   * exactly; the grass simply sits a little flatter.
+   * On at High, which is the level that means "everything".
+   */
+  coverShadows: boolean;
   /** Multiplies the ground-cover and tree cull radii. */
   cullScale: number;
   /**
@@ -93,6 +107,7 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     anisotropyCap: 16,
     shadows: true,
     shadowMapSize: 2048,
+    coverShadows: true,
     cullScale: 1,
     shadowEveryNFrames: 1,
   },
@@ -105,6 +120,7 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     anisotropyCap: 16,
     shadows: true,
     shadowMapSize: 1024,
+    coverShadows: false,
     cullScale: 0.8,
     shadowEveryNFrames: 2,
   },
@@ -124,6 +140,7 @@ export const QUALITY: Record<QualityLevel, QualitySettings> = {
     anisotropyCap: 8,
     shadows: false,
     shadowMapSize: 512,
+    coverShadows: false,
     cullScale: 0.62,
     shadowEveryNFrames: 0,
   },
