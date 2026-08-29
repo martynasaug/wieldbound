@@ -17372,3 +17372,51 @@ not redundant in the way the code reads, and whatever the second one depends on
 the first for has not been identified. Reverted. Recorded so the next reader
 does not spend the same hour on the same idea.
 Full suite 38/38.
+
+**Phase 70 M70.116 — what the whole session did to the machine's workload,
+measured end to end.** Reported as "overall game takes too heavy of a toll on
+pc". This entry is the accounting, because several separate changes have
+compounded and none of them was measured against the whole.
+**THE FRAME, AT REST.** A 30-second CPU profile standing still, taken at the
+start of the session and again now:
+                            before      after
+    main thread idle         30.3%      51.3%
+    updateMatrixWorld       14.89%       6.76%
+    projectObject            8.10%       4.32%
+    intersectsObject         3.88%       1.99%
+The scene-graph walk is roughly HALVED, and the main thread is now idle for
+half of every second at 60fps instead of a third. Nothing was aimed at
+`updateMatrixWorld` directly — it fell out of there being 2,704 fewer objects
+to walk (M70.109's per-species chunking) and fewer of them casting shadows
+(M70.108). Both were argued as draw-call work at the time; the CPU saving is a
+second dividend that was not predicted and is worth recording as the larger
+one.
+**WHAT IS SUBMITTED PER FRAME**, same spot, same frozen clock:
+    draw calls        813  ->  671   (-17.5%)
+    triangles       2.72M  -> 2.77M  (+1.7%)
+    scene objects  12,033  -> 9,329  (-22%)
+**THE LOAD:**
+    worst single block   22,707ms  ->  1,156ms
+    total blocked        26,099ms  ->  4,234ms
+    time to playable        38.4s  ->    24.8s
+**FOUR THINGS TRIED AND REJECTED THIS ROUND**, each measured, because the
+cheap-looking wins here keep failing and the record is worth more than the
+attempts:
+- *Dropping `checkShaderErrors` now that linking is parallel.* M70.106 had
+  disproved it against the synchronous path, and the context genuinely had
+  changed, so it was re-run: 23.1s and 23.7s against a 22.3-24.8s baseline.
+  Inside the noise. Kept, and the shader errors with it.
+- *Removing the earlier `warmUp(scene)` as redundant with `warmWholeScene`.*
+  Made the load WORSE, 37.1s against 23.6s.
+- *Starting the loop before `warmWholeScene` finishes.* Did not reach playable
+  any sooner — the loading screen is not gated on it — and pushed a 6,830ms
+  frame into the first thirty seconds of play. Strictly worse.
+- *Collapsing the 115 shader programs.* 34 are unnamed `MeshBasicMaterial`
+  variants and 26 of those carry an `onBeforeCompile() {}` in their cache key,
+  which looked like the cause until it turned out to be `Material.prototype`'s
+  own empty default — present on every material ever made, identical in every
+  key, and splitting nothing. The 34 differ by real render state. No win here
+  without changing what is drawn.
+What remains is a floor rather than waste: 8.3 seconds of the load is the main
+thread IDLE while the driver links shaders on its own threads, which is the
+thing that used to be a frozen browser. Full suite 38/38.
