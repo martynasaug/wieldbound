@@ -1446,7 +1446,7 @@ export class Game {
     // ONE WARM DRAW, covering the world AND every monster now standing in it.
     // This is the pass that actually creates the programs; everything above
     // only arranged for the right things to be present when it happens.
-    this.world.warmWholeScene();
+    await this.world.warmWholeScene();
     // Out of sight again, but never disposed — see `monsterShaderKeepAlive`.
     for (const root of this.monsterShaderKeepAlive) root.visible = false;
 

@@ -1015,7 +1015,7 @@ export class World {
    * the fill cost is negligible; the real cost is vertex and draw-call work,
    * paid once, under the loading screen.
    */
-  warmWholeScene(): void {
+  async warmWholeScene(): Promise<void> {
     const wasCulled: [THREE.Object3D, boolean][] = [];
     // ONE INSTANCE EACH, not all eighty-two thousand plants. A program is
     // keyed on the material, the geometry and the defines — never on how many
@@ -1071,6 +1071,30 @@ export class World {
     // a depth material and nothing else. Frustum culling is already off for
     // this pass, so asking for one shadow render here covers every caster in
     // the world rather than the handful currently near the player.
+    // LINK IN PARALLEL FIRST, off the main thread.
+    //
+    // This one `render` used to be a single unbroken 22.7-SECOND block, with
+    // the whole browser — not just the tab — frozen behind it, because the
+    // first draw of a program forces three.js to query it (uniform locations,
+    // and the error log when `checkShaderErrors` is on) and every one of those
+    // queries BLOCKS until the driver has finished linking. A hundred and
+    // fifteen programs, all linked serially, inside one frame.
+    // `compileAsync` exists for exactly this: it creates the same programs and
+    // then polls `COMPLETION_STATUS_KHR` — the KHR_parallel_shader_compile
+    // extension, which this machine reports as available — resolving only when
+    // the driver is done. The linking still costs what it costs, but it happens
+    // on the driver's own threads while the event loop keeps running, so the
+    // loading screen animates and the browser stays alive. By the time the
+    // render below runs, every program it touches is already linked and its
+    // first-use query returns immediately.
+    // M70.106 measured this block and filed it as "the deliberate trade, not a
+    // bug". That was too quick: the trade was paying for it under a loading
+    // screen, and it was never a licence to hang the machine while doing so.
+    await this.renderer.compileAsync(this.scene, this.camera);
+    // AND THEN THE SHADOW PASS, which `compileAsync` genuinely cannot reach —
+    // a shadow uses a DEPTH material three.js builds inside
+    // `WebGLShadowMap.getDepthMaterial`, so it is a different program that no
+    // amount of compiling the scene's own materials will create. See M70.91.
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(prevTarget);

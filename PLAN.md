@@ -17322,3 +17322,53 @@ than it claims makes every result it produces weaker, and nothing fails.** The
 combat runs were not wrong, they were narrower than they read — and the only
 thing that exposed it was looking at a picture of the hotbar rather than at the
 numbers underneath it.
+
+**Phase 70 M70.115 — the load froze the whole browser, and M70.106 was wrong
+to file it as a design decision.** Reported directly: "loading takes so long
+and the whole chrome freezes during loading", then a second freeze after
+logging in, then "overall game takes too heavy of a toll on pc".
+M70.106 measured this exact block — one unbroken ~24 second main-thread stall
+— proved it was genuine with a round-trip witness, correctly identified it as
+shader linking under the loading screen, and then **filed it as "the deliberate
+trade and not a bug"**. That was the wrong conclusion. Paying for the compile
+under a loading screen is a reasonable trade; hanging the machine while doing
+it is not, and "the whole of CHROME freezes" is not a tab-level stall at all.
+**THE FIX IS ONE CALL.** `warmWholeScene` ended in a single synchronous
+`renderer.render(scene, camera)` with everything visible and culling off. The
+first draw of a program forces three.js to query it — uniform locations, and
+the error log when `checkShaderErrors` is on — and every one of those queries
+BLOCKS until the driver has finished linking. A hundred and fifteen programs,
+linked serially, inside one frame.
+`renderer.compileAsync(scene, camera)` creates the same programs and then polls
+`COMPLETION_STATUS_KHR` — the `KHR_parallel_shader_compile` extension, which
+this machine reports as available and which M70.106 had already checked for and
+then not acted on. The linking still costs what it costs, but it happens on the
+driver's threads while the event loop keeps running. The render that follows
+finds every program already linked and its first-use query returns at once. The
+shadow pass still needs the real render, because a depth material is built
+inside `WebGLShadowMap.getDepthMaterial` and no amount of compiling the scene's
+own materials will create it (M70.91).
+**MEASURED, same machine, same route:**
+    worst single block   22,707ms  ->  1,156ms
+    total blocked        26,099ms  ->   4,234ms   (-84%)
+    time to playable        38.4s  ->    24.8s    (-35%)
+**And the warm still works**, which is the thing that had to survive: programs
+after load 116, and after touring the east field, the dragons, the golems, the
+town and the orc camp — 118. Two. The whole point of M70.91 is intact.
+**WHERE THE REMAINING TIME GOES**, instrumented rather than guessed:
+    start() -> assets              3.3s   (five parallel loads)
+    textures settle                0.0s
+    warmUp(scene)                  6.9s
+    monster prewarm                1.6s
+    warmWholeScene                 8.1s
+    ------------------------------------
+    loop starts                   23.6s
+**One experiment worth recording because it failed.** `warmWholeScene` looked
+like a strict superset of the earlier `warmUp(this.world.scene)` — same scene,
+plus hidden objects revealed, plus the shadow pass — so removing the earlier
+one should have been 6.9 seconds free. It made the load **WORSE: 37.1s against
+23.6s**, with a 21-second gap appearing where the compile had been. The two are
+not redundant in the way the code reads, and whatever the second one depends on
+the first for has not been identified. Reverted. Recorded so the next reader
+does not spend the same hour on the same idea.
+Full suite 38/38.
