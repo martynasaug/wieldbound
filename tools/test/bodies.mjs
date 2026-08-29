@@ -22,6 +22,7 @@ import {
   BASE_MOVE_SPEED_PX_PER_SEC,
   MONSTER_STATS,
   PLAYER_BODY_RADIUS_PX,
+  reachToBody,
   WEAPON_TYPES,
   attackRangeFor,
   resolveBodyCollision,
@@ -46,20 +47,33 @@ const weapons = [undefined, ...WEAPON_TYPES];
 
 console.log(`player radius ${PLAYER_BODY_RADIUS_PX}px, ${kinds.length} monster kinds\n`);
 
-console.log("1. every weapon reaches past every body");
+// REACH IS MEASURED TO THE SURFACE NOW, and that changes what this section is
+// asserting. It used to compare a weapon's reach against the CENTRE-to-centre
+// contact distance, which made every creature harder to hit the bigger it was
+// drawn and put a hard ceiling on `bodyRadiusPx` — a body wider than the
+// shortest weapon would park the player where nothing could land. That ceiling
+// is why a dragon drawing out to 131px carried a 32px body and stood on top of
+// the player.
+// With `reachToBody` the r cancels on both sides (contact is 14 + r, reach is
+// weapon + r) so the margin no longer depends on the creature's size at all.
+// The check is kept rather than deleted because the PROPERTY is still worth
+// pinning: it now proves the cancellation holds for every kind and every
+// weapon, so a future change that reintroduces a size term fails here.
+console.log("1. every weapon reaches past every body, whatever its size");
 for (const kind of kinds) {
-  const contact = separationFor(PLAYER_BODY_RADIUS_PX, MONSTER_STATS[kind].bodyRadiusPx);
+  const radius = MONSTER_STATS[kind].bodyRadiusPx;
+  const contact = separationFor(PLAYER_BODY_RADIUS_PX, radius);
   let worst = Infinity;
   let worstWeapon = null;
   for (const weapon of weapons) {
-    const margin = attackRangeFor(weapon) - contact;
+    const margin = reachToBody(attackRangeFor(weapon), radius) - contact;
     if (margin < worst) {
       worst = margin;
       worstWeapon = weapon ?? "fist";
     }
     if (margin < MIN_REACH_MARGIN_PX) {
       fail(
-        `${kind}: ${weapon ?? "fist"} reaches ${attackRangeFor(weapon)}px against contact ${contact}px ` +
+        `${kind}: ${weapon ?? "fist"} reaches ${reachToBody(attackRangeFor(weapon), radius)}px against contact ${contact}px ` +
           `— ${margin}px of slack, needs ${MIN_REACH_MARGIN_PX}px`,
       );
     }
@@ -67,6 +81,21 @@ for (const kind of kinds) {
   console.log(
     `  ${kind.padEnd(10)} contact ${String(contact).padStart(3)}px  tightest ${String(worstWeapon).padEnd(7)} +${worst}px`,
   );
+}
+
+console.log("\n1b. and the margin does not depend on how big the creature is");
+{
+  const marginsOf = (kind) =>
+    weapons.map((w) =>
+      reachToBody(attackRangeFor(w), MONSTER_STATS[kind].bodyRadiusPx) -
+      separationFor(PLAYER_BODY_RADIUS_PX, MONSTER_STATS[kind].bodyRadiusPx));
+  const first = marginsOf(kinds[0]).join(",");
+  const same = kinds.every((k) => marginsOf(k).join(",") === first);
+  if (!same) {
+    fail("a weapon's slack changes with the body radius — reach is not measured to the surface");
+  } else {
+    console.log(`  every kind gives the same slack per weapon (${first}) — size cancels`);
+  }
 }
 
 console.log("\n2. every monster reaches back");

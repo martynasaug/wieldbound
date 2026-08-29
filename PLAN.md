@@ -17088,3 +17088,63 @@ Whether that is worth a millisecond on a 144Hz display is a question only that
 display can answer.
 Full suite 37/37 plus the new `scatterchunks`; `fighting` flaked once and
 passed on re-run, as recorded.
+
+**Phase 70 M70.110 — a dragon was standing on top of the player, and the
+reason was that reach was measured to a centre.** Found by looking at a
+screenshot from the M70.109 validation tour rather than at a counter: at the
+dragon ring the player was not merely overlapped, it was **invisible inside
+the creature's chest**, with three dragons stacked in the same spot behind it.
+**THE MEASUREMENT M70.97 WAS MISSING.** That entry saw this on a mushnub,
+checked one number, and left it on the reasonable ground that widening every
+radius would change pack crowding. Measuring all thirteen kinds — the
+world-space bounds of everything each creature actually draws, against the
+radius that decides how close you may stand — shows the error is **not
+uniform, it scales**:
+    mushnub 1.30x   slime 1.38x   wolf 1.62x   cactoro 2.26x
+    orcbrute 2.62x  troll 3.11x   golem 3.41x  dragon 4.10x
+A little overhang reads fine. Four times is a creature you stand inside:
+contact was `14 + 32` = 46px while a dragon drew out to 131px.
+**THE FIRST FIX WAS WRONG AND THE SUITE SAID SO.** Raising the radii to match
+the art broke `bodies.mjs` in sixteen places — `dragon: sword reaches 62px
+against contact 72px`. Its header had warned about exactly this since it was
+written: "if a body were wider than your reach, walking up to it would push you
+out of your own attack range and melee against that kind would silently stop
+working." So the small radii were not an oversight. **The shortest weapon in
+the game was a hard ceiling on how big any body could be**, and the models had
+simply grown past what that ceiling allowed.
+**THE REAL FIX IS THE MODEL, NOT THE NUMBERS.** A weapon's reach is how far
+past YOUR OWN hands it goes; it says nothing about what you are swinging at.
+Measured centre-to-centre it made every creature harder to hit the bigger it
+was drawn. `reachToBody(reach, bodyRadiusPx)` measures to the SURFACE instead,
+and the ceiling does not move — it disappears: contact is `14 + r` and reach is
+`weapon + r`, so r cancels and no body, however large, can push the player out
+of range. `bodies.mjs` now proves the cancellation for every kind and every
+weapon (`1b`), and the slack is identical everywhere — `+40px` for a fist
+against a mushnub and against a dragon alike.
+It is genuinely contained: **one** server site decides what a swing lands on
+(`attackTargetFor`), and four client sites read reach for the target ring, the
+indicator, the auto-target and the target frame. All five now go through the
+same helper, because a UI that disagrees with the server here says "in range"
+while the swing finds nothing — the most confusing failure the combat UI can
+have. Nearest-target selection also ranks by surface rather than centre now,
+or a small creature standing behind a large one whose flank you are already
+touching would win the comparison.
+**The radii then follow the art**, by a stated rule rather than by taste: the
+radius approximates the TORSO, taken as `min(halfX, halfZ)` of the drawn
+bounds rather than the larger — a wingspan is not a body, and you stand under
+a dragon's wing without standing inside its ribs.
+    dragon 32 -> 58   golem 28 -> 53   demon 26 -> 48   orcbrute 22 -> 34
+    ghost  16 -> 32   cactoro 20 -> 25  armabee 16 -> 22  goblin 16 -> 19
+    troll, wolf, slime, mushnub, spikyblob unchanged — already inside the rule
+Verified live: full suite **38/38**, a dragon fight still lands (233, 1184 and
+483 damage, all three killed), and at the golem ring the player now sits 116px
+from a 53px body — outside it, visible, with the three golems spread apart
+instead of stacked.
+**Two harness faults found on the way, both of which looked like game bugs.**
+`walkTo` gave up after six seconds of not converging, which is wrong: walking
+AROUND something legitimately does not close the gap, so it stopped 2,035px
+short of the dragons and reported "0 alive in client" — a streaming failure
+that never happened. It now needs to be both not converging AND not moving.
+And it has no pathfinding at all, so a route starting inside the palisade walks
+into a fence panel and stays there; the visual checks are routed through a
+waypoint outside the wall. Both cost real time and neither was the game.

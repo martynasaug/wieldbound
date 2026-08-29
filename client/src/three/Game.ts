@@ -30,6 +30,7 @@ import {
   appearanceFromItems,
   attackRangeFor,
   classForWeapon,
+  reachToBody,
   critDamageMultiplier,
   defaultAttackFor,
   doubleAttackChance,
@@ -2990,6 +2991,17 @@ export class Game {
     return reachOf(equippedBySlot(this.items).weapon ?? null, this.passives().rangePercent);
   }
 
+  /**
+   * Reach against a PARTICULAR creature, which is the only kind that means
+   * anything once bodies differ in size. Mirrors the server's
+   * `attackTargetFor` exactly: if these two disagree the ring says "in range"
+   * while the swing finds nothing, which is the most confusing failure the
+   * combat UI can have.
+   */
+  private reachTo(kind: MonsterKind): number {
+    return reachToBody(this.reach(), MONSTER_STATS[kind].bodyRadiusPx);
+  }
+
   private syncMaterials(): void {
     // Copied on the way out, or the two panels would hold a live reference to
     // the field they are meant to be a snapshot of.
@@ -3675,12 +3687,18 @@ export class Game {
    */
   private nearestMonster(limit: number): string | null {
     let best: string | null = null;
-    let bestDist = limit;
+    let bestDist = Infinity;
     for (const [id, vis] of this.aliveMonsters()) {
+      // Surface distance, matching the server's `attackTargetFor`. Ranking by
+      // centre would prefer a small creature standing behind a large one whose
+      // flank the player is already touching.
+      const radius = MONSTER_STATS[vis.kind].bodyRadiusPx;
       const d = this.distanceTo(vis);
-      if (d <= bestDist) {
+      if (d > limit + radius) continue;
+      const surface = d - radius;
+      if (surface < bestDist) {
         best = id;
-        bestDist = d;
+        bestDist = surface;
       }
     }
 
@@ -3715,7 +3733,8 @@ export class Game {
       this.lockedId = null;
     }
 
-    const lockedInReach = lockedAlive && this.distanceTo(locked!) <= reach;
+    const lockedInReach =
+      lockedAlive && this.distanceTo(locked!) <= this.reachTo(locked!.kind);
     this.engagedId =
       (lockedInReach ? this.lockedId : null) ??
       this.nearestMonster(reach) ??
@@ -4436,7 +4455,7 @@ export class Game {
       this.indicators.showTarget(
         engaged.actor.position.x,
         engaged.actor.position.z,
-        this.distanceTo(engaged) <= reach,
+        this.distanceTo(engaged) <= this.reachTo(engaged.kind),
         Math.max(0.7, spec.height * 0.5),
       );
     } else {
@@ -5036,7 +5055,7 @@ export class Game {
     const shownId = this.lockedId ?? this.engagedId;
     const t = shownId ? this.monsters.get(shownId) : null;
     if (t && !t.dead) {
-      const range = this.reach();
+      const range = this.reachTo(t.kind);
       const dist = this.distanceTo(t);
       // "locked" is worth saying out loud: it is the difference between the
       // game having picked this for you and you having insisted on it.

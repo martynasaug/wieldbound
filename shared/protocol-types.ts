@@ -960,7 +960,60 @@ export function isRetreating(
 // the shorter weapon room to land.
 export const PLAYER_BODY_RADIUS_PX = 14;
 
+/**
+ * How a monster's `bodyRadiusPx` is chosen, because it stopped being obvious.
+ *
+ * These were hand-picked per creature and drifted badly away from the art as
+ * the models got bigger. Measured across all thirteen kinds — the world-space
+ * bounds of everything each creature actually draws, against the radius that
+ * decides how close you may stand to it — the error was not uniform, it SCALED:
+ *     mushnub   drawn 1.30x its collision radius
+ *     slime     1.38x     wolf 1.62x     cactoro 2.26x
+ *     orcbrute  2.62x     troll 3.11x    golem 3.41x
+ *     dragon    4.10x
+ * A little overhang is normal and reads fine. Four times is a dragon standing
+ * on top of you: contact was `14 + 32` = 46px while the creature drew out to
+ * 131px, so the player was parked deep inside its chest and could not be seen.
+ * M70.97 spotted this on a mushnub and left it, on the reasonable ground that
+ * widening every radius would change pack crowding. The measurement above is
+ * what that entry was missing — it is not every radius, it is the big ones.
+ *
+ * THE RULE NOW: the radius approximates the creature's TORSO, taken as
+ * `min(halfX, halfZ)` of its drawn bounds rather than the larger of the two,
+ * because a wingspan is not a body. You stand under a dragon's wing; you do not
+ * stand inside its ribs.
+ *
+ * AND IT IS CLAMPED so no monster can be pushed out of its own reach:
+ * `bodyRadiusPx <= floor(attackRangePx * 0.8) - PLAYER_BODY_RADIUS_PX`. The
+ * melee ring already parks a chaser at `max(contact, attackRangePx * 0.8 + ...)`
+ * (see M70.94), so a radius inside that bound cannot move where anything
+ * stands — it only stops bodies overlapping. That is why this change is
+ * invisible to the AI and visible on screen.
+ * `tools/test/bodies.mjs` asserts the clamp for every kind.
+ */
+
 /** How far apart two bodies must stay, centre to centre. */
+/**
+ * How far a swing carries against a particular creature.
+ *
+ * A weapon's reach is how far past YOUR OWN hands it goes; it says nothing
+ * about what you are swinging at. Measuring it centre-to-centre therefore made
+ * every creature harder to hit the bigger it was drawn, and set a hard ceiling
+ * on `bodyRadiusPx`: a body wider than the shortest weapon would stop the
+ * player at a distance from which nothing could be landed, so the radii had to
+ * stay small whatever the models did. That ceiling is why a dragon drawing out
+ * to 131px carried a 32px body and stood on top of the player (see the note on
+ * PLAYER_BODY_RADIUS_PX).
+ *
+ * Measuring to the surface removes the ceiling instead of raising it: contact
+ * is `14 + r` and reach is `weapon + r`, so the r cancels and a bigger body
+ * can never push the player out of range no matter how large it grows. The
+ * bug class is designed out rather than asserted against.
+ */
+export function reachToBody(reachPx: number, bodyRadiusPx: number): number {
+  return reachPx + bodyRadiusPx;
+}
+
 export function separationFor(a: number, b: number): number {
   return a + b;
 }
@@ -1284,7 +1337,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 1800,
     attackRangePx: 56,
     speedPxPerSec: 150,
-    bodyRadiusPx: 16,
+    bodyRadiusPx: 19,
     // Shouts for help, so a careless pull brings the whole camp.
     alertRadiusPx: 210,
     // The first thing in the world with an opinion about schools, and it is a
@@ -1469,7 +1522,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 1300,
     attackRangePx: 46,
     speedPxPerSec: 215,
-    bodyRadiusPx: 16,
+    bodyRadiusPx: 22,
     leapRangePx: 250,
     leapSpeedMultiplier: 3.2,
     leapDurationMs: 380,
@@ -1502,7 +1555,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     keepAwayPx: 150,
     backpedalPace: 0.55,
     speedPxPerSec: 112,
-    bodyRadiusPx: 20,
+    bodyRadiusPx: 25,
     deathBurstRadiusPx: 90,
     deathBurstDamage: 10,
     // A plant, which is the whole of it: poison is water to it, fire ends it,
@@ -1534,7 +1587,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 1900,
     attackRangePx: 60,
     speedPxPerSec: 142,
-    bodyRadiusPx: 22,
+    bodyRadiusPx: 34,
     alertRadiusPx: 300,
     // Real armour this time. And a body that size is a great deal of blood for
     // something to travel, which is what a coated blade is for.
@@ -1573,7 +1626,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 1700,
     attackRangePx: 58,
     speedPxPerSec: 168,
-    bodyRadiusPx: 16,
+    bodyRadiusPx: 32,
     // Barely there, so a blade passes through most of it — the oldest rule in
     // the genre, and the reason a caster has a job. Kept to 30 rather than the
     // cap because it already answers accuracy with 38 evasion, and a kind that
@@ -1614,7 +1667,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     keepAwayPx: 165,
     backpedalPace: 0.5,
     speedPxPerSec: 152,
-    bodyRadiusPx: 26,
+    bodyRadiusPx: 48,
     // It is made of the fire it throws, and cold is the opposite of it. Spells
     // slide off a thing that is itself a spell.
     resist: { fire: 50, arcane: 30, frost: -35 },
@@ -1651,7 +1704,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     keepAwayPx: 150,
     backpedalPace: 0.4,
     speedPxPerSec: 70,
-    bodyRadiusPx: 28,
+    bodyRadiusPx: 53,
     windupMs: 1100,
     slamRadiusPx: 140,
     // Same sweep, same reason — x1.8 cost eleven per cent of a level-20
@@ -1711,7 +1764,7 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     attackIntervalMs: 2600,
     attackRangePx: 95,
     speedPxPerSec: 124,
-    bodyRadiusPx: 32,
+    bodyRadiusPx: 58,
     windupMs: 950,
     slamRadiusPx: 165,
     // The apex, and the one that was already dangerous: it hits 15-25 before the

@@ -27,6 +27,7 @@ import {
   WEAPONS,
   classForWeapon,
   attackRangeFor,
+  reachToBody,
   weaponDef,
 
   ITEM_SLOTS,
@@ -2071,18 +2072,25 @@ function attackTargetFor(playerId: string, player: LivePlayer): MonsterState | n
   if (selectedId) {
     const selected = monsters.find((m) => m.id === selectedId);
     if (selected && selected.status === "alive" &&
-        Math.hypot(player.x - selected.x, player.y - selected.y) <= reach) {
+        Math.hypot(player.x - selected.x, player.y - selected.y) <=
+          reachToBody(reach, MONSTER_STATS[selected.kind].bodyRadiusPx)) {
       return selected;
     }
   }
+  // Nearest by SURFACE distance, not by centre. Ranking by centre would pick a
+  // small creature standing behind a large one whose flank the player is
+  // already touching.
   let best: MonsterState | null = null;
-  let bestDist = reach;
+  let bestDist = Infinity;
   for (const monster of monsters) {
     if (monster.status !== "alive") continue;
+    const radius = MONSTER_STATS[monster.kind].bodyRadiusPx;
     const d = Math.hypot(player.x - monster.x, player.y - monster.y);
-    if (d <= bestDist) {
+    if (d > reachToBody(reach, radius)) continue;
+    const surface = d - radius;
+    if (surface < bestDist) {
       best = monster;
-      bestDist = d;
+      bestDist = surface;
     }
   }
   return best;
