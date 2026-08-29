@@ -1834,7 +1834,21 @@
         border: 1px solid rgba(138, 107, 47, 0.7);
         border-radius: 7px;
         pointer-events: none;
-        z-index: 12;
+        /* BELOW THE WINDOW RAIL (z 10), not above it.
+           This sat at 12 and so painted straight over any window open behind
+           it. The Smithy is the worst case and it is a real one: the panel
+           opens at x=776..1198 with its five tabs at y=314, and this box
+           occupies 962..1198 / 276..353 - so Reforge, Etch and Salvage were
+           covered by WORK IN HAND every single time the bench was used.
+           They still WORKED, because pointer-events:none let the clicks
+           through, which is the worst version of the bug: nothing misbehaves,
+           the tabs simply cannot be read or found. Tobin explains reforging
+           and etching to you by name, and then the interface hides both.
+           A tracker is ambient and a window is something the player opened on
+           purpose, so the window wins. The minimap keeps z 12 - it sits above
+           the band the rail can reach, and it is the one readout worth
+           keeping on top. */
+        z-index: 9;
       }
       #quest-tracker.open { display: block; }
       .qt-head {
