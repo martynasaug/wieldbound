@@ -17200,3 +17200,50 @@ sidestep — because different journeys failed on different runs from the same
 start, which rules out fixed geometry and points at monsters and combat
 bumping the character off line. Three long cross-map routes now arrive within
 170px, every time.
+
+**Phase 70 M70.112 — the Smithy worked everywhere except where the player was
+standing.** M70.103 recorded crafting as covered, but only to the extent that
+the panel OPENS. Nothing had ever pressed Craft, Refine, Reforge, Etch or
+Salvage and checked the world changed. Driving all five through their real
+buttons found one real bug, and three of my own that looked exactly like it.
+**THE BUG. The station panel had no tether.** With the Smithy open, walking
+**696px from the bench — seventeen times `INTERACTION_RANGE_PX`, which is 40 —**
+left every tab, every recipe and every button live and enabled. Pressing Craft
+sent `CRAFT_CONSUMABLE` and the server, which checks `atStation` and returns
+without a word when that fails, **replied with nothing at all.** So a player
+who wandered off mid-craft was holding a fully functional-looking smithy in
+which no button did anything and nothing ever said why — the worst shape a UI
+failure can take, because nothing visibly misbehaves.
+The fix is the rule the game already had for the other station-like thing:
+`updateDialogueRange` closes a conversation past `NPC_TETHER_PX`, and its
+comment argues the case exactly ("the game never stops while you are talking").
+`updateStationRange` now does the same for the bench, with the same kind of
+slack (`STATION_TETHER_SLACK = 1.5`) so standing at the very edge cannot
+flicker the window, and it says why it closed — a window that vanishes on its
+own is only better than a dead one if the player learns something. Verified:
+open at the bench, and shut by 366px.
+**AND THE SMITHY ITSELF WORKS, end to end, now that it has been asked from the
+right place:**
+    Craft   Health Potion:  wood -2, herb -8, potion 1 in the bag
+    Refine  Ingot:          wood 10135->10117, ore 10214->10184, ingot 999->1000
+    Reforge lists the bag with real costs and rarity steps
+    Etch    lists items and names the runes each would need
+    Salvage items 30->29, recipes 5->6 — it teaches as it consumes
+**Three false alarms, all mine, all worth writing down because each read as a
+game bug for a while.**
+- `craftPanel.open()` takes a `stationId` and I called it bare, so `stationId`
+  was null and `enabled = canAfford(...) && !!this.stationId` disabled every
+  row. Reported by the first run as "every row disabled" with 10,103 wood
+  against a 2-wood potion, which is a very convincing bug.
+- `travelTo` walked OUT through a gate on the way to the workbench, which
+  stands INSIDE the wall. `leaveTown` only ever handled leaving; it is
+  `throughWall` now and crosses in either direction, picking the gate by
+  whichever end of the journey is outside.
+- And even then the character stopped 43px from the bench against an
+  `INTERACTION_RANGE_PX` of 40. Three pixels. The server was right to ignore it.
+The pattern across all three: the harness fails silently in the same way the
+game does, and a silent failure of the tester is indistinguishable from a
+silent failure of the thing tested. Watching the actual socket — what was sent,
+what came back — is what separated them, and it is what should be reached for
+first next time rather than fourth.
+Full suite 38/38, `npx tsc --noEmit` clean.

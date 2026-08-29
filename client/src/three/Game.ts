@@ -245,6 +245,16 @@ const MONSTER_MODELS: Record<MonsterKind, { model: string; height: number }> = {
 
 const MOVE_SEND_INTERVAL_MS = 60;
 
+/**
+ * How far past the interaction range a station panel survives.
+ *
+ * The same idea as `NPC_TETHER_PX`: what a click was allowed to open must not
+ * be closed again by a step. One and a half is enough that standing at the very
+ * edge of the bench does not flicker the window, and short enough that a player
+ * who has actually walked off finds it shut rather than dead.
+ */
+const STATION_TETHER_SLACK = 1.5;
+
 // The world holds ~80 monsters and the server sends all of them in every
 // snapshot, which is correct — it is authoritative and the client should not be
 // deciding what exists. Rendering all 80 as animated skinned meshes is another
@@ -3622,6 +3632,36 @@ export class Game {
    * A little slack past the talk range, so standing at the very edge does not
    * flicker the box open and shut.
    */
+  /**
+   * Closes the Smithy when the player walks away from the bench.
+   *
+   * The same rule `updateDialogueRange` applies to a conversation, and the
+   * station panel simply never had one. Measured: with the panel open, walking
+   * 696px away — seventeen times `INTERACTION_RANGE_PX` — left every tab, every
+   * recipe and every Craft, Forge, Reforge, Etch and Salvage button live and
+   * enabled. Pressing one sent the message and the server, which checks
+   * `atStation` and returns without a word when it fails, replied with
+   * NOTHING AT ALL. So a player who wandered off mid-craft was left holding a
+   * fully functional-looking smithy in which no button did anything and no
+   * message ever said why, which is the worst shape a UI failure can take.
+   *
+   * A little slack past the interaction range, for the same reason the
+   * dialogue has it: standing at the very edge must not flicker the panel open
+   * and shut. And it says why it closed, because a window that vanishes on its
+   * own is only better than a dead one if the player learns something.
+   */
+  private updateStationRange(): void {
+    if (!this.craftPanel.isOpen) return;
+    const id = this.craftPanel.station;
+    const station = id ? this.stationStates.get(id) : null;
+    if (!station) return;
+    const dist = Math.hypot(this.playerX - station.x, this.playerY - station.y);
+    if (dist <= INTERACTION_RANGE_PX * STATION_TETHER_SLACK) return;
+    this.craftPanel.close();
+    this.fitWindows();
+    this.hud.toast("Too far from the workbench.", "#c98d5e");
+  }
+
   private updateDialogueRange(): void {
     const openId = this.dialogue.openNpcId;
     if (!openId) return;
@@ -4103,6 +4143,7 @@ export class Game {
     updateNpcs(this.npcs);
     for (const n of this.npcs.values()) n.actor.update(dt);
     this.updateDialogueRange();
+    this.updateStationRange();
     this.profiler.end("npcs");
     // The tracker's own no-op guard is the thing that makes this free: it keys
     // on a distance rounded to fifty pixels, so this rebuilds the panel about

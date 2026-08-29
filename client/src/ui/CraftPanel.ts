@@ -146,6 +146,12 @@ export class CraftPanel {
     return this.overlay.classList.contains("open");
   }
 
+  /** Which bench this was opened at, so the caller can check the player is
+   *  still standing at it. See `Game.updateStationRange`. */
+  get station(): string | null {
+    return this.stationId;
+  }
+
   open(stationId: string): void {
     this.stationId = stationId;
     this.overlay.classList.add("open");
