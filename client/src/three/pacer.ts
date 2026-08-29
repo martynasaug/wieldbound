@@ -217,6 +217,18 @@ export class FramePacer {
     }
   }
 
+  /** What a rendered frame costs, as the pacer's own smoothed estimate.
+   *  Read by the adaptive quality controller, which must judge the same
+   *  number the divisor is chosen from or the two would disagree. */
+  get frameCostMs(): number {
+    return this.costMs;
+  }
+
+  /** The measured refresh interval, 0 until the first probe lands. */
+  get refreshIntervalMs(): number {
+    return this.refreshMs;
+  }
+
   /** For the profiler's readout. */
   get refreshHz(): number {
     return this.refreshMs > 0 ? 1000 / this.refreshMs : 0;

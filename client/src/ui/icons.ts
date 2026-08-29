@@ -423,7 +423,18 @@ export function hasIcon(key: string): key is IconKey {
  */
 export function iconSvg(key: string, className = "icon"): string {
   const d = ICON_PATHS[key as IconKey];
-  if (!d) return "";
+  // A KEY THAT IS NOT HERE DRAWS NOTHING, SILENTLY, and that is how Oswyn
+  // Thale — the game's only shopkeeper — spent an unknown number of builds
+  // greeting people with an empty black square where his portrait goes. His
+  // entry in town.ts asked for "dock-bag", which has never existed; the
+  // inventory glyph is "dock-inventory". Nothing threw, nothing logged, and
+  // the only way to find it was to look at a screenshot of the dialogue.
+  // Returning "" is still right — a missing glyph must not take a panel down
+  // with it — but it should not be quiet about it.
+  if (!d) {
+    console.warn(`[icons] no glyph called "${key}"; drawing nothing.`);
+    return "";
+  }
   return `<svg class="${className}" viewBox="0 0 512 512" aria-hidden="true"><path d="${d}"/></svg>`;
 }
 

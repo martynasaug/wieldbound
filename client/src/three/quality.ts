@@ -195,3 +195,101 @@ export function shadowSchedule(
   const next = (tick + 1) % interval;
   return { tick: next, needsUpdate: next === 0 };
 }
+
+// --- Adapting the level to the machine, rather than to an opinion ----------
+//
+// The file above argues that quality is "a setting rather than a decision",
+// and that argument still holds for what a player PREFERS. What it does not
+// cover is the case this exists for: a machine that cannot hold its own
+// display's refresh rate at the level it happens to be set to.
+//
+// The pacer's response to that is to halve the frame rate — on a 144Hz display
+// a frame costing 9ms misses the 6.94ms budget, so it draws one frame per two
+// refreshes and the player gets 72fps at High. Nothing is wrong with that
+// arithmetic, but it is the wrong trade to make silently: almost nobody would
+// choose a 2048 shadow map and a pixel ratio of 2 over DOUBLE the frame rate,
+// and nothing on screen tells them that is the choice being made on their
+// behalf. The pacer knows the display is fast and knows the frame is too
+// expensive for it, which is everything needed to lower the one and let the
+// other recover.
+//
+// The player's own hand always wins: one press of F4 sets `manual` and this
+// stops adjusting for the rest of the session.
+
+/** How long a level must be held before it may change again. Long enough that
+ *  a monster camp coming into view cannot trigger a level change on its own. */
+export const AUTO_HOLD_MS = 8000;
+/** How far inside the budget a frame must sit before trying a HIGHER level.
+ *  Deliberately generous: stepping up is optional and stepping back down is
+ *  visible, so it should only happen when there is real room. */
+export const AUTO_UP_HEADROOM = 0.6;
+
+export interface AutoQualityState {
+  level: QualityLevel;
+  /**
+   * The best level adaptation may try.
+   *
+   * Lowered permanently whenever a step UP has to be taken back, which is the
+   * whole anti-oscillation mechanism. Flapping between two levels every eight
+   * seconds is worse to look at than either level, and a machine that has once
+   * failed to hold a level is not going to start holding it later in the same
+   * session.
+   */
+  ceiling: QualityLevel;
+  changedAt: number;
+  /** The player pressed F4. Their choice is final. */
+  manual: boolean;
+}
+
+export function newAutoQuality(level: QualityLevel): AutoQualityState {
+  return { level, ceiling: "high", changedAt: 0, manual: false };
+}
+
+const rank = (l: QualityLevel): number => QUALITY_ORDER.indexOf(l);
+
+/**
+ * Decide whether the quality level should move, from what the pacer measured.
+ *
+ * Pure, and returns the whole next state rather than mutating, so the rule can
+ * be walked by `tools/test/autoquality.mjs` without a browser — the same
+ * treatment `shadowSchedule` and the pacer's own divisor rule already get.
+ * Returns null when nothing should change.
+ */
+export function autoQualityDecision(
+  s: AutoQualityState,
+  measured: { divisor: number; costMs: number; refreshMs: number },
+  now: number,
+): AutoQualityState | null {
+  if (s.manual) return null;
+  // Nothing has been measured yet. The pacer reports refreshMs 0 until its
+  // first probe lands, and a decision from no data is a guess.
+  if (measured.refreshMs <= 0 || measured.costMs <= 0) return null;
+  if (now - s.changedAt < AUTO_HOLD_MS) return null;
+
+  const budget = measured.refreshMs;
+  const down = QUALITY_ORDER[rank(s.level) + 1];
+  const up = QUALITY_ORDER[rank(s.level) - 1];
+
+  // THE FRAME DOES NOT FIT THE DISPLAY. The pacer has already given up a
+  // refresh for it, which is the measurement — not a prediction.
+  if (measured.divisor > 1 && down) {
+    return { ...s, level: down, ceiling: s.ceiling, changedAt: now };
+  }
+  // Room to spare, and allowed to try. `ceiling` is what stops this climbing
+  // back into a level that has already been proven too expensive.
+  if (measured.divisor === 1 && up && rank(up) >= rank(s.ceiling) &&
+      measured.costMs < budget * AUTO_UP_HEADROOM) {
+    return { ...s, level: up, changedAt: now };
+  }
+  return null;
+}
+
+/**
+ * Record that a level did not hold, so adaptation never tries it again.
+ *
+ * Called when a step down immediately follows a step up: the level we just
+ * left becomes the ceiling.
+ */
+export function lowerCeiling(s: AutoQualityState, failed: QualityLevel): AutoQualityState {
+  return rank(failed) < rank(s.ceiling) ? s : { ...s, ceiling: QUALITY_ORDER[rank(failed) + 1] ?? "performance" };
+}

@@ -148,6 +148,14 @@ import { Town } from "./town";
 import { buildNpcs, updateNpcs, type NpcVisual } from "./npcs";
 import { profiler } from "./profiler";
 import { FramePacer } from "./pacer";
+import {
+  QUALITY_ORDER,
+  autoQualityDecision,
+  lowerCeiling,
+  newAutoQuality,
+  type AutoQualityState,
+  type QualityLevel,
+} from "./quality";
 import { DialoguePanel, type DialogueAction } from "../ui/DialoguePanel";
 import { QuestTracker } from "../ui/QuestTracker";
 import { EXCHANGE_OFFERS, EXCHANGE_RATE, SHOP_STOCK } from "../../../shared/shop";
@@ -687,6 +695,22 @@ export class Game {
   private lastProgramKeys: Set<string> = new Set();
   /** Chooses how many display refreshes each frame lasts. See pacer.ts. */
   private readonly pacer = new FramePacer();
+  /**
+   * The graphics level following the machine. See quality.ts.
+   *
+   * Seeded from whatever was loaded, so a returning player starts at the
+   * level their machine settled on last time rather than re-deriving it.
+   */
+  //
+  // Created on first use rather than here: `world` is declared below this
+  // point and a field initialiser cannot reach it (TS2729). Seeding it lazily
+  // from the level actually in force is also more honest than seeding it from
+  // `loadQuality()` again, which would silently disagree if the world ever
+  // clamped the stored level for a reason of its own.
+  private autoQuality: AutoQualityState | null = null;
+  /** The level adaptation last chose, so a step down that immediately
+   *  follows a step up can lower the ceiling on the level that failed. */
+  private lastAutoStepUpTo: QualityLevel | null = null;
   // Watchdog bookkeeping — see `watchForSlide`. Held on the instance rather
   // than in the loop so a lock is measured across frames, which is the only
   // timescale it is visible on.
@@ -3153,6 +3177,10 @@ export class Game {
       if (e.key === "F4") {
         e.preventDefault();
         const q = this.world.cycleQuality();
+        // THE PLAYER HAS AN OPINION NOW, so stop having one for them.
+        // Adaptation exists to spare somebody a choice they were never
+        // shown; it has no business overriding one they just made.
+        this.autoQuality = { ...(this.autoQuality ?? newAutoQuality(q.level)), level: q.level, manual: true };
         this.hud.toast(`Graphics: ${q.label}`, "#8fd15a");
         this.combatLog.push(`Graphics quality set to ${q.label}. F4 to cycle, F3 for the frame cost.`, "#8fd15a");
         return;
@@ -3990,6 +4018,7 @@ export class Game {
         const started = performance.now();
         this.loopBody();
         this.pacer.onFrameCost(performance.now() - started, started);
+        this.adaptQuality(started);
       }
     } catch (err) {
       console.error("[loop] frame threw and was skipped:", err);
@@ -3997,6 +4026,40 @@ export class Game {
       requestAnimationFrame(this.loop);
     }
   };
+
+  /**
+   * Let the graphics level follow what the display and the frame actually
+   * are, once a frame and almost always deciding nothing.
+   *
+   * The pacer already measures both halves — the real refresh interval and
+   * what a frame costs — and its own response to a frame that will not fit
+   * is to draw one for every two refreshes. On a 144Hz display that is 72fps
+   * at High, and the trade is made silently: nobody is asked whether they
+   * would rather have a 1024 shadow map and twice the frame rate. This asks
+   * the question by answering it, and F4 takes it back.
+   */
+  private adaptQuality(now: number): void {
+    this.autoQuality ??= newAutoQuality(this.world.qualityLevel);
+    const next = autoQualityDecision(
+      this.autoQuality,
+      { divisor: this.pacer.divisor, costMs: this.pacer.frameCostMs, refreshMs: this.pacer.refreshIntervalMs },
+      now,
+    );
+    if (!next) return;
+    const wentDown = QUALITY_ORDER.indexOf(next.level) > QUALITY_ORDER.indexOf(this.autoQuality.level);
+    // A step DOWN that undoes the step up we just made is the machine saying
+    // that level does not hold. Remember it, or this oscillates forever.
+    this.autoQuality = wentDown && this.lastAutoStepUpTo === this.autoQuality.level
+      ? lowerCeiling(next, this.autoQuality.level)
+      : next;
+    this.lastAutoStepUpTo = wentDown ? null : next.level;
+    const q = this.world.setQuality(next.level);
+    this.hud.toast(`Graphics: ${q.label} (auto)`, "#8fd15a");
+    this.combatLog.push(
+      `Graphics set to ${q.label} to hold ${this.pacer.refreshHz.toFixed(0)}Hz. F4 to choose yourself.`,
+      "#8fd15a",
+    );
+  }
 
   private loopBody(): void {
     const dt = Math.min(0.05, this.clock.getDelta());

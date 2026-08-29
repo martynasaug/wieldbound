@@ -737,6 +737,25 @@ export class World {
     return QUALITY[this.quality].label;
   }
 
+  /** The level in force. Read by the adaptive controller in Game. */
+  get qualityLevel(): QualityLevel {
+    return this.quality;
+  }
+
+  /**
+   * Move to a level without cycling to it.
+   *
+   * `cycleQuality` is the player pressing F4 and is deliberately a rotation;
+   * adaptation needs to name the level it wants. Both save, so a level the
+   * machine settled on is still there on the next visit and the adaptation
+   * starts from an answer rather than from the default.
+   */
+  setQuality(level: QualityLevel): { level: QualityLevel; label: string } {
+    this.applyQuality(level);
+    saveQuality(level);
+    return { level, label: QUALITY[level].label };
+  }
+
   /** Keeps the camera and the shadow frustum trailing the player. */
   follow(x: number, z: number, dtSeconds: number): void {
     // Chest height above the SURFACE, not above zero and not above the terrain.

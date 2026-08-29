@@ -16785,3 +16785,86 @@ And Warden Cabel PATROLS: sampled twice seconds apart he had moved 90px, so
 walking to his spawn point and clicking there projected him off screen at
 (-3951, 8191) and reported "cabel does not answer a click". The harness now
 closes on live NPC positions. Every NPC answers.
+
+**Phase 70 M70.104/105 — the interface was hiding two things, and the graphics
+level now follows the machine instead of an opinion.** Two visual bugs found
+by looking at captured frames rather than at counters — the M70.97 practice
+paying out twice — and then a feature, asked for directly: "game should adapt
+to every player setting for best performance".
+**THE QUEST TRACKER WAS PAINTING OVER THE SMITHY.** Reading a screenshot of
+the bench, two of the five tabs were simply not there. Measured rather than
+squinted at: `#craft-panel` occupies x=776..1198 with its tabs at y=314, and
+`#quest-tracker` sits at 962..1198 / 276..353 with `z-index: 12` against the
+window rail's 10. So **Reforge, Etch and Salvage were covered by "WORK IN
+HAND" every single time the bench was opened.**
+The worst part is that nothing misbehaved. The tracker is `pointer-events:
+none`, so the clicks went through and the tabs worked perfectly — they just
+could not be read or found. Tobin's dialogue explains reforging and etching to
+you by name, and then the interface hides both of them. Fixed by dropping the
+tracker to `z-index: 9`, below the rail: a tracker is ambient and a window is
+something the player opened on purpose, so the window wins. The minimap keeps
+12, since it sits above the band the rail can reach. Verified by eye — all
+five tabs now read cleanly.
+**THE ONLY SHOPKEEPER HAD NO FACE.** Oswyn Thale's dialogue portrait was an
+empty black square, and had been for an unknown number of builds. `town.ts`
+asks for the icon `"dock-bag"`, which has never existed; the glyph is
+`"dock-inventory"`. `iconSvg` returns `""` for a key it does not know, so
+there was no error, no warning and no log line — the panel just drew nothing
+where a person should be. A sweep of every `iconSvg`/`data-icon`/`icon:` site
+in the client and shared code found exactly one bad reference, this one, so
+the bug is fixed and the class is closed. `iconSvg` now `console.warn`s the
+missing key: returning `""` is still right — a missing glyph must not take a
+panel down with it — but it should not be silent about it.
+**ADAPTIVE GRAPHICS QUALITY.** `quality.ts` argues, well, that the level is "a
+setting rather than a decision". That holds for what somebody PREFERS and does
+not cover the case this is for: a machine that cannot hold its own display's
+refresh rate at the level it happens to be set to. The pacer already measures
+both halves — the real refresh interval and what a frame costs — and its
+response to a frame that will not fit is to draw one per two refreshes. On a
+144Hz display a 9ms frame is 72fps at High, and that trade is made silently.
+Almost nobody would choose a 2048 shadow map over double the frame rate, and
+nothing on screen says that is the choice being made for them.
+`autoQualityDecision` is a pure function over `{divisor, costMs, refreshMs}`,
+tested by `tools/test/autoquality.mjs` without a browser, the same treatment
+`shadowSchedule` and the divisor rule already get. It steps DOWN when the
+pacer has actually given up a refresh — a measurement, not a prediction — and
+UP only with real headroom (60% of budget), because stepping up is optional
+and stepping back down is visible. Two guards matter:
+- an 8-second HOLD, so a monster camp coming into view cannot walk the level
+  down three times in a second and back up when it dies;
+- a CEILING, lowered permanently whenever a step up has to be taken back.
+  Flapping between two levels every eight seconds is worse to look at than
+  either level, and a machine that has once failed to hold a level will not
+  start holding it later in the same session.
+**One press of F4 sets `manual` and adaptation stops for the session** —
+it exists to spare somebody a choice they were never shown, not to override
+one they just made. It also announces itself, in a toast and in the combat
+log ("Graphics set to High to hold 60Hz. F4 to choose yourself"), because a
+setting that changes on its own and says nothing is worse than one that never
+changes.
+Thirteen checks, mutation-tested in both directions: removing the ceiling
+fails exactly the oscillation check, removing the hold fails exactly the hold
+check. Verified live as well — a healthy 60Hz session is left alone at
+divisor 1, and forcing a 144Hz budget the frame cannot meet stepped Balanced
+to Performance within twelve seconds and recovered when the real refresh rate
+was measured again.
+**Stated plainly: this cannot be validated against a 144Hz display from here.**
+Headless Chromium's virtual vsync is 60Hz, so every frame-rate number in this
+session is capped at 60 and the machine that reported "should be 120fps not
+60" is the only place the interesting branch runs for real.
+**The long run.** Twenty minutes, 692 fights, sampled every 30s:
+geometries 337 -> 370 and PLATEAUED (M70.100's leak stays fixed — it was 1.77
+per SECOND before), textures flat, programs plateaued, DOM flat, **0 invariant
+violations, 0 console errors**. Frame p99 settled to ~30ms after the load.
+Two harness findings worth keeping, both of which cost real time:
+- A 60-second CONTROL window with the driver completely silent is now part of
+  the run. It proved the frame gaps were NOT the harness's own traffic — and
+  then a blank-page control proved the rest: an empty page in the same
+  browser holds 60fps with **zero** frames over 100ms, while the game idles at
+  47fps with 48 of them in thirty seconds. That is real and it is in the game.
+- `walkTo` had a fixed 30px deadzone and a 160ms poll. After the long run the
+  same character was level 60 with forty talent points spent, moving at
+  341px/s — 55px per poll against a 55px arrival tolerance — so it flew past
+  every target and circled it until the timeout. Every NPC in town then
+  "stopped answering a click", and it looked exactly like a regression I had
+  just caused. Both numbers now derive from the speed actually observed.

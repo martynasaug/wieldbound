@@ -1063,7 +1063,7 @@ export const TOWN_NPCS: TownNpc[] = [
     title: "Provisioner",
     role: "vendor",
     body: "adventurer",
-    icon: "dock-bag",
+    icon: "dock-inventory",
     ...at(415, 285),
     facingDeg: 105,
     // A shopkeeper's round is short and it is all his own doorstep: out to the
