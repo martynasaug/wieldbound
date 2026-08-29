@@ -402,6 +402,18 @@ function playerResist(playerId: string, school: DamageSchool): number {
 }
 
 /** Whether a player is standing at the station they named. */
+/**
+ * SAY SO WHEN THE ANSWER IS NO.
+ *
+ * All six smithy actions used to `return` silently when this failed, while
+ * `BUY_FROM_VENDOR` two hundred lines above sends "You are too far from X".
+ * The asymmetry mattered: the client kept the panel open at any distance
+ * (fixed in M70.112), so a player who wandered off pressed Craft and got
+ * nothing back at all — no potion, no error, no clue. The client tether now
+ * stops most of that, but a handler that refuses without a word is a bad
+ * bargain whatever the UI does, and this is the same message the vendor
+ * already gives for the same reason.
+ */
 function atStation(playerId: string, stationId: string): boolean {
   const player = players.get(playerId);
   const station = stations.find((s) => s.id === stationId);
@@ -3206,7 +3218,10 @@ wss.on("connection", (socket) => {
 
     // --- forge: make a named thing ----------------------------------------
     if (msg.type === "FORGE_ITEM" && id) {
-      if (!atStation(id, msg.payload.stationId)) return;
+      if (!atStation(id, msg.payload.stationId)) {
+        sendInfo(socket, "You are too far from the workbench.", "#c98d5e");
+        return;
+      }
       const base = ITEM_BASES[msg.payload.baseId];
       if (!base) return;
       // Checked against what is about to be made rather than against a count,
@@ -3242,7 +3257,10 @@ wss.on("connection", (socket) => {
 
     // --- reforge: one step up the ladder -----------------------------------
     if (msg.type === "REFORGE_ITEM" && id) {
-      if (!atStation(id, msg.payload.stationId)) return;
+      if (!atStation(id, msg.payload.stationId)) {
+        sendInfo(socket, "You are too far from the workbench.", "#c98d5e");
+        return;
+      }
 
       const item = getItem(id, msg.payload.itemId);
       if (!item) return;
@@ -3279,7 +3297,10 @@ wss.on("connection", (socket) => {
 
     // --- draw: an item's one worthwhile part --------------------------------
     if (msg.type === "DRAW_RUNE" && id) {
-      if (!atStation(id, msg.payload.stationId)) return;
+      if (!atStation(id, msg.payload.stationId)) {
+        sendInfo(socket, "You are too far from the workbench.", "#c98d5e");
+        return;
+      }
       const drawn = drawRune(id, msg.payload.itemId, msg.payload.affix);
       // Says so rather than failing silently. Every reason this can refuse is a
       // "should not happen" from the client's side — a stale item id, something
@@ -3310,7 +3331,10 @@ wss.on("connection", (socket) => {
 
     // --- etch: a rune, cut into something you own ---------------------------
     if (msg.type === "ETCH_AFFIX" && id) {
-      if (!atStation(id, msg.payload.stationId)) return;
+      if (!atStation(id, msg.payload.stationId)) {
+        sendInfo(socket, "You are too far from the workbench.", "#c98d5e");
+        return;
+      }
       const item = getItem(id, msg.payload.itemId);
       if (!item) return;
 
@@ -3357,7 +3381,10 @@ wss.on("connection", (socket) => {
 
     // --- refine: raw into stock --------------------------------------------
     if (msg.type === "REFINE_MATERIAL" && id) {
-      if (!atStation(id, msg.payload.stationId)) return;
+      if (!atStation(id, msg.payload.stationId)) {
+        sendInfo(socket, "You are too far from the workbench.", "#c98d5e");
+        return;
+      }
       const def = refineDef(msg.payload.id);
       if (!def) return;
 
@@ -3393,7 +3420,10 @@ wss.on("connection", (socket) => {
 
     // --- consumables: one pair of handlers for the whole table --------------
     if (msg.type === "CRAFT_CONSUMABLE" && id) {
-      if (!atStation(id, msg.payload.stationId)) return;
+      if (!atStation(id, msg.payload.stationId)) {
+        sendInfo(socket, "You are too far from the workbench.", "#c98d5e");
+        return;
+      }
       const def = consumableDef(msg.payload.id);
       if (!def) return;
       if (!spendMaterials(id, def.cost)) {

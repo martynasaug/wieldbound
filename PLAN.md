@@ -17247,3 +17247,35 @@ silent failure of the thing tested. Watching the actual socket — what was sent
 what came back — is what separated them, and it is what should be reached for
 first next time rather than fourth.
 Full suite 38/38, `npx tsc --noEmit` clean.
+
+**Phase 70 M70.113 — the last three core loops, and six handlers taught to say
+no out loud.** Drove vendor purchase, consumable use and quest hand-in, the
+three loops nothing had ever pressed. Socket watched throughout, which is the
+practice M70.112 ended on rather than an afterthought this time.
+**ALL THREE WORK, and the wire says so exactly:**
+    Buy Health Potion  BUY_FROM_VENDOR -> CONSUMABLES_UPDATE, MATERIALS_UPDATE,
+                       INFO;  wood -4, herb -14, matching the listed price
+    Use a potion       USE_CONSUMABLE  -> CONSUMABLES_UPDATE, HP_UPDATE
+    Hand in a quest    TURN_IN_QUEST   -> MATERIALS_UPDATE, CONSUMABLES_UPDATE,
+                       XP_UPDATE, STATS_UPDATE, QUEST_STATE, MANA_UPDATE, and
+                       the tracker row clears
+No console errors on any of them. With M70.103 and M70.112 that leaves nothing
+in the core loop undriven: gathering, the bench and all five of its tabs,
+salvage, dialogue, quests end to end, the vendor, consumables, death and
+respawn, socket reconnect, and two clients sharing a world.
+**AND ONE ASYMMETRY WORTH CLOSING.** Checking that the server validates range
+on the NPC actions — a client that could shop from anywhere is an exploit, not
+a UX matter — showed it does, on all three, and that `BUY_FROM_VENDOR` sends
+`You are too far from ${npc.name}` when it refuses. The six SMITHY handlers
+(`FORGE_ITEM`, `REFORGE_ITEM`, `DRAW_RUNE`, `ETCH_AFFIX`, `REFINE_MATERIAL`,
+`CRAFT_CONSUMABLE`) all had the same guard and every one of them just
+`return`ed. That silence is exactly what made M70.112's bug so hard to see: the
+panel stayed open, the button worked, the message went out, and nothing came
+back. The client tether fixed the common case; this fixes the class. All six
+now answer `You are too far from the workbench.` — the same message the vendor
+already gives, for the same reason. A handler that refuses without a word is a
+bad bargain whatever the UI does.
+Verified from 538px away: `["You are too far from the workbench."]` where the
+same request returned an empty array before. The smithy still works end to end
+in range (potion crafted, ingot 1000 -> 1001, recipes 6 -> 7).
+Full suite green; `fighting` flaked once and passed on re-run, as recorded.
