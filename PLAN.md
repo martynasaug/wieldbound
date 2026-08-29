@@ -16713,3 +16713,75 @@ The lesson worth keeping is the one that cost the most: a test that
 fails for an environmental reason must say so in its OWN words. This one
 described a broken game for long enough that the description reached the
 plan and became the thing everybody knew.
+
+**Phase 70 M70.103 — a headed browser was measuring the window manager, and
+the five untested paths all work.** New machine, so the driven harness had to
+be rebuilt from nothing (the previous one lived in a scratchpad and did not
+travel with the clone). Rebuilding it turned up a measurement error large
+enough to invalidate the method, not just a number.
+**THE HARNESS WAS RUNNING AT ONE FRAME PER SECOND.** Driven from a background
+shell, the headed Chromium window is never in the foreground, and Chrome
+throttles `requestAnimationFrame` to 1Hz for a window it considers occluded.
+Measured side by side against the same dev server: **headed 11 rAF callbacks
+in ten seconds, headless 501.** Every frame-time number a headed run produces
+here is therefore a property of the window manager. Worse, the game reports
+each throttled gap as a `[hitch] 1993ms BETWEEN frames — worst:
+net:STATE_SNAPSHOT 6ms`, which is indistinguishable from the between-frame
+stall this whole thread has been chasing, and there were dozens of them per
+minute. An hour was nearly spent on them.
+The check that separates the two, and it is worth keeping: **time a trivial
+`page.evaluate` round trip alongside the frame gaps.** A THROTTLED page
+answers instantly, because its main thread is idle; a genuinely STALLED one
+cannot answer at all. Headless is not a compromise here — both modes report
+the same real adapter through ANGLE (`AMD Radeon RX 5700 XT ... D3D11`), so
+headless is hardware-rendered, not a software fallback. The driver now
+defaults to headless and says why.
+**The one real block, found and then explained rather than fixed.** With the
+phantom removed, one enormous stall survived: a single unbroken **23.6-24.6
+second main-thread block**, reproducible on every login across five runs,
+which the game's own profiler never reported at all. The round-trip witness
+proved it genuine — `page.evaluate` could not be answered for 24 seconds.
+A CPU profile named it outright: `getProgramInfoLog` at **51.7% of all
+samples**, against 40.7% idle. That is three.js's shader error check, which on
+a program's first use calls into the driver and BLOCKS until linking finishes.
+It looked like the answer to M70.70/71/79/80/89/91 all at once, so
+`debug.checkShaderErrors = false` was implemented and measured.
+**It changed nothing: 23,896ms against 23,636ms.** Re-profiling showed why —
+the block simply moved to `getProgramParameter` at 46.9%. three.js must query
+uniform locations before it can draw, and that query blocks on the link just
+as hard. The work is the compile itself and there is no way to not wait for
+it. **M70.71 was right and this was wrong**, and the change was reverted
+rather than kept for the story.
+What the block actually is: `#loading` is on screen for its entire duration
+(checked directly — the element is present through the stall and gone one
+second after it ends). It is `warmWholeScene` doing exactly what M70.91 built
+it to do, paying for every program under the loading screen so that no frame
+during play has to. It is a ~35 second load, which is a real cost worth
+knowing about, but it is the deliberate trade and not a bug. Recorded so it is
+not re-opened as a stall a seventh time.
+**THE FIVE UNTESTED PATHS, ALL DRIVEN, ALL WORKING.** PLAN has listed
+gathering, crafting/forge/salvage, NPC dialogue and quests, and socket
+reconnect as never exercised. Every one was driven through the real UI or the
+real proximity rules rather than poked into game state:
+- *Gathering* — walked to the tree cluster east of town and stood still.
+  Wood +2 in twelve seconds, no key pressed, which is the proximity rule
+  working as `index.ts` describes it.
+- *The bench* — the panel opens at the workbench with all six tabs live
+  (Forge, Refine, Reforge, Etch, Salvage, and the consumable list with real
+  costs against a real wallet).
+- *Salvage* — 36 items to 35, the Frostbrand taken apart.
+- *Dialogue* — all five townspeople answer a click, each with their own
+  greeting and their own action list; the Herald offers five quest hand-ins,
+  Oswyn a full shop, Tobin the forge tutorial.
+- *Reconnect* — closed the socket from underneath the game. It came back
+  `readyState 1` within nine seconds and the character still walked 308px
+  afterwards, so the world survives the drop rather than only the socket.
+- The quest tracker reads correctly throughout.
+Two of those "failures" were the harness, and both are worth writing down
+because both looked like game bugs. Dialogue does not open on proximity —
+`onPointerDown` raycasts the NPC's own mesh and THEN checks
+`NPC_TALK_RANGE_PX` — so the first version tested the wrong thing entirely.
+And Warden Cabel PATROLS: sampled twice seconds apart he had moved 90px, so
+walking to his spawn point and clicking there projected him off screen at
+(-3951, 8191) and reported "cabel does not answer a click". The harness now
+closes on live NPC positions. Every NPC answers.
