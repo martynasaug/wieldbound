@@ -17684,3 +17684,38 @@ group's children ARE the survivors, so that comparison had become vacuously
 false. Every count now comes from the field as built. It still fails if nothing
 is culled, and now also fails if the two states drift apart.
 Full suite 38/38, `npx tsc --noEmit` clean.
+
+**Phase 70 M70.123 — the border treeline was two thirds of the scene graph,
+and the frame now fits 144Hz.** Following M70.122's mechanism to its largest
+instance. Having a trustworthy yardstick is what made this findable at all.
+**WHAT WAS IN THE GRAPH.** 7,383 objects, of which 3,480 Mesh, 2,846 Group and
+914 Bone. Grouping them by top-level subtree found ONE group holding **4,954
+nodes across 1,474 children**, and a per-child distance check found **1,470 of
+those 1,474 beyond 120 units of the player.**
+It is the border treeline: `buildDecor` rings the play area with
+`perimeter * 1.05` trees to frame the world, which is 1,470 of them, each a
+cloned hierarchy of about three nodes. They sit at the map's edge by
+construction, so almost none is ever near anybody — and every one was walked by
+`updateMatrixWorld` on every frame, because M70.121 established that the walk
+skips nothing.
+**THE CHANGE** is one line plus a bound: register the treeline as a
+`DistanceCuller` tier at `TREE_CULL_UNITS`, the same radius the woods already
+use, and give each tree a `boundingSphere` so the culler can judge it (it
+leaves anything without one permanently visible on purpose — "a chunk hidden
+wrongly is a hole in the world"). The detaching from M70.122 then does the rest.
+    scene objects        7,383 -> 2,412
+    updateMatrixWorld     1.5ms -> 0.5ms
+    frame cost            7.7ms -> 6.2ms   (medians of three runs each)
+**AND THAT CROSSES THE LINE THIS WHOLE THREAD HAS BEEN AIMED AT.** A 144Hz
+display buys 6.94ms per frame at one frame per refresh. The frame was 8.5ms
+when this session's measurement began; it is **6.2ms**, which fits — on this
+machine, at Balanced, at the benchmark spot. Over the session:
+    8.5ms -> 7.7ms (M70.122, detaching culled chunks)
+           -> 6.2ms (this, the treeline)
+**The visual cost is nothing, and that is checked rather than assumed.**
+`TREE_CULL_UNITS` is 165, which IS the fog's far plane — a border tree past it
+was already being drawn as flat sky colour. From mid-map the camera never sees
+the horizon at all (it sits 22 units out looking down), and at the east edge
+the Thornwood is fully present: 236 trees attached against 4 at mid-map, with
+trunks, foliage and shadows all where they were.
+Full suite green; `fighting` flaked once and passed on re-run, as recorded.

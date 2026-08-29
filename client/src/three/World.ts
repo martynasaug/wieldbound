@@ -486,9 +486,31 @@ export class World {
       tree.scale.setScalar(proto.scale * height);
       tree.position.set(x, terrainHeight(x, z), z);
       tree.rotation.y = rand() * Math.PI * 2;
+      // A BOUND, so the culler can judge it like a chunk.
+      //
+      // `DistanceCuller` reads `boundingSphere` off each child and leaves
+      // anything without one permanently visible ("a chunk drawn too often
+      // costs frames, a chunk hidden wrongly is a hole in the world"). These
+      // are single objects rather than instanced chunks, so nothing computes
+      // one for them; a sphere at the trunk with the tree's own height as its
+      // radius is both cheap and generous.
+      (tree as THREE.Object3D & { boundingSphere?: THREE.Sphere }).boundingSphere =
+        new THREE.Sphere(new THREE.Vector3(x, 0, z), height);
       border.add(tree);
     }
     this.scene.add(border);
+    // THE BORDER TREELINE IS THE BIGGEST THING IN THE SCENE GRAPH, and almost
+    // none of it is ever near the player.
+    //
+    // `treeCount` is `perimeter * 1.05` — 1,470 trees ringing the play area,
+    // about 4,950 nodes once each clone's own hierarchy is counted, which is
+    // TWO THIRDS of everything in the graph. Measured at the benchmark spot,
+    // 1,470 of the 1,474 were beyond 120 units, and `updateMatrixWorld` fell
+    // from 1.0ms to 0.3ms with them out of it.
+    // They are scenery at the edge of the world: the same tier treatment the
+    // woods already get, at the same radius, since past the fog's far plane a
+    // tree is flat sky colour either way.
+    this.culler.add(border, TREE_CULL_UNITS, "border");
 
     // Ground cover fills the INSIDE, where the treeline deliberately never
     // goes. Added to its own group rather than to `decor`, because decor is
