@@ -17884,3 +17884,28 @@ taken during the soak said 7.6ms for the same reason. The honest number at the
 benchmark spot, at Balanced, is about **5.7ms against a 6.94ms budget** — the
 conclusion stands and the number was soft.
 No code changed in this entry.
+
+**Phase 70 M70.128 — a visual sweep after six rendering changes, and one thing
+that looked wrong and was not.** M70.117 through M70.126 changed what casts
+shadows, what is in the scene graph at all, what the silhouette covers and how
+the ground rings sample terrain. Counters cannot see any of those going wrong,
+so this looked: town at noon and midnight, open field at noon and dusk, the
+Coldwater bridge, the Thornwood at the map's east edge, and a golem camp, each
+with the clock frozen so the lighting is reproducible.
+Everything holds. The Thornwood has its treeline, trunks and shadows intact —
+which is the one M70.123 could plausibly have emptied — and the figure standing
+behind a trunk shows the armoured cyan silhouette M70.111 fixed. The bridge's
+planks, rails, water and abutments read correctly with no seams. The field
+keeps its grass and its tree shadows with cover shadows off (M70.117). No
+console errors anywhere.
+**AND ONE FALSE ALARM, checked rather than assumed.** The statue plinth reads
+pale cream at midnight while the paving around it is dark, which looked exactly
+like a material left mid-fade by M70.126's new `warmFadedOccluders` — a pass
+that deliberately sets `transparent` and `depthWrite` on every fadeable
+material and puts them back. Checked directly: **0 materials in a suspicious
+state** across the decor, the buildings and the nodes, and `fadedMaterials`
+empty. The brightness is `Town.update`'s own `squareGlow`, an intensity-34
+point light the town raises at night on purpose — "a town that only lights up
+once you are inside it is a town with nothing to walk toward". Recorded so the
+next sweep does not re-open it.
+No code changed in this entry.
