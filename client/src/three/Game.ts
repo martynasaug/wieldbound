@@ -1505,6 +1505,7 @@ export class Game {
     this.projectiles.prewarm(this.world);
     this.effects.prewarm(this.world);
     this.drops.prewarm(this.world);
+    await this.warmFadedOccluders();
     this.effects.warmByPlaying();
     this.skillFx.warmByPlaying();
     await this.world.warmWholeScene();
@@ -4700,6 +4701,53 @@ export class Game {
     for (const n of this.nodes.values()) consider(n);
     for (const d of this.world.decor.children) consider(d);
     for (const b of this.town.buildings) consider(b);
+  }
+
+  /**
+   * Compile the SEE-THROUGH version of everything the camera can fade.
+   *
+   * `fadeOccluders` turns a tree or a wall translucent when it stands between
+   * the camera and the player, and `transparent` is part of a program's cache
+   * key — so the first time each occluder faded, three.js built a second
+   * program for it inline. Measured on the twelve-camp circuit, that was the
+   * last of the multi-second freezes: ~1,900ms frames whose new program
+   * belonged to `Leaves_NormalTree` and `Bark_NormalTree`, the border trees,
+   * differing from the warmed one in exactly `opaque`.
+   * Found by asking three.js which MATERIAL owned the program
+   * (`renderer.properties.get(m).currentProgram`) rather than decoding cache
+   * keys, which is the technique that should be reached for first — see
+   * M70.125.
+   * So the fade state is applied to every fadeable material, compiled once
+   * under the loading screen, and put back. `warmWholeScene` then compiles the
+   * opaque half as it always did, and both variants exist before play starts.
+   */
+  private async warmFadedOccluders(): Promise<void> {
+    const mats = new Set<THREE.Material>();
+    const collect = (o: THREE.Object3D) => {
+      o.traverse((c) => {
+        const mesh = c as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          if (m) mats.add(m);
+        }
+      });
+    };
+    for (const d of this.world.decor.children) collect(d);
+    for (const b of this.town.buildings) collect(b);
+    for (const n of this.nodes.values()) collect(n);
+    if (mats.size === 0) return;
+
+    const was: [THREE.Material, boolean, boolean][] = [];
+    for (const m of mats) {
+      was.push([m, m.transparent, m.depthWrite]);
+      m.transparent = true;
+      m.depthWrite = false;
+    }
+    await this.world.warmUp(this.world.scene);
+    for (const [m, transparent, depthWrite] of was) {
+      m.transparent = transparent;
+      m.depthWrite = depthWrite;
+    }
   }
 
   private fadeOccluders(): void {

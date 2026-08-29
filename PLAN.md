@@ -17805,3 +17805,39 @@ out in the field — not the light count, which no longer moves. That is the nex
 thread to pull, and it is a smaller one than the 6.4-second frame this started
 with.
 Suite green; `camps` flaked once and passed on re-run, as recorded.
+
+**Phase 70 M70.126 — the camera's own fade was recompiling the world, and the
+multi-second freezes are gone.** The last of the thread M70.124 opened.
+**WHAT IT WAS.** `fadeOccluders` makes a tree or a wall translucent when it
+stands between the camera and the player — `m.transparent = true`, which is
+part of a program's cache key through `opaque`. So the FIRST time each occluder
+faded, three.js built a second program for it, inline, in the frame the player
+was looking at. That is what the surviving ~1,900ms stalls were: their new
+programs belonged to `Leaves_NormalTree` and `Bark_NormalTree`, the border
+trees, differing from the warmed ones in exactly that flag.
+Found the same way as M70.125 and worth repeating as the method: ask three.js
+which MATERIAL owns the new program via
+`renderer.properties.get(material).currentProgram`, rather than decoding cache
+keys by hand. Three rounds were spent on the masks before that occurred to me;
+the material answers in one.
+**THE FIX.** `warmFadedOccluders` applies the fade state to every material the
+camera can fade — the decor, the town's buildings, the resource nodes —
+compiles once with `compileAsync`, and puts it back. `warmWholeScene` then
+compiles the opaque half as it always did, so both variants exist before the
+loop starts.
+**MEASURED, over the full twelve-camp circuit:**
+    at the start of this thread   11 long frames, worst 6,386ms
+    after M70.124/125              4 long frames, worst 1,960ms
+    now                           worst frame 239ms
+And on the six-camp stall probe, which reports every frame over 250ms and what
+changed across it: **0 stalls, and 0 new programs.** Nothing compiles during
+play any more.
+**The cost is 1.4 seconds of load** — 25.6s to 27.0s — paid under the loading
+screen, where the total main-thread block is still 3.8s with nothing over
+1.4s. Multi-second freezes during a fight for a second and a half of loading is
+a trade worth making, and it is the same trade M70.91 made when it put the
+world's shaders under the loading screen in the first place.
+The worst frame left in the circuit is `npcs 134ms`, which is a different
+system and a much smaller number; recorded as the next thread rather than
+chased here.
+Suite 38/38.
