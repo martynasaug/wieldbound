@@ -304,6 +304,26 @@ export class Minimap {
     });
   }
 
+  /**
+   * The settings, for anyone else who wants to show them.
+   *
+   * Returned as a copy so a caller cannot mutate the map's state behind its
+   * back — `setOptions` is the only way in, and it is the only place that
+   * saves and re-applies.
+   */
+  get options(): MinimapSettings {
+    return { ...this.settings };
+  }
+
+  /** Change some of them from elsewhere — the Settings window (O) shows the
+   *  same rows this panel does, and both must end at the same stored object. */
+  setOptions(patch: Partial<MinimapSettings>): void {
+    this.settings = { ...this.settings, ...patch };
+    this.save();
+    this.applySettings();
+    this.draw();
+  }
+
   /** Pushes the current settings into the DOM and resizes the canvas. */
   private applySettings(): void {
     const s = this.settings;

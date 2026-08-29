@@ -595,6 +595,18 @@ export class World {
     saveCameraDistance(this.targetDistance);
   }
 
+  /** Set the distance outright, for the Settings window's slider. The wheel
+   *  goes through `zoomBy`; both land on the same clamped, saved value. */
+  setCameraDistance(distance: number): void {
+    this.targetDistance = Math.max(CAMERA_MIN_DISTANCE, Math.min(CAMERA_MAX_DISTANCE, distance));
+    saveCameraDistance(this.targetDistance);
+  }
+
+  /** The range the distance may take, so a slider can be drawn for it. */
+  get cameraRange(): { min: number; max: number } {
+    return { min: CAMERA_MIN_DISTANCE, max: CAMERA_MAX_DISTANCE };
+  }
+
   /** How far the camera sits from the player right now. Read by the tests. */
   get cameraDistance(): number {
     return this.distance;

@@ -17520,3 +17520,45 @@ next reader repeating them:**
   the M70.106 mistake with the sign flipped. The real fix, if geometry ever
   proves to be the bottleneck on a weaker GPU, is lower-poly source art rather
   than a cull-distance trick.
+
+**Phase 70 M70.119 — one Settings window, because the settings were in four
+places and three of them were undiscoverable.** Asked for directly, and the
+survey that started it is the argument for it: graphics on F4 (a bare keypress
+that cycles three levels and tells you afterwards), sound on M, the minimap
+behind a cog on the minimap itself, the camera on the mouse wheel with no way
+to read or type a number. Nothing anywhere lists them, and the F4 one changes
+the most expensive thing in the frame.
+`ui/SettingsPanel.ts` is a window in the same rail as Character, Inventory,
+Talents and the Leaderboard, opened the same way — key **O**, or a dock button
+beside the others so it is findable without being told. Five sections:
+- **Graphics** — the three levels as buttons, with a line under them saying
+  what the chosen one actually does ("no shadows · grass casts none · up to 1x
+  pixel density · no edge smoothing"), and a toggle for the adaptive controller
+  from M70.105 with its behaviour written out.
+- **Sound** — mute and a volume slider that moves on `input` rather than
+  `change`, so dragging it is audible while dragging.
+- **Camera** — the distance the wheel controls, as a number.
+- **Minimap** — shape, size, zoom, opacity, rotation and all eight blip
+  toggles.
+- **Controls** — every key the game reads, which existed nowhere before.
+**It owns none of it.** Every row reads and writes whatever already stored the
+setting, so the minimap's own cog and this window cannot disagree, and F4 and
+M still work exactly as before — they just call `refresh()` afterwards so an
+open window does not go stale. `Minimap.setOptions` and `World.setCameraDistance`
+are new, both landing on the same clamped, saved values their existing paths
+already used.
+**Two layout bugs of my own making, both found by looking at the screenshot
+rather than at the test that had just passed green.**
+- The window ran off the bottom of the screen: Opacity was half cut off and
+  the whole Controls section was unreachable. `.window-body` has scrolled since
+  it was written, but `#window-rail` has no `top`, so its height is whatever is
+  inside it and the `max-height: 100%` every window relies on resolves against
+  nothing. This is simply the longest window in the game and the first to
+  notice. Bounded explicitly.
+- Then it had no BACKGROUND below the title bar — the rows below the fold were
+  written straight onto the grass. The frame is painted by a rule listing
+  `#character-panel, #inventory-panel, #craft-panel, #leaderboard-panel,
+  #skills-panel` by name, and a sixth panel does not get it by existing.
+Both would have shipped on the test alone: it reported "settings window works",
+seven checks green, zero console errors, while the thing was unreadable.
+Full suite 38/38, `npx tsc --noEmit` clean.

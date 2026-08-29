@@ -108,7 +108,7 @@ import { Indicators } from "./indicators";
 import { ATTACK_STYLES, Projectiles, attackStyle, impactDelayMs } from "./attacks";
 import { LightPool } from "./lightPool";
 import { playSfx, preloadSfx, toggleMuted } from "./sfx";
-import { unlockAudio } from "./audio";
+import { isMuted, masterVolume, setMasterVolume, unlockAudio } from "./audio";
 import { Soundscape } from "./soundscape";
 import {
   FOG_FAR,
@@ -158,6 +158,7 @@ import {
   type QualityLevel,
 } from "./quality";
 import { DialoguePanel, type DialogueAction } from "../ui/DialoguePanel";
+import { SettingsPanel } from "../ui/SettingsPanel";
 import { QuestTracker } from "../ui/QuestTracker";
 import { EXCHANGE_OFFERS, EXCHANGE_RATE, SHOP_STOCK } from "../../../shared/shop";
 import {
@@ -508,6 +509,8 @@ export class Game {
   private serverTime = Date.now();
   private readonly inventoryPanel: InventoryPanel;
   private readonly craftPanel: CraftPanel;
+  /** Every setting the game has, in one window. See ui/SettingsPanel.ts. */
+  private readonly settingsPanel: SettingsPanel;
   private readonly skillPanel: SkillPanel;
   private readonly leaderboardPanel: LeaderboardPanel;
   private readonly combatLog = new CombatLog();
@@ -792,6 +795,39 @@ export class Game {
       (action) => this.useAction(action),
       (weapon, layout) => this.socket.sendSetHotbar(weapon ?? "fist", layout),
     );
+
+    // Built here rather than as a field initialiser because every hook it
+    // takes reads something that does not exist until the world, the minimap
+    // and the audio graph do.
+    this.settingsPanel = new SettingsPanel({
+      quality: () => this.world.qualityLevel,
+      setQuality: (level) => {
+        const q = this.world.setQuality(level);
+        this.autoQuality = {
+          ...(this.autoQuality ?? newAutoQuality(level)),
+          level,
+          manual: true,
+        };
+        this.hud.toast(`Graphics: ${q.label}`, "#8fd15a");
+        this.noteQualityWarm();
+      },
+      autoQuality: () => !(this.autoQuality?.manual ?? false),
+      setAutoQuality: (on) => {
+        this.autoQuality = {
+          ...(this.autoQuality ?? newAutoQuality(this.world.qualityLevel)),
+          manual: !on,
+        };
+      },
+      muted: () => isMuted(),
+      setMuted: (m) => { if (m !== isMuted()) toggleMuted(); },
+      volume: () => masterVolume(),
+      setVolume: (v) => setMasterVolume(v),
+      cameraDistance: () => this.world.cameraDistance,
+      setCameraDistance: (d) => this.world.setCameraDistance(d),
+      cameraRange: () => this.world.cameraRange,
+      minimap: () => this.minimap.options,
+      setMinimap: (patch) => this.minimap.setOptions(patch),
+    });
 
     this.socket = new GameSocket("ws://localhost:8080", characterName, {
       onWelcome: (p) => this.onWelcome(p),
@@ -3206,6 +3242,7 @@ export class Game {
         this.hud.toast(`Graphics: ${q.label}`, "#8fd15a");
         this.noteQualityWarm();
         this.combatLog.push(`Graphics quality set to ${q.label}. F4 to cycle, F3 for the frame cost.`, "#8fd15a");
+        this.settingsPanel.refresh();
         return;
       }
       // The keys and the dock buttons are two ways to do one thing, so both
@@ -3219,6 +3256,9 @@ export class Game {
       } else if (key === "k") {
         this.skillPanel.toggle();
         this.fitWindows(this.skillPanel.isOpen ? "dock-skills" : undefined);
+      } else if (key === "o") {
+        this.settingsPanel.toggle();
+        this.fitWindows(this.settingsPanel.isOpen ? "dock-settings" : undefined);
       } else if (key === "l") {
         this.leaderboardPanel.toggle();
         if (this.leaderboardPanel.isOpen) this.socket.sendRequestLeaderboard();
@@ -3236,6 +3276,7 @@ export class Game {
       } else if (key === "m") {
         const nowMuted = toggleMuted();
         this.hud.toast(nowMuted ? "Sound off" : "Sound on", "#c9b47a");
+        this.settingsPanel.refresh();
       } else {
         const action = this.hotbar.skillForKey(key);
         if (action) this.useAction(action);
@@ -3282,6 +3323,7 @@ export class Game {
       ["dock-character", () => this.characterPanel.toggle(), () => this.characterPanel.isOpen],
       ["dock-inventory", () => this.inventoryPanel.toggle(), () => this.inventoryPanel.isOpen],
       ["dock-skills", () => this.skillPanel.toggle(), () => this.skillPanel.isOpen],
+      ["dock-settings", () => this.settingsPanel.toggle(), () => this.settingsPanel.isOpen],
       [
         "dock-leaderboard",
         () => {
@@ -4117,6 +4159,7 @@ export class Game {
     const q = this.world.setQuality(next.level);
     this.hud.toast(`Graphics: ${q.label} (auto)`, "#8fd15a");
     this.noteQualityWarm();
+    this.settingsPanel.refresh();
     this.combatLog.push(
       `Graphics set to ${q.label} to hold ${this.pacer.refreshHz.toFixed(0)}Hz. F4 to choose yourself.`,
       "#8fd15a",

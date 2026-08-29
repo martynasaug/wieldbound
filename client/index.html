@@ -324,6 +324,7 @@
       #inventory-panel,
       #craft-panel,
       #leaderboard-panel,
+      #settings-panel,
       #skills-panel {
         display: flex;
         flex-direction: column;
@@ -1389,6 +1390,74 @@
       }
       .dock-btn .dock-badge.show { display: block; }
 
+      /* --- Settings -------------------------------------------------------
+         One row per setting: a label on the left, its control on the right,
+         and an optional note under it in the muted colour the rest of the
+         interface uses for explanations. */
+      /* BOUNDED, so the body scrolls instead of the window running off the
+         bottom of the screen. The rail has no `top` of its own, so its height
+         is whatever is inside it and the `max-height: 100%` every other window
+         relies on resolves against nothing — which put Opacity half off screen
+         and the whole Controls section out of reach. This window is the
+         longest in the game, so it is the one that noticed. */
+      #settings-panel { width: 420px; max-height: calc(100vh - 320px); }
+      #settings-body { padding: 10px 12px 14px; }
+      .set-section {
+        color: var(--gold);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        margin: 14px 0 6px;
+        border-bottom: 1px solid rgba(138, 107, 47, 0.45);
+        padding-bottom: 4px;
+      }
+      .set-section:first-child { margin-top: 0; }
+      .set-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 5px 0;
+      }
+      .set-label { color: var(--parchment); font-size: 13px; }
+      .set-note {
+        color: var(--muted);
+        font-size: 11.5px;
+        line-height: 1.35;
+        margin: -2px 0 4px;
+        max-width: 380px;
+      }
+      .set-choice { display: flex; gap: 4px; }
+      .set-choice button, .set-check {
+        background: var(--slot-grad);
+        border: 1px solid var(--gold-dim);
+        color: var(--muted);
+        border-radius: 5px;
+        padding: 4px 10px;
+        font-family: Georgia, serif;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .set-choice button:hover, .set-check:hover { border-color: var(--gold); color: var(--parchment); }
+      .set-choice button.active {
+        border-color: var(--gold-bright);
+        color: var(--gold-bright);
+        background: linear-gradient(180deg, #5a4324, #33260f);
+      }
+      .set-check { min-width: 58px; }
+      .set-check.on { border-color: var(--gold-bright); color: var(--gold-bright); }
+      .set-slider { display: flex; align-items: center; gap: 8px; }
+      .set-slider input[type="range"] { width: 190px; accent-color: var(--gold); }
+      .set-value { color: var(--muted); font-size: 12px; min-width: 46px; text-align: right; }
+      .set-keyrow { padding: 3px 0; }
+      .set-key {
+        color: var(--gold-bright);
+        font-size: 12px;
+        font-family: Georgia, serif;
+        min-width: 118px;
+      }
+      .set-keywhat { color: var(--muted); font-size: 12px; flex: 1; text-align: right; }
+
       /* --- Minimap --------------------------------------------------------
          Top right, above the window rail, left of the dock. Everything about
          it is a persisted setting, so this styles a range of sizes and both
@@ -2047,6 +2116,15 @@
             <div id="leaderboard-list" class="window-body"></div>
           </div>
         </div>
+        <div id="settings-overlay" class="window">
+          <div id="settings-panel">
+            <div class="win-title">
+              <span class="win-icon" data-icon="settings"></span><span>Settings</span>
+              <button id="settings-close" class="win-close">&times;</button>
+            </div>
+            <div id="settings-body" class="window-body"></div>
+          </div>
+        </div>
         <div id="skills-overlay" class="window">
           <div id="skills-panel">
             <div class="win-title">
@@ -2094,6 +2172,9 @@
         </button>
         <button id="dock-leaderboard" class="dock-btn" title="Leaderboard (L)">
           <span data-icon="dock-leaderboard"></span><span class="dock-key">L</span>
+        </button>
+        <button id="dock-settings" class="dock-btn" title="Settings (O)">
+          <span data-icon="settings"></span><span class="dock-key">O</span>
         </button>
       </div>
       <div id="quest-tracker"></div>
