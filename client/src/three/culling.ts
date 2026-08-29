@@ -213,6 +213,64 @@ const RE_EVALUATE_UNITS = 2;
 const SHADOW_WINDOW_MARGIN = 6;
 
 /**
+ * Instances a ground-cover draw call ought to be worth making.
+ *
+ * A draw call that draws three plants costs the same to SUBMIT as one that
+ * draws three hundred, and the comment above already says the important half
+ * of this: "draw calls scale with species x chunks-in-range and not with
+ * instance count". What it did not do was act on it per species.
+ * Measured standing in open field: 448 cover chunks drawn for 6,456 plants —
+ * **14.4 plants per draw call** — with 20 chunks drawing a SINGLE plant and
+ * 141 drawing between two and four. The dense grasses were fine (Grass_Common_
+ * Short averaged 56 per chunk); it was the sparse species that were paying a
+ * full draw call each for a handful of flowers, because every species shares
+ * one 26-unit grid however thinly it is scattered.
+ */
+export const COVER_TARGET_PER_CHUNK = 48;
+
+/**
+ * The largest a species' cell may grow, in base cells across.
+ *
+ * TWO, and the number is not a guess. Enlarging a cell trades draw calls for
+ * triangles: fewer, fatter chunks are cheaper to submit but cull and thin more
+ * coarsely, so more plants survive to be drawn. Measured on one frozen frame,
+ * standing in open field:
+ *     cap 1 (as before)   753 draw calls   2,484,013 triangles
+ *     cap 2               676 draw calls   2,777,912 triangles
+ *     cap 3               662 draw calls   2,969,876 triangles
+ *     cap 4               663 draw calls   3,134,748 triangles
+ * Cap 4 is strictly dominated — the same calls as 3 for another 165k triangles
+ * — so the real choice is 2 against 3, and 2 wins it on two grounds. It is the
+ * better exchange rate (77 calls for 294k triangles, against 91 for 486k), and
+ * more importantly a 3-step cell is 78 units across, which is exactly
+ * COVER_CULL_UNITS: at that size a species' chunk is as big as the distance it
+ * is culled at, so the distance cut can no longer reject anything for it and
+ * the mechanism this file exists for quietly stops working. A 2-step cell is
+ * 52 units and stays comfortably inside it.
+ */
+export const MAX_CHUNK_STEP = 2;
+
+/**
+ * How many base cells across one chunk of a species should span.
+ *
+ * Pure arithmetic and exported so `tools/test/scatterchunks.mjs` can walk it
+ * without a browser, the same treatment `coverCullRadius` gets.
+ *
+ * Enlarging a cell does cost something back: the culler's reach is the
+ * species' cull radius PLUS the chunk's bounding radius, so a bigger chunk is
+ * kept alive further away. It still wins, because the area a cell covers grows
+ * as the square of the step while that radius term grows only linearly - for a
+ * species retired at 20 units, a 26-unit cell has about 6.8 chunks in range and
+ * a 104-unit cell about 2.5.
+ */
+export function coverChunkStep(total: number, baseCells: number): number {
+  const per = total / Math.max(1, baseCells);
+  if (per >= COVER_TARGET_PER_CHUNK) return 1;
+  const want = Math.sqrt(COVER_TARGET_PER_CHUNK / Math.max(per, 0.01));
+  return Math.min(MAX_CHUNK_STEP, Math.max(1, Math.round(want)));
+}
+
+/**
  * The distance a ground-cover species stops being worth drawing, from how tall
  * it is.
  *

@@ -16,7 +16,7 @@
 // decor, because the player learns to click on scenery.
 
 import * as THREE from "three";
-import { coverCullRadius } from "./culling";
+import { coverChunkStep, coverCullRadius } from "./culling";
 import { loadModel } from "./assets";
 import { terrainHeight } from "./World";
 import { windyGeometry } from "./wind";
@@ -171,6 +171,8 @@ export function partsOf(proto: THREE.Group, normalizeTo: number): { parts: Part[
  */
 export const CHUNK_UNITS = 26;
 
+
+
 export interface ScatterArea {
   halfWidth: number;
   halfHeight: number;
@@ -222,10 +224,20 @@ export async function buildGroundCover(
 
   const cols = Math.max(1, Math.ceil((area.halfWidth * 2) / CHUNK_UNITS));
   const rows = Math.max(1, Math.ceil((area.halfHeight * 2) / CHUNK_UNITS));
-  const cellOf = (x: number, z: number) => {
-    const cx = Math.min(cols - 1, Math.floor(((x + area.halfWidth) / (area.halfWidth * 2)) * cols));
-    const cz = Math.min(rows - 1, Math.floor(((z + area.halfHeight) / (area.halfHeight * 2)) * rows));
-    return cz * cols + cx;
+  // A GRID PER SPECIES, not one grid for all of them. See `coverChunkStep`:
+  // the sparse species were each paying a draw call for two or three flowers
+  // because they were being diced on the same 26-unit lattice as the grass.
+  const gridFor = (step: number) => {
+    const c = Math.max(1, Math.ceil(cols / step));
+    const r = Math.max(1, Math.ceil(rows / step));
+    return {
+      count: c * r,
+      cellOf: (x: number, z: number) => {
+        const cx = Math.min(c - 1, Math.floor(((x + area.halfWidth) / (area.halfWidth * 2)) * c));
+        const cz = Math.min(r - 1, Math.floor(((z + area.halfHeight) / (area.halfHeight * 2)) * r));
+        return cz * c + cx;
+      },
+    };
   };
 
   const m = new THREE.Matrix4();
@@ -272,6 +284,11 @@ export async function buildGroundCover(
     const AUTHORED_AREA = (4800 / 40) * (3600 / 40);
     const density = (area.halfWidth * 2 * area.halfHeight * 2) / AUTHORED_AREA;
     const total = Math.round(species.count * density);
+    // Chosen from how thinly this species is actually scattered over THIS
+    // area, so a bigger map or a different exclusion does not need the number
+    // revisited.
+    const grid = gridFor(coverChunkStep(total, cols * rows));
+    const cellOf = grid.cellOf;
     // Rejection sampling against the exclusion circles. Attempts are counted
     // rather than retried forever: at the town's share of the map this rejects
     // roughly one placement in eighty, and an unbounded retry loop is how a

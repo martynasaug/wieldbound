@@ -17028,3 +17028,63 @@ frames on a measurement this machine cannot make would be M70.106's mistake
 with the sign flipped. Recorded with its numbers so the decision can be taken
 properly the day there is a real frame timer.
 Full suite 37/37, including `culling`, which exercises this file directly.
+
+**Phase 70 M70.109 — a draw call was drawing three flowers.** Following the
+same rule as M70.108: with milliseconds unmeasurable here, go after work that
+is provably wasted rather than work that merely looks expensive, and judge it
+on counters that are deterministic.
+**THE MEASUREMENT THAT STARTED IT.** Standing in open field, ground cover was
+**448 draw calls for 6,456 plants — 14.4 plants per call**. The distribution
+is the finding: twenty chunks drew a SINGLE plant, and a hundred and forty-one
+drew between two and four. The dense grasses were perfectly healthy
+(`Grass_Common_Short` averaged 56 per chunk); it was the sparse species paying
+a full draw call for a handful of flowers — `Flower_4_Group` at 2.6 per chunk,
+`Flower_3_Group` at 4.5, `Fern_1` at 5.9.
+The cause is one line: `CHUNK_UNITS = 26` is a single lattice shared by all
+twenty species, however thinly a species is scattered. `scatter.ts` already
+knew the important half of this — its own comment says "draw calls scale with
+species x chunks-in-range and not with instance count" — it just never acted
+on it per species.
+**THE FIX** is a per-species grid. `coverChunkStep(total, baseCells)` picks how
+many base cells one chunk of a species should span, from how thinly that
+species actually landed on THIS area, so a bigger map or a new exclusion zone
+needs no number revisited. It lives in `culling.ts` beside `coverCullRadius`
+and for the same stated reason — `scatter.ts` reaches into the asset loader and
+cannot be imported under plain Node — which is what lets
+`tools/test/scatterchunks.mjs` walk it as arithmetic. Plant POSITIONS are
+untouched: placements are generated in one pass before any bucketing (the file
+already guaranteed this), so only which InstancedMesh a plant belongs to
+changes, and the field is identical by construction.
+**CHOOSING THE CAP, which is a real trade and was measured rather than
+guessed.** Fatter chunks are cheaper to submit but cull and thin more coarsely,
+so more plants survive to be drawn. One frozen frame, same spot, same clock:
+    cap 1 (as before)   753 draw calls   2,484,013 triangles
+    cap 2               676 draw calls   2,777,912 triangles
+    cap 3               662 draw calls   2,969,876 triangles
+    cap 4               663 draw calls   3,134,748 triangles
+Cap 4 is strictly dominated — identical calls to cap 3 for another 165,000
+triangles — so the choice is 2 against 3. **Two**, on two grounds: the better
+exchange rate (77 calls for 294k triangles against 91 for 486k), and a
+structural one that decides it outright. A 3-step cell is 78 units across,
+which is exactly `COVER_CULL_UNITS`; a chunk as big as the distance it is
+culled at can never be rejected by the distance cut, so cap 3 would quietly
+switch off the mechanism this file exists for. A 2-step cell is 52 units and
+stays inside it. `scatterchunks.mjs` asserts that relationship rather than the
+number, so the cap cannot drift past the cull radius unnoticed.
+**COMBINED WITH M70.108**, on the same frame and the same spot:
+    before both   813 draw calls   2,722,801 triangles   12,033 scene objects
+    after both    671 draw calls   2,770,310 triangles    9,329 scene objects
+**142 fewer draw calls (-17.5%) for a 1.7% change in triangles, and 2,704
+fewer objects in the scene graph (-22%)** — that last one is a bonus that was
+not the goal: `updateMatrixWorld` and `projectObject` walk every object every
+frame and were 23% of CPU self-time in the idle profile, so a graph a fifth
+smaller is a CPU saving as well as a submission one.
+Verified by eye at an identical camera and a frozen clock: the field reads the
+same, the grass, flowers, tree and shadows all where they were.
+Stated honestly, as in M70.108: **none of this has been converted into a frame
+time**, because this machine cannot measure one (M70.106). What is claimed is
+142 fewer draw calls and an unchanged picture, both of which are measured.
+Whether that is worth a millisecond on a 144Hz display is a question only that
+display can answer.
+Full suite 37/37 plus the new `scatterchunks`; `fighting` flaked once and
+passed on re-run, as recorded.
