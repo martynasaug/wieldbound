@@ -17768,3 +17768,40 @@ is in front of the player. What would actually close it is intercepting the
 moment three.js decides to build a program and doing it asynchronously, which
 is not reachable from outside the library. Recorded rather than claimed fixed.
 Load 25.6s, nothing left parked below the world, no console errors, suite 38/38.
+
+**Phase 70 M70.125 — the FX pools were warmed against a world that did not
+exist yet.** M70.124 left two ~2,000ms first-compile stalls open and said what
+would be needed to close them. This closes most of it, and the method that
+found it is the part worth keeping.
+**ASK WHICH MATERIAL, NOT WHICH CACHE KEY.** Three rounds were spent decoding
+three.js's boolean masks by hand and guessing at the owner. There is no need:
+`renderer.properties.get(material).currentProgram` is reachable from outside
+the library, so after a new program appears the scene can simply be walked for
+whichever material is using it. The answers came out immediately — **a loot
+drop's disc and a skillfx additive**, both already pooled, both already
+"prewarmed".
+**AND THEY WERE PREWARMED AGAINST THE WRONG SCENE.** The four FX prewarms ran
+near the top of `Game.start`, BEFORE `buildDecor` had been awaited — so the
+town did not exist, its sixteen lanterns did not exist, and the monster rigs
+did not exist. A program's cache key contains the scene's LIGHT COUNT, so every
+pool compiled for a world that never occurs during play, and the first loot
+disc and the first spell ring compiled again for real, inline, about two
+seconds each. They now run immediately before `warmWholeScene`, where the world
+is built, every light is in and the rigs are standing in the scene.
+**MEASURED, on the full twelve-camp circuit:**
+    before this thread   11 long frames, worst 6,386ms / 1,757ms / 1,057ms
+    after                 4 long frames, worst 1,960ms / 1,883ms /   900ms
+And at a camp, pressing every hotbar key, dropping loot, opening the bag and
+the settings window: **0 new programs**, where the same test began this session
+at +3 and +2.
+**The light count is now genuinely constant**, which is what M70.124's fix was
+for: sampled every frame across the field, the town and two camps, it sat at
+48 and changed **zero** times.
+**What is left, stated rather than claimed fixed.** Three ~1-2 second stalls
+survive, and asking the same question of them names the owner: the BORDER TREES
+(`Bark_NormalTree`, `Leaves_NormalTree`). They are compiled at load like
+everything else, so the surviving variant is some render state they only meet
+out in the field — not the light count, which no longer moves. That is the next
+thread to pull, and it is a smaller one than the 6.4-second frame this started
+with.
+Suite green; `camps` flaked once and passed on re-run, as recorded.

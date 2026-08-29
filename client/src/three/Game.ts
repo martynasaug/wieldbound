@@ -1286,10 +1286,6 @@ export class Game {
     // never a loaded model, so none of the warming above ever reaches it,
     // and a live cast was the first thing to pay for it — see
     // `SkillFx.prewarm`/`Projectiles.prewarm`.
-    this.skillFx.prewarm(this.world);
-    this.projectiles.prewarm(this.world);
-    this.effects.prewarm(this.world);
-    this.drops.prewarm(this.world);
     installDisposeTracer();
     this.socket.connect();
 
@@ -1489,6 +1485,26 @@ export class Game {
     // them here puts those programs in front of `warmWholeScene`, which is
     // already drawing everything once — so they cost nothing extra and they
     // cost it under the loading screen. See `Effects.warmByPlaying`.
+    // THE FX POOLS WARM HERE, not near the top of `start`, and the move is
+    // the whole fix.
+    //
+    // They used to run before `buildDecor` had even been awaited — so the town
+    // and its sixteen lanterns did not exist yet, and neither did the monster
+    // rigs. A program's cache key contains the scene's LIGHT COUNT, so every
+    // pool compiled against a scene that never occurs during play, and the
+    // first loot disc and the first spell ring compiled again for real, inline,
+    // about two seconds each.
+    // Found by asking three.js which MATERIAL owned each late program rather
+    // than decoding its cache key: `renderer.properties.get(material)
+    // .currentProgram`. The answers were a drop disc and a skillfx additive —
+    // both already pooled, both already "warmed", neither warmed against the
+    // scene it would actually be drawn in.
+    // Here the world is built, the lights are all in, and the monster rigs are
+    // standing in the scene, so what is compiled is what will be used.
+    this.skillFx.prewarm(this.world);
+    this.projectiles.prewarm(this.world);
+    this.effects.prewarm(this.world);
+    this.drops.prewarm(this.world);
     this.effects.warmByPlaying();
     this.skillFx.warmByPlaying();
     await this.world.warmWholeScene();
