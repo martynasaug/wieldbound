@@ -17605,3 +17605,39 @@ fine. `git diff --stat` is what caught it: two files changed, one insertion in
 `indicators.ts`, where the change is twenty lines. Check the diff, not the
 test, when the question is "did the edit land".
 Full suite 38/38, `npx tsc --noEmit` clean.
+
+**Phase 70 M70.121 — why freezing static matrices has never worked, read out
+of three.js's own source.** Three separate attempts in this thread have tried
+to stop the per-frame matrix walk touching scenery that has not moved since the
+world was built, and all three measured no change: M70.116 recorded one as
+"tried and rejected" without a mechanism, and it deserved better than that.
+**THE MEASUREMENT.** `scene.updateMatrixWorld()` costs **1.6ms per frame** over
+9,322 objects — real money in a frame that must fit 6.94ms at 144Hz. Bounding
+what the scenery contributes:
+    everything                       9,322 objects   1.6ms
+    ground cover + forest DETACHED   6,721 objects   1.1ms
+    the same 2,601 chunks flagged
+      `matrixWorldAutoUpdate = false` 9,322 objects  1.7ms
+Detaching them saves 0.5ms. Flagging them saves NOTHING — with the flags
+verified `[false, false]` and `scene.matrixWorldNeedsUpdate` confirmed false,
+so the guard was genuinely in the state the fix assumes.
+**THE REASON, from `node_modules/three/src/core/Object3D.js`:**
+```
+    const children = this.children;
+    for ( let i = 0, l = children.length; i < l; i ++ ) {
+      const child = children[ i ];
+      child.updateMatrixWorld( force );          // <- unconditional
+    }
+```
+There is no `child.matrixWorldAutoUpdate === true || force === true` guard on
+the recursion in this version. The flag governs only whether an object
+recomputes its OWN `matrixWorld`; the subtree is walked either way. So
+`matrixAutoUpdate = false` skips a matrix multiply per node and
+`matrixWorldAutoUpdate = false` skips one more — and neither can skip a single
+node of the traversal, which is where the 1.6ms actually is.
+**This closes the line.** The only lever on the walk is the number of objects
+in the graph, which is why M70.109's chunking (12,033 -> 9,329) moved
+`updateMatrixWorld` from 14.89% to 6.76% of idle CPU while two deliberate
+attempts at the flags moved nothing. Recorded with the source quoted so nobody
+— including me — spends a fourth afternoon on it.
+No code changed in this entry.
