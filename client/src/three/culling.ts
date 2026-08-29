@@ -21,10 +21,25 @@ import * as THREE from "three";
 // a 12-unit pine do not stop mattering at the same range, and giving them one
 // radius would either keep the grass too long or pop the trees.
 //
-// Why `.visible` rather than removing from the scene: three.js skips an
-// invisible object and its whole subtree before any per-object work, the flag
-// costs nothing to flip back, and the instance buffers stay resident on the GPU
-// — so walking back toward a wood does not re-upload it.
+// Why DETACHING rather than `.visible = false`, which is what this did first:
+// half of that reasoning was right and half of it was not.
+//
+// The right half: three.js's RENDER path (`projectObject`) does skip an
+// invisible object and its whole subtree, and the instance buffers do stay
+// resident on the GPU across a detach — `removeFromParent` disposes nothing —
+// so walking back toward a wood still does not re-upload it.
+// The wrong half: `Object3D.updateMatrixWorld` recurses into every child
+// UNCONDITIONALLY in this version of three.js. There is no visibility test and
+// no `matrixWorldAutoUpdate` guard on the recursion (see M70.121, which quotes
+// the source after three separate attempts to use that flag measured nothing).
+// So every hidden chunk was still walked, every frame, forever.
+// Measured at the benchmark spot: 9,322 objects in the graph, of which about
+// 1,986 were culled chunks costing a matrix walk and returning no pixels, and
+// the walk itself is 1.6ms of a 8.53ms frame. Taking them out of the graph is
+// the only thing that can skip them, because the flag cannot.
+// The chunk keeps its parent in `homeOf` so it can go back exactly where it
+// came from — a chunk re-added to the wrong group would inherit the wrong
+// transform.
 
 /** Ground cover — grass, clover, pebbles, mushrooms. Nothing here is over a
  *  metre and most of it is a third of one, so past this it is sub-pixel. Sits
@@ -80,8 +95,15 @@ export class DistanceCuller {
    *  still worth attacking. */
   readonly perTier = new Map<string, number>();
 
+  /** Where each detached chunk came from, so it can be put back. */
+  private readonly homeOf = new WeakMap<THREE.Object3D, THREE.Object3D>();
+  /** Chunks currently out of the graph, per tier, so `update` can consider
+   *  them again without walking the scene to find them. */
+  private readonly parked: THREE.Object3D[][] = [];
+
   add(group: THREE.Object3D, radius: number, label: string, shadowLimited = false): void {
     this.tiers.push({ group, radius, label, shadowLimited });
+    this.parked.push([]);
     this.lastX = Infinity; // force the next update to do the work
   }
 
@@ -154,9 +176,14 @@ export class DistanceCuller {
 
     let visible = 0;
     let total = 0;
-    for (const tier of this.tiers) {
+    for (let t = 0; t < this.tiers.length; t++) {
+      const tier = this.tiers[t];
       let tierVisible = 0;
-      for (const child of tier.group.children) {
+      // Everything, attached or parked. Iterated over a COPY of the live list
+      // because the loop below moves children in and out of it.
+      const candidates = [...tier.group.children, ...this.parked[t]];
+      const stillParked: THREE.Object3D[] = [];
+      for (const child of candidates) {
         total++;
         // The INSTANCE sphere, not the geometry's. `computeBoundingSphere` on
         // an InstancedMesh bounds where its placements actually are; the
@@ -169,6 +196,7 @@ export class DistanceCuller {
           // a chunk drawn too often costs frames, a chunk hidden wrongly is a
           // hole in the world.
           child.visible = true;
+          if (child.parent === null) (this.homeOf.get(child) ?? tier.group).add(child);
           visible++;
           tierVisible++;
           continue;
@@ -184,6 +212,15 @@ export class DistanceCuller {
         const reach = own * this.scale + bound.radius;
         const on = cx * cx + cz * cz <= reach * reach;
         child.visible = on;
+        // IN OR OUT OF THE GRAPH, not just shown or hidden. See the note at
+        // the top of this file.
+        if (on && child.parent === null) {
+          (this.homeOf.get(child) ?? tier.group).add(child);
+        } else if (!on && child.parent !== null) {
+          this.homeOf.set(child, child.parent);
+          child.removeFromParent();
+        }
+        if (!on) stillParked.push(child);
         if (on) {
           visible++;
           tierVisible++;
@@ -206,6 +243,7 @@ export class DistanceCuller {
           }
         }
       }
+      this.parked[t] = stillParked;
       this.perTier.set(tier.label, tierVisible);
     }
     this.visibleChunks = visible;

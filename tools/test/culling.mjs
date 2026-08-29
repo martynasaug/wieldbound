@@ -59,6 +59,15 @@ function buildField(halfW, halfH, perChunk = 40) {
 
 section("1. the field");
 const cover = buildField(200, 150);
+// THE WHOLE FIELD, kept because the group no longer holds it.
+//
+// The culler used to hide a culled chunk and now removes it from the scene
+// graph entirely — three.js walks every child of every group in
+// `updateMatrixWorld` regardless of visibility (M70.121), so hiding one still
+// cost a matrix walk every frame forever. That means `cover.children` is now
+// the list of chunks currently DRAWN, and the assertions below have to measure
+// against the field as it was built rather than against the group.
+const ALL = [...cover.children];
 check("chunks were built", cover.children.length > 100);
 check(
   "each chunk bounds its own instances, not the prototype at the origin",
@@ -73,9 +82,16 @@ const culler = new DistanceCuller();
 culler.add(cover, COVER_CULL_UNITS, "cover");
 culler.update(0, 0);
 
-const drawn = cover.children.filter((c) => c.visible);
+const drawn = ALL.filter((c) => c.visible && c.parent !== null);
 check("something is still drawn", drawn.length > 0, "the world would be empty");
-check("and something was dropped", drawn.length < cover.children.length, "nothing was culled");
+check("and something was dropped", drawn.length < ALL.length, "nothing was culled");
+// The two must agree: a culled chunk is both hidden AND out of the graph, or
+// the render path and the matrix walk would disagree about what exists.
+check(
+  "hidden and detached mean the same thing",
+  ALL.every((c) => (c.visible && c.parent !== null) || (!c.visible && c.parent === null)),
+  "a chunk was hidden but left in the graph, or detached but left visible",
+);
 for (const c of drawn) {
   const d = Math.hypot(c.boundingSphere.center.x, c.boundingSphere.center.z);
   check(
@@ -85,7 +101,7 @@ for (const c of drawn) {
   );
   break; // one representative check; the reduction figure below covers the rest
 }
-for (const c of cover.children) {
+for (const c of ALL) {
   if (c.visible) continue;
   const d = Math.hypot(c.boundingSphere.center.x, c.boundingSphere.center.z);
   check(
@@ -94,16 +110,16 @@ for (const c of cover.children) {
     `dropped a chunk only ${d.toFixed(1)} units away`,
   );
 }
-const cut = 1 - drawn.length / cover.children.length;
+const cut = 1 - drawn.length / ALL.length;
 console.log(
-  `  ${drawn.length}/${cover.children.length} chunks drawn at the world centre ` +
+  `  ${drawn.length}/${ALL.length} chunks drawn at the world centre ` +
     `— ${(cut * 100).toFixed(0)}% fewer draw calls and triangles from ground cover`,
 );
 check("the saving is worth the file", cut > 0.5, `only ${(cut * 100).toFixed(0)}%`);
 
 section("3. the player standing at a corner still has ground under them");
 culler.update(-190, -140);
-const atCorner = cover.children.filter((c) => c.visible);
+const atCorner = ALL.filter((c) => c.visible);
 check("a corner is not empty", atCorner.length > 0);
 // The chunk the player is standing IN must always survive, at every position.
 for (const [px, pz] of [[0, 0], [-190, -140], [120, -90], [-60, 130], [199, 149]]) {
@@ -135,11 +151,13 @@ check(
 );
 // Past the fog's far plane a tree is flat sky colour, so the cut cannot be seen.
 const forest = buildField(200, 150);
+// Same again: the group holds only what survives, so the total has to be kept.
+const ALL_TREES = [...forest.children];
 const c2 = new DistanceCuller();
 c2.add(forest, TREE_CULL_UNITS, "trees");
 c2.update(0, 0);
-const treesDrawn = forest.children.filter((c) => c.visible).length;
-check("trees are still culled at the far corners", treesDrawn < forest.children.length);
+const treesDrawn = ALL_TREES.filter((c) => c.visible).length;
+check("trees are still culled at the far corners", treesDrawn < ALL_TREES.length);
 console.log(`  ${treesDrawn}/${forest.children.length} tree chunks drawn`);
 
 section("6. a pebble is not a grass tuft");

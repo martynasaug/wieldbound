@@ -17641,3 +17641,46 @@ in the graph, which is why M70.109's chunking (12,033 -> 9,329) moved
 attempts at the flags moved nothing. Recorded with the source quoted so nobody
 — including me — spends a fourth afternoon on it.
 No code changed in this entry.
+
+**Phase 70 M70.122 — the culler hid what it culled; now it takes it out of the
+graph, and the frame is 9% cheaper.** M70.121 established that
+`Object3D.updateMatrixWorld` recurses into every child unconditionally in this
+three.js — no visibility test, no `matrixWorldAutoUpdate` guard. This is the
+consequence, and it is the largest single runtime win of the session.
+**FIRST, A YARDSTICK**, because measurement has been the obstacle all session
+and three separate attempts have been wasted on unreliable ones. `framebench`
+reads `pacer.frameCostMs` — the number the game itself steers on — at a fixed
+place, a frozen sun and a pinned quality, as a median over ~950 frames.
+Repeatability checked before trusting it: **8.5, 9.4, 8.5ms**.
+**AND AN ATTRIBUTION**, from the game's own section profiler rather than a CPU
+sampler, at that same spot:
+    frame avg  8.53ms
+    render     7.41ms   <- 87% of the frame
+    world 0.38 · actors 0.21 · npcs 0.13 · plates 0.11 · net 0.08 ·
+    fx 0.04 · minimap 0.04 · occluders 0.03 · targeting 0.03 · hud 0.03
+So all the game's own logic together is 1.1ms and the frame IS `render`. Of
+that, 1.6ms is `scene.updateMatrixWorld` over 9,322 objects — **1,986 of which
+were culled chunks, hidden but still walked, every frame, forever.**
+**THE CHANGE.** `DistanceCuller` now detaches a chunk it culls and re-adds it
+when it comes back into range, remembering its parent in a `WeakMap` so it
+returns to the group it came from. The original comment defending `.visible`
+was half right and half wrong, and both halves are now written down: the render
+path (`projectObject`) genuinely does skip an invisible subtree, and
+`removeFromParent` genuinely disposes nothing, so the instance buffers stay
+resident and walking back toward a wood still does not re-upload it. What it
+missed is that the matrix walk skips nothing.
+    scene objects   9,322 -> 7,337   (-1,985, exactly the culled chunks)
+    frame cost       8.5ms -> 7.7ms  (-9%, medians of three runs each)
+**Correctness, which is the whole risk of detaching.** A circuit to the far
+south-west, the far north-east and the town and back home: at every stop
+`attached == visible` and nothing was ever hidden-but-attached, so the render
+path and the matrix walk cannot disagree about what exists. Home had 219 chunks
+before the trip and 216 after it, and the picture is identical. The new
+invariant is asserted in `culling.mjs` directly — "hidden and detached mean the
+same thing" — so a future change cannot half-apply it.
+`culling.mjs` needed updating for a real reason rather than a convenient one:
+it measured culling as `visible < children.length`, and with detaching the
+group's children ARE the survivors, so that comparison had become vacuously
+false. Every count now comes from the field as built. It still fails if nothing
+is culled, and now also fails if the two states drift apart.
+Full suite 38/38, `npx tsc --noEmit` clean.
