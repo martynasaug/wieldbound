@@ -16670,3 +16670,46 @@ long-lived gains on purpose; those are meant to persist.
 `soundscape` suite passes; the rest is the known baseline (`brace`,
 `casting`, `slaying` need seeded characters, `throwers` is the open bug,
 `camps` is timing-flaky and passes on re-run).
+
+**Phase 70 M70.102 — the four "known failing" tests all pass; three were
+environment and one was fixed a while ago.** First act on a new machine was
+to rebuild the baseline rather than inherit it, and the recorded suite
+status turned out to be wrong in every particular.
+`brace`, `casting` and `slaying` were carried as "fail only because they
+need seeded characters" — correct as a diagnosis, and this machine's
+database already had `Bracer`, `Caster` and `Slayer` in it, so re-seeding
+them and running against a live server passed `brace` and `casting`
+outright.
+`throwers` was carried as the one genuinely open AI bug. It passes. Not
+once — **16 consecutive runs, zero failures**, across two server restarts.
+M70.94's cap of a keep-away monster's `stopAt` at `attackRangePx * 0.95`
+did fix it, and the reason it was still recorded as broken is that M70.94
+and M70.95 both read the failure through the pre-fix run and then reasoned
+their way to the leash as the explanation. The leash reasoning in M70.95 is
+still sound as far as it goes — `MONSTER_LEASH_PX` is 520 from home and a
+chase past it does turn into `return` — it simply was not what this test
+was hitting. Recorded plainly: **the throwers bug is closed, and it was
+closed by M70.94.**
+`slaying` was the interesting one, because it failed here for a real
+reason that was not a game bug. It reported `FAIL — a frost kill did not
+advance a frost quest` after killing 24 armabees with frost, which is as
+alarming as a test failure gets. The counter read `4 -> 4` and
+`rule-armabee`'s objective is `count: 4`: the quest was already SATISFIED
+from a previous session's run, and a full counter cannot move. The test's
+own header names `tools/quests-reset.mjs` as the fix and its author wrote
+the reset tool for exactly this, but the failure surfaced sixty seconds of
+fighting later, worded as a claim about the game, and so it was believed
+and carried in this file as an open item.
+Fixed in the test rather than the game: `slaying.mjs` now reads
+`questSatisfied(questDef(QUEST), count())` immediately after accepting the
+quest and, if the counter is already full, SKIPS with the exact command to
+run instead of fighting for a minute and then lying. Verified in both
+directions — after `quests-reset.mjs Slayer` it runs and passes properly
+(`counter 0 -> 0` on lightning, `0 -> 4` on frost), and on the very next
+run it prints the skip.
+**Full suite: 36 of 36 green** (35 pass, `slaying` skipping on a
+deliberately-full counter). `camps` and `fighting` both passed first try.
+The lesson worth keeping is the one that cost the most: a test that
+fails for an environmental reason must say so in its OWN words. This one
+described a broken game for long enough that the description reached the
+plan and became the thing everybody knew.

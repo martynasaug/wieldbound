@@ -27,6 +27,7 @@
 import WebSocket from "ws";
 import { TOWN_NPCS } from "../../shared/town.ts";
 import { PLAYER_SPAWN } from "../../shared/protocol-types.ts";
+import { questDef, questSatisfied } from "../../shared/quests.ts";
 
 const NAME = process.argv[2] ?? "Slayer";
 const QUEST = "rule-armabee";
@@ -116,6 +117,24 @@ ws.on("open", async () => {
   await sleep(1000);
   if (count() === null) { console.log("FAIL — the Herald would not hand over the quest"); process.exit(1); }
   console.log(`took "${QUEST}" from a guide (role: ${herald.role}), counter at ${count()}`);
+
+  // A COUNTER THAT IS ALREADY FULL CANNOT MOVE, and this probe measures
+  // movement — so a second run against the same character reports "a frost
+  // kill did not advance a frost quest", which reads exactly like the feature
+  // being broken and is not. `quests-reset.mjs` exists for this and the
+  // header above says so, but the failure arrived sixty seconds of fighting
+  // later and worded itself as a game bug, so it was believed and carried in
+  // PLAN as one. Checked up front now, and named for what it is.
+  if (questSatisfied(questDef(QUEST), count())) {
+    console.log(
+      `SKIP — ${NAME}'s "${QUEST}" counter is already full ` +
+        `(${count()}/${questDef(QUEST).objective.count}), so nothing can move it.
+` +
+        `       Stop the server and run: node tools/quests-reset.mjs ${NAME}`,
+    );
+    ws.close();
+    process.exit(0);
+  }
 
   // Frostbrand first, because it is two-handed and puts the shield away, which
   // is what leaves the off-hand free for the mace. Equipping the mace first
