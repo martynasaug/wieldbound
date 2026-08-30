@@ -1174,8 +1174,30 @@ export class Game {
     });
   }
 
+  /** A LOAD TIMELINE, kept rather than deleted after the measurement.
+   *
+   *  "Loading takes 27 seconds" is not something anybody can act on; a list of
+   *  named spans is. Three sessions have now had to build this from scratch to
+   *  answer the same question, and it costs one array push per phase.
+   *  Read it with `__wieldbound.loadPhases`. */
+  private readonly loadMarks: { name: string; t: number }[] = [];
+
+  private loadMark(name: string): void {
+    this.loadMarks.push({ name, t: Math.round(performance.now()) });
+  }
+
+  /** The timeline as spans: what each phase COST, which is the question. */
+  get loadPhases(): { name: string; at: number; ms: number }[] {
+    return this.loadMarks.map((m, i) => ({
+      name: m.name,
+      at: m.t,
+      ms: m.t - (i ? this.loadMarks[i - 1].t : 0),
+    }));
+  }
+
   async start(): Promise<void> {
     this.running = true;
+    this.loadMark("start");
     // Debug handle. Movement and targeting are hard to diagnose from a
     // screenshot alone, and this is how the "keys stick after a panel steals
     // focus" bug was found.
@@ -1356,6 +1378,7 @@ export class Game {
       this.npcs = npcs;
     });
     await Promise.all([decor, anims, kit, body, people]);
+    this.loadMark("assets (decor, anims, kit, body, people)");
     // The models have parsed; their textures have not necessarily arrived, and
     // a first frame that repaints itself twenty megabytes at a time is exactly
     // what a loading screen exists to hide.
@@ -1386,6 +1409,7 @@ export class Game {
     // happens while the loading screen is still up, where a pause is what the
     // screen is FOR, rather than as the opening stutter of the game.
     await this.world.warmUp(this.world.scene);
+    this.loadMark("warmUp(scene): compile the world");
 
     // AND ONE FULL FRAME, WITH EVERYTHING STILL VISIBLE, TO UPLOAD IT.
     //
@@ -1515,9 +1539,11 @@ export class Game {
     this.effects.prewarm(this.world);
     this.drops.prewarm(this.world);
     await this.warmFadedOccluders();
+    this.loadMark("warmFadedOccluders");
     this.effects.warmByPlaying();
     this.skillFx.warmByPlaying();
     await this.world.warmWholeScene();
+    this.loadMark("warmWholeScene");
     // Out of sight again, but never disposed — see `monsterShaderKeepAlive`.
     for (const root of this.monsterShaderKeepAlive) root.visible = false;
 
@@ -4756,6 +4782,19 @@ export class Game {
    * So the fade state is applied to every fadeable material, compiled once
    * under the loading screen, and put back. `warmWholeScene` then compiles the
    * opaque half as it always did, and both variants exist before play starts.
+   *
+   * THIS PHASE COSTS ~6.4s OF A ~28.6s LOAD AND TWO ATTEMPTS TO CUT IT FAILED.
+   * `warmUp(this.world.scene)` walks everything — terrain, river, road, sky,
+   * actors, effect pools — to warm some trees and walls, which looks like
+   * obvious waste. It is not, and the reason is that the cost is the COMPILING
+   * and not the walking. Measured against a 6,347-6,575ms baseline:
+   *   - compiling all 1,562 fadeable objects instead: 7,571ms and 8,944ms
+   *   - compiling one mesh per material (135 of them, since a program is keyed
+   *     by material, so the cover is 11.6x smaller): 7,131ms and 6,792ms
+   * Neither beat walking the whole scene once. There are 135 genuinely new
+   * transparent programs to build here and building them is the bill. Do not
+   * spend a third session narrowing the traversal — narrow the MATERIAL COUNT
+   * or accept it.
    */
   private async warmFadedOccluders(): Promise<void> {
     const mats = new Set<THREE.Material>();

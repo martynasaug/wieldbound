@@ -18096,3 +18096,58 @@ Recorded as disproven so nobody spends another hour on it. The wider lesson is
 the one M70.130 and M70.131 also paid for: this session has now produced more
 broken measurements than broken game code, and every one of them looked like a
 finding until it was controlled. Suite 38/38.
+
+**Phase 70 M70.133 — every headless load measurement in this file is wrong, and
+the load is 28.6s of mostly irreducible shader compiling.** Went back to the
+user's second complaint, the one only half fixed: loading is still long.
+
+**THE HARNESS WAS MEASURING SOFTWARE RENDERING.** Profiled headless and got
+87.9s to playable with a single 37,027ms frozen block — reproducible across
+three runs at 88/90/92s. That is far worse than the ~27s this file records and
+looked like a serious regression. It is not. Asking the context what it is:
+
+    headless: ANGLE (SwiftShader Device), KHR_parallel_shader_compile FALSE
+    headed:   ANGLE (AMD Radeon RX 5700 XT, D3D11), KHR_parallel_shader_compile TRUE
+
+Headless Chromium is SwiftShader, a SOFTWARE rasteriser, and it does not have
+the parallel-compile extension — so `compileAsync` cannot compile off-thread and
+degrades to blocking. The 37s block is the CPU compiling shaders. **M70.115's
+whole fix can only pay off where that extension exists, which is on a player's
+machine and never in the harness.** The session moved to headless in M70.104 for
+FRAME timing, where headed throttles to ~1fps unfocused; that reason does not
+apply to a load measurement, which only has to finish. Load is measured headed
+from now on. Frames stay headless.
+
+**WHAT THE LOAD ACTUALLY IS.** Headed, on the real GPU, 28.6s — which matches
+the ~27s recorded, so that number was right. A load timeline is now built in
+(`__wieldbound.loadPhases`, kept rather than deleted: three sessions have
+rebuilt this to ask the same question):
+
+    1,583ms  start
+    3,703ms  assets (decor, anims, kit, body, people)
+    7,846ms  warmUp(scene): compile the world
+    6,347ms  warmFadedOccluders
+    8,325ms  warmWholeScene
+
+Three shader-compile passes are 22.5s of 28.6s — 79%. Worst blocking block is
+2.5-3.2s, NOT the ~1,300ms recorded at M70.115; that claim was measured under
+SwiftShader and should not be trusted either.
+
+**TWO ATTEMPTS AT THE 6.3s PHASE, BOTH FAILED, BOTH REVERTED.**
+`warmFadedOccluders` flips transparency on decor, buildings and nodes and then
+compiles THE WHOLE SCENE — terrain, river, road, sky, actors, effect pools — to
+warm some trees and walls, which looks like obvious waste.
+
+    baseline (walk the whole scene)          6,347ms / 6,575ms
+    compile all 1,562 fadeable objects       7,571ms / 8,944ms   WORSE
+    compile one mesh per material (135)      7,131ms / 6,792ms   no better
+
+A program is keyed by its MATERIAL, so 1,562 objects need only a 135-object
+cover — 11.6x smaller — and it still did not win. The cost is the COMPILING, not
+the walking: there are 135 genuinely new transparent programs to build and
+building them is the bill. Both shapes are written into the function's comment
+so a third session does not narrow the traversal again. The lever, if anyone
+wants one, is the MATERIAL COUNT.
+
+Suite 38/38 (`fighting.mjs` failed once in the batch and passed alone; already
+recorded as timing-flaky).
