@@ -910,6 +910,7 @@ export class Game {
         // no acknowledgement beyond the tracker panel quietly losing a row.
         // Essence, runes and recipes all got a floater or a sound for far
         // smaller moments than this one long before it did.
+        const justDone_: string[] = [];
         if (this.questsSeen) {
           const justDone = p.completed.filter((id) => !this.completedQuests.includes(id));
           for (const id of justDone) {
@@ -922,6 +923,7 @@ export class Game {
             }
             this.hud.toast(label, "#ffd873");
             playSfx("levelup", 0.6);
+            justDone_.push(id);
           }
         }
         this.questsSeen = true;
@@ -932,7 +934,14 @@ export class Game {
         // stale row that does nothing when clicked.
         const openId = this.dialogue.openNpcId;
         const npc = openId ? this.npcs.get(openId) : null;
-        if (npc) this.dialogue.setActions(this.dialogueActionsFor(npc));
+        if (npc) {
+          this.dialogue.setActions(this.dialogueActionsFor(npc));
+          // After the redraw, so the words land over the list they belong to.
+          const said = justDone_
+            .map((qid) => QUESTS.find((q) => q.id === qid))
+            .find((d) => d && d.giver === npc.def.id);
+          if (said) this.dialogue.say(said.done);
+        }
       },
       onRunes: (p) => {
         // A rune arriving is the payoff for having destroyed something, so it
@@ -3683,14 +3692,15 @@ export class Game {
             label: `Hand in: ${def.name}`,
             note: rewardLabel(def.reward),
             primary: true,
+            // SEND, AND WAIT TO BE TOLD. This used to speak the completion
+            // line the moment the button was pressed, so a hand-in the server
+            // refused — out of earshot, most easily — still had the giver say
+            // "Four. Good. You are hired for the next one, then" while nothing
+            // was paid and the quest stayed open. `onQuestState` says it now,
+            // when the quest is actually recorded done, and redraws the list
+            // itself; the refusal has its own message.
             onPick: () => {
               this.socket.sendTurnInQuest(npc.def.id, def.id);
-              this.dialogue.say(def.done);
-              window.setTimeout(() => {
-                if (this.dialogue.openNpcId === npc.def.id) {
-                  this.dialogue.setActions(this.dialogueActionsFor(npc));
-                }
-              }, 260);
             },
           });
         } else {

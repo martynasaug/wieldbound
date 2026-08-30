@@ -3158,7 +3158,14 @@ wss.on("connection", (socket) => {
     if (msg.type === "ACCEPT_QUEST" && id) {
       const def = questDef(msg.payload.questId);
       if (!def || def.giver !== msg.payload.npcId) return;
-      if (!nearNpc(id, def.giver)) return;
+      // Out of earshot is the one refusal here that a player can cause by
+      // standing in the wrong place, so it says so. The workbench already did
+      // (M70.126); these two returned in silence, which meant clicking "Hand
+      // in" from a step too far away paid nothing and explained nothing.
+      if (!nearNpc(id, def.giver)) {
+        sendInfo(socket, `You are too far from ${npcById(def.giver)?.name ?? "them"} to talk business.`, "#c98d5e");
+        return;
+      }
 
       // The same gate the client greys the row out with, re-run here — the
       // client's list and the server's rule have to BE the same rule, or a
@@ -3182,7 +3189,14 @@ wss.on("connection", (socket) => {
     if (msg.type === "TURN_IN_QUEST" && id) {
       const def = questDef(msg.payload.questId);
       if (!def || def.giver !== msg.payload.npcId) return;
-      if (!nearNpc(id, def.giver)) return;
+      // Out of earshot is the one refusal here that a player can cause by
+      // standing in the wrong place, so it says so. The workbench already did
+      // (M70.126); these two returned in silence, which meant clicking "Hand
+      // in" from a step too far away paid nothing and explained nothing.
+      if (!nearNpc(id, def.giver)) {
+        sendInfo(socket, `You are too far from ${npcById(def.giver)?.name ?? "them"} to talk business.`, "#c98d5e");
+        return;
+      }
 
       const row = questRows(id).find((r) => r.questId === def.id);
       if (!row || row.completedAt !== null) return;

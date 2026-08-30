@@ -18001,3 +18001,47 @@ Recorded and not fixed: `tools/seed.mjs --level 1` still hands out enchanted
 endgame gear, so it cannot produce a fair low-level control — the armed run
 above had to forge its own weapon through the UI, which was the better test
 anyway. Suite 38/38.
+
+**Phase 70 M70.131 — the quest hand-in told you it had worked when it had
+not.** M70.130 left the first quest at "4 / 4, return to Warden Cabel" and
+stopped there. Closing that loop found the failure path was wrong in two ways at
+once, and the accepted path was right all along: at arm's length a hand-in pays
++25 wood, +25 ore, two potions, the xp and the level, and clears the tracker.
+
+The database is what settled it. A driven run reported "level 1 -> 2, wallet
+unchanged, tracker still says 4 / 4", which reads like a reward paid in halves —
+`addMaterial` before `addXp` in the same block, so half-applying it should be
+impossible. It was: the level came from the four slimes (4 x 5xp = 20, and
+`xpToNextLevel(1)` is exactly 20) and the hand-in had done NOTHING. Querying
+`quests` directly showed `watch-slimes: count=4 completedAt=NULL` — the write
+never happened, which no amount of reading client state would have told me.
+
+WHAT WAS WRONG. `TURN_IN_QUEST` and `ACCEPT_QUEST` both did `if (!nearNpc(...))
+return;` — a bare return, no message. The workbench stopped doing that in
+M70.126 and these two were missed. Worse, the client spoke the giver's
+completion line OPTIMISTICALLY: `onPick` called `dialogue.say(def.done)` the
+instant the button was pressed, so a refused hand-in still had Cabel say "Four.
+Good. You are hired for the next one, then." while nothing was paid, nothing was
+recorded, and the quest stayed open. The one clue was the 260ms re-render
+quietly putting the "Hand in" row back.
+
+Both fixed. The server names who you are too far from. The client sends and
+waits: `onQuestState` already knew which quests had just completed (it spawns
+the floater and plays the sound there), so the giver's line is spoken from
+there, after the redraw, only for a quest whose completion actually arrived.
+
+THE TEST WAS WRONG TWICE MORE, both the same wrong number. `NPC_TETHER_PX` is
+270 — talk range 150 plus beat radius 120, because townspeople walk. The first
+"too far" run stood at ~260px, INSIDE it, succeeded, and reported four failures
+that were all one consequence of that. The second stood 501px out but had used
+`talkTo()` directly, which bypasses the 150px gate a real click goes through —
+which is not a bug, but it is the exact state a player reaches when the giver
+strolls off mid-conversation, so it is the right thing to drive. At 476px, with
+the fixture reset in the database rather than re-grinding four slimes: refusal
+explained, nothing paid, quest still open, no completion line. Then at 15px:
+wood 41 -> 66, ore 37 -> 62, level 3 -> 4, tracker empty, "Four. Good." said
+once it was true, and both "The Quiet Ones" and "As Far As The Stone" unlocked.
+
+Also confirmed while here: a level 1 has one talent point waiting
+(`talentPointsAtLevel(1)` is 1), the panel says "1 point", and spending it works
+— 11 nodes, classes `talent-node` and `talent-node unavailable`. Suite 38/38.
