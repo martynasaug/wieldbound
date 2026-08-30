@@ -18151,3 +18151,50 @@ wants one, is the MATERIAL COUNT.
 
 Suite 38/38 (`fighting.mjs` failed once in the batch and passed alone; already
 recorded as timing-flaky).
+
+**Phase 70 M70.134 — a wrong number corrected, and a third failed attempt at
+the same phase.** M70.133 ended by naming the material count as the lever and
+asserting the fade phase builds "135 genuinely new transparent programs". That
+was wrong, and it was wrong in a way worth spelling out: 135 is the MATERIAL
+count. The whole game only has 125 programs. Material count was quietly read as
+program count and written into PLAN as if measured.
+
+So the timeline now carries `renderer.info.programs.length` at every mark, and
+a phase that takes six seconds while adding nothing can no longer be described
+as compiling:
+
+    1,650ms  +  0 programs   start
+    4,342ms  +  0 programs   assets (decor, anims, kit, body, people)
+    7,621ms  + 41 programs   warmUp(scene): compile the world
+    6,670ms  + 35 programs   warmFadedOccluders
+    8,757ms  + 49 programs   warmWholeScene
+
+125 programs across 23.0s of compiling — **~195ms per program, and the rate is
+almost identical in all three phases**. That is the real shape of the load, and
+it is a much more useful sentence than "loading takes 28 seconds": the load is
+linear in the number of distinct programs and nothing else.
+
+**THE THIRD ATTEMPT, going after the program count rather than the traversal —
+the lever M70.133 named — ALSO FAILED.** `transparent` is what flips `#define
+OPAQUE`, so a fadeable material needs two programs; leave it transparent ALL the
+time and the second never exists. It did exactly what it was supposed to:
+
+    warmFadedOccluders   6,670ms -> ~2,270ms
+    programs             125 -> 118
+    TOTAL LOAD           ~28.6s -> 29.4s / 30.0s   (no change)
+    WORST BLOCKING SPAN  2.7s -> 8.5s / 9.1s       (3x WORSE)
+
+`warmWholeScene` absorbed the saving and then some, rising ~1.9s: moving 1,562
+objects into the transparent pass costs more than the variant it saves. And the
+freeze it produced is the user's original complaint — the browser locking up
+during load — made three times worse to buy nothing. Reverted.
+
+Three shapes have now been measured and rejected on this one phase: narrowing
+the traversal to the fadeable objects, narrowing it to one mesh per material,
+and removing the variant. All three are written into the function's own comment
+with their numbers. The remaining lever is fewer distinct materials in the ART,
+which is a content change, not a code one.
+
+Suite 38/38 — `fighting.mjs` failed in the batch again and passed three times
+alone straight afterwards. It is a real flake under load, not a regression, and
+it is the second batch running it has cost a re-run.

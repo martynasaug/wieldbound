@@ -1180,18 +1180,27 @@ export class Game {
    *  named spans is. Three sessions have now had to build this from scratch to
    *  answer the same question, and it costs one array push per phase.
    *  Read it with `__wieldbound.loadPhases`. */
-  private readonly loadMarks: { name: string; t: number }[] = [];
+  private readonly loadMarks: { name: string; t: number; programs: number }[] = [];
 
   private loadMark(name: string): void {
-    this.loadMarks.push({ name, t: Math.round(performance.now()) });
+    this.loadMarks.push({
+      name,
+      t: Math.round(performance.now()),
+      // A phase that takes six seconds and adds no programs is not compiling,
+      // whatever it looks like it is doing. This column is what turned
+      // "loading is slow" into "125 programs at a very steady ~195ms each".
+      programs: this.world.renderer.info.programs?.length ?? 0,
+    });
   }
 
   /** The timeline as spans: what each phase COST, which is the question. */
-  get loadPhases(): { name: string; at: number; ms: number }[] {
+  get loadPhases(): { name: string; at: number; ms: number; programs: number; added: number }[] {
     return this.loadMarks.map((m, i) => ({
       name: m.name,
       at: m.t,
       ms: m.t - (i ? this.loadMarks[i - 1].t : 0),
+      programs: m.programs,
+      added: m.programs - (i ? this.loadMarks[i - 1].programs : 0),
     }));
   }
 
@@ -4783,7 +4792,7 @@ export class Game {
    * under the loading screen, and put back. `warmWholeScene` then compiles the
    * opaque half as it always did, and both variants exist before play starts.
    *
-   * THIS PHASE COSTS ~6.4s OF A ~28.6s LOAD AND TWO ATTEMPTS TO CUT IT FAILED.
+   * THIS PHASE COSTS ~6.4s OF A ~28.6s LOAD AND THREE ATTEMPTS TO CUT IT FAILED.
    * `warmUp(this.world.scene)` walks everything — terrain, river, road, sky,
    * actors, effect pools — to warm some trees and walls, which looks like
    * obvious waste. It is not, and the reason is that the cost is the COMPILING
@@ -4791,10 +4800,25 @@ export class Game {
    *   - compiling all 1,562 fadeable objects instead: 7,571ms and 8,944ms
    *   - compiling one mesh per material (135 of them, since a program is keyed
    *     by material, so the cover is 11.6x smaller): 7,131ms and 6,792ms
-   * Neither beat walking the whole scene once. There are 135 genuinely new
-   * transparent programs to build here and building them is the bill. Do not
-   * spend a third session narrowing the traversal — narrow the MATERIAL COUNT
-   * or accept it.
+   * Neither beat walking the whole scene once, because the cost is COMPILING
+   * and not walking: this phase builds 35 of the load's 125 programs, and
+   * programs cost a very steady ~195ms each in every phase that makes them.
+   * (An earlier note here said 135 programs. That was the MATERIAL count read
+   * as a program count; the whole game only has 125.)
+   *
+   * The third attempt went after the program count instead, which is the right
+   * lever, and it also failed. `transparent` is what flips `#define OPAQUE`,
+   * so leaving these materials transparent ALL the time means the second
+   * variant never exists. It does work as designed — this phase fell to
+   * ~2,270ms and seven programs went away — but `warmWholeScene` then rose by
+   * ~1.9s and the total load did not move, while the WORST BLOCKING SPAN went
+   * from 2.7s to 8.5-9.1s. Moving 1,562 objects into the transparent pass
+   * costs more than the variant it saves, and it makes the load freeze that
+   * was the original complaint three times worse. Reverted.
+   *
+   * So: not the traversal, not the variant. The only lever left is fewer
+   * distinct materials in the ART, which is a content change and not a code
+   * one. Accept the phase or reduce the material count.
    */
   private async warmFadedOccluders(): Promise<void> {
     const mats = new Set<THREE.Material>();
