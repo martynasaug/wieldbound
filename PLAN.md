@@ -18198,3 +18198,60 @@ which is a content change, not a code one.
 Suite 38/38 — `fighting.mjs` failed in the batch again and passed three times
 alone straight afterwards. It is a real flake under load, not a regression, and
 it is the second batch running it has cost a re-run.
+
+**Phase 70 M70.135 — the flaky test was flaky for a real reason, and its main
+assertion had never been able to fail.** `fighting.mjs` had cost two batches a
+re-run, so I went to stabilise it. The flake was real and shallow; what was
+underneath it was not.
+
+**THE FLAKE.** It failed about one run in eight with `standing still: 0 damage`.
+The sequence was `USE_ATTACK`, `sleep(1200)`, `dealt = 0` — the counter was
+zeroed AFTER the opening swings. A level 40 Fighter kills a mushnub well inside
+1,200ms, so the damage that proved the fight happened was discarded, and if
+nothing else was in reach the nine seconds that followed measured a cleared
+camp. Same cause behind passes ranging 49 to 1,079 damage. Zeroing before the
+order fixes it: five runs, five passes, real damage every time.
+
+Two more repairs to the approach, both found while chasing that. It walked at
+one monster's LAST KNOWN position for a flat nine seconds — often to a corpse,
+since this test clears its own camp. It now re-aims every tick at whatever is
+nearest and alive, and waits out a respawn rather than reporting a rule broken
+because the field is empty. And the "close enough" threshold was a flat 45px,
+which is unreachable for most kinds: bodies cannot interpenetrate, so the
+closest you can stand to a dragon is 14 + 58 = 72px. It is measured to the
+SURFACE now — the same correction M70.110 made to reach itself.
+
+**THE ASSERTION UNDERNEATH.** "You do not swing at something behind you" has
+never been able to fail. Disabling `isRetreating` in the server outright and
+re-running still reported 0 damage while retreating and still printed OK. Two
+structural reasons:
+
+  * The player sprints at ~198px/s and NOTHING in the game is faster, so they
+    are out of reach inside a second. Measured: 0 of 77 ticks with anything in
+    reach at all. No blow could have landed either way.
+  * The attack order lapses after `ATTACK_ORDER_LAPSE_MS` with nothing in
+    reach, so by the retreat window there was frequently no fight in progress.
+    With the rule off and a target in reach for 75 of 76 ticks: still 0.
+
+Three ways to make it bite were tried and all three were wrong:
+  - Holding station at the edge of reach keeps a target there (69-76 of 77
+    ticks) but leaves the player STATIONARY most of the time — the destination
+    is ~22px away and one tick covers it — and a stationary player has no
+    heading to be "away", so the guard correctly does not apply. Reported 474
+    against 654 as if broken.
+  - Re-pressing `USE_ATTACK` during the retreat reads as 820 against 514.
+    `useDefaultAttack` resolves a swing directly and is NOT guarded by
+    `isRetreating`; ONLY the automatic swing loop is. Worth knowing on its own
+    and not written down anywhere before.
+  - Engaging the FASTEST nearby monster instead of the nearest, to keep it in
+    reach, made the test fail one run in three with the rule ON: over a
+    nine-second sprint a chaser gets IN FRONT of the player, the heading is
+    toward it, and the swing is allowed. Correct behaviour reported as a bug.
+
+So the test now counts in-reach ticks and says INCONCLUSIVE instead of passing
+when there were none — which on this map is most runs. That is worse-looking
+and much more honest: it no longer claims to verify a rule it cannot reach. The
+standing-still half is sound and always was. All of it is written into the file
+so the next person does not re-derive it.
+
+Suite 38/38.
