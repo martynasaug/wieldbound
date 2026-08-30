@@ -30,7 +30,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { ITEM_BASES, rollItem, itemName } from "../shared/items.ts";
+import { ITEM_BASES, PALETTE_SCHOOL, rollItem, itemName } from "../shared/items.ts";
 import {
   ITEM_SLOTS,
   MAX_WEAPON_LEVEL,
@@ -182,6 +182,20 @@ function kitForBand(band) {
     if (!b) continue;
     out.push({ base: b.id, affixes: [], equip: firstWeapon });
     firstWeapon = false;
+  }
+  // ONE WEAPON OF EVERY DAMAGE SCHOOL, which the loop above does not give you.
+  //
+  // Picking the best base per weapon TYPE fills the bag with iron: at band 2
+  // the best bow is a Recurve, which is physical. But the Herald's whole quest
+  // chain is `slay` objectives gated on a SCHOOL — four armabees with frost,
+  // four wolves with fire, and so on — and the school comes from the PALETTE,
+  // not the family. So a seeded character had every weapon family and could
+  // not attempt any of those five quests. Same reason the curated endgame list
+  // names one of each: the seed exists to make gated content reachable.
+  const schools = new Set(Object.values(PALETTE_SCHOOL));
+  for (const school of schools) {
+    const b = pickBest((x) => x.weaponType && PALETTE_SCHOOL[x.art.palette] === school);
+    if (b && !out.some((o) => o.base === b.id)) out.push({ base: b.id, affixes: [], equip: false });
   }
   // Straight off ITEM_SLOTS rather than typed out. Hand-writing them as
   // "head, chest, back, feet" matched nothing at all - the real names are

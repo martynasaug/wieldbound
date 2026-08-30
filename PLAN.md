@@ -18530,3 +18530,39 @@ rows that all say "false" looks like a clean bill of health, and this one is not
 one.
 
 No code changed. Suite 38/38 as of M70.141.
+
+**Phase 70 M70.143 — all six quest objective kinds are now driven end to end.**
+`slay` was the last one, and the only objective in the game gated on a TECHNIQUE
+rather than a place: kill four armabees with FROST. The school comes from the
+weapon's PALETTE, not its family, which is why it needed tooling before it
+needed a test.
+
+**THE SEED COULD NOT MAKE A CHARACTER THAT COULD ATTEMPT IT.** `kitForBand`
+picked the best base per weapon TYPE, and at band 2 the best bow is a Recurve —
+iron, physical. So a seeded character owned every weapon family and could not
+start any of the Herald's five quests, all of which are school-gated. It now
+also grants one weapon of each school at the right band, which for band 2 is a
+Hoarstring (frost bow), Cinderbite (fire), Adderfang (nature), a Runewood Staff
+(arcane) and a Sparkhead (lightning). Same reasoning the curated endgame list
+was written with: the seed exists to make gated content reachable.
+
+Driven end to end on a level 22: equip the Hoarstring, confirm `weaponSchool`
+reads `frost`, take "The Wing Is The Animal" from the Herald, clear the camp,
+hand it back. **Four armabees in six seconds** — and that number is the point.
+Armabees are weak to frost, and the Herald's completion line says "you will have
+noticed they came apart faster than the ones you have been hacking", which is
+the school system doing exactly what it was built to do. 180xp, 50 wood, 50 ore,
+30 herb, level 22 -> 23, tracker empty, zero console errors.
+
+The tracker reads "Armabees chilled 0 / 4" rather than "slain", which is the
+kind of small correctness this file keeps asking for.
+
+ONE HARNESS FAULT, ITS OWN CLASS. The accept click landed 900ms after the quest
+row was picked and the tracker stayed empty. Not a bug and not a bad selector:
+the Herald carries EIGHT topic rows under the quest list, so the redraw after
+picking is slower than Cabel's or Marda's, and the accept button did not exist
+yet. The run then spent seven minutes hunting for a quest it had never taken.
+1600ms. Worth writing down because it is the first timing failure this session
+that was about one NPC having more to say than another.
+
+Suite 38/38.
