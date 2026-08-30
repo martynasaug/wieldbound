@@ -18337,3 +18337,38 @@ A level 1 is now a believable beginner: Worn Recruit's Blade, one of every
 weapon family, a full set of rags, 0/0/0/0 attributes, 50hp, trees at 1 — and a
 Worn Hunter's Bow, which is exactly the character M70.136 could not make. Suite
 38/38.
+
+**Phase 70 M70.138 — the seed was additive across levels, and the retreat
+question is still not settled.** Two small things, one fixed and one honestly
+left open.
+
+**THE SEED WAS NOT IDEMPOTENT ACROSS LEVELS.** M70.137 cleared "the union of
+both kits" before granting — the curated endgame list and the kit being granted
+now. That is not enough: re-seeding a character from level 1 to level 20 left
+the band-1 Worn set in the bag beside the new band-2 Honed one, because band 1's
+bases are in neither list. It clears every base any band's kit could grant now
+(`[1,2,3,4,5].flatMap(kitForBand)` plus the curated list), which is the actual
+set this tool is responsible for. Verified: re-seeding 1 -> 20 cleared 24 items
+and left exactly seven weapons, one per family. Anything the player found or
+forged is still untouched, because these are the exact base ids this file hands
+out and nothing else.
+
+**THE RETREAT MEASUREMENT STILL DID NOT LAND.** With the tooling fixed I built
+the character M70.136 could not: level 20, band 2, a Honed Recurve — low enough
+not to one-shot its target, armed with the long reach that should keep a monster
+in range while backing off. It is still inconclusive, and the reason is the
+harness rather than the game: the approach walks to melee CONTACT before
+engaging, so even a bow starts the retreat adjacent and the sprint clears reach
+almost as fast as it does for a sword. Three runs: two killed the target inside
+the control window, the third measured one in-reach tick.
+
+Engaging at bow range rather than at contact is the obvious next shape, and it
+is written down rather than attempted because this question has now consumed a
+long stretch of a session for something already measured as marginal — the melee
+window where the rule could matter is about a fifth of a second. The asymmetry
+stands as recorded in M70.136: `useDefaultAttack` is unguarded, only the swing
+loop is, and whether that should change is a design call about feel that wants a
+real measurement behind it. The character to make that measurement with now
+exists, which was the point.
+
+Suite 38/38.

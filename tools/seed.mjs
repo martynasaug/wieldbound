@@ -215,7 +215,17 @@ const insert = db.prepare(
 // this tool hands out, so anything the player found or forged is left alone.
 // The union of BOTH kits: re-seeding the same character at a different level
 // must not leave the previous band sitting in the bag beside the new one.
-const ids = [...new Set([...KIT, ...ACTIVE_KIT].map((k) => k.base))];
+// EVERY BAND THIS TOOL COULD HAVE GRANTED, not just the one it is granting
+// now. Clearing only the current kit meant re-seeding a character from level 1
+// to level 20 left the band-1 Worn set sitting in the bag beside the band-2
+// Honed one — the tool is meant to be idempotent and that made it additive
+// across levels. Anything the player found or forged is still left alone,
+// because these are the exact base ids this file hands out.
+const ids = [
+  ...new Set(
+    [...KIT, ...[1, 2, 3, 4, 5].flatMap((b) => kitForBand(b))].map((k) => k.base),
+  ),
+];
 const cleared = db
   .prepare(
     `DELETE FROM items WHERE characterId = ? AND baseId IN (${ids.map(() => "?").join(",")})`,
