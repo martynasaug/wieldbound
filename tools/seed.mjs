@@ -32,7 +32,10 @@ import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { ITEM_BASES, rollItem, itemName } from "../shared/items.ts";
 import {
+  ITEM_SLOTS,
   MAX_WEAPON_LEVEL,
+  STAT_POINTS_PER_LEVEL,
+  RARITY_ORDER,
   WEAPON_TYPES,
   classForWeapon,
   maxHpForLevel,
@@ -132,6 +135,67 @@ const KIT = [
   { base: "blackglassring", affixes: ["keen", "adder", "leech"] },
 ];
 
+// --- what `--level` is actually worth ---------------------------------------
+//
+// `--level N` used to set the character's level and NOTHING else: every run
+// handed out the same Enchanted band-5 endgame kit, so `--level 1` produced a
+// level 1 holding a Frostbrand. That is not a curiosity, it blocked two real
+// investigations — M70.130 needed a fair armed-low-level control and had to
+// forge its own weapon through the UI instead, and M70.136 needed a character
+// that could hold a live target at bow range and could not be made at all.
+//
+// Bands are 1-5 and the world is laid out by them, so the mapping is one band
+// per seventeen levels: 1 at level 1, 5 from level 68. Rarity walks its own
+// ladder over the same span, starting at Worn — a level 1 who has been to the
+// anvil has Honed, so Worn is a fair "found it on the way here".
+//
+// BAND 5 KEEPS THE CURATED KIT EXACTLY AS IT WAS. That list exists to test set
+// bonuses, every talent tree and every damage school at once, and Player3619 is
+// seeded at 84; changing what it gets would move the ground under every browser
+// harness in the scratchpad. Below band 5 the kit is derived from the catalogue
+// instead, which is also less to maintain.
+const bandForLevel = (lvl) => Math.max(1, Math.min(5, 1 + Math.floor(lvl / 17)));
+const rarityForLevel = (lvl) => RARITY_ORDER[Math.max(1, Math.min(RARITY_ORDER.length - 1, Math.round((lvl / 68) * (RARITY_ORDER.length - 1))))];
+
+const BAND = bandForLevel(LEVEL);
+const RARITY = rarityForLevel(LEVEL);
+
+/** One item per weapon family and one per armour slot, at the right band.
+ *  Picks the strongest base at or below the target band, so a band with a gap
+ *  in the catalogue falls back rather than handing out nothing. */
+function kitForBand(band) {
+  const bases = Object.values(ITEM_BASES);
+  const pickBest = (match) => {
+    const all = bases.filter(match);
+    if (!all.length) return null;
+    const eligible = all.filter((b) => b.band <= band);
+    // Fall UP when the catalogue has nothing that low. There is no band 1 head,
+    // chest, back or boot, so a strict filter left a level 1 in a shield and a
+    // ring and nothing else — which is a worse lie than gear one band high.
+    if (!eligible.length) return all.sort((a, b) => a.band - b.band)[0];
+    return eligible.sort((a, b) => b.band - a.band)[0];
+  };
+  const out = [];
+  let firstWeapon = true;
+  for (const wt of WEAPON_TYPES) {
+    const b = pickBest((x) => x.weaponType === wt);
+    if (!b) continue;
+    out.push({ base: b.id, affixes: [], equip: firstWeapon });
+    firstWeapon = false;
+  }
+  // Straight off ITEM_SLOTS rather than typed out. Hand-writing them as
+  // "head, chest, back, feet" matched nothing at all - the real names are
+  // helm, armor, cape, boots - and a level 1 came out in a shield and a ring.
+  for (const slot of ITEM_SLOTS.filter((x) => x !== "weapon")) {
+    const b = pickBest((x) => x.slot === slot);
+    if (b) out.push({ base: b.id, affixes: [], equip: true });
+  }
+  return out;
+}
+
+const ACTIVE_KIT = BAND >= 5 ? KIT : kitForBand(BAND);
+console.log(`  kit: band ${BAND}, ${RARITY} (${ACTIVE_KIT === KIT ? "the curated endgame list" : "derived from the catalogue"})`);
+
 // A fixed generator, so two runs of this produce the same kit. The jitter in
 // `rollItem` is ±8% and nothing here is a surprise worth preserving; what a
 // repeatable seed buys is a bug report that means the same thing twice.
@@ -149,7 +213,9 @@ const insert = db.prepare(
 
 // Idempotent: clear what a previous run granted. Matched on the exact base ids
 // this tool hands out, so anything the player found or forged is left alone.
-const ids = KIT.map((k) => k.base);
+// The union of BOTH kits: re-seeding the same character at a different level
+// must not leave the previous band sitting in the bag beside the new one.
+const ids = [...new Set([...KIT, ...ACTIVE_KIT].map((k) => k.base))];
 const cleared = db
   .prepare(
     `DELETE FROM items WHERE characterId = ? AND baseId IN (${ids.map(() => "?").join(",")})`,
@@ -164,7 +230,7 @@ const cleared = db
 // takes whichever the query returns first, which is a coin flip that would have
 // looked like "the seed sometimes does not work".
 const fillSlots = [
-  ...new Set(KIT.filter((k) => k.equip).map((k) => ITEM_BASES[k.base]?.slot).filter(Boolean)),
+  ...new Set(ACTIVE_KIT.filter((k) => k.equip).map((k) => ITEM_BASES[k.base]?.slot).filter(Boolean)),
 ];
 const unequipped = db
   .prepare(
@@ -175,13 +241,13 @@ const unequipped = db
 
 let equippedWeapon = null;
 const granted = [];
-for (const entry of KIT) {
+for (const entry of ACTIVE_KIT) {
   const base = ITEM_BASES[entry.base];
   if (!base) {
     console.error(`  ! no such base item "${entry.base}" — skipped`);
     continue;
   }
-  const rolled = rollItem(base, "enchanted", rand, undefined, entry.affixes);
+  const rolled = rollItem(base, RARITY, rand, undefined, entry.affixes.length ? entry.affixes : undefined);
   const equip = entry.equip ? 1 : 0;
   if (equip && base.weaponType) equippedWeapon = base.weaponType;
   insert.run(
@@ -207,11 +273,30 @@ for (const entry of KIT) {
 // Attributes are spent rather than left as points, because an unspent pool is a
 // character who still cannot hit anything — and the whole reason to seed is to
 // skip that. A few points are left over so the spend screen is testable too.
-const STR = 40;
-const AGI = 40;
-const VIT = 40;
-const INT = 40;
-const SPARE_POINTS = 10;
+// SPENT OUT OF WHAT THE LEVEL ACTUALLY EARNED, not a flat 40 each.
+//
+// This was `const STR = 40` and so on regardless of `--level`, which made a
+// "level 1" with 160 attribute points, 250hp and every weapon tree at the cap —
+// a level 84 wearing a level 1 badge. That is not a control for anything, and
+// it is why M70.130 had to forge its own weapon through the UI to get a fair
+// armed low-level character.
+//
+// Attributes start at 0 and a level is worth STAT_POINTS_PER_LEVEL, so a level
+// N character has earned (N-1)*3. Spread evenly, with a few held back so the
+// spend screen is still testable — which was the original reason for the spare.
+// Supplies in proportion as well: nine thousand of every material at level 1
+// makes the forge gate untestable, which is the exact thing a low-level seed
+// exists to exercise.
+const MATS = LEVEL >= 40 ? 9999 : 40 + LEVEL * 20;
+const RARE_MATS = LEVEL >= 40 ? 999 : Math.floor(LEVEL / 4);
+const CONSUMABLES = LEVEL >= 40 ? 50 : Math.max(2, Math.floor(LEVEL / 2));
+const EARNED = Math.max(0, (LEVEL - 1) * STAT_POINTS_PER_LEVEL);
+const SPARE_POINTS = Math.min(10, Math.floor(EARNED / 8));
+const SPEND = EARNED - SPARE_POINTS;
+const STR = Math.floor(SPEND / 4);
+const AGI = Math.floor(SPEND / 4);
+const VIT = Math.floor(SPEND / 4);
+const INT = SPEND - STR - AGI - VIT;
 
 db.prepare(
   "UPDATE characters SET level = ?, xp = 0, statPoints = ?, strength = ?, agility = ?," +
@@ -225,14 +310,14 @@ db.prepare(
   VIT,
   INT,
   maxHpForLevel(LEVEL, VIT),
-  9999,
-  9999,
-  9999,
-  999,
-  999,
-  999,
-  50,
-  50,
+  MATS,
+  MATS,
+  MATS,
+  RARE_MATS,
+  RARE_MATS,
+  RARE_MATS,
+  CONSUMABLES,
+  CONSUMABLES,
   classForWeapon(equippedWeapon),
   character.id,
 );
@@ -241,8 +326,12 @@ db.prepare(
 // the total the curve asks for rather than a big round number, because the
 // interface shows progress WITHIN the level and a character carrying nine
 // thousand spare points into level 20 would render as a full bar forever.
+// Weapon trees scale with the character too. A level 1 with every tree at 20
+// has twenty talent points per weapon and nothing a real level 1 could spend
+// them on, which is the same lie the attributes were telling.
+const TREE_LEVEL = Math.max(1, Math.min(MAX_WEAPON_LEVEL, Math.round((LEVEL / 68) * MAX_WEAPON_LEVEL)));
 let capXp = 0;
-for (let level = 1; level < MAX_WEAPON_LEVEL; level++) capXp += weaponXpToNext(level);
+for (let level = 1; level < TREE_LEVEL; level++) capXp += weaponXpToNext(level);
 const setProgress = db.prepare(
   "INSERT INTO weapon_progress (characterId, weaponType, xp) VALUES (?,?,?)" +
     " ON CONFLICT(characterId, weaponType) DO UPDATE SET xp = excluded.xp",
@@ -257,9 +346,9 @@ const spentRanks = db
 
 console.log(`\nSeeded "${character.name}" (${character.id.slice(0, 8)})`);
 console.log(`  level ${LEVEL}, ${STR}/${AGI}/${VIT}/${INT} + ${SPARE_POINTS} unspent`);
-console.log(`  ${maxHpForLevel(LEVEL, VIT)} hp, materials topped up, 50 potions, 50 tonics`);
+console.log(`  ${maxHpForLevel(LEVEL, VIT)} hp, ${MATS} of each material, ${CONSUMABLES} potions, ${CONSUMABLES} tonics`);
 console.log(
-  `  every weapon tree at level ${MAX_WEAPON_LEVEL} — ${MAX_WEAPON_LEVEL} points each,` +
+  `  every weapon tree at level ${TREE_LEVEL} — ${TREE_LEVEL} points each,` +
     ` ${spentRanks} rank(s) already spent`,
 );
 if (cleared > 0) console.log(`  cleared ${cleared} item(s) from a previous seed`);

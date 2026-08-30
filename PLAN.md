@@ -18297,3 +18297,43 @@ a live target at bow range — which needs `seed.mjs` to be able to make a
 genuinely low-level character first.
 
 Suite 38/38.
+
+**Phase 70 M70.137 — `--level` now means something.** `tools/seed.mjs --level N`
+set the level column and nothing else: every run granted the same Enchanted
+band-5 endgame kit, 40 in every attribute, 250hp and every weapon tree at the
+cap. `--level 1` produced a level 84 wearing a level 1 badge.
+
+That is not a curiosity. It blocked two investigations in this session alone —
+M70.130 wanted a fair armed low-level control and had to forge a weapon through
+the game's own UI to get one, and M70.136 needed a character that could hold a
+live target at bow range to measure the retreat rule and could not be built at
+all. Recorded as an open item twice; fixed here.
+
+Everything now follows the level. Gear band is one per seventeen levels (1 at
+level 1, 5 from 68, which is how the world itself is banded); rarity walks the
+same span from Worn; attributes are spent out of the `(level-1) *
+STAT_POINTS_PER_LEVEL` a character has actually earned rather than a flat 40;
+hit points, weapon-tree level, materials and consumables follow too. Below band
+5 the kit is derived from the catalogue rather than hand-listed, which is also
+less to maintain.
+
+**THE TOP OF THE RANGE IS UNTOUCHED, ON PURPOSE.** From level 68 it is the same
+curated list item for item — that list exists to test set bonuses, every talent
+tree and every damage school at once, and Player3619 is seeded at 84, so
+changing it would move the ground under every browser harness. Verified by
+re-seeding: the same 22 items with the same rolls. The one difference is
+attributes, 40/40/40/40 -> 59/59/59/62, which is the 249 points a level 84 has
+genuinely earned.
+
+Two bugs of my own on the way, both caught by looking at the output rather than
+at the exit code. The slot list was hand-typed as "head, chest, back, feet" when
+the real names are `helm, armor, cape, boots`, so the first level 1 came out in
+a shield and a ring and nothing else; it reads `ITEM_SLOTS` now. And a strict
+`band <= target` filter finds nothing for those slots at band 1 because the
+catalogue has no band-1 armour, so it falls UP to the lowest available rather
+than granting nothing.
+
+A level 1 is now a believable beginner: Worn Recruit's Blade, one of every
+weapon family, a full set of rags, 0/0/0/0 attributes, 50hp, trees at 1 — and a
+Worn Hunter's Bow, which is exactly the character M70.136 could not make. Suite
+38/38.
