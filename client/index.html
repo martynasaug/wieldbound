@@ -1844,12 +1844,29 @@
         max-width: 62ch;
       }
 
+      /* A line the situation adds under what the person actually said — set
+         apart so it never reads as words out of their mouth. */
+      .dlg-aside {
+        margin-top: 9px;
+        padding-left: 10px;
+        border-left: 2px solid rgba(201, 141, 94, 0.55);
+        color: #c9a87a;
+        font-size: 13px;
+        font-style: italic;
+        line-height: 1.5;
+      }
+
       #dialogue-options {
         display: flex;
         flex-direction: column;
         gap: 2px;
         padding: 0 10px 11px;
-        max-height: 34vh;
+        /* Cabel offers seven quests plus three topics plus Goodbye, and at 34vh
+           the last two rows sat below the fold with nothing to say they were
+           there — the list scrolls, but a scrollbar that only appears on hover
+           is not an affordance a new player will find. Enough height for the
+           longest list in the game, still scrolling on a short window. */
+        max-height: 44vh;
         overflow-y: auto;
       }
       .dlg-option {

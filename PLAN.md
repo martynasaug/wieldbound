@@ -17937,3 +17937,67 @@ else — works end to end, and the crafting system has no undriven path left.
 No bugs found. Recorded because "the panel lists it" was standing in for "the
 button works" in this file, and those are different claims.
 Suite 38/38.
+
+**Phase 70 M70.130 — the first hour, and the sentence the opening was
+missing.** Every test in this session so far had used Player3619: level 84,
+fully geared, killing anything in one swing. A brand-new character walks
+completely different code, so this drove the actual opening — spawn, first
+quest giver, first camp — and found that a new player cannot get out of it.
+
+The quest machinery is fine, and that took three wrong tests to establish. The
+first went to the Herald, whose chain starts at level 5, and read the correctly
+greyed rows ("level 5", `after "Thin Them Out"`) as a bug. The second clicked a
+quest row ONCE and reported the tracker never filled, when accepting is two
+steps: the row shows the brief, "I'll do it." sends it. The third counted kills
+off a tracker it had never managed to fill. A fourth called `lockTarget()` and
+`setTarget()` — neither exists — then pressed Tab, so it swung at whichever
+slime Tab chose while watching a different one, and reported four survivors out
+of six. Reading `lockedId` off the game instead: slimes died in 11.2s, 15.3s and
+43.8s. Every one of those was the test being wrong before the game was, which is
+the M70.97 lesson arriving from the other direction — a harness that lies
+green is bad, and one that lies red costs just as much.
+
+WHAT IS ACTUALLY WRONG. A new character spawns with 20 wood, 20 ore, 15 herb
+and NOTHING IN THEIR HANDS. Fists are 1-3 a swing (0.6x family multiplier) with
+one swing every 1180ms and 47% to hit against a slime's evasion — one slime, one
+on one, dies in about twenty seconds, and that much is fine. But the first camp
+does not come one at a time: measured over eight minutes, 2.84 slimes were on
+the player AT ONCE, worst 3. Driven for 480s, a bare-handed level 1 killed ONE
+of the four "Thin Them Out" asks for and sat pinned at 1/60 health the whole
+time. The first quest in the game is not completable the way the game hands it
+to you.
+
+And the answer was always sitting there: an Arming Sword costs 4 wood and 8 ore
+against the 20/20 you start with. Nothing anywhere says so. Worse, Warden Cabel
+opened with "You are armed and you are standing still" — the game asserting the
+one thing that is not true about you.
+
+So, no gate and no balance change: the people who send you out now NOTICE.
+`DialoguePanel.open` takes an optional aside, rendered under their own words in
+italic behind a rule so it never reads as something they said, and cleared by
+`say` since an action that speaks has moved the conversation past what the aside
+was commenting on. Cabel's greeting drops the false claim ("You are standing
+still, and I can fix that"), and an empty-handed character talking to any quest
+giver is pointed at Tobin and the anvil.
+
+THE CONTROL, because "it should help" is not a measurement. Same camp, same
+pressure — avg 2.78 slimes on the player armed against 2.84 unarmed:
+
+    unarmed   1 of 4 slimes in 480s, health pinned at 1/60
+    armed     4 of 4 slimes in 218s, 0 deaths
+
+The whole loop was driven through the real UI: walk to the bench, Forge tab,
+forge an Apprentice's Staff (wallet 20/20 -> 16/12), equip it, take the quest,
+clear the camp. Cabel stops mentioning it the moment you are carrying something.
+
+Two more things, both found by LOOKING at the screenshot after the assertions
+had already gone green. The aside sat directly under "You are armed", which is
+how the greeting got fixed rather than merely papered over. And Cabel's option
+list — seven quests, three topics, Goodbye — was clipped at `max-height: 34vh`
+with "Goodbye." below the fold and nothing to say it was there; a scrollbar that
+appears on hover is not an affordance a new player finds. 44vh.
+
+Recorded and not fixed: `tools/seed.mjs --level 1` still hands out enchanted
+endgame gear, so it cannot produce a fair low-level control — the armed run
+above had to forge its own weapon through the UI, which was the better test
+anyway. Suite 38/38.

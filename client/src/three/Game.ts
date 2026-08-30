@@ -3502,7 +3502,7 @@ export class Game {
     const dy = this.playerY - npc.y;
     const len = Math.hypot(dx, dy) || 1;
     npc.actor.faceDirection(dx / len, dy / len);
-    this.dialogue.open(npc.def, this.dialogueActionsFor(npc));
+    this.dialogue.open(npc.def, this.dialogueActionsFor(npc), this.unarmedAside(npc));
   }
 
   /**
@@ -3512,6 +3512,32 @@ export class Game {
    * themselves. The list is built fresh on every open so it reflects the bag
    * and the level as they are now.
    */
+  /**
+   * The sentence the opening of the game was missing.
+   *
+   * A new character spawns with nothing in their hands, and the first camp
+   * aggros about three slimes at once — measured at 2.84 on the player on
+   * average, which bare fists (1-3 a swing against 15hp, one swing every
+   * 1.18s) cannot beat: eight minutes of driven play killed one slime of the
+   * four the first quest asks for and sat pinned at 1/60 health. Armed, the
+   * same fight is straightforward — an Arming Sword costs 4 wood and 8 ore and
+   * a new character starts with 20 of each, so the answer was always there and
+   * nothing ever pointed at it. Worse, Cabel opens with "You are armed and you
+   * are standing still", which is the game asserting the very thing that is
+   * not true.
+   *
+   * So the people who send you out say something when you are empty-handed.
+   * No gate and no balance change: the fight is winnable the moment you are
+   * carrying anything, and this is the game noticing that you are not.
+   */
+  private unarmedAside(npc: NpcVisual): string | null {
+    if (equippedBySlot(this.items).weapon) return null;
+    if (npc.def.role !== "quest") return null;
+    return "You are carrying nothing. Tobin Ash keeps the anvil by the workbench " +
+      "and you have wood and ore enough for a blade — go and get something in your " +
+      "hands before you take work off me.";
+  }
+
   private dialogueActionsFor(npc: NpcVisual): DialogueAction[] {
     const actions: DialogueAction[] = [];
 

@@ -62,8 +62,18 @@ export class DialoguePanel {
     return this.isOpen ? (this.npc?.id ?? null) : null;
   }
 
-  open(npc: TownNpc, actions: DialogueAction[]): void {
+  /** A line the SITUATION adds to what this person says, under their own
+ *  words and in a quieter colour. Set per-open rather than stored on the
+ *  npc, because it is a fact about the player, not about them: a watch
+ *  captain greeting you with "you are armed" while you are empty-handed is
+ *  the game failing to notice the one thing its whole premise is about.
+ *  Cleared by `say`, since an action that speaks has moved the conversation
+ *  past the greeting the aside was commenting on. */
+  private aside: string | null = null;
+
+  open(npc: TownNpc, actions: DialogueAction[], aside: string | null = null): void {
     this.npc = npc;
+    this.aside = aside;
     this.actions = actions;
     this.portrait.innerHTML = iconSvg(npc.icon);
     this.portrait.className = `dlg-portrait role-${npc.role}`;
@@ -83,6 +93,7 @@ export class DialoguePanel {
   /** Replaces the spoken paragraph. Used when an action wants to say something
    *  back — "Taken. Come and see me when it is done." */
   say(text: string): void {
+    this.aside = null;
     this.bodyEl.textContent = text;
     this.renderOptions();
   }
@@ -97,6 +108,12 @@ export class DialoguePanel {
   private showGreeting(): void {
     if (!this.npc) return;
     this.bodyEl.textContent = this.npc.greeting;
+    if (this.aside) {
+      const el = document.createElement("div");
+      el.className = "dlg-aside";
+      el.textContent = this.aside;
+      this.bodyEl.appendChild(el);
+    }
     this.renderOptions();
   }
 

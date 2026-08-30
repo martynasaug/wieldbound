@@ -1138,7 +1138,7 @@ export const TOWN_NPCS: TownNpc[] = [
       { radiusPx: 452, angleDeg: 60, facingDeg: 250, dwellMs: 5000 },
     ],
     greeting:
-      "You are armed and you are standing still. I can fix the second of those. The watch has " +
+      "You are standing still, and I can fix that. The watch has " +
       "work, and the watch pays.",
     topics: [
       {
