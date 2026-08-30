@@ -18458,3 +18458,44 @@ without any engine help by boxing meshes from `geometry.boundingBox` through
 `matrixWorld` and testing point containment. It turned "that frame looks wrong"
 into "blocked at 1.2 inside three town meshes", which is what made the real
 cause findable.
+
+**Phase 70 M70.141 — the occluder fade was fading one panel of a building.**
+M70.140 raised the camera's wall floor on the strength of two captures, so this
+swept the town properly: a ring pattern of twenty-five stops over the built-up
+area, reporting at each how far the camera actually sat and whether it ended up
+inside a solid town mesh. Six or seven stops have the camera blocked by
+something, which is expected in a town. Two were still unusable.
+
+**WHAT THOSE TWO LOOKED LIKE.** The frame is filled edge to edge with the
+opaque inside of a building, the character a faint outline in the middle of it.
+The fade exists precisely for this, so the question was why it was not helping.
+Measured rather than guessed: fifteen occluder candidates, and exactly **ONE**
+material faded.
+
+`fadeOccluders` faded `hit.object`'s materials and nothing else. A tree is one
+mesh, so that looked correct for years. A BUILDING is many — walls, roof, trim,
+each with its own material — and a ray can only ever touch one of them, so one
+panel went translucent and the rest of the same building stayed solid across the
+whole screen. It now walks up to whichever candidate root owns the mesh that was
+hit and fades everything under it. Faded materials at that spot: 1 -> 19, and
+the capture shows the paving through the wall with the character and their bow
+clearly readable.
+
+It cannot reach further than it should: the walk stops at the first ancestor
+that is in `occluderCandidates`, which is already the list of things allowed to
+fade, so this is the same objects all the way through rather than one panel
+deep. At the square, with nothing blocking, faded materials stay 0.
+
+**A WRONG GUESS ALONG THE WAY, REVERTED.** Before measuring I reasoned that a
+camera INSIDE a wall exits through the wall's inner face, that the face is
+back-facing, that a Raycaster honours `material.side`, and therefore that the
+wall could never be reported — so I reversed the ray to cast from the player
+toward the camera. It typechecked, it was plausible, and the capture afterwards
+was identical: still one opaque wall. `FADED 1` is what settled it — something
+WAS being found, so the direction was never the problem. Reverted.
+
+Also recorded: the "is the player inside a building" column added to the sweep
+is junk and was ignored. It tests X and Z only, so it reads 8-20 at every stop
+including the healthy town centre, where a wide flat mesh contains the player's
+footprint without containing the player. The camera column tests Y as well,
+which is why that one means something. Suite 38/38.

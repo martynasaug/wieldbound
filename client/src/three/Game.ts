@@ -4886,19 +4886,43 @@ export class Game {
     this.refreshOccluderCandidates(actor.position.x, actor.position.z);
     const blockers = this.raycaster.intersectObjects(this.occluderCandidates, true);
 
+    // FADE THE WHOLE OCCLUDER, NOT THE ONE PANEL THE RAY TOUCHED.
+    //
+    // This used to fade `hit.object`'s materials alone. A tree is one mesh so
+    // that looked right, but a BUILDING is many — walls, roof, trim, each with
+    // its own material — and the ray only ever touches one of them. Measured at
+    // the north-east corner of town, where a building forces the camera to its
+    // floor: fifteen occluder candidates, exactly ONE material faded, and the
+    // screen still filled edge to edge with the opaque rest of the same
+    // building. The character was a faint outline in the middle of it.
+    //
+    // So walk up to whichever candidate root owns the mesh that was hit and
+    // fade everything under it. The candidate list is already the set of things
+    // allowed to fade, so this cannot reach past it and turn the town
+    // translucent — it is the same objects, all the way through instead of one
+    // panel deep.
+    const fadeTree = (root: THREE.Object3D) => {
+      root.traverse((c) => {
+        const mesh = c as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          if (!m) continue;
+          const base = (m.userData.baseOpacity as number) ?? 1;
+          m.transparent = true;
+          m.opacity = base * 0.2;
+          // Without this the faded trunk still writes depth and punches a
+          // player-shaped hole in whatever is behind it.
+          m.depthWrite = false;
+          this.fadedMaterials.add(m);
+        }
+      });
+    };
+    const candidates = new Set(this.occluderCandidates);
     for (const hit of blockers) {
-      const mesh = hit.object as THREE.Mesh;
-      if (!mesh.isMesh) continue;
-      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const m of mats) {
-        const base = (m.userData.baseOpacity as number) ?? 1;
-        m.transparent = true;
-        m.opacity = base * 0.2;
-        // Without this the faded trunk still writes depth and punches a
-        // player-shaped hole in whatever is behind it.
-        m.depthWrite = false;
-        this.fadedMaterials.add(m);
-      }
+      if (!(hit.object as THREE.Mesh).isMesh) continue;
+      let owner: THREE.Object3D | null = hit.object;
+      while (owner && !candidates.has(owner)) owner = owner.parent;
+      fadeTree(owner ?? hit.object);
     }
     this.raycaster.far = Infinity;
   }
