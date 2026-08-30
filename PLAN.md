@@ -18566,3 +18566,35 @@ yet. The run then spent seven minutes hunting for a quest it had never taken.
 that was about one NPC having more to say than another.
 
 Suite 38/38.
+
+**Phase 70 M70.144 — checking the fade fix for the failure it could plausibly
+have caused.** M70.141 made the occluder fade flip `transparent` on every
+material under an occluder rather than on the one panel a ray touched: 1 to 19
+materials at the spot it was measured. `transparent` is part of a program's
+cache key — it flips `#define OPAQUE` — so if any of those variants had not been
+built under the loading screen, walking past a building would now compile them
+INSIDE a frame. That is the exact failure class this phase was mostly spent on,
+and it is a risk I introduced, so it gets measured rather than assumed.
+
+Three laps hugging the ring of buildings at 340px, sampling the renderer at
+every stop:
+
+    programs    129 -> 129   (+0, and +0 after each individual lap)
+    geometries  331 -> 331
+    the fade fired up to 19 materials at once
+
+**No new programs.** `warmFadedOccluders` warms decor, buildings and nodes in
+their see-through state, and it covers what the wider fade now touches. The
+change is free on the axis that could have made it expensive.
+
+Two things NOT claimed from this run. Textures went 224 -> 233 over the three
+laps; that is small, it did not repeat per lap, and it reads as first-visit
+loads rather than drift, but it is nine and not zero and is written down rather
+than rounded away. And the frame numbers — p50 16.6ms, p95 18.9ms, p99 215.8ms,
+max 305.4ms — are NOT a frame-time result: this run drives `travelTo` between
+every sample, and PLAN has recorded since M70.100 that a p99 in that range is
+the fixed cost of being driven rather than anything the game does. The p50 of
+16.6ms is headless vsync at 60Hz, not a measurement of the frame budget either.
+The only number this run is entitled to report is the program count.
+
+Suite 38/38.
