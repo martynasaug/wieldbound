@@ -18372,3 +18372,47 @@ real measurement behind it. The character to make that measurement with now
 exists, which was the point.
 
 Suite 38/38.
+
+**Phase 70 M70.139 — all six quest objective kinds now driven end to end.** The
+game has six: `kill`, `reach`, `slay`, `gather`, `forge`, `salvage`. `kill` and
+`reach` were done in M70.130 and M70.132. Marda Quill's chain is three of the
+remaining four in order and low-level enough for one character, so it went in
+one run: gather 30 wood, gather 40 herb, forge 2, salvage 3. Each is credited
+from a DIFFERENT place in the server — the gather tick, the forge handler, the
+salvage handler — so this is three separate funnels into `advanceQuests` rather
+than one path walked three times.
+
+All three credit and all three pay. No defects. Full chain: 30/30 wood, 40/40
+herb (100xp, 50 wood, 40 ore), 2/2 forged (160xp), 3/3 salvaged (240xp), tracker
+empty at the end, level 20 -> 22, zero console errors. Only `slay` is left, and
+it needs a weapon of a particular school against a particular monster.
+
+THE GAME WAS FINE AND THE HARNESS WAS WRONG, THREE TIMES.
+  * `g.nodes` maps id -> the THREE.Group that DRAWS a node, not the node. The
+    data is `nodeStates`. Exactly the same trap as `g.stations` in M70.130, and
+    I fell into it again.
+  * `nodeStates.kind` is the PROP — `bush`, `tree`, `rock` — not the resource,
+    so filtering for `"herb"` matched nothing and the run stood in a field for
+    three minutes gathering zero. bush = herb.
+  * `walkTo` alone gives up on a long hop: it ended 366px from a bush that was
+    available, with no attack order standing, so the gather never had a chance
+    and the run read as "gathering does not credit". `travelTo` first, then
+    `walkTo`, and all twelve bushes come out 5-16px away.
+
+Worth keeping from that last check: the near bushes yield 2 herb and the far
+ones yield 8. `gatherYieldFor(bandAt(node.x, node.y), ...)` working exactly as
+designed, and the first direct confirmation that walking further out pays.
+
+A test that fails because the character is mid-quest is also the test being
+wrong: the first re-run reported six failures for a character that simply
+already held one of the four. Taking a quest now treats "already in hand" as
+taken, and a completed first link as a skip.
+
+RECORDED, NOT FIXED: the camera sits INSIDE town scenery at the workbench. The
+salvage screenshot is half filled with the near-plane inside of a crate, split
+by a hard vertical seam where two backfaces meet, and `fadeOccluders` has not
+faded it. The same thing happened against Warden Cabel in M70.130's first
+capture. Both are the player standing among close props in town, so the camera
+has nowhere to retreat to and the fade is not catching the object it is inside.
+Not chased here — it wants its own pass with the camera rig rather than a note
+at the end of a quest milestone. Suite 38/38.
