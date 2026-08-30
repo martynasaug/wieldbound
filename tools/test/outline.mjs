@@ -63,10 +63,18 @@ section("2. swapping armour must not strip the whole figure");
   // them — but the outline and silhouette materials belong to the ACTOR and are
   // shared by every hull it owns. Disposing one because a breastplate changed
   // would take the outline off everything until the next full body rebuild.
-  const clear = actor.slice(
-    actor.indexOf("private clearGear("),
-    actor.indexOf("private clearGear(") + 1400,
-  );
+  // TO THE END OF THE METHOD, not a fixed number of characters.
+  //
+  // This sliced 1400 characters from the declaration, which silently stops
+  // guarding the moment anybody writes a long enough comment inside the
+  // method — and that is exactly what happened: M70.146 added a note above the
+  // disposal loop, the guards it checks for slid past the window, and three
+  // checks failed while the code they describe was untouched and correct. A
+  // test whose reach depends on comment length is a test that reports edits
+  // rather than defects.
+  const start = actor.indexOf("private clearGear(");
+  const after = actor.indexOf("\n  private ", start + 1);
+  const clear = actor.slice(start, after === -1 ? actor.length : after);
   check(
     "clearGear skips the shared outline material",
     /m === this\.outlineMaterial/.test(clear),

@@ -18643,3 +18643,56 @@ which means every soak this file has ever recorded was measuring first sight and
 could not have caught a per-revisit leak at all.
 
 Suite 38/38.
+
+**Phase 70 M70.146 — the geometry climb is a REAL leak, one ownership gap is
+closed, and it is not the one that matters.** M70.145 left the trend unsettled
+because `long.mjs`'s default barely covers one lap. A 44.5-minute run, 2047
+fights, four laps settles it:
+
+    geometries  337 -> 409   (+72, 1.6/min, NEVER converging)
+    programs    130 -> 130   (+0)
+    heapMB      132.6 -> 124.9  (-7.7)
+    domNodes    770 -> 750   (-20)
+
+Heap FALLS, DOM falls, programs never move, and the geometry counter climbs in a
+straight line at the same rate a sixteen-minute run measured (1.9/min). That is
+the M70.100 shape exactly, and it is the only counter that shows it.
+
+**NAMING THE THINGS INSTEAD OF COUNTING THEM.** A census walks the scene,
+records every geometry by uuid with its owner, does a lap, and censuses again.
+The renderer's count and the scene's count are tracked separately, because the
+gap between them IS the leak — a geometry the renderer still holds that the
+scene no longer references. Lap 2: scene -2, renderer +14, **detached-but-held
++16**, and the new owners were all `held_*` — the weapons monsters carry.
+
+**THE OWNERSHIP GAP, FIXED.** `Actor.clearGear` disposed materials and left
+geometries. Two of the three gear paths make a NEW geometry (`build` generates
+one, `fitToGrip` clones the donor before rotating and scaling); the `rig:` path
+shares the prototype's, and disposing that would blank the weapon for every
+actor holding one. So `gear.ts` marks ownership where the decision is real and
+`clearGear` disposes only what is marked. Verified safe: four camps driven,
+every `held_*` mesh in the scene still has geometry with attributes, zero
+console errors, and the capture shows gear, crits and floaters all drawing.
+
+**IT DID NOT FIX THE LEAK, AND THAT IS THE HEADLINE.** A matched sixteen-minute
+soak after the change: geometries +32 at 2.1/min, against +29 at 1.9/min before.
+No improvement. The census's `detached-but-held` went 16 -> 9, which is why I
+believed it for an hour, but that metric moves with how many monsters happen to
+be alive at the two sample moments and the soak rate does not. The soak is the
+instrument; the census is a lead generator.
+
+The change is KEPT rather than reverted, and the distinction from the reverted
+ray-reversal and retreat guard is deliberate: those changed behaviour with no
+demonstrated benefit, while this frees resources that were otherwise never freed
+at all. It is a correct ownership fix that is not the dominant source. **THE
+LEAK IS OPEN.** Not held gear. Body geometry is deliberately shared with the
+cached prototype and correctly not disposed; skeletons were already fixed. The
+next thing to try is the census pointed at the renderer's own geometry set
+rather than the scene's, so detached geometries can be named rather than only
+counted.
+
+Also fixed: `outline.mjs` sliced 1400 characters from `private clearGear(` to
+find its guards, so the comment above marched them out of the window and three
+checks failed against untouched, correct code. It slices to the end of the
+method now. Confirmed still sharp by deleting the real guard and watching all
+three fail. Suite 38/38.

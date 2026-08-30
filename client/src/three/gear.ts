@@ -741,6 +741,24 @@ async function makeHeldItem(
   }
   if (!mesh) return null;
 
+  // WHO OWNS THIS GEOMETRY, decided here rather than guessed at teardown.
+  //
+  // Two of the three branches above make a NEW geometry: `build` generates one,
+  // and `fitToGrip` clones the donor before rotating and scaling it. The `rig:`
+  // branch does not — it hands the prototype's own geometry straight to the
+  // mesh, shared with every other actor carrying that weapon and with the
+  // loaded model itself. Disposing that one would blank the weapon for
+  // everybody at once.
+  //
+  // `Actor.clearGear` disposed materials and left geometries, so every piece of
+  // gear ever built stayed in the renderer after its mesh was detached.
+  // Measured over 44.5 minutes of driven play: geometries +72 at a steady
+  // 1.6/min that never converged, while heap, DOM and program counts were all
+  // flat. A census of the scene named the owners — held_adderfang,
+  // held_recurve, held_kiteshield and the rest. This flag is what lets the
+  // teardown dispose the clones and leave the shared ones alone.
+  mesh.geometry.userData.ownedByActor = !base.art.model?.startsWith("rig:");
+
   // Everything that was NOT harvested off the rig still needs the rig's own
   // grip transform, or it hangs in world space beside the character.
   if (!base.art.model?.startsWith("rig:")) {

@@ -1586,12 +1586,32 @@ export class Actor {
     for (const object of [...this.held, ...this.worn]) {
       if (!object) continue;
       const mats = new Set<THREE.Material>();
+      // GEOMETRIES TOO, WHICH THIS USED TO LEAVE BEHIND.
+      //
+      // Materials were disposed here and geometries were not, so every piece of
+      // gear ever built stayed alive in the renderer once its mesh was
+      // detached. It is a slow leak and it hid well: over 44.5 minutes and 2047
+      // fights, heap FELL, DOM fell and the program count never moved, while
+      // `renderer.info.memory.geometries` climbed +72 at a flat 1.6/min and
+      // never converged — which is exactly the shape M70.100 warns about, and
+      // the only counter that showed it.
+      //
+      // Only what this actor OWNS. `gear.ts` marks that at the point the
+      // decision is real: a generated or `fitToGrip`-cloned geometry belongs to
+      // this mesh, while one harvested off a `rig:` prototype is shared with
+      // every other actor holding that weapon, and disposing it would blank the
+      // weapon for all of them. Silhouette ghosts and outline hulls share the
+      // gear's geometry too, but they are CHILDREN of it and leave with it, so
+      // they hold no reference once this traverse is done.
+      const geos = new Set<THREE.BufferGeometry>();
       object.traverse((c) => {
         const mesh = c as THREE.Mesh;
         if (!mesh.isMesh) return;
         for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) mats.add(m);
+        if (mesh.geometry?.userData.ownedByActor) geos.add(mesh.geometry);
       });
       object.removeFromParent();
+      for (const g of geos) g.dispose();
       for (const m of mats) {
         // NOT THE SHARED PASSES. Gear now carries outline hulls (see `rimFor`),
         // and those are children of the gear meshes, so this traverse finds
