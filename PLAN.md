@@ -18255,3 +18255,45 @@ standing-still half is sound and always was. All of it is written into the file
 so the next person does not re-derive it.
 
 Suite 38/38.
+
+**Phase 70 M70.136 — an asymmetry in the retreat rule, found, written down, and
+NOT changed, because it could not be demonstrated.** M70.135 turned up that
+`useDefaultAttack` has no `isRetreating` guard — only the automatic swing loop
+has one. So the bug the rule was added for ("a character sprinting one way while
+damage numbers came off something the other way") still reproduces for anyone
+holding the attack key while backing off. That reads like a clear gap, and the
+fix is four lines beside the guard the loop already runs.
+
+I wrote it, it typechecked, and then I could not show it mattered. Recorded in
+full because the attempt is the useful part:
+
+  * **Melee has almost no window.** The player moves at ~198px/s and nothing in
+    the game is faster, so a character who turns and runs is out of reach in
+    about 220ms — measured as 1-2 in-reach ticks out of 51 with a sword against
+    a dragon. A swing interval is longer than that, so usually no blow is even
+    due while the rule would apply.
+  * **A BOW should be the real case** — a kiting archer stays in reach the whole
+    time they back off, which is exactly the reported complaint. But a level 40
+    Fighter with a bow kills the target during the control window: 1,036, then
+    493, then 200 damage in windows shortened to 2.5s and then 900ms, and the
+    target died in every one. `nearest()` then silently pointed at a monster
+    across the map and reported "out of reach" on the second tick, which cost
+    another two runs to notice.
+  * A character weak enough to leave the target standing cannot hold it at
+    range in the first place, and `tools/seed.mjs` still hands out endgame gear
+    at any `--level`, so there is no easy middle.
+
+So the change is REVERTED. It is principled and unverified, and it changes how
+combat answers a deliberate input — which is a design call about feel, not a
+bug fix, and not one to make on an argument alone. The same standard this
+session has applied to everything else: three load "optimisations", a day/night
+"finding" and a test that could not fail were all rejected on measurement, and
+this does not get an exemption for being small.
+
+What is now written down and was not before: the guard is on the LOOP and not on
+the PRESS, and the practical window in melee is about a fifth of a second. If
+this is ever taken up again, the way to measure it is a character that can hold
+a live target at bow range — which needs `seed.mjs` to be able to make a
+genuinely low-level character first.
+
+Suite 38/38.
