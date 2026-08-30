@@ -18499,3 +18499,34 @@ is junk and was ignored. It tests X and Z only, so it reads 8-20 at every stop
 including the healthy town centre, where a wide flat mesh contains the player's
 footprint without containing the player. The camera column tests Y as well,
 which is why that one means something. Suite 38/38.
+
+**Phase 70 M70.142 — the town sweep is not a regression check, and saying so is
+the point of this entry.** M70.141 was verified by a targeted measurement at one
+spot: walk to (8315, 6370), confirm the camera reports `blocked: true` at the
+3.2 floor, and read `fadedMaterials.size`. That reproduces every time and went
+1 -> 19 with a capture showing the paving through the wall. Good evidence.
+
+The BROAD sweep is not. Two things make it unusable as a check:
+
+  * **It cannot see the fix.** Its verdict was camera distance and bounding-box
+    containment, and the fade changes what is DRAWN, not where the camera sits —
+    so identical scores before and after. A second version scoring the frame
+    itself (largest single colour bucket over the middle of the screen) does see
+    walls, but flags the town SQUARE at 54.9% because a large paved plaza is
+    legitimately one colour. Flatness only means something paired with
+    `blocked`.
+  * **It does not reproduce the condition.** Earlier runs had 6-7 of 25 stops
+    with the camera blocked; the run after the fix had ZERO in the first fifteen
+    stops, including (8315, 6370) itself, which the targeted check reliably
+    blocks. The walk lands a few tens of pixels differently each time and a few
+    tens of pixels is the whole difference between a building being in the way
+    and not. A check that only sometimes reaches the state it is checking cannot
+    tell a fix from a coincidence.
+
+So the sweep stays a DISCOVERY tool — it is how the two bad spots were found in
+the first place, and it is good at that — and the targeted probe at known
+coordinates is the regression check. Written down because a table of twenty-five
+rows that all say "false" looks like a clean bill of health, and this one is not
+one.
+
+No code changed. Suite 38/38 as of M70.141.
