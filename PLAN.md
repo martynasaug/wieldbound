@@ -18598,3 +18598,48 @@ the fixed cost of being driven rather than anything the game does. The p50 of
 The only number this run is entitled to report is the program count.
 
 Suite 38/38.
+
+**Phase 70 M70.145 — a clean soak on everything this session changed, and one
+trend that is not settled.** Nothing had been soaked since the camera floor, the
+wider occluder fade, the dialogue aside and the quest work went in. 15.6 minutes,
+sampled every 30s, 644 fights.
+
+    programs    129 -> 129   (+0)
+    heapMB      117.3 -> 117.3   (+0)
+    domNodes    746 -> 735   (-11)
+    geometries  342 -> 371   (+29, 1.9/min)
+    textures    237 -> 247   (+10, 0.6/min)
+    invariant violations 0, console errors 0
+
+Programs, heap and DOM are the three that matter most and all three are flat.
+The wider fade compiles nothing in play over a full session, which is the same
+answer M70.144 got over three laps and is now confirmed over sixteen minutes of
+real fighting.
+
+**THE FIRST RUN OF THIS WAS RUBBISH AND SAID SO LOUDLY.** A `nohup` I thought
+had failed had in fact started, so TWO soaks drove the same character into the
+same log. The give-away was not subtle once looked at: values alternated between
+two states (prog=130/geo=363/heap=110.6 against prog=173/geo=335/heap=117.3),
+there were truncated fragments like a bare `ins` where two writers hit the file
+at once, and `fights` jumped 449 -> 621 in a thirty-second sample, which one run
+cannot do. I had already started explaining the +43 program jump as an
+auto-quality switch before checking whether the measurement was even one
+measurement. `Get-CimInstance Win32_Process` listed both, both were killed, and
+the run was redone.
+
+**THE OPEN TREND.** Geometries climb +29 over the run and textures +10, neither
+plateauing for good. That is the M70.100 leak SHAPE, so it needs settling rather
+than waving through. What this run can say: it covered one full lap of the ten
+camps plus half of a second, and the second lap's five REVISITED camps added
+about as much per camp as the first lap's ten fresh ones — which is what a leak
+looks like and not what first-sight allocation looks like. What it cannot say:
+the last ninety seconds were flat at 371, and half a lap is not enough to tell a
+slow leak from a curve that is converging.
+
+So a three-lap run is going now. The point of it is one number: whether lap
+three costs as much as lap one. Recorded here rather than left in a terminal
+because `long.mjs`'s own 20-minute default is barely ONE lap of its own circuit,
+which means every soak this file has ever recorded was measuring first sight and
+could not have caught a per-revisit leak at all.
+
+Suite 38/38.
