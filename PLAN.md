@@ -18416,3 +18416,45 @@ capture. Both are the player standing among close props in town, so the camera
 has nowhere to retreat to and the fade is not catching the object it is inside.
 Not chased here — it wants its own pass with the camera rig rather than a note
 at the end of a quest milestone. Suite 38/38.
+
+**Phase 70 M70.140 — the camera was being pushed inside the character, and the
+number that did it had a good reason and a wrong value.** M70.139 ended by
+recording a frame half-filled with near-plane backfaces and not chasing it. This
+chases it.
+
+**MEASURED FIRST, AND THE FIRST GUESS WAS WRONG.** The hypothesis was that props
+are not camera colliders — `setCameraColliders(this.town.buildings)` passes
+buildings only, so barrels, crates and the workbench cannot push the lens out.
+A probe that boxes all 117 solid town meshes by hand (THREE is not on `window`;
+the geometry's local box pushed through `matrixWorld` gives the same answer) and
+asks whether the camera position falls inside any of them says otherwise: at
+Marda's inn and at the Warden's Post the camera reports `blocked: true` at
+distance **1.2**. The collider system is working. It is the floor it works down
+to that is wrong.
+
+**WHAT 1.2 ACTUALLY LOOKS LIKE.** `CAMERA_WALL_MIN_DISTANCE` had an explicit and
+correct rationale — "in a narrow gap the choice is between a very close camera
+and no character at all, and a very close camera is the better of the two" — but
+the number was never measured against it. The field of view is 46 degrees, so
+visible height is about `0.85 * d`, and a character is roughly 1.7 units tall.
+At 1.2 the frame is barely one unit high: **the camera is inside the
+character.** The capture is half body at point-blank and half through-walls
+silhouette shattering into fragments, with no character and no world in it —
+precisely the outcome the trade was meant to avoid.
+
+3.2 gives about 2.7 units of visible height, which is the whole character with
+room, and is still far tighter than the zoom floor of 5. Re-captured at both
+spots: the character reads clearly, bow and all, the ground reads, the outline
+is clean, and at the Warden's Post the post occludes exactly as it should with
+the silhouette showing through. Where even 3.2 is too far the answer is the one
+the fade was already written for — make the wall translucent rather than push
+the lens through the player.
+
+Unblocked play is untouched: the workbench, the anvil and the square all still
+sit at the requested distance of 9 and report `blocked: false`. Suite 38/38.
+
+Worth keeping as a technique: "is the camera inside something" is answerable
+without any engine help by boxing meshes from `geometry.boundingBox` through
+`matrixWorld` and testing point containment. It turned "that frame looks wrong"
+into "blocked at 1.2 inside three town meshes", which is what made the real
+cause findable.

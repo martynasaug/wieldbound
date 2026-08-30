@@ -143,8 +143,24 @@ export const CAMERA_MIN_DISTANCE = 5;
  * how close someone likes to play — and this one is a physical constraint. In a
  * narrow gap between two buildings the choice is between a very close camera
  * and no character at all, and a very close camera is the better of the two.
+ *
+ * IT WAS 1.2, AND AT 1.2 YOU GET NEITHER.
+ *
+ * The trade above is the right one; the number was not measured against it.
+ * The field of view is 46 degrees, so the visible height at distance d is
+ * about 0.85*d — and a character is roughly 1.7 units tall. At 1.2 the frame
+ * is barely one unit high: the camera is INSIDE the character. Captured at
+ * Marda's inn and at the Warden's Post, where a building forces the camera to
+ * this floor, half the screen is the body at point-blank and the other half is
+ * the through-walls silhouette shattering. There is no character and no world
+ * in that frame, which is the outcome the trade was supposed to avoid.
+ *
+ * 3.2 gives about 2.7 units of visible height — the whole character, with room
+ * — and is still far tighter than the zoom floor of 5. Where even that is too
+ * far, the answer is the one the fade was written for: make the wall
+ * translucent rather than pushing the lens through the player.
  */
-export const CAMERA_WALL_MIN_DISTANCE = 1.2;
+export const CAMERA_WALL_MIN_DISTANCE = 3.2;
 export const CAMERA_MAX_DISTANCE = 22;
 export const CAMERA_DEFAULT_DISTANCE = 9;
 
