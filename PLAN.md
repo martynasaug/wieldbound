@@ -18045,3 +18045,54 @@ once it was true, and both "The Quiet Ones" and "As Far As The Stone" unlocked.
 Also confirmed while here: a level 1 has one talent point waiting
 (`talentPointsAtLevel(1)` is 1), the panel says "1 point", and spending it works
 — 11 nodes, classes `talent-node` and `talent-node unavailable`. Suite 38/38.
+
+**Phase 70 M70.132 — the `reach` objective walked, and a night that turned out
+to be fine.** Two investigations, one new coverage and one negative result.
+
+THE `reach` OBJECTIVE, which nothing had ever driven. Four quests — the whole
+"road out" chain — are a walk to a standing stone and nothing else, credited by
+`noteLandmarkArrival` off the position the server already holds, fired only on
+the EDGE of entering a ring so `standingAt` has to be right. Driven end to end
+on Rookie81038: took "As Far As The Stone", tracker read `The Gate Stone — 1250
+away` with a LIVE distance that counted down as I walked, `guideTargets` carried
+`gatestone`, arriving 106px from it (inside `LANDMARK_REACH_PX` 180) credited
+immediately and the log said so, and the hand-in paid 70xp + 30 wood + 30 ore
+and took the character 4 -> 5. No defects. The tracker's live range readout is
+genuinely good guidance and was better than I expected to find.
+
+`guideTargets` holds landmark IDS, not positions — the client resolves the place
+itself from the polar placement in `shared/landmarks.ts`. Worth writing down
+because two harnesses have now guessed otherwise.
+
+THE NIGHT, WHICH IS NOT TOO DARK. A frame captured at the Gate Stone at dusk was
+nearly unreadable — the wolf hitting me was a black blob and the nameplates were
+the only way to know anything was there — so I went to measure the cycle. THREE
+MEASUREMENTS IN A ROW WERE THE HARNESS AND NOT THE GAME:
+
+  1. Reading the WebGL canvas back with `drawImage` returns solid black. The
+     drawing buffer is cleared after compositing unless `preserveDrawingBuffer`
+     is set, which the game rightly does not set. Reported luminance 0 and 100%
+     near-black at every hour of the day, which should have been too neat to
+     believe. Screenshot normally and decode the PNG back inside the page.
+  2. That produced a non-monotonic curve — sunset 13, late night 47, i.e. night
+     brighter than sunset, which is not a curve any sky has. I guessed `freeze`
+     eased toward a target and built an ascending/descending two-pass check.
+  3. The two passes disagreed everywhere, and the guess was still wrong.
+     `freeze` only sets `frozen`; `update` recomputes the phase from it every
+     frame, so the sky is immediate. What moved was the SCENE: that character
+     was standing in a monster camp being chewed on, and a death respawns you in
+     the lit town mid-pass.
+
+Measured properly — open ground with nothing in it, character verified not to
+have moved on any of ten samples, three shots per hour with a worst spread of
+0.3 — the curve is monotonic midnight to noon and the range is unremarkable:
+noon 127.7, darkest 23.9 at sunset, 5.3x, and never more than 12.5% of the frame
+near-black. The night frame at 20:23 shows grass, terrain, the palisade, a slime
+and the character all plainly. NOTHING IS WRONG WITH IT. The Gate Stone frame
+was dark because a stone pillar filled the camera over dark dirt, which is one
+place, not the cycle.
+
+Recorded as disproven so nobody spends another hour on it. The wider lesson is
+the one M70.130 and M70.131 also paid for: this session has now produced more
+broken measurements than broken game code, and every one of them looked like a
+finding until it was controlled. Suite 38/38.
