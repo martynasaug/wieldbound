@@ -4466,32 +4466,25 @@ export class Game {
     this.world.render();
     this.profiler.end("render");
 
-    if (this.profiler.enabled) {
-      // Read AFTER the render, because three.js resets the per-frame counters
-      // at the start of each one — sampled before, these are last frame's.
-      const info = this.world.renderer.info;
-      // A NEW SHADER PROGRAM, IF ONE JUST GOT COMPILED. Three warming passes
-      // (M70.53's actor buffers, and the two `prewarm` calls started this
-      // session) have all been confirmed live not to be the cause of the
-      // remaining `render`-section spikes — so rather than warm a fourth
-      // thing on a guess, this answers the only question left directly:
-      // did `renderer.info.programs` — the same count the overlay already
-      // shows — actually grow on the frame that spiked. If it did, some
-      // material somewhere is still compiling cold and this says so by
-      // name-adjacent evidence (the count and how it moved) rather than by
-      // guessing which one. If it did NOT, shader compilation is eliminated
-      // as a cause entirely, the same way M70.52 eliminated the loader.
-      const programCount = info.programs?.length ?? 0;
-      // The count alone says something churns; the keys say WHAT — the
-      // string three.js hashes a material's defines into, which is what
-      // actually decides whether two materials share a program or each pay
-      // for their own. Computed every frame (cheap: at most ~70 short
-      // strings) but only ever LOGGED on the frames where the count moved,
-      // diffed against the previous frame's set rather than dumped
-      // wholesale, so a stack of ninety keys does not bury the one or two
-      // that actually changed.
-      const keys = new Set((info.programs ?? []).map((p) => p.cacheKey));
+    // DID A SHADER COMPILE ON THIS FRAME? Asked unconditionally, for the same
+    // reason `profiler.setContext` is set unconditionally: the frames worth
+    // diagnosing are the ones nobody was watching. Every render-section spike
+    // this phase has chased turned out to be a cold compile, so "did the program
+    // count move on the frame that spiked" is the single most useful fact about
+    // one — and it was only recorded with F3 held open, which is precisely when
+    // the rare spike does not happen.
+    //
+    // It costs an integer compare per frame. The expensive half, hashing every
+    // material's cache key to say WHICH program appeared, still only runs on the
+    // frames where the count actually changed.
+    //
+    // This is what let a 96ms `render` hitch in town be attributed: the count
+    // was flat at 129 across it, so for the first time in this phase a render
+    // stall was NOT a compile.
+    {
+      const programCount = this.world.renderer.info.programs?.length ?? 0;
       if (this.lastProgramCount !== null && programCount !== this.lastProgramCount) {
+        const keys = new Set((this.world.renderer.info.programs ?? []).map((p) => p.cacheKey));
         const added = [...keys].filter((k) => !this.lastProgramKeys.has(k));
         const removed = [...this.lastProgramKeys].filter((k) => !keys.has(k));
         console.warn(
@@ -4500,9 +4493,15 @@ export class Game {
             (added.length ? `\n  +added: ${added.join(" | ")}` : "") +
             (removed.length ? `\n  -removed: ${removed.join(" | ")}` : ""),
         );
+        this.lastProgramKeys = keys;
       }
       this.lastProgramCount = programCount;
-      this.lastProgramKeys = keys;
+    }
+
+    if (this.profiler.enabled) {
+      // Read AFTER the render, because three.js resets the per-frame counters
+      // at the start of each one — sampled before, these are last frame's.
+      const info = this.world.renderer.info;
       this.profiler.setLabel(
         `quality ${this.world.qualityLabel} (F4)  ·  ` +
           `${this.pacer.refreshHz.toFixed(0)}Hz display, 1 frame per ` +

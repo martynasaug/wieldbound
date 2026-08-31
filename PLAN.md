@@ -19092,3 +19092,39 @@ every previous render stall in this phase turned out to be. Not enough to act on
 and recorded so the third sample has something to join.
 
 Suite 38/38 (unchanged — no game code in this entry).
+
+**Phase 70 M70.153 — the leak fix holds, and the compile check now runs when
+nobody is watching.**
+
+**REGRESSION SOAK.** The same 21-camp, 3-lap route that produced M70.147's
+evidence, re-run after `compileSafely` and the mana fix went in:
+
+    lap 1  +22 geometries      lap 2  +1      lap 3  +1
+    27.5 minutes, 755 swings, 62/63 camps reached, 0 console errors
+
+Laps two and three at +1 each is converged — for comparison, before the fix they
+cost +19 and +13. The `fitToGrip` group the census named is now 19 held in total
+and bounded rather than climbing.
+
+**LAP 1 IS NOT COMPARABLE ACROSS THESE RUNS AND SHOULD NOT BE READ AS AN
+IMPROVEMENT.** It was +153 and +158 in the two earlier runs and is +22 here,
+which looks like a large win and is mostly an artefact of M70.149's login fix:
+the baseline probe is now taken AFTER the loading screen goes, so lap 1 no
+longer absorbs the tail of the load. Laps two and three are measured the same
+way in every run and are the honest comparison.
+
+**THE PROGRAM-COUNT CHECK IS UNCONDITIONAL NOW**, for the same reason
+`profiler.setContext` was made unconditional: the frames worth diagnosing are the
+ones nobody was watching. "Did the shader program count move on the frame that
+spiked" is the single most useful fact about a render stall — every one this
+phase has chased turned out to be a cold compile — and it was only ever recorded
+with F3 held open, which is exactly when a rare spike does not happen.
+
+It costs an integer compare per frame. The expensive half, hashing every
+material's cache key to say WHICH program appeared, still runs only on frames
+where the count actually changed. This is what allowed the two `render` hitches
+in M70.152 to be attributed at all: the count was flat at 129 across both, so for
+the first time in this phase a render stall is NOT a compile.
+
+Suite 38/38, and a 4.4-minute driven smoke after the change: 121 swings, 0
+violations, 0 console errors, programs flat at 129.
