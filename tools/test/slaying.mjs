@@ -12,7 +12,16 @@
 //
 // It needs a live server and a seeded character:
 //
-//     node tools/seed.mjs Slayer --level 40     (with the server stopped)
+//     node tools/seed.mjs Slayer --level 84     (with the server stopped)
+//
+// LEVEL 84, NOT 40, AND THE NUMBER MATTERS. This said 40 for as long as
+// `--level` set the character's level and nothing else, so every seed handed
+// out the same band-5 kit whatever number followed the flag. `--level` now
+// walks the gear band with the level — one band per seventeen levels, band 5
+// only from 68 — and the two weapons below are band 5. A Slayer seeded at 40
+// therefore has no Frostbrand and this test dies at `equip` with "no
+// frostbrand in the bag", which reads as a broken game and is a stale
+// instruction.
 //     node tools/quests-reset.mjs Slayer        (ditto, if it has been run before)
 //     npm run dev:server
 //     node tools/test/slaying.mjs Slayer

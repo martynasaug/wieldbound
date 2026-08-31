@@ -18696,3 +18696,97 @@ find its guards, so the comment above marched them out of the window and three
 checks failed against untouched, correct code. It slices to the end of the
 method now. Confirmed still sharp by deleting the real guard and watching all
 three fail. Suite 38/38.
+
+**Phase 70 M70.147 — the geometry leak is CLOSED, and it was a cache key.** Two
+sessions looked for something that failed to free memory. Nothing did. The
+counter climbed because `heldCache` was keyed on things the geometry does not
+depend on, so it stored the same shape over and over.
+
+`buildHeldItem` caches held-item prototypes under `${baseId}|${rarity}|${hand}`.
+That key is right for a prototype — materials genuinely differ by rarity, and a
+left-hand item is wrapped in a mirrored holder. The GEOMETRY differs by neither.
+`makeHeldItem` touches rarity in exactly two places, `paletteMaterial` and
+`repaint`, and both make materials; `hand` only decides whether the finished mesh
+gets a holder group around it. Seven rarities times two hands means up to
+FOURTEEN byte-identical copies of every shape, against a ceiling of 686 cached
+geometries for the 49 distinct ones this game has.
+
+**THAT CEILING IS WHY IT TOOK THREE SESSIONS.** A driven session meets new
+(base, rarity, hand) combinations at a fairly steady rate as monsters spawn
+carrying varied gear, so the counter rises in a straight line and stays nowhere
+near 686 for hours. +72 over 44.5 minutes at a flat 1.6/min that "never
+converged" is exactly what that looks like — and it is also exactly what an
+unbounded leak looks like. **The counter cannot tell those two apart, and no
+amount of watching it for longer will.** What separates them is asking what each
+surviving geometry was built FROM. Geometry is now keyed on its real inputs,
+`fit:${model}|${lay}` and `build:${name}`.
+
+**THE INSTRUMENT THAT COULD ANSWER IT.** M70.146's next lead was to census the
+renderer's set rather than the scene's, and that is directly possible: three.js
+registers an uploaded geometry by adding a 'dispose' listener to it
+(`WebGLGeometries.get`) and removes it again on disposal, so
+
+    renderer holds this geometry  ===  geometry._listeners.dispose is non-empty
+
+which is the same set `info.memory.geometries` counts, one by one instead of as
+a total. A scene walk structurally CANNOT find a leak, because a leaked geometry
+is by definition one the scene released and the renderer did not — it lives in
+the scene walk's blind spot. Patching `BufferGeometry.setAttribute` to record a
+creation stack turns each survivor from a number into a line of code, and the
+answer came back naming `fitToGrip` 46 times.
+
+**M70.146's FIX WAS UNSAFE AS WELL AS INEFFECTIVE, AND IS REVERTED.** It marked
+gear geometry `userData.ownedByActor` so `clearGear` would dispose it. But
+`buildHeldItem` hands each wielder `proto.object.clone(true)`, and three.js's
+`Mesh.copy` does `this.geometry = source.geometry` — it clones the materials and
+SHARES the geometry. So the flag was never on a per-actor copy; it sat on the
+cached prototype's geometry, and the first monster to despawn disposed a
+geometry the cache and every other wielder still held. Nothing broke visibly
+because three.js silently re-uploads a disposed geometry the next time it is
+drawn — which is also precisely why it measured as no improvement: the buffers
+came straight back. `clearGear` frees materials only now, which is the ownership
+the file's own comment always described. M70.146 kept it on the grounds that it
+"frees resources that were otherwise never freed at all"; that was wrong, and
+the reasoning was wrong in a specific way worth remembering — a change was kept
+because it sounded correct, after its own measurement said it did nothing.
+
+**THE NUMBERS.** Same harness, same 21-camp route, three laps each.
+
+                    before        after
+    lap 2           +19 geo       +4
+    lap 3           +13 geo       +2
+    fitToGrip held   50            16
+    rate            ~1.6-2.0/min  ~0.25/min and falling
+
+Lap 3 costing +2 and still declining is a bounded cache filling, not a leak.
+The remaining 32 detached-but-held geometries are the projectile pool from
+`Projectiles.prewarm`; they are constant across all three laps and correctly
+pooled rather than leaked. 63/63 camps reached, 1270 swings, zero console
+errors. Suite 38/38.
+
+**A FINDING THAT NARROWED IT FAST, RECORDED BECAUSE IT SAVED HOURS.** A control
+run that stayed in ONE camp for three minutes fought 175 fights and moved the
+geometry counter by exactly zero — flat at 334 for two and a half minutes.
+Projectiles, floaters, gear swaps, monster death and respawn all ran
+continuously and allocated nothing. That ruled out everything the previous two
+sessions suspected in three minutes, and pointed at travel.
+
+**THE HARNESS NOW LIVES IN THE REPO, at `tools/soak/`.** Three sessions running,
+each rebuilt a Playwright driver in a scratchpad directory and none of it
+survived the move to another machine; the browser binary cannot be committed but
+every hard-won fact about driving this game can be, and that was always the
+expensive half. `driver.mjs` carries the login-input blur, the before/after stuck
+detection, the closed-loop route bug and the headed/headless tradeoff, and
+`README.md` carries the list of mistakes so a fourth session does not repeat
+them. `soak.mjs` tours all 21 camps for N laps; `long.mjs`'s 20-minute default
+was barely one lap, which is why no soak this file ever recorded could have
+caught a per-revisit leak at all.
+
+**TWO OPEN ITEMS TURNED OUT TO BE ENVIRONMENT, NOT GAME.** `throwers.mjs` was
+recorded as still failing; it passes cleanly once `Closer` is seeded. And
+`slaying.mjs` still documented `node tools/seed.mjs Slayer --level 40` from when
+`--level` set the level and nothing else. `--level` now walks the gear band with
+the level — one band per seventeen levels, band 5 only from 68 — and the two
+weapons that test equips are band 5, so a Slayer seeded at 40 died at `equip`
+with "no frostbrand in the bag". That reads as a broken game and was a stale
+instruction; it says 84 now, with the reason.

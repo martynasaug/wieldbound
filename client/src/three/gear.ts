@@ -659,6 +659,45 @@ function findMesh(root: THREE.Object3D, name: string): THREE.Mesh | null {
 const heldCache = new Map<string, Promise<HeldWeapon | null>>();
 
 /**
+ * Held-item GEOMETRY, cached on what the geometry actually depends on.
+ *
+ * `heldCache` above is keyed `${baseId}|${rarity}|${hand}`, and that is right
+ * for a prototype: the materials genuinely differ by rarity, and a left-hand
+ * item is wrapped in a mirrored holder. The geometry differs by NEITHER.
+ * `makeHeldItem` uses rarity in exactly two places, `paletteMaterial` and
+ * `repaint`, and both make materials; `hand` only decides whether the finished
+ * mesh gets a holder group around it. So keying the geometry the same way built
+ * one byte-identical copy per rarity per hand — up to fourteen of every shape,
+ * with a ceiling of 686 cached geometries for the 49 distinct ones this game
+ * has.
+ *
+ * That ceiling is why the leak hunt took three sessions. A driven session meets
+ * new (base, rarity, hand) combinations at a fairly steady rate as monsters
+ * spawn carrying varied gear, so the geometry counter climbed at a flat
+ * ~1.6/min for forty-five minutes and "never converged" — which reads as an
+ * unbounded leak and is really a cache with a ceiling too distant to see. It
+ * cannot be found by watching the counter, because the counter looks the same
+ * either way; it is found by asking what each surviving geometry was built FROM.
+ *
+ * Keyed by the geometry's own inputs, so two items that would build the same
+ * shape share one. The cache owns these forever, which is correct and bounded:
+ * one per distinct shape, and there are 49 of those.
+ */
+const heldGeoCache = new Map<string, Promise<THREE.BufferGeometry>>();
+
+function cachedHeldGeometry(
+  key: string,
+  build: () => THREE.BufferGeometry,
+): Promise<THREE.BufferGeometry> {
+  let g = heldGeoCache.get(key);
+  if (!g) {
+    g = Promise.resolve(build());
+    heldGeoCache.set(key, g);
+  }
+  return g;
+}
+
+/**
  * The thing in a hand, by catalogue id.
  *
  * Cached per (item, quality, hand) as a prototype; every wielder gets a clone
@@ -704,8 +743,13 @@ async function makeHeldItem(
   let mesh: THREE.Mesh | null = null;
 
   if (base.art.build) {
-    mesh = new THREE.Mesh(
+    // `grip.box` comes from `donorGrip()`, which is itself cached, so the only
+    // input to either builder is the build name.
+    const built = await cachedHeldGeometry(`build:${base.art.build}`, () =>
       base.art.build === "crystalstave" ? buildCrystalStave(grip.box) : buildQuiver(grip.box),
+    );
+    mesh = new THREE.Mesh(
+      built,
       [
         paletteMaterial(palette, "metal", rarity),
         paletteMaterial(palette, "wood", rarity),
@@ -734,30 +778,33 @@ async function makeHeldItem(
       console.warn(`gear: ${base.art.model} has no mesh; ${baseId} will be invisible`);
       return null;
     }
-    mesh = new THREE.Mesh(
-      fitToGrip(donor.geometry, grip.box, base.art.lay ?? "along"),
-      repaint(donor.material, palette, rarity),
+    // The fitted clone depends on the donor model and the lay, and on nothing
+    // else — not on rarity, not on which hand holds it.
+    const lay = base.art.lay ?? "along";
+    const fitted = await cachedHeldGeometry(`fit:${base.art.model}|${lay}`, () =>
+      fitToGrip(donor.geometry, grip.box, lay),
     );
+    mesh = new THREE.Mesh(fitted, repaint(donor.material, palette, rarity));
   }
   if (!mesh) return null;
 
-  // WHO OWNS THIS GEOMETRY, decided here rather than guessed at teardown.
+  // NO ACTOR OWNS THIS GEOMETRY. All three branches now hand out geometry that
+  // something else holds for the life of the process: `rig:` shares the loaded
+  // model's own, and the other two share a `heldGeoCache` entry.
   //
-  // Two of the three branches above make a NEW geometry: `build` generates one,
-  // and `fitToGrip` clones the donor before rotating and scaling it. The `rig:`
-  // branch does not — it hands the prototype's own geometry straight to the
-  // mesh, shared with every other actor carrying that weapon and with the
-  // loaded model itself. Disposing that one would blank the weapon for
-  // everybody at once.
+  // This used to set `userData.ownedByActor` on the two generated branches so
+  // `Actor.clearGear` would dispose them, and that was unsafe from the moment it
+  // was written. `buildHeldItem` hands every wielder `proto.object.clone(true)`,
+  // and `Mesh.copy` does `this.geometry = source.geometry` — it clones the
+  // materials and SHARES the geometry. So the flag was never on a per-actor
+  // copy; it was on the cached prototype's geometry, and the first monster to
+  // despawn disposed a geometry the cache and every other wielder still held.
+  // Nothing visibly broke because three.js silently re-uploads a disposed
+  // geometry the next time it is drawn, which is also exactly why disposing
+  // them measured as no improvement at all: the buffers came straight back.
   //
-  // `Actor.clearGear` disposed materials and left geometries, so every piece of
-  // gear ever built stayed in the renderer after its mesh was detached.
-  // Measured over 44.5 minutes of driven play: geometries +72 at a steady
-  // 1.6/min that never converged, while heap, DOM and program counts were all
-  // flat. A census of the scene named the owners — held_adderfang,
-  // held_recurve, held_kiteshield and the rest. This flag is what lets the
-  // teardown dispose the clones and leave the shared ones alone.
-  mesh.geometry.userData.ownedByActor = !base.art.model?.startsWith("rig:");
+  // Geometry here is cache-owned and bounded — one per distinct shape. Actors
+  // own their materials, which `clearGear` disposes, and nothing else.
 
   // Everything that was NOT harvested off the rig still needs the rig's own
   // grip transform, or it hangs in world space beside the character.

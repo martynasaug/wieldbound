@@ -1586,32 +1586,34 @@ export class Actor {
     for (const object of [...this.held, ...this.worn]) {
       if (!object) continue;
       const mats = new Set<THREE.Material>();
-      // GEOMETRIES TOO, WHICH THIS USED TO LEAVE BEHIND.
+      // MATERIALS ONLY, AND DELIBERATELY SO.
       //
-      // Materials were disposed here and geometries were not, so every piece of
-      // gear ever built stayed alive in the renderer once its mesh was
-      // detached. It is a slow leak and it hid well: over 44.5 minutes and 2047
-      // fights, heap FELL, DOM fell and the program count never moved, while
-      // `renderer.info.memory.geometries` climbed +72 at a flat 1.6/min and
-      // never converged — which is exactly the shape M70.100 warns about, and
-      // the only counter that showed it.
+      // An earlier version of this disposed geometry here as well, on gear
+      // marked `userData.ownedByActor`, chasing a geometry count that climbed
+      // +72 at a flat 1.6/min over 44.5 minutes while heap, DOM and program
+      // counts all stayed flat. It was the wrong fix twice over.
       //
-      // Only what this actor OWNS. `gear.ts` marks that at the point the
-      // decision is real: a generated or `fitToGrip`-cloned geometry belongs to
-      // this mesh, while one harvested off a `rig:` prototype is shared with
-      // every other actor holding that weapon, and disposing it would blank the
-      // weapon for all of them. Silhouette ghosts and outline hulls share the
-      // gear's geometry too, but they are CHILDREN of it and leave with it, so
-      // they hold no reference once this traverse is done.
-      const geos = new Set<THREE.BufferGeometry>();
+      // It was unsafe: `buildHeldItem` hands each wielder
+      // `proto.object.clone(true)`, and `Mesh.copy` SHARES geometry while
+      // cloning materials, so the flag sat on the cached prototype's geometry
+      // rather than on a per-actor copy. The first monster to despawn disposed a
+      // geometry the cache and every other wielder still referenced.
+      //
+      // And it was ineffective, for the same reason it looked harmless: three.js
+      // re-uploads a disposed geometry the moment it is drawn again, so the
+      // buffers came straight back and the measured rate did not move at all.
+      // The real cause was upstream — `heldGeoCache` in `gear.ts` was keyed on
+      // rarity and hand, which the geometry does not depend on, so the cache
+      // held up to fourteen identical copies of every shape.
+      //
+      // Gear geometry is cache-owned and bounded. An actor owns its MATERIALS,
+      // which are genuinely cloned per wielder, and those are what this frees.
       object.traverse((c) => {
         const mesh = c as THREE.Mesh;
         if (!mesh.isMesh) return;
         for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) mats.add(m);
-        if (mesh.geometry?.userData.ownedByActor) geos.add(mesh.geometry);
       });
       object.removeFromParent();
-      for (const g of geos) g.dispose();
       for (const m of mats) {
         // NOT THE SHARED PASSES. Gear now carries outline hulls (see `rimFor`),
         // and those are children of the gear meshes, so this traverse finds
