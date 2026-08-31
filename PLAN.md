@@ -19045,3 +19045,50 @@ for the nearest gate first. The same run afterwards: 187 swings, 2 deaths,
 including across both deaths.
 
 Suite 38/38.
+
+**Phase 70 M70.152 — the two paths a single-client harness cannot reach.** No
+game code changed here; this is coverage of things that were being taken on
+trust.
+
+**TWO CLIENTS IN ONE WORLD.** Everything in `tools/soak/` drove one client, which
+cannot see the half of the game that only exists between players. `multiplayer.mjs`
+runs two fresh level 1s into the same band-1 camp and fights with both at once.
+
+    worst gap between A's drawing of B and B's own position   34px over 541 samples
+    worst gap the other way                                   37px
+    shared monster health disagreements                       3 in 8331 comparisons
+    swings 933, console errors 0, both still rendering
+
+The assertion is deliberately about a BOUND rather than equality. A remote player
+is interpolated from snapshots while the local one is predicted forward, so the
+two positions are never equal and demanding it would fail against a healthy game.
+A desync is a gap that grows and does not come back; 34px over nine minutes of
+both moving is not one.
+
+**QUALITY SWITCHING, HAMMERED.** This is the path M70.148's `compileSafely` most
+affects and the one with the worst history — `setQuality` warms by compiling the
+WHOLE SCENE, which is the call that once produced a 15,087ms frame and whose
+unguarded readiness poll was hanging the loading screen. 24 switches while
+fighting, waiting for each warm to settle rather than counting how fast a loop
+can call a function:
+
+    no switch over 3 seconds        (the failure this path is famous for)
+    geometries  335 -> 338          over 24 switches, so nothing per-switch
+    heap        141.1 -> 141.1MB
+    programs    131 -> 175          each level compiling its variants once, then flat
+    console errors 0
+
+**A SECOND GENUINE FRAME HITCH, AND IT LOOKS LIKE THE FIRST.** A 22.7-minute
+headed capture was 68% throttled and its interval numbers are void — the
+validity check said so rather than letting them be read. Frame COST survives
+throttling, and it recorded one real hitch:
+
+    [hitch] 108ms frame — render 96.3ms [idle town monsters=4/4 engaged=no]
+
+against the earlier run's single `55ms frame — render 53.0ms [idle field]`. Two
+samples in thirty-one minutes, both a ~100ms render section while idle, and the
+program count flat at 129 through both — so NOT a shader compile, which is what
+every previous render stall in this phase turned out to be. Not enough to act on
+and recorded so the third sample has something to join.
+
+Suite 38/38 (unchanged — no game code in this entry).
