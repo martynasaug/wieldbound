@@ -1345,7 +1345,7 @@ function awardKill(monster: MonsterState, now: number): void {
     attrs.statPoints = statPoints;
     if (socket) {
       sendXpUpdate(socket, xp, level, leveledUp);
-      if (leveledUp) sendStatsUpdate(socket, attrs, maxHpOf(playerId, attrs));
+      if (leveledUp) sendStatsUpdate(socket, attrs, maxHpOf(playerId, attrs), maxManaOf(playerId, attrs));
     }
   }
 
@@ -2332,7 +2332,27 @@ function sendHpUpdate(
   socket.send(JSON.stringify(update));
 }
 
-function sendStatsUpdate(socket: WebSocket, attrs: Attributes, maxHp: number, maxMana = 0): void {
+// `maxMana` IS REQUIRED, AND THAT IS THE FIX. It defaulted to 0, and a default
+// on a value the client stores verbatim is a trap: two of the four call sites
+// omitted it, so every level-up from a kill or a quest turn-in told the client
+// its mana pool was ZERO. The client sets `maxMana` from this and immediately
+// calls `hud.setMana(this.mana, this.maxMana)` and `refreshStats()`, so the mana
+// bar and the character sheet both read a pool of nothing until the next
+// MANA_UPDATE happened along and quietly repaired them.
+//
+// Found by a soak asserting invariants rather than counters: `mana above max`,
+// 5 times in 1236 checks, reported as `1419/0`. Nothing about it is visible in a
+// frame time or a memory total, and it is the sort of flicker a player reports
+// as "the mana bar does something weird when I level".
+//
+// Made required rather than merely fixed at the two sites, so the compiler
+// refuses the next omission instead of leaving it to another soak.
+function sendStatsUpdate(
+  socket: WebSocket,
+  attrs: Attributes,
+  maxHp: number,
+  maxMana: number,
+): void {
   if (socket.readyState !== WebSocket.OPEN) return;
   const update: ServerToClientMessage = {
     type: "STATS_UPDATE",
@@ -3221,7 +3241,7 @@ wss.on("connection", (socket) => {
       playerLevels.set(id, level);
       if (attrs) attrs.statPoints = statPoints;
       sendXpUpdate(socket, xp, level, leveledUp);
-      if (leveledUp && attrs) sendStatsUpdate(socket, attrs, maxHpOf(id, attrs));
+      if (leveledUp && attrs) sendStatsUpdate(socket, attrs, maxHpOf(id, attrs), maxManaOf(id, attrs));
       sendQuestState(socket, id);
       return;
     }

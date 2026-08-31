@@ -18936,3 +18936,54 @@ pressing the attack key still lands them. Left alone deliberately — which of t
 two is correct is a design question, not a bug report.
 
 Suite 38/38.
+
+**Phase 70 M70.150 — levelling up told the client its mana pool was zero.** Found
+by a soak that asserts INVARIANTS rather than watching counters, which is a
+different instrument to everything Phase 70 has used so far and found a bug in
+its first quarter of an hour.
+
+`sendStatsUpdate` declared `maxMana = 0` as a DEFAULT PARAMETER. Two of its four
+call sites omitted the argument, and both are level-up paths — from a kill
+(~1348) and from a quest turn-in (~3224). So every level gained through play sent
+`STATS_UPDATE` with a mana pool of zero. The client stores it verbatim and
+immediately calls `hud.setMana(this.mana, this.maxMana)` and `refreshStats()`, so
+the bar and the character sheet both read a pool of nothing until the next
+`MANA_UPDATE` came along and quietly repaired them.
+
+    mana above max, 5 times in 1236 checks, reported as 1419/0
+
+**A DEFAULT ON A VALUE THE CLIENT STORES VERBATIM IS A TRAP**, and that is the
+part worth keeping. The signature made the wrong call legal, so it read fine at
+both sites and nothing anywhere could notice. `maxMana` is REQUIRED now rather
+than merely supplied at those two lines, so the compiler refuses the next
+omission instead of leaving it for another soak to find eighteen months later.
+
+Verified: 824 checks over 9.7 minutes and six level-ups, zero violations, against
+five violations over thirteen level-ups before. The soak's catch rate is
+probabilistic — it only sees the window between the bad `STATS_UPDATE` and the
+next mana tick — so the compiler is the real guarantee and the run is
+corroboration.
+
+**WHY NO COUNTER WOULD EVER HAVE FOUND THIS.** It costs no memory, no frame time
+and no draw call. Every soak in this file up to now watched geometries, textures,
+programs, heap and DOM, and all five were perfectly flat through every occurrence.
+It is only visible if something asks whether the STATE IS COHERENT, which is what
+`invariants.mjs` now does about 1.4 times a second while playing.
+
+**TWO OF ITS OWN CHECKS WERE WRONG FIRST, WHICH IS THE USUAL RATE.** "Dead
+monster still drawn" fired 86 times in three minutes against entirely correct
+code: on death the actor plays `die` and the CORPSE STAYS where it fell until the
+server respawns it and `revive()` runs. Bodies lying on the ground is the design,
+not a bug. It was replaced with two checks that are real — a lock held on a
+corpse, which the death handler explicitly clears, and a drawn weapon that is not
+the equipped weapon, which is the invariant behind "weapons display correctly
+after a swap".
+
+And the death counter could never have fired. It watched for `hp <= 0`, which is
+never observable: `applyDamage` sets the character straight back to
+`floor(maxHp / 2)` at `PLAYER_ARRIVAL` in the same call that reports the defeat.
+It watches for the teleport now. Death and respawn remain UNTESTED regardless,
+because a level 133 character with seeded gear does not die — that needs a
+deliberately weak character and is its own run.
+
+Suite 38/38.
