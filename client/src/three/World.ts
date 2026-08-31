@@ -79,6 +79,19 @@ import {
 const MAX_GROUND_SLOPE = 1.5;
 
 /**
+ * How long a shader warm-up may wait before giving up. See `compileSafely`.
+ *
+ * three.js polls for readiness with no timeout at all, which is fine right up
+ * until a program never reports ready — then the promise never settles and
+ * whatever was awaiting it waits for the rest of the session. The loading
+ * screen awaits one of these. Eight seconds is far longer than any compile
+ * measured here (the worst was around 500ms for a `physical` program on
+ * ANGLE/D3D11) and far shorter than a player's patience with a bar that has
+ * stopped at 100%.
+ */
+const COMPILE_WAIT_LIMIT_MS = 8000;
+
+/**
  * Seats a flat unit quad on the ground AS DRAWN, tilted to the local slope.
  *
  * THIS IS M55.3's LESSON A THIRD TIME, and it is worth stating in those terms:
@@ -790,8 +803,10 @@ export class World {
       // frame while this runs — the picture pauses for a moment instead of the
       // machine stopping, and the game, the network and the interface all keep
       // running underneath it.
-      this.qualityWarm = this.renderer
-        .compileAsync(this.scene, this.camera)
+      // `compileSafely`, not `compileAsync` — see the note there. This is the
+      // call that made the crash unavoidable: it compiles the entire scene, so
+      // ANY material freed anywhere while it polls was enough to kill the page.
+      this.qualityWarm = this.compileSafely(this.scene, null)
         .catch(() => undefined)
         .then(() => {
           this.qualityWarm = null;
@@ -994,10 +1009,62 @@ export class World {
    */
   async warmUp(object: THREE.Object3D): Promise<void> {
     try {
-      await this.renderer.compileAsync(object, this.camera, this.scene);
+      await this.compileSafely(object, this.scene);
     } catch {
       // Older drivers, a lost context mid-compile. The object still renders.
     }
+  }
+
+  /**
+   * `compileAsync`, minus the crash.
+   *
+   * three.js's own version polls `checkMaterialsReady` on a `setTimeout` and
+   * does this, with no guard:
+   *
+   *     const program = properties.get( material ).currentProgram;
+   *     if ( program.isReady() ) ...
+   *
+   * Disposing a material removes its properties entry, so the next tick reads
+   * `undefined.isReady()` and throws. And because the throw happens inside a
+   * timeout callback rather than the promise executor, it is an UNCAUGHT
+   * EXCEPTION: the `try/catch` around the `await` cannot see it, the promise
+   * never settles, and the load stops dead. Seen exactly that way, with
+   * `TypeError: Cannot read properties of undefined (reading 'isReady')` on the
+   * loading screen at "dressing your character 100%" and the game unrecoverable.
+   *
+   * The disposal it races is not exotic and cannot be designed away from one
+   * end: `setQuality` compiles the WHOLE SCENE, so any material anywhere that
+   * is freed during that window is enough — a monster despawning, a weapon
+   * swapped, an actor torn down. Guarding every disposer would mean guarding
+   * all of them, forever. The poll is the one place the fix belongs.
+   *
+   * A material with no program is one that was disposed while we waited. It is
+   * never going to become ready, and it no longer needs to: drop it and carry
+   * on. The deadline is the second half — three's version polls forever, so a
+   * program that never reports ready hangs the loading screen with no way out.
+   * A warm-up that gives up costs one stuttering frame; one that never returns
+   * costs the session.
+   */
+  private compileSafely(object: THREE.Object3D, targetScene: THREE.Scene | null): Promise<void> {
+    const materials = this.renderer.compile(object, this.camera, targetScene);
+    const properties = (this.renderer as unknown as {
+      properties: { get(m: THREE.Material): { currentProgram?: { isReady(): boolean } } };
+    }).properties;
+    const giveUpAt = performance.now() + COMPILE_WAIT_LIMIT_MS;
+    return new Promise((resolve) => {
+      const poll = (): void => {
+        for (const material of [...materials]) {
+          const program = properties.get(material)?.currentProgram;
+          if (!program || program.isReady()) materials.delete(material);
+        }
+        if (materials.size === 0 || performance.now() >= giveUpAt) {
+          resolve();
+          return;
+        }
+        setTimeout(poll, 10);
+      };
+      poll();
+    });
   }
 
   /** A throwaway target so `warmBuffers` never draws anything the player
@@ -1183,7 +1250,9 @@ export class World {
     // M70.106 measured this block and filed it as "the deliberate trade, not a
     // bug". That was too quick: the trade was paying for it under a loading
     // screen, and it was never a licence to hang the machine while doing so.
-    await this.renderer.compileAsync(this.scene, this.camera);
+    // `compileSafely` — this is the call the loading screen awaits, so it is
+    // the one that must never fail to settle. See the note on that method.
+    await this.compileSafely(this.scene, null);
     // AND THEN THE SHADOW PASS, which `compileAsync` genuinely cannot reach —
     // a shadow uses a DEPTH material three.js builds inside
     // `WebGLShadowMap.getDepthMaterial`, so it is a different program that no

@@ -18790,3 +18790,80 @@ the level — one band per seventeen levels, band 5 only from 68 — and the two
 weapons that test equips are band 5, so a Slayer seeded at 40 died at `equip`
 with "no frostbrand in the bag". That reads as a broken game and was a stale
 instruction; it says 84 now, with the reason.
+
+**Phase 70 M70.148 — swapping weapons could hard-stop the client, and the test
+that was watching this code said it was fine.** Found by looking at a screenshot
+rather than at a log. `gearcheck.mjs` swapped all 25 weapons in the bag, reported
+25 drawable held meshes and zero missing geometry, and the picture it saved was
+the LOADING SCREEN with a red error box: `TypeError: Cannot read properties of
+undefined (reading 'isReady')`, stopped at "dressing your character 100%".
+
+**WHAT IT IS.** `compileAsync` calls `compile()` and then polls
+`checkMaterialsReady` on a `setTimeout`:
+
+    const program = properties.get( material ).currentProgram;
+    if ( program.isReady() ) ...
+
+Disposing a material removes its properties entry, so `properties.get` returns a
+fresh empty object and the next tick dereferences `undefined`. The throw happens
+in a TIMEOUT CALLBACK, not in the promise executor, so it is an uncaught
+exception: the `try/catch` around `await compileAsync(...)` in `World.warmUp`
+cannot see it, the promise never settles, and everything awaiting it waits
+forever. The loading screen awaits one.
+
+**WHY IT CANNOT BE FIXED FROM THE DISPOSING END, WHICH IS WHERE I TRIED FIRST.**
+The first attempt deferred material disposal in `Actor` while a warm-up was in
+flight — `warmsInFlight`, a queue, the lot. It did not help, and the instrument
+said so plainly: the crash reproduced unchanged. Patching `Material.dispose` to
+record its callers showed the disposals going through the new deferred path
+exactly as intended, which meant the poll that was throwing belonged to somebody
+else. It did: `setQuality` and the load-time warm both call
+`compileAsync(this.scene, ...)` on the ENTIRE SCENE, so any material freed
+anywhere in the game during that window is enough — a monster despawning, an
+actor torn down, a weapon swapped. Guarding every disposer means guarding all of
+them forever. The poll is the one place the fix belongs, and the Actor-side
+deferral was reverted rather than kept alongside it.
+
+**THE FIX.** `World.compileSafely` replaces all three `compileAsync` call sites.
+It keeps `renderer.compile()` and `program.isReady()` — so the
+KHR_parallel_shader_compile benefit is untouched, which is the whole reason the
+async version was used — and polls itself with two guards three does not have:
+
+    const program = properties.get( material )?.currentProgram;
+    if ( !program || program.isReady() ) materials.delete( material );
+
+A material with no program was disposed while we waited; it will never be ready
+and no longer needs to be. And a deadline, because three's poll has no timeout at
+all: a program that never reports ready hangs whatever awaited it, and the
+loading screen awaits one. A warm-up that gives up costs a stuttering frame; one
+that never returns costs the session.
+
+**THE THIRD CALL SITE IS WHY THIS TOOK THREE ATTEMPTS.** Two were replaced and
+the crash persisted, because `warmWholeScene` had its own
+`await this.renderer.compileAsync(this.scene, this.camera)` fifty lines further
+down — the one the loading screen actually awaits. `grep compileAsync` found it
+in a second, after twenty minutes of reasoning about which disposer was at
+fault. Grep the codebase before theorising about it.
+
+**IT WAS NOT MY CHANGE, AND THAT WAS CHECKED RATHER THAN ASSUMED.** Reverting
+`gear.ts` and `Actor.ts` to 6b09bcf reproduced the identical crash, so it
+predates M70.147 and has been reachable by any player who swapped a weapon
+while a compile was in flight — which includes every swap made during the first
+seconds after the world appears, since the load-time whole-scene warm is still
+polling then.
+
+**`warmup.mjs` PASSED THROUGHOUT ALL OF THIS.** It asserted
+`/this\.renderer\.compileAsync\(object, this\.camera, this\.scene\)/` — the
+spelling of the call, not any property of it — so it was satisfied by the exact
+code that was hanging the game and would have gone on being satisfied forever.
+It now checks what actually matters: still asynchronous, still never rejecting,
+bounded by a deadline, and tolerant of a material disposed mid-poll. Confirmed
+sharp by deleting the `!program ||` guard and watching the last of those fail.
+
+Verified: 25 weapons swapped back to back, zero console errors, every held mesh
+drawable and renderer-registered, and the saved frame shows the character in
+armour holding the staff with the combat log reading "Staff in hand — you fight
+as a Mage". Rarity tint survives the M70.147 geometry sharing — a Worn and a
+Honed recurve share one geometry uuid and 1992 vertices while carrying different
+material uuids and different colours, which is exactly the split intended.
+Suite 38/38.

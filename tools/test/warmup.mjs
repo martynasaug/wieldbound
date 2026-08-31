@@ -65,15 +65,36 @@ section("2. nothing is drawn before its shaders exist");
     "World exposes a warm-up",
     /async warmUp\(object: THREE\.Object3D\): Promise<void>/.test(world),
   );
+  // `compileSafely`, not three's `compileAsync`. Both compile off the blocking
+  // path — the point this section has always been making — but three's version
+  // polls `properties.get(material).currentProgram.isReady()` unguarded, and a
+  // material disposed mid-poll throws from a TIMEOUT callback, where no
+  // `try/catch` around the await can reach it. That hung the loading screen at
+  // "dressing your character 100%". So what is asserted is the property, not the
+  // spelling: still asynchronous, still never rejecting, and now also bounded.
   check(
     "which uses the async compile, not the blocking one",
-    /this\.renderer\.compileAsync\(object, this\.camera, this\.scene\)/.test(world),
-    "renderer.compile() would move the stall rather than remove it",
+    /await this\.compileSafely\(object, this\.scene\)/.test(world),
+    "a synchronous renderer.compile() would move the stall rather than remove it",
   );
   check(
     "and never rejects",
-    /await this\.renderer\.compileAsync[\s\S]{0,120}?\} catch \{/.test(world),
+    /await this\.compileSafely[\s\S]{0,160}?\} catch \{/.test(world),
     "a failed warm-up must not leave an actor permanently invisible",
+  );
+  check(
+    "and cannot wait forever",
+    /performance\.now\(\) >= giveUpAt/.test(world) && /COMPILE_WAIT_LIMIT_MS/.test(world),
+    "three's own poll has no timeout, so a program that never reports ready " +
+      "hangs whatever awaited it — and the loading screen awaits one",
+  );
+  check(
+    "and tolerates a material disposed while it waits",
+    /const program = properties\.get\(material\)\?\.currentProgram;[\s\S]{0,120}?if \(!program \|\| program\.isReady\(\)\)/.test(
+      world,
+    ),
+    "this is the crash: a disposed material has no program, and three " +
+      "dereferences it anyway from a setTimeout where the await cannot catch it",
   );
 
   // Both actor paths — monsters and remote players — must add hidden, warm,
