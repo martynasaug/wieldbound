@@ -18867,3 +18867,72 @@ as a Mage". Rarity tint survives the M70.147 geometry sharing — a Worn and a
 Honed recurve share one geometry uuid and 1992 vertices while carrying different
 material uuids and different colours, which is exactly the split intended.
 Suite 38/38.
+
+**Phase 70 M70.149 — measuring the result, and three instruments that were
+lying.** The leak and the swap crash are fixed; this is what the game now
+measures at, plus the harness corrections needed before any of it could be
+believed.
+
+**FRAMES: 8.3 minutes of driven play, 28,730 frames.**
+
+    p50 16.7ms   p95 16.8   p99 16.8   max 1017
+    frames over 33ms: 19    over 50ms: 19    over 100ms: 19    over 250ms: 19
+    genuine frame-cost hitches: 1  (55ms, render 53.0ms)
+
+p99 sitting 0.1ms above p50 is a flat line, not a distribution. And the tail is
+not real: the counts for >33, >50, >100 and >250 are all the SAME 19, which is
+one cluster near a second wearing four disguises — the backgrounding throttle,
+not the game. One genuine 55ms hitch in eight minutes is the honest total.
+
+**THE HEADED-FLAGS THEORY, TESTED AND WRONG.** The recorded advice was that
+headed Chromium throttles to ~1fps unfocused and is useless for frame timing. It
+seemed worth overturning, since `--disable-renderer-backgrounding`,
+`--disable-backgrounding-occluded-windows` and
+`--disable-background-timer-throttling` exist to switch exactly that off, and the
+driver sets all three. They do not work. An 8-minute run with all three still
+produced a tight band of 1016ms frames. The advice stands; it is now recorded as
+tested rather than inherited.
+
+**AND THE VALIDITY CHECK WRITTEN TO CATCH THAT WAS ITSELF WRONG.** It compared
+the MEDIAN against 200ms and passed a thoroughly throttled run: p50 16.7ms with
+p95 and p99 both 1016ms. Chromium throttles in BURSTS, so the median stays
+perfect while the tail is fabricated — a median can only ever certify the half of
+the data that was never in question. It looks for the cluster now: frames in a
+tight band around 1000ms, which real stutters do not form.
+
+**THE THIRD CORRECTION, AND THE ONE THAT HAD ALREADY DONE DAMAGE.** `login()`
+waited for `localActor` plus `geometries > 100`, which lands PARTWAY THROUGH the
+load. Two measurements were quietly ruined by it: a load-time run reported 6.4s
+across three phases because it stopped the clock mid-sequence, and the gear probe
+drove twenty-five weapon swaps into a client that was still loading. That second
+one is how the M70.148 crash was found — by luck, from an instrument that was
+wrong in a way that happened to be productive. It now waits for `LoadingScreen`
+to remove its own element, which is the game's own statement that it is done.
+
+**LOAD, MEASURED PROPERLY, IS ~10s ON THIS MACHINE.**
+
+    start                                   1912-1971ms    +0 programs
+    assets (decor, anims, kit, body, people) 1458-1497ms    +2
+    warmUp(scene): compile the world         1742-1795ms   +40
+    warmFadedOccluders                       2073-2229ms   +35
+    warmWholeScene                           1996-2161ms   +51
+    total 9.2-9.6s, 129 programs
+
+**THIS IS NOT EVIDENCE THAT LOAD GOT FASTER.** The 28.6s on record was measured
+on the OTHER PC, and this is the first load measurement taken here at all, with a
+gate that did not exist then. Five phases at about two seconds each, with the
+three warm phases accounting for 128 of the 129 programs, is a balanced load
+rather than one with a hot spot to attack — so the standing note that the only
+remaining lever is fewer distinct materials in the art still holds, and is still
+the user's call.
+
+**THE RETREAT ASYMMETRY, STATED PRECISELY** so it can be decided rather than
+re-discovered. The tick loop refuses to swing at something you are running away
+from (`server/src/index.ts` ~4001, guarded by `isRetreating`). The explicit
+keypress path, `useDefaultAttack` at ~2125, has no such guard: it calls
+`orderAttack`, finds a target, checks only the recovery clock, and resolves the
+hit. So holding a direction away from a monster stops the automatic swings while
+pressing the attack key still lands them. Left alone deliberately — which of the
+two is correct is a design question, not a bug report.
+
+Suite 38/38.

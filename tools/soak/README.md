@@ -31,10 +31,30 @@ Each of these produced a confident, wrong number before the cause was found.
   is called explicitly, every movement key is swallowed. The bot stands still
   for the whole run while reporting that it pressed thousands of keys.
 - **`g.running` is true about three seconds in, long before the world loads.**
-  Wait for something that implies content — `localActor` plus
-  `renderer.info.memory.geometries > 100`. A probe installed at `running` sees
-  an empty scene and reports, correctly and uselessly, that there is nothing
-  there.
+  Worse, the obvious repair is *also* wrong: `localActor` plus
+  `geometries > 100` lands partway through the load, while the world is still
+  being warmed. That quietly ruined two measurements — a load-time run reported
+  6.4s and three phases because it stopped the clock mid-sequence, and a gear
+  probe drove 25 weapon swaps into a still-loading client and screenshotted the
+  loading screen. Wait for `LoadingScreen` to remove its own element:
+  `!document.getElementById("loading")` is the game's own statement that it is
+  done, and nothing has to be guessed.
+- **The anti-throttle flags do NOT make headed frame timing honest.** Tested,
+  not assumed: with `--disable-renderer-backgrounding`,
+  `--disable-backgrounding-occluded-windows` and
+  `--disable-background-timer-throttling` all set, an 8-minute headed run still
+  produced p50 16.7ms with p95 *and* p99 at 1016ms. Chromium throttles in
+  bursts, so the median stays perfect while the tail is fabricated. Check for
+  the cluster, never the median: a throttled run has a tight band of frames near
+  1000ms and nothing between 100ms and 900ms — one run had exactly 179 frames
+  over 33ms, over 50ms, over 100ms and over 250ms, which is one spike at a
+  second wearing four disguises.
+- **Frame COST survives a throttled run; the frame INTERVAL does not.** The
+  profiler labels them: `Nms frame — worst section: ...` timed work inside a
+  frame and is trustworthy, while `Nms BETWEEN frames` timed a gap in
+  scheduling, which is exactly what throttling manufactures. This is how a
+  previous session came to blame `net:STATE_SNAPSHOT` for a 1000ms stall whose
+  handler took 8ms.
 - **Stuck detection must compare position before AND after a leg.** Sampling
   only afterwards makes a moving character look motionless, which once sent a
   run detouring past every camp it was supposed to fight in: `fights=0`,
@@ -77,6 +97,10 @@ readable from a probe without adding a debug hook to ship code.
 | `driver.mjs` | launch, login, probe, movement primitives. Import this; do not re-derive it. |
 | `soak.mjs` | tours all 21 camps for N laps, fighting at each. Answers "does lap 3 cost as much as lap 1". |
 | `geoleak.mjs` | stays in one place and names every geometry the renderer holds, by creation stack. |
+| `frames.mjs` | frame distribution and hitch attribution while playing. Reports whether the run was throttled instead of letting you read fiction. |
+| `loadtime.mjs` | `Game.loadPhases` — what each load phase cost and how many shader programs it added. Headed, for the reason above. |
+| `gearcheck.mjs` | swaps every weapon in the bag and checks each one still has drawable, renderer-registered geometry. |
+| `raritytint.mjs` | checks that sharing geometry across rarities did not also share the tint. |
 
 ### How the geometry census works
 

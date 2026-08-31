@@ -66,12 +66,21 @@ export async function login(page, name, { timeout = 180000 } = {}) {
   await page.waitForSelector("#name-input", { timeout: 30000 });
   await page.fill("#name-input", name);
   await page.click("#play-button");
+  // WAIT FOR THE LOADING SCREEN TO GO, and nothing weaker.
+  //
   // `running` is set at the TOP of `start()`, before a single asset is loaded,
-  // so waiting on it returns in about three seconds with an empty scene. A
-  // probe that installs itself at that moment sees no geometry at all and
-  // reports the world is empty, which is true and useless. Wait for the world
-  // to actually be there: the local actor exists, and the renderer has uploaded
-  // a scene's worth of geometry rather than a loading screen's worth.
+  // so waiting on it returns in about three seconds with an empty scene. The
+  // obvious repair — wait for `localActor` and a scene's worth of uploaded
+  // geometry — is better and still wrong: it lands partway through the load,
+  // while the world is still being warmed. Two measurements were quietly ruined
+  // by that. A load-time run reported 6.4s and three phases, because it stopped
+  // the clock in the middle of the sequence. And a gear probe drove twenty-five
+  // weapon swaps into a client that was still loading, then saved a screenshot
+  // of the LOADING SCREEN — which, as it happens, is how the swap crash was
+  // found, but by luck rather than design.
+  //
+  // `LoadingScreen.finish` removes its own element, so its absence is the
+  // game's own statement that the load is over. Nothing here has to guess.
   await page.waitForFunction(
     () => {
       const g = window.__wieldbound;
@@ -82,7 +91,7 @@ export async function login(page, name, { timeout = 180000 } = {}) {
         !!g.localActor &&
         !!root &&
         getComputedStyle(root).display !== "none" &&
-        g.world.renderer.info.memory.geometries > 100
+        !document.getElementById("loading")
       );
     },
     null,
