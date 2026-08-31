@@ -179,6 +179,46 @@ export async function nearestMonster(page) {
   });
 }
 
+// THE TOWN HAS A WALL, AND IT HAS THREE DOORS.
+//
+// `TOWN_RADIUS_PX` is 800 and `TOWN_GATES` cuts openings at 0, 180 and 256
+// degrees. A bot that walks straight at its destination from inside the
+// palisade pushes at whichever wall segment lies between, forever. A level 1
+// starting at the arrival point did exactly that for seven of an eight-minute
+// run — 65 blocked legs, 21px/s average, and a report of "no invariant
+// violations" that meant nothing at all.
+//
+// The endgame character never showed this because it is always already outside.
+// Anything that starts a fresh character has to leave through a gate.
+export const TOWN_CENTER = { x: 8000, y: 6000 };
+export const TOWN_RADIUS_PX = 800;
+const GATE_ANGLES_DEG = [0, 180, 256];
+
+/** True while the point is inside the palisade (with a little margin). */
+export function insideTown(p) {
+  return Math.hypot(p.x - TOWN_CENTER.x, p.y - TOWN_CENTER.y) < TOWN_RADIUS_PX + 60;
+}
+
+/** A point just outside the gate nearest `from`'s current bearing. */
+export function gateWaypoint(from) {
+  const bearing = (Math.atan2(from.y - TOWN_CENTER.y, from.x - TOWN_CENTER.x) * 180) / Math.PI;
+  let best = GATE_ANGLES_DEG[0];
+  let bestDelta = Infinity;
+  for (const g of GATE_ANGLES_DEG) {
+    const delta = Math.abs(((g - bearing + 540) % 360) - 180);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = g;
+    }
+  }
+  const a = (best * Math.PI) / 180;
+  // Well clear of the opening, so the next leg does not immediately re-enter.
+  return {
+    x: TOWN_CENTER.x + Math.cos(a) * (TOWN_RADIUS_PX + 260),
+    y: TOWN_CENTER.y + Math.sin(a) * (TOWN_RADIUS_PX + 260),
+  };
+}
+
 /** The WASD keys that point from the player toward (x, y). */
 export function keysToward(from, to) {
   const dx = to.x - from.x;

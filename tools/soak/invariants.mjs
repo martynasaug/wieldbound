@@ -15,7 +15,7 @@
 // Headless: nothing here is timing-sensitive, so SwiftShader is fine and the
 // backgrounding throttle cannot contaminate a boolean.
 
-import { open, login, hotbarKeys, step, nearestMonster, keysToward } from "./driver.mjs";
+import { open, login, hotbarKeys, step, nearestMonster, keysToward, insideTown, gateWaypoint } from "./driver.mjs";
 
 const NAME = process.argv[2] ?? "Player3619";
 const MINUTES = Number(process.argv[3] ?? 10);
@@ -166,6 +166,8 @@ const run = async () => {
   let i = 0;
   let swings = 0;
   let deaths = 0;
+  let blocked = 0;
+  let travelled = 0;
   let lastHp = null;
 
   const first = await check();
@@ -178,13 +180,27 @@ const run = async () => {
     while (Date.now() < travelUntil) {
       const p = await me(page);
       if (Math.hypot(wp.x - p.x, wp.y - p.y) < 260) break;
-      const dirs = keysToward(p, wp);
+      // Leave through a gate before heading anywhere outside the wall.
+      const aim = insideTown(p) && !insideTown(wp) ? gateWaypoint(p) : wp;
+      const dirs = keysToward(p, aim);
       const r = await step(page, dirs, 600);
+      travelled += r.moved;
       await check();
       if (r.moved < 25) {
+        blocked++;
+        // A SINGLE ALTERNATING SIDESTEP CANNOT LEAVE A CONCAVE CORNER, and the
+        // town palisade is full of them. A level 1 walked into one and spent
+        // seven minutes there while the run reported no invariant violations,
+        // which was true and worthless. Escalate: sidestep first, and if that
+        // keeps failing, commit to a long run in one direction until something
+        // changes.
         const perp = dirs.includes("w") || dirs.includes("s") ? [sign > 0 ? "d" : "a"] : [sign > 0 ? "s" : "w"];
         await step(page, perp, 900);
         sign = -sign;
+        if (blocked % 4 === 0) {
+          const away = [["w"], ["a"], ["s"], ["d"]][(blocked / 4) % 4];
+          await step(page, away, 2500);
+        }
       }
     }
     const fightUntil = Date.now() + 25000;
@@ -224,14 +240,43 @@ const run = async () => {
       const snap = await check();
       console.log(
         `t=${((Date.now() - t0) / 60000).toFixed(1)}m checks=${checks} swings=${swings} deaths=${deaths} ` +
+          `blocked=${blocked} travelled=${Math.round(travelled)}px ` +
           `violations=${[...violations.values()].reduce((s, v) => s + v.count, 0)} ${JSON.stringify(snap)}`,
       );
     }
   }
 
-  console.log(`\n=== ${checks} checks over ${((Date.now() - t0) / 60000).toFixed(1)}m, ${swings} swings, ${deaths} deaths ===`);
+  const minutes = (Date.now() - t0) / 60000;
+  console.log(
+    `\n=== ${checks} checks over ${minutes.toFixed(1)}m, ${swings} swings, ${deaths} deaths, ` +
+      `${Math.round(travelled)}px travelled, ${blocked} blocked legs ===`,
+  );
+
+  // DID THIS RUN ACTUALLY PLAY THE GAME? A soak that finds nothing because the
+  // character was stuck against a fence reports exactly the same "no invariant
+  // violations" as a soak that found nothing because the game is correct, and
+  // the two are worth opposite amounts. One run really did sit in a corner for
+  // seven of its eight minutes: swings frozen at 28, health pinned at 60/60,
+  // the geometry count unchanged to the unit. Nothing about the violation list
+  // hinted at it.
+  //
+  // So the run certifies itself or it does not. A character that fights and
+  // travels is exercising the code these invariants describe; one that does
+  // neither has tested nothing, whatever the violation count says.
+  const swingsPerMin = swings / Math.max(minutes, 0.1);
+  const pxPerMin = travelled / Math.max(minutes, 0.1);
+  const void_ = swingsPerMin < 3 || pxPerMin < 2000;
+  if (void_) {
+    console.log(
+      `\n*** RUN VOID — ${swingsPerMin.toFixed(1)} swings/min and ${Math.round(pxPerMin)}px/min travelled.\n` +
+        "*** The character was stuck, not the game quiet. Findings below prove nothing either way.",
+    );
+  } else {
+    console.log(`liveness ok: ${swingsPerMin.toFixed(1)} swings/min, ${Math.round(pxPerMin)}px/min`);
+  }
+
   if (violations.size === 0) {
-    console.log("no invariant violations");
+    console.log(void_ ? "no invariant violations (but see above)" : "no invariant violations");
   } else {
     for (const [name, rec] of [...violations.entries()].sort((a, b) => b[1].count - a[1].count)) {
       console.log(`  ${String(rec.count).padStart(5)}x  ${name}`);

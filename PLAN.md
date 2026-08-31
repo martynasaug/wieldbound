@@ -18987,3 +18987,61 @@ because a level 133 character with seeded gear does not die — that needs a
 deliberately weak character and is its own run.
 
 Suite 38/38.
+
+**Phase 70 M70.151 — the defeat path, tested at last, and a soak that now
+refuses to certify itself.** Death and respawn had never been exercised by
+anything here: every harness drives a seeded endgame character, and that
+character does not die. Fifteen minutes and 395 swings at level 133 produced
+exactly zero deaths, so the teleport home, the health it returns with, the
+Weakened debuff, the experience penalty and the cancelled cast were all running
+untested.
+
+**THE FIXTURE IS A NAME THAT HAS NEVER LOGGED IN.** A fresh character starts at
+level 1 with no gear, which is exactly what is wanted and needs no seeding —
+`tools/seed.mjs` refuses an unknown name anyway. `death.mjs` walks one into the
+nearest band-1 camp and stands there without attacking. Nine assertions, all
+passing:
+
+    respawns at PLAYER_ARRIVAL          8075,6130 exactly
+    comes back on half health           30/60, floor(maxHp / 2)
+    health not above the maximum
+    is Weakened
+    no cast survives the death
+    experience did not increase
+    can still move afterwards           269px
+    world still rendering               587 draw calls
+    no console errors
+
+Nothing was wrong. Recording it anyway, because "this path is correct" is only
+worth having once something has actually walked it.
+
+**THE DEATH DETECTOR WAS WRONG IN A WAY WORTH REMEMBERING.** The first version
+required health to FALL at the moment of death. It rises: `applyDamage` never
+leaves hp at zero, it writes floor(maxHp / 2) in the same call that reports the
+defeat, so from outside a death looks like a heal and a teleport. The probe
+consequently walked back into the camp and died over and over for four minutes
+while reporting that it never died — with `weakened` sitting in the status list
+the whole time, on screen, in its own output.
+
+**A RUN THAT PROVES NOTHING NOW SAYS SO.** Pointing the invariant soak at a
+level 1 produced "no invariant violations" over eight minutes, and it was
+worthless: swings frozen at 28 after the first ninety seconds, health pinned at
+60/60, the geometry count unchanged to the unit. The character had walked into a
+corner of the palisade and stayed there. A stuck bot and a correct game produce
+byte-identical reports.
+
+So the run certifies itself or it does not. `invariants.mjs` tracks distance
+travelled and swings per minute and prints **RUN VOID** below any run that did
+not actually play — the same shape of check as the frame harness's throttle
+detector, and for the same reason: silence is not evidence.
+
+**AND THE REASON IT WAS STUCK IS A FACT EVERY HARNESS NEEDED.** `TOWN_RADIUS_PX`
+is 800 and `TOWN_GATES` cuts openings at 0, 180 and 256 degrees only. The bot was
+at bearing 90 — a solid wall — walking into it forever at 21px/s. The endgame
+character never revealed this because it is always already outside. `driver.mjs`
+has `insideTown` and `gateWaypoint` now, and anything heading out of town aims
+for the nearest gate first. The same run afterwards: 187 swings, 2 deaths,
+32,990px travelled, blocked legs plateauing at 22, liveness ok, zero violations —
+including across both deaths.
+
+Suite 38/38.
