@@ -19308,3 +19308,52 @@ real one. Left as found and written down; fixing it means giving it its own camp
 or waiting for respawn, which is its own change.
 
 Suite 38/38 on a clean run.
+
+**Phase 70 M70.157 — you no longer turn to stare at monsters you are walking
+past.** Reported from play: "when you're walking somewhere and there is a monster
+nearby your character automatically starts facing the monster, even while walking
+the other way", and then the detail that settled it — "that happens even without
+targeting or attacking".
+
+**`engagedId` IS NOT WHAT ITS NAME SAYS.** The facing rule read it as "the thing
+you are fighting", and its own comment says so, but the value is computed as:
+
+    this.engagedId = (lockedInReach ? this.lockedId : null)
+      ?? this.nearestMonster(reach)
+      ?? (lockedAlive ? this.lockedId : null)
+      ?? this.nearestMonster(ENGAGE_RADIUS_PX);
+
+That last fallback makes ANY monster within 340px "engaged" with no swing, no
+click and no order — so `stepMovement` turned the body to face it and the
+character walked sideways past a camp it had never touched.
+
+**AND `isRetreating` COULD NOT RESCUE IT.** `RETREAT_DOT` is -0.35, so the
+override only lets go once you are heading more than about 110 degrees away from
+the thing. Walking PAST something is nowhere near that, which is why the reported
+case is the common one rather than an edge.
+
+**THE HONEST SIGNAL IS `attacking`**, set from the server's `ATTACK_STATE` and
+true only while a standing attack order exists, plus a short grace so the body
+does not snap between its feet and its enemy in the gap between swings.
+
+The grace keys on a new `lastOwnAttackAt` rather than the existing
+`lastCombatAt`, and the difference is the whole point: `lastCombatAt` is also
+stamped by `onMonsterAttack` — by something hitting YOU. A monster swinging at
+your back while you walk past is precisely the reported situation, so using it
+would have re-enabled the override in the one case being complained about.
+
+**BOTH HALVES MEASURED, because a fix that pointed everyone at their feet forever
+would break what the override was added for** ("you attack while facing away",
+M70 earlier). `facing.mjs` walks past a camp and then fights in it:
+
+    walking past, never attacking, 106-271px away   0 degrees off travel, 6/6
+    fighting, strafing                              55 degrees off travel, 3/6
+
+**THE PROBE'S FIRST RUN FAILED AND THE GAME WAS FINE.** Phase one strafes in one
+direction for two seconds, which carries the character from 137px out to 600px —
+past `ENGAGE_RADIUS_PX`. Phase two then measured a character alone in a field,
+found nothing held, and reported the override broken. It closes back in and
+alternates the strafe now, so the second phase actually happens next to
+something.
+
+Suite 38/38.

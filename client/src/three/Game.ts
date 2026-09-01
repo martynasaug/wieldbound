@@ -334,6 +334,17 @@ const SLIDE_MOVE_EPSILON_PX = 0.5;
 // that crossing the map keeps flickering a ring onto distant camps.
 const ENGAGE_RADIUS_PX = 340;
 
+/**
+ * How long after the last blow the body keeps facing what it was fighting.
+ *
+ * Swings are seconds apart at low Agility, and `attacking` can drop for a moment
+ * between a kill and the next target. Without a grace window the character snaps
+ * from facing its enemy to facing its feet and back again mid-fight, which reads
+ * worse than either state on its own. Short enough that walking away from a
+ * finished fight releases almost immediately.
+ */
+const FACE_TARGET_GRACE_MS = 900;
+
 // A click within this many screen pixels of a monster counts as a click on it,
 // even if the ray missed the mesh. A slime is under a metre tall and renders
 // perhaps twenty pixels across at this camera; demanding a pixel-accurate hit
@@ -721,6 +732,9 @@ export class Game {
   private running = false;
   /** Last moment combat traffic arrived, used to show the reach ring only while fighting. */
   private lastCombatAt = 0;
+  /** When YOU last swung or cast — not when something last hit you. Facing
+   *  while moving keys on this; see the note in the movement step. */
+  private lastOwnAttackAt = 0;
   private actorBuildsInFlight = 0;
   /** The shared profiler. See profiler.ts — the loop runs about thirty
    *  subsystems and none of them had ever been timed, and the network dispatch
@@ -2407,6 +2421,8 @@ export class Game {
   }): void {
     const vis = this.monsters.get(p.monsterId);
     this.lastCombatAt = performance.now();
+    // A blow YOU landed, which is what the facing override keys on.
+    this.lastOwnAttackAt = this.lastCombatAt;
     // FORCED, because Agility's double-attack lands as two of these messages
     // back to back — two independent rolls, two log lines, two floating
     // numbers — and `play`'s own guard (`currentAnim === anim` is a no-op
@@ -2823,6 +2839,8 @@ export class Game {
     }
 
     this.lastCombatAt = performance.now();
+    // A spell YOU cast, same as landing a blow.
+    this.lastOwnAttackAt = this.lastCombatAt;
     this.hotbar.startCooldown(p.skillId, p.cooldownRemainingMs);
     this.hotbar.startGlobalCooldown(p.globalCooldownMs);
     this.combatLog.push(`You cast ${skill.name}.`, "#9ad4ff");
@@ -5227,11 +5245,34 @@ export class Game {
       // fleeing, and because a character moonwalking away from a wolf while
       // staring at it is a worse picture than the one being fixed.
       //
+      // ONLY WHILE ACTUALLY FIGHTING, WHICH IS NOT THE SAME AS "SOMETHING IS
+      // NEARBY". This is the correction to the paragraph above.
+      //
+      // `engagedId` sounds like the thing you are fighting and is not: it falls
+      // back to `nearestMonster(ENGAGE_RADIUS_PX)`, so ANY monster within 340px
+      // becomes "engaged" whether or not you have ever swung at it or clicked
+      // it. The facing rule read that as a fight, so walking past a camp turned
+      // your character to stare at it and walk sideways — reported from play as
+      // exactly that, with no targeting and no attacking involved.
+      //
+      // `attacking` is the honest signal: it is set from the server's
+      // ATTACK_STATE, which is true only while a standing attack order exists.
+      // `lastCombatAt` covers the beat after the last blow so the body does not
+      // snap back to its feet between swings.
+      //
       // Screen-space input maps straight to world axes: +x is east, +y is south
       // in server space, which is +z here.
       const engaged = this.engagedId ? this.monsters.get(this.engagedId) : null;
+      // `lastOwnAttackAt`, NOT `lastCombatAt`. The latter is also stamped by
+      // `onMonsterAttack` — by something hitting YOU — and a monster swinging at
+      // your back is not a reason to turn your body away from where you are
+      // going. Being attacked while walking past is the exact situation being
+      // complained about, so it must not be what re-enables the override.
+      const inCombat =
+        this.attacking || performance.now() - this.lastOwnAttackAt < FACE_TARGET_GRACE_MS;
       const facingTarget =
         engaged &&
+        inCombat &&
         !isRetreating(dx, dy, engaged.state.x - this.playerX, engaged.state.y - this.playerY);
       if (facingTarget && engaged) {
         actor.faceToward(engaged.actor.position.x, engaged.actor.position.z);
