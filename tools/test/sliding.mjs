@@ -135,25 +135,61 @@ check(
 // check compared string offsets against a fixed slice and PASSED when the
 // recovery was deliberately moved back inside the guard — a test that cannot
 // fail is worse than no test, because it is also a claim.
-const guardAt = game.indexOf("if (p.x !== undefined && p.y !== undefined) {");
-check("the respawn-coordinate guard is where it is expected", guardAt > -1);
+// THE PROPERTY, NOT THE SPELLING. This used to look for the literal
+// `if (p.x !== undefined && p.y !== undefined) {` in `onHpUpdate` and for
+// `setTimeout(() => this.localActor?.revive(), 900);`, and both moved when the
+// death sequence was split in two: the body now lies where it fell for
+// `DEATH_HOLD_MS` and `finishRespawn` does the teleport and the standing up.
+// The invariant is unchanged and is the only thing worth asserting — recovery
+// from the actor's own pose must never depend on the server's payload, because
+// `play("die")` locks the animation state until `revive` clears it.
+const respawnAt = game.indexOf("private finishRespawn(): void {");
+check("the respawn step exists", respawnAt > -1);
 let end = -1;
-if (guardAt > -1) {
+if (respawnAt > -1) {
   let depth = 0;
-  for (let i = game.indexOf("{", guardAt); i < game.length; i++) {
+  for (let i = game.indexOf("{", respawnAt); i < game.length; i++) {
     if (game[i] === "{") depth++;
     else if (game[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
   }
 }
-const insideGuard = guardAt > -1 && end > -1 && game.slice(guardAt, end).includes("revive()");
+const body = respawnAt > -1 && end > -1 ? game.slice(respawnAt, end) : "";
+// Brace-matched rather than measured in characters. A first version of this
+// check compared string offsets against a fixed slice and PASSED when the
+// recovery was deliberately moved back inside the guard — a test that cannot
+// fail is worse than no test, because it is also a claim.
+const coordGuardAt = body.indexOf("if (at) {");
+let guardEnd = -1;
+if (coordGuardAt > -1) {
+  let depth = 0;
+  for (let i = body.indexOf("{", coordGuardAt); i < body.length; i++) {
+    if (body[i] === "{") depth++;
+    else if (body[i] === "}") { depth--; if (depth === 0) { guardEnd = i; break; } }
+  }
+}
+const insideGuard =
+  coordGuardAt > -1 && guardEnd > -1 && body.slice(coordGuardAt, guardEnd).includes("revive()");
 check(
-  "revive() is NOT scheduled inside the respawn-coordinate guard",
+  "revive() is NOT inside the respawn-coordinate guard",
   !insideGuard,
   "a defeat without coordinates would lock the character forever",
 );
+check("revive() still happens on every defeat", body.includes("revive()"));
 check(
-  "revive() is still scheduled somewhere in the defeat branch",
-  game.includes("setTimeout(() => this.localActor?.revive(), 900);"),
+  "the respawn step is scheduled unconditionally by the defeat branch",
+  /setTimeout\(\(\) => this\.finishRespawn\(\), DEATH_HOLD_MS\);/.test(game),
+);
+// And the reason the split exists at all: the body must not be moved on the
+// same frame it dies, or the death animation plays on the respawn tile in town.
+check(
+  "the teleport home is NOT in the defeat branch any more",
+  !/this\.localActor\?\.play\("die"\);[\s\S]{0,400}?snapTo/.test(game),
+  "moving the body next to play(\"die\") is the bug this split fixed",
+);
+check(
+  "movement is suspended while dying",
+  /if \(this\.dying\) return;/.test(game) && /private dying = false;/.test(game),
+  "a corpse that still walks keeps telling the server where it walked to",
 );
 
 // --- 5. the run action must never be left disabled --------------------------

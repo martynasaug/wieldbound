@@ -19189,3 +19189,61 @@ adaptive controller changes level. Not chased further — one 66ms frame per
 sixteen minutes is far below the 650-700ms freezes this phase was opened to fix.
 
 Suite 38/38.
+
+**Phase 70 M70.155 — you now die where you were killed.** Reported from play:
+"you die, immediately teleported to spawn point and do the dying animation
+there." Exactly right, and it was two adjacent statements in `onHpUpdate`:
+
+    this.localActor?.play("die");
+    if (p.x !== undefined && p.y !== undefined) {
+      this.playerX = p.x; this.playerY = p.y;      // the arrival point
+      this.localActor?.snapTo(...);                 // on the same frame
+    }
+    setTimeout(() => this.localActor?.revive(), 900);
+
+So the character vanished from the fight and performed its death animation
+standing on the respawn tile in town. Every part of that is backwards: the death
+belongs to the place that caused it, and arriving home is what happens AFTER it.
+
+**THE FIX IS TIME BETWEEN TWO EVENTS.** The fall plays in place; `finishRespawn`
+does the moving `DEATH_HOLD_MS` (1500ms) later, then revives. `dying` suspends
+movement for the duration and the key set is cleared — without that the player
+walks their own corpse around during the fall, and worse, `stepMovement` keeps
+sending MOVE from the death site, which the server accepts and which would drag
+them straight back out of the respawn it just granted.
+
+Client-side only, deliberately. `PlayerState` carries no dead flag, so remote
+players have never animated a death at all — a server-side downed state would be
+a protocol change for something no one can currently see. This is a local
+presentation bug and it is fixed where it lives.
+
+Verified with two screenshots and fourteen assertions: the body 1201px from town
+while dying, among the slimes that killed it, with "You were defeated." in the
+log; then 1502ms later standing idle at the Emberhold monument, visible, on half
+health, Weakened, and able to move.
+
+**THE PROBE WAS WRONG TWICE MORE, IN OPPOSITE DIRECTIONS.** Detecting the death
+by the teleport stopped working the moment the teleport stopped being instant, so
+it moved to the health jump — and at 700ms sampling it measured a 1500ms hold as
+977ms and failed a working game, which is the wrong way round. Sampling at 120ms
+fixed the timing and broke the detection: `hp > before && hp <= half` caught a
+passive regeneration tick from 10 to 12 and reported a death with no Weakened
+status. It keys on `hp === floor(maxHp / 2)` with a jump of at least five now,
+which no regen tick can imitate.
+
+Also worth recording: the first arrival screenshot showed a town square with no
+character in it, which looked alarming and was the camera not having caught up on
+the frame of the `snapTo`. A second shot 1500ms later, plus asserting
+`visible`/`anim` directly, showed it standing idle. One frame is not evidence.
+
+**`sliding.mjs` CAUGHT THIS, WHICH IS WHAT IT IS FOR.** It guards the animation
+lock — `play("die")` sets `oneShotUntil` to MAX_SAFE_INTEGER and only `revive`
+clears it — by asserting that recovery is never conditional on the server's
+payload. Both of its checks were written against the OLD shape (the literal
+coordinate guard, and `setTimeout(... revive(), 900)`), so the split broke them
+while leaving the invariant intact. They asserted the spelling; they assert the
+property now, in its new home, plus the new rule that movement is suspended while
+dying. Confirmed sharp by moving `revive()` inside the coordinate guard and by
+deleting the `dying` guard, and watching each fail.
+
+Suite 38/38.

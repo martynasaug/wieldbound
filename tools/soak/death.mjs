@@ -28,6 +28,10 @@ const ARRIVAL = {
 // something else finds them.
 const CAMP = { x: SPAWN.x + 1320, y: SPAWN.y };
 
+const SHOT_FELL = process.argv[3] ?? "death-fell.png";
+const SHOT_ARRIVED = process.argv[4] ?? "death-arrived.png";
+const SHOT_SETTLED = process.argv[5] ?? "death-settled.png";
+
 let failures = 0;
 const check = (name, ok, detail = "") => {
   console.log(`  ${ok ? "ok  " : "FAIL"}  ${name}${detail ? " — " + detail : ""}`);
@@ -64,24 +68,64 @@ const run = async () => {
   let sign = 1;
   while (Date.now() < deadline && !died) {
     const s = await state(page);
-    // THE TELEPORT IS THE TELL, and nothing else is.
+    // THE HEALTH JUMP IS THE TELL NOW, not the teleport.
     //
-    // The first version of this also required `s.hp < before.hp + 1`, on the
-    // assumption that dying lowers your health. It does the opposite from
-    // outside: `applyDamage` never leaves hp at zero, it writes
-    // floor(maxHp / 2) in the same call that reports the defeat, so health
-    // JUMPS UP at the moment of death. That condition could never be true and
-    // the probe walked back to the camp and died repeatedly for four minutes
-    // while reporting that it never died — with `weakened` sitting in the
-    // status list the whole time.
+    // Two revisions here, both worth keeping. The first required health to FALL
+    // at the moment of death; it does the opposite from outside, because
+    // `applyDamage` writes floor(maxHp / 2) in the same call that reports the
+    // defeat, so a death looks like a heal. That version walked back into the
+    // camp and died repeatedly for four minutes while reporting no deaths.
     //
-    // A jump from beyond 500px to within 300px of the arrival point in one
-    // sample is a teleport: a level 1 covers about 120px in the 600ms between
-    // samples and cannot fake it.
-    const nearArrival = Math.hypot(s.x - ARRIVAL.x, s.y - ARRIVAL.y) < 300;
+    // The second keyed on the teleport home, which worked until the teleport
+    // stopped being instant: the body now lies where it fell for
+    // `DEATH_HOLD_MS` before arriving. The defeat itself is the health jump, and
+    // that is what the sequence below is timed from.
+    // EXACTLY half, and a big step. `s.hp > before.hp && s.hp <= half` was the
+    // first attempt and it was too loose the moment the sampling got fast
+    // enough to be accurate: passive regeneration ticks a few points at a time,
+    // so at 120ms intervals it caught a heal from 10 to 12 and reported a death
+    // with no Weakened status and 12/60 health. `applyDamage` writes precisely
+    // `floor(maxHp / 2)`, and no regen tick moves five points at once.
+    const jumped = s.hp === Math.floor(s.maxHp / 2) && s.hp - before.hp >= 5;
     const wasFarFromTown = Math.hypot(before.x - ARRIVAL.x, before.y - ARRIVAL.y) > 500;
-    if (nearArrival && wasFarFromTown) {
-      died = { before, after: s };
+    if (jumped && wasFarFromTown) {
+      const diedAt = Date.now();
+      const fellAt = { x: s.x, y: s.y };
+      // WHERE IS THE BODY DURING THE FALL? This is the whole fix: it must still
+      // be out in the field, not standing on the respawn tile in town.
+      await page.screenshot({ path: SHOT_FELL });
+      const duringFall = await state(page);
+      // Then wait for the arrival and time it.
+      let arrived = null;
+      while (Date.now() - diedAt < 6000) {
+        const now = await state(page);
+        if (Math.hypot(now.x - ARRIVAL.x, now.y - ARRIVAL.y) < 300) {
+          arrived = { at: Date.now() - diedAt, state: now };
+          break;
+        }
+        await page.waitForTimeout(100);
+      }
+      await page.screenshot({ path: SHOT_ARRIVED });
+      // AND ONE AFTER THE DUST SETTLES. The arrival shot is taken on the frame
+      // the position first reads as home, which is the frame of the `snapTo` —
+      // the camera has not caught up and the actor may still be in its fallen
+      // pose. A character that never stands back up, or never reappears at all,
+      // would look exactly like that in a single frame and is worth ruling out.
+      await page.waitForTimeout(1500);
+      await page.screenshot({ path: SHOT_SETTLED });
+      const settled = await page.evaluate(() => {
+        const g = window.__wieldbound;
+        const a = g.localActor;
+        return {
+          visible: !!a?.root?.visible,
+          anim: a?.currentAnim ?? null,
+          actorX: a ? Math.round(a.position.x) : null,
+          actorZ: a ? Math.round(a.position.z) : null,
+          camX: Math.round(g.world.camera.position.x),
+          camZ: Math.round(g.world.camera.position.z),
+        };
+      });
+      died = { before, after: s, fellAt, duringFall, arrived, settled };
       break;
     }
     const dx = CAMP.x - s.x;
@@ -92,7 +136,12 @@ const run = async () => {
     if (dirs.length === 0) {
       // Standing in the camp. Do nothing and let it happen — no attacking, so
       // the fight is as one-sided as possible.
-      await page.waitForTimeout(700);
+      //
+      // SAMPLED FAST, because the moment of death is the zero point for timing
+      // the fall. At 700ms between samples the defeat was noticed up to 700ms
+      // late and a 1500ms hold measured as 977ms — a failing assertion about a
+      // working game, which is the wrong way round.
+      await page.waitForTimeout(120);
     } else {
       const r = await step(page, dirs, 600);
       if (r.moved < 20) {
@@ -110,8 +159,27 @@ const run = async () => {
     process.exit(1);
   }
 
-  const after = died.after;
-  console.log(`\ndied: ${JSON.stringify(died.before)}\n  ->  ${JSON.stringify(after)}\n`);
+  const after = died.arrived?.state ?? died.after;
+  console.log(`\ndied at (${died.fellAt.x}, ${died.fellAt.y})`);
+  console.log(`during the fall: ${JSON.stringify(died.duringFall)}`);
+  console.log(`arrived: ${died.arrived ? `${died.arrived.at}ms later, ${JSON.stringify(died.arrived.state)}` : "NEVER"}\n`);
+
+  // THE SEQUENCE, which is the thing that was wrong. The body must still be out
+  // where it was killed while the death animation plays, and only then appear at
+  // the arrival point. Before this, both happened on the same frame and the
+  // death animation played standing on the respawn tile in town.
+  const fellFromTown = Math.hypot(died.duringFall.x - ARRIVAL.x, died.duringFall.y - ARRIVAL.y);
+  check(
+    "the body stays where it fell during the death animation",
+    fellFromTown > 500,
+    `${Math.round(fellFromTown)}px from the arrival point while dying`,
+  );
+  check("it does arrive eventually", !!died.arrived, died.arrived ? "" : "never reached the arrival point");
+  check(
+    "the fall lasts about as long as the hold",
+    !!died.arrived && died.arrived.at >= 1000 && died.arrived.at <= 4000,
+    `${died.arrived?.at ?? "-"}ms between the defeat and the arrival`,
+  );
 
   check(
     "respawns at the arrival point",
@@ -129,6 +197,9 @@ const run = async () => {
     after.statuses.some((s) => String(s).toLowerCase().includes("weak")),
     `statuses=[${after.statuses.join(",")}]`,
   );
+  console.log(`settled: ${JSON.stringify(died.settled)}`);
+  check("the character is visible again after respawning", died.settled.visible, JSON.stringify(died.settled));
+  check("it is not stuck in the death pose", died.settled.anim !== "die", `anim=${died.settled.anim}`);
   check("no cast survives the death", !after.casting);
   check(
     "experience did not increase across the death",

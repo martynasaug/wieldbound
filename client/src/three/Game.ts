@@ -224,6 +224,22 @@ import {
 
 const PLAYER_HEIGHT = 1.8;
 
+/**
+ * How long the body lies where it fell before reappearing at the arrival point.
+ *
+ * This used to be 900ms and it was not a hold at all — it was the delay before
+ * `revive`, while the teleport home happened on the same frame as the death. So
+ * the sequence a player actually saw was: vanish from the fight, materialise in
+ * town, play a death animation standing on the respawn tile, get up. Reported as
+ * "the dying sequence is bad", which is generous.
+ *
+ * Long enough for the fall to read as a fall and for the place that killed you
+ * to be the last thing on screen; short enough that being dead is a beat rather
+ * than a punishment. The whole point is that these are now two events with time
+ * between them instead of two statements on adjacent lines.
+ */
+const DEATH_HOLD_MS = 1500;
+
 // Monster art, one row per kind. Every model is from Quaternius's Ultimate
 // Monsters (CC0, glTF), so the stand-ins from M1 are gone. Height is chosen to
 // read the kind's role at a glance — a golem should look like it has 14 armour
@@ -705,6 +721,11 @@ export class Game {
    *  `null` means "no reading yet" — the first frame is never a delta. */
   /** Geometry and texture counts as of the previous frame, so an upload during
    *  THIS one can be named in the hitch line. -1 means "no frame yet". */
+  /** Set for the length of the death animation, between falling and arriving.
+   *  Movement and the keyboard are both suspended while it is true. */
+  private dying = false;
+  /** Where the server says to reappear, held until the fall has finished. */
+  private pendingRespawn: { x: number; y: number } | null = null;
   private lastGeometryCount = -1;
   private lastTextureCount = -1;
   /** Appended to the profiler context, so a hitch says whether it uploaded. */
@@ -2244,12 +2265,24 @@ export class Game {
       // The fight is over, so the numbers describing it should not outlive it
       // and drift over the respawn.
       this.floaters.clear();
+      // YOU FALL WHERE YOU DIED. The body used to be teleported to the arrival
+      // point on this same line, one statement after `play("die")` — so the
+      // character vanished from the fight and performed its death animation in
+      // the middle of town, standing on the respawn tile. Every part of that is
+      // backwards: the death belongs to the place that caused it, and arriving
+      // home is what happens AFTER it.
+      //
+      // So the fall plays here, in place, and `finishRespawn` does the moving
+      // once it is over. See `DEATH_HOLD_MS`.
       this.localActor?.play("die");
-      if (p.x !== undefined && p.y !== undefined) {
-        this.playerX = p.x;
-        this.playerY = p.y;
-        this.localActor?.snapTo(...onGround(toWorldX(p.x), toWorldZ(p.y)));
-      }
+      this.pendingRespawn =
+        p.x !== undefined && p.y !== undefined ? { x: p.x, y: p.y } : null;
+      this.dying = true;
+      // Dying takes the keyboard away. Without this the player keeps walking
+      // their corpse around during the fall, and — worse — `stepMovement` keeps
+      // sending MOVE from the death site, which the server would accept and
+      // which would drag them straight back out of the respawn it just granted.
+      this.keys.clear();
       // OUTSIDE the coordinate check, and that is the whole point of the line.
       //
       // `play("die")` is unconditional and sets `oneShotUntil` to
@@ -2266,8 +2299,36 @@ export class Game {
       // That is exactly the kind of fact that is true until one of them is
       // added or edited, and there is no reason for the CLIENT's recovery from
       // its own pose to depend on the payload at all.
-      setTimeout(() => this.localActor?.revive(), 900);
+      setTimeout(() => this.finishRespawn(), DEATH_HOLD_MS);
     }
+  }
+
+  /**
+   * The second half of dying: get up, somewhere else.
+   *
+   * Split out from `onHpUpdate` so the fall and the arrival are two events with
+   * time between them rather than two statements on adjacent lines. Safe to run
+   * twice — a second defeat landing mid-fall simply reschedules it — and safe to
+   * run with no respawn position, which is the case the note above is about.
+   */
+  private finishRespawn(): void {
+    const at = this.pendingRespawn;
+    this.pendingRespawn = null;
+    this.dying = false;
+    if (at) {
+      this.playerX = at.x;
+      this.playerY = at.y;
+      this.localActor?.snapTo(...onGround(toWorldX(at.x), toWorldZ(at.y)));
+      // The camera is placed from the player's position every frame, so it
+      // follows on its own — but the server has had this position since the
+      // moment of death, and the client has been quietly disagreeing with it
+      // for the whole fall. Say it out loud rather than waiting for the next
+      // input to reconcile it.
+      this.socket.sendMove(at.x, at.y);
+    }
+    // Unconditional, and see the note above for why: `play("die")` locks the
+    // animation state until `revive` clears it, whatever the payload contained.
+    this.localActor?.revive();
   }
 
   // A swing is a beat, not an instant. The server tells us the outcome all at
@@ -5065,6 +5126,10 @@ export class Game {
   }
 
   private stepMovement(dt: number): void {
+    // A corpse does not walk. `play("die")` locks the POSE but never stopped the
+    // translation, so before this the body slid across the ground mid-fall and
+    // kept telling the server where it had slid to.
+    if (this.dying) return;
     let dx = 0;
     let dy = 0;
     if (this.keys.has("a") || this.keys.has("arrowleft")) dx -= 1;
