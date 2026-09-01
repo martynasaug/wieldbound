@@ -19421,3 +19421,42 @@ about:blank origin and silently will not load a `file://` path, which produced
 one perfectly black crop.
 
 Suite 38/38.
+
+**Phase 70 M70.159 — three ornament styles, and heads with a face on them.**
+"Both" was chosen from the comparison and is the default; `Wyrms`, `Iron`,
+`Both` and `Plain` are all a setting in the minimap panel, because which one
+looks right is taste and taste is what that panel exists to stop me deciding for
+everybody.
+
+**IRONWORK.** Four brackets on the diagonals, each a mirrored pair of volutes
+joined by a bar, plus rivets around the bezel. A volute is the body sweep again
+with the radius falling away as it turns, so the band coils in and thins.
+
+Two defects found by rendering it rather than by reading it. The 4.5px halo that
+separates gold-on-gold met itself across each coil and filled it in — four dark
+discs on the diagonals — so the ironwork takes a 2.2px outline instead; the
+serpent's body is three times as wide and does not have the problem, which is why
+that is per-piece rather than one constant. And the spiral turned 1.55π, nearly
+280 degrees, closing into a gear rather than a scroll. Just over a half turn
+leaves the C visible.
+
+**THE HEADS WERE BASIC AND BLAND, WHICH THEY WERE.** Five flat polygons in one
+flat gold. The lesson is that at thirty pixels a SILHOUETTE carries almost
+nothing and INTERNAL EDGES carry everything, so what was missing was not a better
+outline but contrast: a dark mouth stroke between two jaw masses, a nostril, an
+eye socket with a highlight, a jowl behind the jaw, a frill of three spikes off
+the back of the skull, and horns swept as tapering bands rather than straight
+quads — a straight horn reads as a spike glued on, a curved one as grown. The
+muzzle also came down from 22 units to 19 with a stepped brow: the long version
+was a gharial.
+
+**A ZOOM TOOL, BECAUSE THIS COULD NOT BE JUDGED OTHERWISE.** `crop.mjs` cuts a
+region out of a frame and magnifies it, and `ornaments.mjs` renders every style
+in one pass. The heads are about thirty pixels on screen; every judgement about
+them before this was made from a 190px widget inside a 1600px screenshot, which
+is how the first version's silhouette problem survived a look at the frame it was
+in. `crop.mjs` loads its input as a data URI — an `<img>` inside `setContent` is
+on an about:blank origin and silently will not load a `file://` path, which
+produced one perfectly black crop.
+
+Suite 38/38.

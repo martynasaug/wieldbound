@@ -14,7 +14,7 @@
 import { WORLD_WIDTH, WORLD_HEIGHT } from "../../../shared/protocol-types";
 import { iconSvg } from "./icons";
 import { MinimapTerrain } from "./minimapTerrain";
-import { ornamentSvg } from "./minimapOrnament";
+import { ornamentSvg, type OrnamentStyle } from "./minimapOrnament";
 
 /** Where something is, in three.js world units (x east, z south). */
 export interface Blip {
@@ -105,6 +105,10 @@ export interface MinimapSettings {
   showGrid: boolean;
   showCoords: boolean;
   opacity: number;
+  /** What is mounted around the ring. See `minimapOrnament.ts` — the styles are
+   *  a setting because which one looks right is a matter of taste, and taste is
+   *  what this whole settings panel exists to stop me deciding for everybody. */
+  ornament: OrnamentStyle;
 }
 
 const STORAGE_KEY = "wieldbound.minimap";
@@ -123,6 +127,7 @@ const DEFAULTS: MinimapSettings = {
   showGrid: true,
   showCoords: true,
   opacity: 1,
+  ornament: "both",
 };
 
 export const MIN_RANGE = 14;
@@ -181,8 +186,8 @@ export class Minimap {
   private readonly terrain = new MinimapTerrain();
   /** Host for the generated serpents. Rebuilt only when the size changes. */
   private readonly ornament: HTMLElement;
-  /** Ring diameter the serpents were last generated for. */
-  private ornamentSize = -1;
+  /** Size and style the ornament was last generated for. */
+  private ornamentKey = "";
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement("div");
@@ -291,6 +296,18 @@ export class Minimap {
         `<button data-value="circle">Circle</button><button data-value="square">Square</button>` +
         `</span></div>`,
     );
+    // Which ornament is mounted around the ring. A setting rather than a
+    // decision, for the same reason the shape and the size are: three people
+    // will want three different answers and none of them is wrong.
+    rows.push(
+      `<div class="mm-row mm-row-inline"><span>Frame</span>` +
+        `<span class="mm-seg" data-seg="ornament">` +
+        `<button data-value="serpents">Wyrms</button>` +
+        `<button data-value="ironwork">Iron</button>` +
+        `<button data-value="both">Both</button>` +
+        `<button data-value="none">Plain</button>` +
+        `</span></div>`,
+    );
     rows.push(
       `<div class="mm-row mm-row-inline"><span>Size</span>` +
         `<span class="mm-seg" data-seg="size">` +
@@ -320,11 +337,12 @@ export class Minimap {
     });
 
     for (const seg of Array.from(this.panel.querySelectorAll<HTMLElement>(".mm-seg"))) {
-      const key = seg.dataset.seg as "shape" | "size";
+      const key = seg.dataset.seg as "shape" | "size" | "ornament";
       for (const button of Array.from(seg.querySelectorAll("button"))) {
         button.addEventListener("click", () => {
           const value = button.dataset.value!;
           if (key === "size") this.settings.size = Number(value);
+          else if (key === "ornament") this.settings.ornament = value as OrnamentStyle;
           else this.settings.shape = value as "circle" | "square";
           this.save();
           this.applySettings();
@@ -370,8 +388,9 @@ export class Minimap {
     if (opacity) opacity.value = String(Math.round(s.opacity * 100));
 
     for (const seg of Array.from(this.panel.querySelectorAll<HTMLElement>(".mm-seg"))) {
-      const key = seg.dataset.seg as "shape" | "size";
-      const current = key === "size" ? String(s.size) : s.shape;
+      const key = seg.dataset.seg as "shape" | "size" | "ornament";
+      const current =
+        key === "size" ? String(s.size) : key === "ornament" ? s.ornament : s.shape;
       for (const button of Array.from(seg.querySelectorAll("button"))) {
         button.classList.toggle("active", button.dataset.value === current);
       }
@@ -396,9 +415,10 @@ export class Minimap {
     // say the same thing again. `+ 22` is the bezel the ring adds around the
     // canvas — see the padding in `.mm-ring`.
     const ringSize = s.size + 22;
-    if (ringSize !== this.ornamentSize) {
-      this.ornamentSize = ringSize;
-      this.ornament.innerHTML = ornamentSvg(ringSize);
+    const ornamentKey = `${ringSize}:${s.ornament}`;
+    if (ornamentKey !== this.ornamentKey) {
+      this.ornamentKey = ornamentKey;
+      this.ornament.innerHTML = ornamentSvg(ringSize, s.ornament);
     }
 
     // The window rail is told how much room the map takes, so the two can never
