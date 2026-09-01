@@ -240,6 +240,16 @@ const PLAYER_HEIGHT = 1.8;
  */
 const DEATH_HOLD_MS = 1500;
 
+/** The gold the toast and the log line already use, so the world agrees with
+ *  the interface about what a level-up is coloured. */
+const LEVEL_UP_COLOR = 0xffd873;
+/** How long the ring spends drawing inward before the burst goes off. Long
+ *  enough to read as a wind-up, short enough not to feel like a cutscene. */
+const LEVEL_UP_GATHER_MS = 340;
+/** How far the burst ring floats above the ground it was sampled on, so a slope
+ *  cannot swallow its near half. Small enough to still read as ground-level. */
+const LEVEL_UP_RING_LIFT = 0.45;
+
 // Monster art, one row per kind. Every model is from Quaternius's Ultimate
 // Monsters (CC0, glTF), so the stand-ins from M1 are gone. Height is chosen to
 // read the kind's role at a glance — a golem should look like it has 14 armour
@@ -1054,12 +1064,7 @@ export class Game {
           this.hud.toast(`Level up — ${this.level}`, "#ffd873");
           this.refreshClassUi();
           playSfx("levelup");
-          const self = this.localActor;
-          if (self) {
-            this.effects.play("holy", self.position.x, self.position.y + 1.0, self.position.z, {
-              scale: 3.4, tint: 0xffd873, durationMs: 900,
-            });
-          }
+          this.playLevelUpFx();
         }
       },
       onLootUpdate: (p) => {
@@ -2301,6 +2306,58 @@ export class Game {
       // its own pose to depend on the payload at all.
       setTimeout(() => this.finishRespawn(), DEATH_HOLD_MS);
     }
+  }
+
+  /**
+   * What a level-up looks like.
+   *
+   * IT USED TO BE ONE FLAT BILLBOARD. `effects.play("holy", ...)` at scale 3.4,
+   * centred on the character's chest — and the `holy` atlas cell at that size is
+   * a solid vertical slab, so the celebration for getting stronger was your
+   * character DISAPPEARING behind an opaque yellow rectangle, which then faded to
+   * a pale smear. Reported from play, and confirmed by capturing the frames: the
+   * body is completely hidden at the moment it happens. It was also the same
+   * sprite the `holy` damage school uses, so it did not even read as a level-up.
+   *
+   * The pieces to do this properly were already here, in `SkillFx`, and they are
+   * real geometry rather than a camera-facing quad:
+   *
+   *   `pillar` is a spinning ring that CONTRACTS, 1.4 to 0.35 — energy gathering
+   *   `nova`   is a ring that EXPANDS — the burst
+   *   `flash`  is a pooled point light, so the ground and the grass light up
+   *
+   * Gather, then burst, then the light: a shape with a beginning and an end that
+   * happens AROUND the character instead of on top of them, so the thing being
+   * celebrated stays visible while it is celebrated.
+   */
+  private playLevelUpFx(): void {
+    const self = this.localActor;
+    if (!self) return;
+    const at = () => {
+      const x = self.position.x;
+      const z = self.position.z;
+      return { x, z, y: surfaceHeight(x, z) };
+    };
+    const gather = at();
+    this.skillFx.pillar(gather.x, gather.y, gather.z, LEVEL_UP_COLOR, LEVEL_UP_GATHER_MS + 160);
+    this.skillFx.flash(gather.x, gather.y, gather.z, LEVEL_UP_COLOR, 6, 300);
+    // Position is re-read at the burst rather than captured above: a level-up
+    // lands mid-fight far more often than standing still, and a shockwave left
+    // behind at the spot where the killing blow happened reads as a bug.
+    window.setTimeout(() => {
+      if (!this.running || this.localActor !== self) return;
+      const burst = at();
+      // LIFTED, AND THAT IS NOT COSMETIC FUSSING. `nova` draws a flat ring at
+      // one height, sampled at the centre, so on any slope the near half sinks
+      // under the terrain and what the player sees is an arc with two sawn-off
+      // ends rather than a ring. Caught in a captured frame — it is invisible in
+      // the source and obvious in a picture.
+      //
+      // Raised at this call site rather than inside `nova`, which monster death
+      // bursts also use and which are deliberately flat on the ground.
+      this.skillFx.nova(burst.x, burst.y + LEVEL_UP_RING_LIFT, burst.z, 2.6, LEVEL_UP_COLOR, 640);
+      this.skillFx.flash(burst.x, burst.y, burst.z, LEVEL_UP_COLOR, 13, 420);
+    }, LEVEL_UP_GATHER_MS);
   }
 
   /**

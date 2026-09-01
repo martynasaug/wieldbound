@@ -19247,3 +19247,64 @@ dying. Confirmed sharp by moving `revive()` inside the coordinate guard and by
 deleting the `dying` guard, and watching each fail.
 
 Suite 38/38.
+
+**Phase 70 M70.156 — the level-up celebration was a yellow slab over your own
+character.** Reported from play as "look how terrible the level up animation is",
+and the capture settles it immediately: the entire celebration was
+
+    this.effects.play("holy", x, y + 1.0, z, { scale: 3.4, tint: 0xffd873, ... })
+
+one camera-facing billboard at scale 3.4, centred on the chest. The `holy` atlas
+cell at that size is a near-solid vertical slab, so the reward for getting
+stronger was the character VANISHING behind an opaque yellow rectangle which
+then faded to a pale smear. It was also the same sprite the `holy` damage school
+uses, so it did not read as a level-up even when it was visible.
+
+**THE PIECES WERE ALREADY HERE.** `SkillFx` has real geometry rather than
+billboards, and two of them are exactly this shape: `pillar` is a spinning ring
+that CONTRACTS from 1.4 to 0.35, and `nova` is a ring that EXPANDS. Gather, then
+burst, then `flash` — a pooled point light, so the grass and the ground light up
+gold rather than a decal being pasted over them. The whole thing now happens
+AROUND the character instead of on top of them, which is the point: the thing
+being celebrated stays visible while it is celebrated.
+
+Position is re-read at the burst rather than captured at the gather, because a
+level-up lands mid-fight far more often than standing still and a shockwave left
+behind at the spot of the killing blow reads as a bug.
+
+**NO POSE, AND THAT IS NOT AN OVERSIGHT.** The rig has twenty-five clips and not
+one of them is a cheer, a salute or a victory stance — the sets are attack, idle,
+walk, run, hit, die, cast, pickup and roll. Bending `cast` into a triumphant
+gesture for a warrior mid-swing would look worse than nothing. This is an art
+gap, not a code one.
+
+**THE RING WAS AN ARC, AND ONLY A PICTURE COULD HAVE SAID SO.** `nova` draws a
+flat ring at ONE height, sampled at the centre, so on any slope its near half
+sinks under the terrain — what renders is a ring with two sawn-off ends. Invisible
+in the source, obvious in a captured frame. Lifted at the call site rather than
+inside `nova`, which monster death bursts also use and which are deliberately
+flat on the ground.
+
+**AND THE HARNESS LIED ABOUT TIME, TWICE, THE SAME WAY.** `levelup.mjs` labelled
+its frames "+160ms" apart because it slept 160ms between them — but a headless
+screenshot costs about 190ms on its own, so "frame 4 (+640ms)" was really past a
+second and a half, and two captures of the same empty ground were compared as if
+they straddled the effect. It records the REAL elapsed time per frame now. The
+first attempt also caught a level-up that landed as a Golem died, so the frame
+held a corpse, four crit numbers, three loot labels and a bag-full warning with
+the thing under test somewhere underneath; `fxshot.mjs` walks somewhere quiet and
+fires the effect directly instead, since `private` is a compile-time fiction and
+`__wieldbound` is the whole Game.
+
+**A FLAKY TEST, RECORDED RATHER THAN WAVED THROUGH.** `fighting.mjs` failed twice
+during this work and passed alone both times, with two DIFFERENT messages —
+"nothing landed while standing still" and "still swinging while running away —
+5 against 1 standing". It is order-dependent: earlier tests clear the camp near
+`Fighter`, monsters take `MONSTER_RESPAWN_MS` to come back, and both windows it
+measures then compare almost-empty samples. It is a server test and every change
+in this entry is client-side, so it cannot be a regression from them — but a test
+that fails for reasons unrelated to the code under test will eventually hide a
+real one. Left as found and written down; fixing it means giving it its own camp
+or waiting for respawn, which is its own change.
+
+Suite 38/38 on a clean run.
