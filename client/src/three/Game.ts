@@ -2159,6 +2159,9 @@ export class Game {
     this.minimap.setSnapshot({
       drops: dropBlips,
       guides: this.objectiveGuides(),
+      // The one renderer-side number the map needs to ask `shared/` where the
+      // river and the road are. See `MinimapSnapshot.pxPerUnit`.
+      pxPerUnit: PX_PER_UNIT,
       player: { x: self.position.x, z: self.position.z, facing: self.bearing },
       players,
       monsters,

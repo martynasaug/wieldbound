@@ -19357,3 +19357,67 @@ alternates the strafe now, so the second phase actually happens next to
 something.
 
 Suite 38/38.
+
+**Phase 70 M70.158 — the minimap is a map now, in a frame.** Reported from play:
+"I don't like the way it looks, I don't like the way it displays things" — make
+it more like World of Warcraft's, with a custom design around it.
+
+**IT WAS A RADAR, NOT A MAP.** A flat olive disc with coloured dots on it. You
+could not see the river you were about to walk into, the road you were looking
+for, the forest you were standing in or the town you were walking home to. The
+ground now comes from the same `shared/` functions that decide where those
+things actually are — `distanceToRiver`, `distanceToRoad`, `forestStrengthAt`,
+the town radii — so the picture cannot drift from the world.
+
+**BUILT A FEW ROWS AT A TIME, WHICH IS THE WHOLE DESIGN.** Sampling terrain walks
+the road and river polylines per cell, and doing a tile of that in one frame is
+precisely the 100ms stall this phase has spent weeks removing. `minimapTerrain.ts`
+fills an offscreen tile six rows a frame and swaps it in only when finished; the
+tile covers nearly twice the view, so ordinary walking pans across an image that
+already exists. Measured over 10.6 minutes of driven play afterwards: 2
+frame-cost hitches, the same background rate as before it, and none of them in a
+minimap section.
+
+**THE FRAME.** A bevelled ring — a conic gradient, because a ring lit from one
+side reads as metal and a ring of one colour reads as a stroke — with the zoom
+and settings controls set into the rim as orbs, `N` on the bezel, the place name
+on a plaque above and the coordinates on one below. Previously the buttons were a
+rectangle parked underneath that did not belong to the map.
+
+Cut into the bezel was tried first and abandoned for a reason worth keeping: "The
+Coldwater Bridge" is far wider than an 11px band of metal, so the name either
+spilled past the ring or ellipsed to nothing.
+
+**AND THE ORNAMENTS, WHICH TOOK THREE GOES AND ARE STILL NOT RIGHT.** The
+reference is RuneScape, which mounts its minimap in a pair of ornamental dragons.
+Generated rather than drawn, for the same reason the armour is: there is no
+artist on this project.
+
+The first attempt swept a SHORT arc with a THICK body, tapered it smoothly and
+capped it with a rounded wedge, and was reported — accurately — as looking like
+two phalluses flanking the map. That failure is worth writing down because it is
+entirely general: a short, thick, smoothly-tapering form with a blunt rounded end
+reads as exactly one thing, and no amount of detailing rescues it. The fix is
+silhouette, not decoration — long and thin, an angular open jaw, horns, scale
+ribs to break the tube, and a curled tail so the far end is clearly an end.
+
+The second attempt was legible but the heads were flush against a bezel of the
+same gold and vanished into it. The third enlarged them and stood them off the
+ring, and they promptly covered the place-name plaque — a readability bug, since
+that name is the most useful text on the map. They sit at ten and two o'clock now
+and the plaque is clear.
+
+**THEY STILL DO NOT READ AS DRAGONS.** They read as ribbed banding with a head at
+one end. Recorded as unfinished rather than claimed as done, and paused for
+direction rather than iterated on blind a fourth time — tuning creature art
+through numeric constants without a fast visual loop is expensive and was not
+converging.
+
+Also added `tools/soak/uishot.mjs` (screenshot one element close up) and
+`crop.mjs` (magnify a region of a frame), because a minimap is 190px in the
+corner of a 1600px screenshot and cannot be judged at that size. `crop.mjs`
+loads its input as a data URI: an `<img>` inside `setContent` sits on an
+about:blank origin and silently will not load a `file://` path, which produced
+one perfectly black crop.
+
+Suite 38/38.

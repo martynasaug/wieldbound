@@ -1474,75 +1474,161 @@
         font-family: Georgia, serif;
         transition: opacity .15s;
       }
+      /* --- The minimap's furniture ------------------------------------------
+         A heavy bezel with everything set into it, rather than a thin circle
+         with a button bar parked underneath. The old arrangement read as two
+         widgets that happened to be adjacent; the ring is the frame for all of
+         it now — controls on the rim, place name across the top, coordinates
+         across the bottom.
+
+         The bezel is a conic-gradient rather than a flat border because a ring
+         lit from one side reads as metal and a ring of one colour reads as a
+         stroke. The angles are a light from the upper left: bright at 300deg,
+         dark at 120deg, with two secondary highlights so it does not look like
+         a simple two-stop sweep. */
+      #minimap .mm-ring {
+        position: relative;
+        padding: 11px;
+        border-radius: 50%;
+        background:
+          conic-gradient(from 300deg,
+            #f2d79a 0deg, #b98f3e 38deg, #6e5220 92deg,
+            #4a3617 150deg, #7c5c26 205deg, #d8b263 268deg,
+            #8d6c2e 318deg, #f2d79a 360deg);
+        box-shadow:
+          0 6px 22px #000b,
+          inset 0 0 0 1px rgba(255, 231, 170, .35),
+          0 0 0 1px #1a1208,
+          0 0 0 4px rgba(12, 9, 5, .55);
+      }
+      #minimap.mm-square .mm-ring { border-radius: 12px; }
+
+      /* The ornament layer. Centred on the ring and larger than it, so the
+         heads and spines can stand proud of the bezel without the ring having
+         to reserve room for them. Behind everything else in the ring and inert
+         to the pointer: it is furniture, and the wheel-zoom on the canvas must
+         still reach the canvas. */
+      #minimap .mm-orn-wrap {
+        position: absolute; left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        line-height: 0;
+        filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .6));
+      }
+      /* Hidden on the square map: serpents coiled around a rectangle read as a
+         mistake rather than as a frame. */
+      #minimap.mm-square .mm-orn-wrap { display: none; }
+
+
       #minimap .mm-frame {
         position: relative;
-        border: 2px solid var(--gold-dim);
-        background: #26301a;
-        box-shadow: 0 5px 20px #0009, inset 0 0 22px #0007;
         border-radius: 50%;
+        background: #26301a;
         overflow: hidden;
         line-height: 0;
+        box-shadow:
+          inset 0 0 0 2px #201709,
+          inset 0 4px 18px #000a;
       }
-      #minimap.mm-square .mm-frame { border-radius: 8px; }
-      /* An inner keyline, the same trick the character window uses: one flat
-         stroke reads as a placeholder, two reads as a frame. */
-      #minimap .mm-frame::after {
-        content: "";
-        position: absolute; inset: 3px;
-        border: 1px solid rgba(226,176,79,.22);
+      #minimap.mm-square .mm-frame { border-radius: 6px; }
+      #minimap .mm-canvas { display: block; cursor: crosshair; }
+
+      /* Curvature. A flat disc of pixels looks like a flat disc of pixels; a
+         soft rim shadow and a highlight off the top-left make it read as
+         something you are looking INTO. Pointer-events off so the wheel-zoom on
+         the canvas underneath still works. */
+      #minimap .mm-glass {
+        position: absolute; inset: 0;
         border-radius: 50%;
         pointer-events: none;
+        background:
+          radial-gradient(120% 120% at 28% 18%, rgba(255, 246, 214, .13), transparent 46%),
+          radial-gradient(circle at 50% 50%, transparent 58%, rgba(0, 0, 0, .45) 100%);
       }
-      #minimap.mm-square .mm-frame::after { border-radius: 5px; }
-      #minimap .mm-canvas { display: block; cursor: crosshair; }
-      #minimap .mm-coords {
-        position: absolute; left: 0; right: 0; bottom: 6px;
-        text-align: center;
-        font: 10px monospace; color: #f0e0bb;
-        text-shadow: 0 1px 2px #000, 0 0 4px #000;
+      #minimap.mm-square .mm-glass { border-radius: 6px; }
+
+      /* North. The one piece of orientation a rotating map needs, and harmless
+         on a fixed one — it simply never moves. */
+      #minimap .mm-cardinal {
+        position: absolute; top: 0px; left: 50%;
+        transform: translateX(-50%);
+        font: 700 10px Georgia, serif;
+        color: #ffeab8;
+        text-shadow: 0 1px 2px #000, 0 0 6px #000;
         pointer-events: none;
-      }
-      /* Where you are, above the coordinates. Sits inside the frame rather than
-         under it so it cannot push the dock rail down, and stays empty — not
-         hidden — out in open country, so nothing on screen moves when it
-         appears. */
-      /* Where you are. UNDER the frame rather than inside it, and that is a
-         correction: inside, it was clipped by the round map's own mask, which
-         ate the last three letters of "The Coldwater Bridge" and would have
-         eaten a different number of them at each of the four map sizes. Its
-         height is fixed and always reserved, so the dock rail does not step as
-         the readout comes and goes. */
-      #minimap .mm-place {
-        height: 18px; line-height: 18px;
-        text-align: center;
-        font: 600 12px Georgia, 'Times New Roman', serif; color: #f4dfa8;
-        letter-spacing: 0.2px;
-        text-shadow: 0 1px 2px #000, 0 0 5px #000;
-        pointer-events: none;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        letter-spacing: .5px;
       }
 
-      #minimap .mm-bar {
-        display: flex; align-items: center; gap: 4px;
-        padding: 3px 5px;
-        background: linear-gradient(180deg, #3a2a17, #241a0f);
-        border: 1px solid var(--gold-dim);
-        border-radius: 6px;
+      /* Two plaques cut into the bezel, top and bottom. Both are absolutely
+         positioned over the ring so they cannot change its size — a readout that
+         resizes its own frame makes the whole corner of the screen twitch every
+         time the place name appears. */
+      /* Two plaques, above and below the ring rather than cut into it.
+         Overlapping the bezel was tried first and the name is the reason it
+         does not work: "The Coldwater Bridge" is wider than an 11px band of
+         metal, so it either spilled past the ring or was ellipsed down to
+         nothing. Above and below, both keep a reserved height so the dock rail
+         below does not step every time a name appears or goes. */
+      #minimap .mm-place,
+      #minimap .mm-coords {
+        align-self: center;
+        max-width: 100%;
+        padding: 1px 10px;
+        border-radius: 8px;
+        background: linear-gradient(180deg, #3d2c16, #211708);
+        border: 1px solid rgba(226, 176, 79, .55);
+        box-shadow: 0 2px 8px #0009, inset 0 1px 0 rgba(255, 231, 170, .18);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        pointer-events: none;
+        text-align: center;
       }
-      #minimap .mm-zoom {
-        flex: 1; text-align: center;
-        font: 10px monospace; color: var(--gold);
+      #minimap .mm-place {
+        /* Clearance for the serpents' heads, which rise beside the ring. */
+        margin-bottom: 3px;
+        font: 600 12px Georgia, 'Times New Roman', serif;
+        color: #f6e3ac;
+        text-shadow: 0 1px 2px #000;
       }
-      #minimap .mm-btn {
-        width: 20px; height: 20px; flex: none;
+      /* Invisible rather than absent out in open country, so nothing moves. */
+      #minimap .mm-place:empty { visibility: hidden; }
+      #minimap .mm-coords {
+        font: 10px monospace; color: #e9d7a6;
+        letter-spacing: .3px;
+      }
+
+      /* The controls, set into the rim at the compass points a WoW player's
+         hand already expects: zoom on the lower arc, settings on the upper
+         right. Round, because everything else here is. */
+      #minimap .mm-orb {
+        position: absolute;
+        width: 22px; height: 22px;
         display: flex; align-items: center; justify-content: center;
-        background: var(--slot-grad);
-        border: 1px solid var(--gold-dim); border-radius: 4px;
-        color: var(--gold-bright);
-        font: 13px/1 Georgia, serif; cursor: pointer; padding: 0;
+        padding: 0;
+        border-radius: 50%;
+        border: 1px solid #1d1508;
+        background:
+          radial-gradient(circle at 34% 28%, #6b5326, #3a2a12 68%, #241a0b);
+        color: #ffdf9a;
+        font: 14px/1 Georgia, serif;
+        cursor: pointer;
+        box-shadow: 0 2px 6px #000a, inset 0 1px 0 rgba(255, 230, 170, .28);
+        transition: filter .12s, transform .12s;
       }
-      #minimap .mm-btn:hover { border-color: var(--gold); background: #4a3a1c; }
-      #minimap .mm-btn .icon { width: 12px; height: 12px; }
+      #minimap .mm-orb:hover { filter: brightness(1.35); transform: scale(1.06); }
+      #minimap .mm-orb:active { transform: scale(0.96); }
+      #minimap .mm-orb .icon { width: 12px; height: 12px; }
+      /* 225deg, 315deg and 45deg around the rim. */
+      #minimap .mm-out { left: -4px;  bottom: 26px; }
+      #minimap .mm-in  { right: -4px; bottom: 26px; }
+      #minimap .mm-cog { right: -4px; top: 26px; }
+
+      #minimap .mm-zoom {
+        position: absolute; left: 50%; bottom: 8px;
+        transform: translateX(-50%);
+        font: 9px monospace; color: rgba(255, 223, 154, .75);
+        text-shadow: 0 1px 2px #000;
+        pointer-events: none;
+      }
 
       /* The settings popover hangs to the LEFT: the map is already against the
          dock on the right, so opening rightward would run it off screen. */

@@ -11,7 +11,10 @@
 // some want the screen back — so the useful version is the configurable one
 // rather than whichever default I happened to like.
 
+import { WORLD_WIDTH, WORLD_HEIGHT } from "../../../shared/protocol-types";
 import { iconSvg } from "./icons";
+import { MinimapTerrain } from "./minimapTerrain";
+import { ornamentSvg } from "./minimapOrnament";
 
 /** Where something is, in three.js world units (x east, z south). */
 export interface Blip {
@@ -73,6 +76,16 @@ export interface MinimapSnapshot {
    * shared/places.ts.
    */
   place: string | null;
+  /**
+   * How many server pixels make one world unit, so the map can ask `shared/`
+   * where the river, the road and the forests actually are.
+   *
+   * Passed in rather than imported because that constant lives in the renderer's
+   * heightfield, and this file is deliberately renderer-agnostic. One number
+   * keeps it that way while letting the ground be drawn from the same functions
+   * the world itself is built from — see `minimapTerrain.ts`.
+   */
+  pxPerUnit: number;
 }
 
 export interface MinimapSettings {
@@ -164,22 +177,43 @@ export class Minimap {
   private ratio = 1;
   /** Next time `setSnapshot` is allowed to actually redraw the canvas. */
   private nextDrawAt = 0;
+  /** The drawn ground under the blips. Owns its own build schedule. */
+  private readonly terrain = new MinimapTerrain();
+  /** Host for the generated serpents. Rebuilt only when the size changes. */
+  private readonly ornament: HTMLElement;
+  /** Ring diameter the serpents were last generated for. */
+  private ornamentSize = -1;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement("div");
     this.root.id = "minimap";
+    // THE FURNITURE AROUND THE MAP, which is most of what makes one readable.
+    //
+    // The old arrangement was a thin gold circle with a rectangular button bar
+    // hanging underneath it, and the two did not belong to each other — the bar
+    // read as a separate widget that happened to be parked below a map. The
+    // pieces are one object now: a heavy bezel with the controls set INTO it,
+    // the place name on a plaque across the top and the coordinates on one
+    // across the bottom, so the ring is the frame for all of it.
+    //
+    // Ordered so the ring's children stack correctly without a z-index war: the
+    // clipped map first, then the glass over it, then the things that sit on the
+    // rim.
     this.root.innerHTML = `
-      <div class="mm-frame">
-        <canvas class="mm-canvas"></canvas>
-        <div class="mm-coords"></div>
-      </div>
       <div class="mm-place"></div>
-      <div class="mm-bar">
-        <button class="mm-btn mm-out" title="Zoom out">−</button>
+      <div class="mm-ring">
+        <div class="mm-orn-wrap"></div>
+        <div class="mm-frame">
+          <canvas class="mm-canvas"></canvas>
+          <div class="mm-glass"></div>
+        </div>
+        <div class="mm-cardinal mm-n">N</div>
         <span class="mm-zoom">—</span>
-        <button class="mm-btn mm-in" title="Zoom in">+</button>
-        <button class="mm-btn mm-cog" title="Minimap settings"></button>
+        <button class="mm-orb mm-out" title="Zoom out">−</button>
+        <button class="mm-orb mm-in" title="Zoom in">+</button>
+        <button class="mm-orb mm-cog" title="Minimap settings"></button>
       </div>
+      <div class="mm-coords"></div>
       <div class="mm-panel"></div>
     `;
     parent.appendChild(this.root);
@@ -190,6 +224,7 @@ export class Minimap {
     this.placeEl = this.root.querySelector(".mm-place")!;
     this.zoomEl = this.root.querySelector(".mm-zoom")!;
     this.panel = this.root.querySelector(".mm-panel")!;
+    this.ornament = this.root.querySelector(".mm-orn-wrap")!;
     (this.root.querySelector(".mm-cog") as HTMLElement).innerHTML = iconSvg("settings");
 
     this.root.querySelector(".mm-out")!.addEventListener("click", () => this.zoom(1.3));
@@ -355,6 +390,17 @@ export class Minimap {
     this.canvas.width = Math.round(s.size * this.ratio);
     this.canvas.height = Math.round(s.size * this.ratio);
 
+    // THE SERPENTS, regenerated only when the ring actually changes size. They
+    // are pure geometry for a given diameter, so rebuilding them on every
+    // settings touch would be a string of a few thousand characters produced to
+    // say the same thing again. `+ 22` is the bezel the ring adds around the
+    // canvas — see the padding in `.mm-ring`.
+    const ringSize = s.size + 22;
+    if (ringSize !== this.ornamentSize) {
+      this.ornamentSize = ringSize;
+      this.ornament.innerHTML = ornamentSvg(ringSize);
+    }
+
     // The window rail is told how much room the map takes, so the two can never
     // overlap however large the player makes it. Setting a variable rather than
     // reaching into the rail keeps this from having to know the rail exists.
@@ -363,7 +409,9 @@ export class Minimap {
     // than collapsing it is the point: the readout goes blank every time you
     // walk out of a wood, and a rail that stepped up and down as you crossed a
     // treeline would be the most distracting thing on the screen.
-    document.documentElement.style.setProperty("--minimap-bottom", `${s.size + 58 + 18}px`);
+    // place plaque + ring bezel + coords plaque + gaps. Measured from the built
+    // layout rather than guessed: the ring adds 22px of bezel to the canvas.
+    document.documentElement.style.setProperty("--minimap-bottom", `${s.size + 22 + 17 + 15 + 28}px`);
 
     this.draw();
   }
@@ -492,6 +540,23 @@ export class Minimap {
       const dz = (z - snap.player.z) * scale;
       return [half + dx * cos - dz * sin, half + dx * sin + dz * cos];
     };
+
+    // THE GROUND FIRST, under everything. See `minimapTerrain.ts` — the tile is
+    // built a few rows at a time off to one side and only swapped in when it is
+    // finished, so this can never be the frame that pays for it.
+    //
+    // World units and server pixels are the same two axes with a scale and an
+    // origin between them: `toWorldX` in the heightfield is
+    // `(serverX - WORLD_WIDTH / 2) / PX_PER_UNIT`, so this is that, inverted.
+    const ppu = snap.pxPerUnit;
+    const toPxX = (wx: number): number => wx * ppu + WORLD_WIDTH / 2;
+    const toPxY = (wz: number): number => wz * ppu + WORLD_HEIGHT / 2;
+    this.terrain.update(toPxX(snap.player.x), toPxY(snap.player.z), s.range * 2 * ppu);
+    this.terrain.draw(
+      ctx,
+      (sx, sy) => project((sx - WORLD_WIDTH / 2) / ppu, (sy - WORLD_HEIGHT / 2) / ppu),
+      angle,
+    );
 
     if (s.showGrid) this.drawGrid(ctx, snap, project, scale, size);
     this.drawBounds(ctx, snap, project);
