@@ -103,6 +103,30 @@ export class Effects {
    */
   private readonly materialPool: THREE.MeshBasicMaterial[] = [];
   private readonly freeMaterials: THREE.MeshBasicMaterial[] = [];
+
+  /**
+   * The atlas texture, POOLED, for the same reason the materials are.
+   *
+   * `play` used to do `this.base.clone()` on every single effect and set
+   * `needsUpdate = true` on the result. A clone shares the IMAGE but is a new
+   * texture as far as the renderer is concerned, and `needsUpdate` forces the
+   * upload — so every hit flash, every cast, every impact pushed the whole
+   * 288x672 atlas to the GPU again. Measured over six minutes of driven play:
+   * 113 separate uploads of `assets/fx.png`, roughly nineteen a minute, each one
+   * a synchronous transfer inside `renderer.render()`.
+   *
+   * That is where the last unexplained stall was coming from. A `render`-section
+   * hitch of 83ms, then 147ms, each carrying `uploads=+4tex` on exactly the
+   * frame that spiked — four atlas uploads landing on one frame.
+   *
+   * A clone per effect is not needed; a clone per CONCURRENT effect is, because
+   * `update` animates `texture.offset` to walk the atlas and offset is
+   * per-texture state. That is a pool of exactly `POOL_SIZE`, uploaded once,
+   * reused forever — which is what the material pool beside it already worked
+   * out and this half was left behind.
+   */
+  private readonly texturePool: THREE.Texture[] = [];
+  private readonly freeTextures: THREE.Texture[] = [];
   private static readonly POOL_SIZE = 32;
 
   /** Fills the pool and uploads/compiles it — called once, off-screen,
@@ -110,8 +134,18 @@ export class Effects {
   prewarm(world: { warmUp(o: THREE.Object3D): Promise<void>; warmBuffers(o: THREE.Object3D, label?: string): void }): void {
     const group = new THREE.Group();
     for (let i = 0; i < Effects.POOL_SIZE; i++) {
+      // One clone per pool slot, made HERE and never again. `needsUpdate` is set
+      // once so the upload happens under the loading screen with everything
+      // else, rather than on the first frame a player is hit.
+      const texture = this.base.clone();
+      texture.needsUpdate = true;
+      texture.wrapS = THREE.ClampToEdgeWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.repeat.set(1 / FX_COLS, 1 / FX_ROWS);
+      this.texturePool.push(texture);
+      this.freeTextures.push(texture);
       const material = new THREE.MeshBasicMaterial({
-        map: this.base,
+        map: texture,
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
@@ -151,19 +185,25 @@ export class Effects {
 
   play(name: EffectName, x: number, y: number, z: number, opts: EffectOptions = {}): void {
     const row = FX_ROW[name];
-    const texture = this.base.clone();
-    texture.needsUpdate = true;
-    texture.wrapS = THREE.ClampToEdgeWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.repeat.set(1 / FX_COLS, 1 / FX_ROWS);
 
     // Borrowed rather than built: see `materialPool`'s own comment. A pool
     // this size running dry means over thirty hits are mid-flash at once,
     // which is a busier fight than this game's own aggro caps allow —
     // dropping the flash silently is the right failure, the same call
     // `lightPool.ts` makes when its own pool is exhausted.
+    //
+    // The TEXTURE is borrowed the same way now. It used to be cloned fresh here
+    // with `needsUpdate = true`, which re-uploaded the whole 288x672 atlas on
+    // every effect — see `texturePool`. Both pools are the same size and are
+    // taken and returned together, so a free material implies a free texture;
+    // the second check is belt and braces rather than a real case.
     const material = this.freeMaterials.pop();
     if (!material) return;
+    const texture = this.freeTextures.pop();
+    if (!texture) {
+      this.freeMaterials.push(material);
+      return;
+    }
     material.map = texture;
     material.color.set(opts.tint ?? 0xffffff);
     material.opacity = 1;
@@ -213,14 +253,17 @@ export class Effects {
 
       if (t >= 1) {
         this.scene.remove(fx.mesh);
-        // Handed back to the pool rather than disposed — see
-        // `materialPool`'s own comment. The texture is still disposed:
-        // it is a fresh clone every `play()`, cheap, and swapping which
-        // one a pooled material's `.map` points to costs nothing to the
-        // compiled program either way (`map` presence is the define, not
-        // the texture's identity).
+        // Both handed back to their pools rather than disposed — see
+        // `materialPool` and `texturePool`. The texture USED to be disposed
+        // here, on the reasoning that it was "a fresh clone every `play()`,
+        // cheap". It was not cheap: disposing it meant the next `play` cloned
+        // and re-uploaded the entire 288x672 atlas, nineteen times a minute in
+        // ordinary combat, each upload landing inside `renderer.render()`.
+        // Swapping which texture a pooled material's `.map` points to still
+        // costs nothing to the compiled program (`map` presence is the define,
+        // not the texture's identity) — that half of the old note was right.
         this.freeMaterials.push(fx.material);
-        fx.texture.dispose();
+        this.freeTextures.push(fx.texture);
         this.live.splice(i, 1);
         continue;
       }
@@ -249,9 +292,13 @@ export class Effects {
   dispose(): void {
     for (const fx of this.live) {
       this.scene.remove(fx.mesh);
-      fx.texture.dispose();
     }
     this.live.length = 0;
+    // The texture pool, all of it, for the same reason the material pool is
+    // freed wholesale below: the live ones and the free ones are both ours.
+    for (const t of this.texturePool) t.dispose();
+    this.texturePool.length = 0;
+    this.freeTextures.length = 0;
     // The whole pool, not just what was active — `freeMaterials` holds the
     // rest, and skipping them here would leak exactly what pooling was
     // supposed to stop leaking.

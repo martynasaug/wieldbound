@@ -585,6 +585,29 @@ export interface ActorOptions {
    * warm-up.
    */
   warmUp?: (object: THREE.Object3D) => Promise<void>;
+
+  /**
+   * Uploads this piece's TEXTURES, which `warmUp` does not.
+   *
+   * `warmUp` compiles; it does not draw. three.js uploads a texture the first
+   * time it is actually used in a draw, so a compile-only warm leaves every map
+   * on the gear waiting to be uploaded on the first frame the weapon is visible
+   * — inside `renderer.render()`, where it lands as a render-section stall with
+   * nothing in the JavaScript above it to blame.
+   *
+   * Measured: two hitches in fourteen minutes of driven play, 108ms and 51ms,
+   * both reporting 0-3ms outside the timed sections and both carrying
+   * `uploads=+0geo/+4tex` and `uploads=+1geo/+3tex` — the texture counter moving
+   * on precisely the frame that spiked. Spawning actors already get a real draw
+   * via `World.warmBuffers`; their GEAR did not, because `dress` attaches it
+   * asynchronously long after the spawn warm has run.
+   *
+   * Wired to `World.warmTextures`, which uses `renderer.initTexture` and draws
+   * nothing. An earlier version pointed this at `warmBuffers` instead; it fixed
+   * the stalls and cost +5 junk shader programs, because `warmBuffers` renders
+   * the object alone and an object alone has no lights. See `warmTextures`.
+   */
+  warmDraw?: (object: THREE.Object3D) => void;
 }
 
 export class Actor {
@@ -1030,6 +1053,9 @@ export class Actor {
         socket.add(held.object);
         this.held.push(held.object);
         this.trackMaterials(held.object);
+        // The weapon is in the hand now, so a draw here uploads its maps before
+        // anyone sees it. See `ActorOptions.warmDraw`.
+        this.options.warmDraw?.(this.root);
       });
     }
 
@@ -1074,6 +1100,10 @@ export class Actor {
         this.worn.push(p.object);
         this.trackMaterials(p.object);
       }
+      // Now that the armour is actually on the actor, draw it once off-screen so
+      // its textures upload here rather than inside the first visible frame.
+      // See `ActorOptions.warmDraw`.
+      this.options.warmDraw?.(this.root);
     })();
   }
 

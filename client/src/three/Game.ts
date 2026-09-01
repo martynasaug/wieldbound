@@ -703,6 +703,12 @@ export class Game {
   /** Previous frame's `renderer.info.programs.length`, so a late shader
    *  compile can be caught by name-adjacent evidence instead of guessed at.
    *  `null` means "no reading yet" — the first frame is never a delta. */
+  /** Geometry and texture counts as of the previous frame, so an upload during
+   *  THIS one can be named in the hitch line. -1 means "no frame yet". */
+  private lastGeometryCount = -1;
+  private lastTextureCount = -1;
+  /** Appended to the profiler context, so a hitch says whether it uploaded. */
+  private uploadNote = "";
   private lastProgramCount: number | null = null;
   /** Previous frame's program cache keys, so a count change can name what
    *  moved rather than just that something did. */
@@ -1268,6 +1274,7 @@ export class Game {
       // And the body is coloured from the name. See `tintBody` in Actor.ts.
       identity: this.name,
       warmUp: (object) => this.world.warmUp(object),
+      warmDraw: (object) => this.world.warmTextures(object),
     });
     this.localActor.setAppearance(this.appearance);
 
@@ -1662,6 +1669,7 @@ export class Game {
           rim: 0.3,
           identity: s.name,
           warmUp: (object) => this.world.warmUp(object),
+          warmDraw: (object) => this.world.warmTextures(object),
         });
         this.players.set(s.id, actor);
         this.playerMotion.set(s.id, { x: s.x, y: s.y, moving: false });
@@ -1771,6 +1779,13 @@ export class Game {
         // Twenty monsters in view is twenty duplicate bodies drawn to say
         // something four other pieces of UI already say.
         silhouette: false,
+        // A monster's WEAPON is dressed on asynchronously, after the spawn warm
+        // below has already drawn the body. Without this its maps upload on the
+        // first frame it is visible, inside `renderer.render()`. This draws
+        // nothing and compiles nothing — see `World.warmTextures`. `warmUp` is
+        // deliberately still not passed here: the body is warmed externally,
+        // and adding a second compile pass would change that flow.
+        warmDraw: (object) => this.world.warmTextures(object),
       });
       const vis: MonsterVisual = { actor, kind: s.kind, state: s, dead: false, windingUp: false, windupStartedAt: 0, moving: false, alerted: false, fleeing: false };
       // Placed immediately, same as the old inline path did — otherwise the
@@ -4481,6 +4496,39 @@ export class Game {
     // This is what let a 96ms `render` hitch in town be attributed: the count
     // was flat at 129 across it, so for the first time in this phase a render
     // stall was NOT a compile.
+    // WAS ANYTHING UPLOADED TO THE GPU ON THIS FRAME? The other half of
+    // attributing a render stall, and the half that was missing.
+    //
+    // Two `render`-section hitches were caught with the program count flat —
+    // 55ms and 108ms, both reporting 0-3ms "outside the timed sections", so the
+    // time really was inside `renderer.render()` rather than in the loop above
+    // it. That eliminates a shader compile, which is what every earlier render
+    // stall in this phase turned out to be, and leaves a first-draw UPLOAD as
+    // the obvious remaining suspect.
+    //
+    // three.js counts a geometry or texture the first time it uploads one
+    // (`WebGLGeometries.get`, `WebGLTextures`), so if either counter moves on
+    // the frame that spiked, something was uploaded during it. Two integer
+    // compares per frame, and the answer is folded into the hitch line itself
+    // rather than logged separately, so no timestamp correlation is needed to
+    // read it.
+    //
+    // Written this way ON PURPOSE rather than as a standing-still probe: a
+    // special idle run selects for the most common state, not for a cause, and
+    // a bot that stands still is not testing the game. Instrumenting once means
+    // every ordinary playing soak attributes its own hitches from now on.
+    {
+      const mem = this.world.renderer.info.memory;
+      const dGeo = mem.geometries - this.lastGeometryCount;
+      const dTex = mem.textures - this.lastTextureCount;
+      this.uploadNote =
+        this.lastGeometryCount < 0 || (dGeo === 0 && dTex === 0)
+          ? ""
+          : ` uploads=${dGeo >= 0 ? "+" : ""}${dGeo}geo/${dTex >= 0 ? "+" : ""}${dTex}tex`;
+      this.lastGeometryCount = mem.geometries;
+      this.lastTextureCount = mem.textures;
+    }
+
     {
       const programCount = this.world.renderer.info.programs?.length ?? 0;
       if (this.lastProgramCount !== null && programCount !== this.lastProgramCount) {
@@ -4548,7 +4596,8 @@ export class Game {
       this.profiler.setContext(
         `${moving ? "moving" : "idle"} ${townDist < TOWN_RADIUS_PX ? "town" : "field"} ` +
           `monsters=${nearMonsters}/${this.monsters.size} players=${this.players.size} ` +
-          `engaged=${this.engagedId ? "yes" : "no"}`,
+          `engaged=${this.engagedId ? "yes" : "no"}` +
+          this.uploadNote,
       );
     }
     this.profiler.frameEnd();

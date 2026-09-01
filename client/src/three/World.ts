@@ -1097,6 +1097,54 @@ export class World {
    * would otherwise be skipped by the very camera test this bypasses the
    * screen to avoid depending on.
    */
+  /**
+   * Uploads every texture an object's materials reference, without drawing it.
+   *
+   * THE PROBLEM THIS SOLVES, AND WHY IT IS NOT `warmBuffers`. `warmUp` compiles
+   * programs but never draws, and three.js uploads a texture the first time it
+   * is actually used in a draw. So gear — attached by `Actor.dress` long after
+   * the spawn warm has run — arrived with its maps still on the CPU, and paid
+   * for them inside `renderer.render()` on the first frame the weapon was
+   * visible. Measured as two `render`-section hitches in fourteen minutes,
+   * 108ms and 51ms, each reporting 0-3ms outside the timed sections and each
+   * carrying `uploads=+4tex` and `uploads=+3tex` — the texture counter moving on
+   * exactly the frame that spiked.
+   *
+   * The obvious fix was to call `warmBuffers` on the actor, and it worked and
+   * was wrong: `warmBuffers` renders the object ALONE, which has no lights in
+   * it, so it compiles a zero-light program variant for every material it
+   * touches — the precise trap documented in that function. It cost +5 programs
+   * over a fourteen-minute run, each one junk that nothing will ever draw.
+   *
+   * `initTexture` is the tool that actually fits. three.js documents it as
+   * "preloading a texture rather than waiting until first render (which can
+   * cause noticeable lags due to decode and GPU upload overhead)", which is
+   * this problem stated exactly. No draw, no program, no lighting to get wrong
+   * — it uploads the bytes and nothing else.
+   *
+   * Every slot is swept generically rather than listing `map`, `normalMap` and
+   * the rest: a material property that is a texture is a texture, and a named
+   * list is a list that silently stops covering a slot the day one is added.
+   */
+  warmTextures(object: THREE.Object3D): void {
+    const seen = new Set<THREE.Texture>();
+    object.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const material of materials) {
+        if (!material) continue;
+        for (const value of Object.values(material as unknown as Record<string, unknown>)) {
+          const texture = value as THREE.Texture | null;
+          if (!texture || !(texture as { isTexture?: boolean }).isTexture) continue;
+          if (seen.has(texture)) continue;
+          seen.add(texture);
+          this.renderer.initTexture(texture);
+        }
+      }
+    });
+  }
+
   warmBuffers(object: THREE.Object3D, label = "actor"): void {
     // Named per call rather than one shared label, matching `rig:<name>` —
     // called from a promise continuation rather than inside the main loop,

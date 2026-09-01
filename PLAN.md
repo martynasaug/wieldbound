@@ -19128,3 +19128,64 @@ the first time in this phase a render stall is NOT a compile.
 
 Suite 38/38, and a 4.4-minute driven smoke after the change: 121 swings, 0
 violations, 0 console errors, programs flat at 129.
+
+**Phase 70 M70.154 — every visual effect was re-uploading the whole sprite atlas,
+and it took two wrong fixes to find it.**
+
+`Effects.play` did `this.base.clone()` on every hit flash, cast and impact, then
+set `needsUpdate = true` on the result. A clone shares the IMAGE but is a new
+texture as far as the renderer is concerned, and `needsUpdate` forces the upload
+— so each effect pushed the entire 288x672 `fx.png` to the GPU again, inside
+`renderer.render()`.
+
+    late-session texture uploads, 6 minutes of driven play:  125  ->  4
+    the same over a longer route:                           1390  ->  4
+    uploads of assets/fx.png specifically:                   113  ->  0
+
+The clone was not pointless — `update` animates `texture.offset` to walk the
+atlas and offset is per-texture state, so CONCURRENT effects genuinely need
+separate textures. But that is a pool of `POOL_SIZE`, not one per effect ever
+played. The materials beside it were already pooled at 32; the textures were left
+behind. They are pooled now, cloned once in `prewarm` so the upload happens under
+the loading screen, and handed back on reap.
+
+The old code carried a comment justifying the dispose — "it is a fresh clone
+every `play()`, cheap". Half of it was right: swapping which texture a pooled
+material's `.map` points to costs nothing to the compiled program, because `map`
+PRESENCE is the define rather than the texture's identity. The "cheap" half was
+the bug, and it is the half nobody re-measured.
+
+**THE TWO WRONG FIXES, KEPT IN THE RECORD BECAUSE ONE OF THEM LOOKED RIGHT.**
+The hitch signature was `uploads=+4tex` on the spiking frame, so gear was blamed
+first — `dress` attaches weapons asynchronously, long after the spawn warm.
+Wiring a `warmDraw` hook to `warmBuffers` produced ZERO hitches over fourteen
+minutes against two in the matched before-run, and it was chance: at roughly four
+hitches per forty-five minutes, a clean fourteen-minute window turns up about a
+third of the time. It also cost +5 junk shader programs, because `warmBuffers`
+renders the object alone and an object alone has no lights — the exact trap
+documented in that function. Re-pointing it at `renderer.initTexture`, which
+three.js documents for precisely this problem, was cleaner and left the signature
+completely unchanged: 2 hitches, both still `+4tex`, in the cleanest run yet
+(58,589 frames, zero throttling, p99 16.9ms, max 18ms).
+
+Two failures in a row is what forced the census. Hooking `addEventListener` on
+the texture prototype catches the renderer taking ownership — three.js registers
+a texture by adding a 'dispose' listener when it uploads one, the same mechanism
+that cracked the geometry leak — and grouping by what BACKS each texture rather
+than by the upload stack named it immediately: 113 distinct `Texture` objects,
+all wrapping one `HTMLImageElement`, `assets/fx.png`.
+
+**WHAT IS AND IS NOT CLAIMED.** The upload counts are unambiguous and are the
+justification: nineteen full-atlas GPU transfers a minute during ordinary combat,
+now none. The hitch counts are only suggestive — 1 hitch at 66ms after, against 2
+at 147ms and 83ms before, over matched 16.3-minute runs. That is better on both
+count and magnitude and is nowhere near enough sample to call on its own, which
+is precisely the mistake the `warmBuffers` attempt already made once.
+
+The surviving hitch still reports `+5tex`, and the post-fix census suggests what
+those are: `.shadowMap` at 2048x2048, uploaded twice in six minutes. That is the
+shadow render target being rebuilt, which `setQuality` does by design when the
+adaptive controller changes level. Not chased further — one 66ms frame per
+sixteen minutes is far below the 650-700ms freezes this phase was opened to fix.
+
+Suite 38/38.
