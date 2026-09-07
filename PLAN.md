@@ -19711,3 +19711,29 @@ this phase opened with. In-play frame time is p50 16.7ms, p99 16.8ms, and across
 two clean unthrottled runs — 89,000 frames — exactly one frame exceeded 33ms.
 
 No game code changed in this entry; the whole of it is measurement.
+
+**Phase 70 M70.166 — the economy, checked while playing.** Forge, salvage,
+refine, etch and craft were the largest untested surface left: nothing in the
+suite touches a wallet, and the soaks never spent a material.
+
+Rather than a new one-off harness, the checks went into `invariants.mjs`, which
+is the instrument that found the mana bug. Everything those five verbs do lands
+in the same two places — `wallet` and `runes` — so four comparisons cover the
+lot: no balance may go negative, non-finite or fractional, and no recipe may be
+learned twice.
+
+**AND THE BOT NOW ACTUALLY SPENDS SOMETHING.** A wallet check on a bot that only
+swings is a check that passes by never being exercised — the same "0 violations,
+0 swings" trap the liveness rule exists for, one level down. It salvages a spare
+item every twenty-fifth swing, which also keeps the bag from filling, which is
+what a player does with a bag full of loot. Two things are asserted around each
+one: the item is actually gone afterwards, and no material went DOWN as a result
+of taking something apart.
+
+    6.0 minutes, 509 checks, 163 swings, 6 salvages, 0 violations
+    blocked legs 0 for the whole run, 14,365px/min
+
+Nothing was wrong, which is worth recording as a result rather than silence: this
+is the first time any of it has been exercised at all.
+
+The zero blocked legs are the steering from M70.163 holding up over a second run.

@@ -116,6 +116,31 @@ const CHECK = () => {
     }
   }
 
+  // THE ECONOMY. Nothing a player owns may go negative or stop being a number,
+  // and nothing may quietly grow while they are asleep. These are cheap to check
+  // and cover the whole of forge, salvage, refine, etch and craft from the one
+  // place their results all land — which is a lot of untested surface for four
+  // comparisons.
+  const wallets = [
+    ["wallet", g.wallet],
+    ["runes", g.runes],
+  ];
+  for (const [label, bag] of wallets) {
+    if (!bag || typeof bag !== "object") continue;
+    for (const [key, value] of Object.entries(bag)) {
+      if (!Number.isFinite(value)) say(`${label}.${key} is not finite`, String(value));
+      else if (value < 0) say(`${label} went negative`, `${key}=${value}`);
+      else if (!Number.isInteger(value)) say(`${label} is fractional`, `${key}=${value}`);
+    }
+  }
+  if (Array.isArray(g.recipes)) {
+    const seen = new Set();
+    for (const r of g.recipes) {
+      if (seen.has(r)) say("duplicate recipe learned", String(r));
+      seen.add(r);
+    }
+  }
+
   // The renderer should not be holding an ever-growing pile of anything while
   // the actor count is flat. Reported, not asserted — the threshold is a
   // judgement and this file is for things that are simply wrong.
@@ -168,6 +193,7 @@ const run = async () => {
   let deaths = 0;
   let blocked = 0;
   let travelled = 0;
+  let salvages = 0;
   let lastHp = null;
 
   const first = await check();
@@ -199,6 +225,55 @@ const run = async () => {
         continue;
       }
       swings++;
+      // SALVAGE SOMETHING NOW AND THEN, so the economy checks above are checking
+      // something. A bot that only swings never forges, salvages, refines or
+      // etches, so every wallet invariant would pass by never being exercised —
+      // the same "0 violations, 0 swings" trap the liveness check exists for,
+      // one level down. It also keeps the bag from filling, which is what a
+      // player does with a bag full of loot.
+      if (swings % 25 === 0) {
+        const result = await page.evaluate(() => {
+          const g = window.__wieldbound;
+          const { ITEM_BASES } = window.__wieldboundRules;
+          // Never the equipped kit, and never the last of anything — salvage
+          // refuses an equipped item and that refusal is not what is under test.
+          const spare = g.items.find((it) => !it.equipped && ITEM_BASES[it.baseId]);
+          if (!spare) return null;
+          const before = { items: g.items.length, wallet: { ...g.wallet } };
+          g.socket.sendSalvageItem(spare.id);
+          return { id: spare.id, before };
+        });
+        if (result) {
+          salvages++;
+          await page.waitForTimeout(700);
+          const after = await page.evaluate(
+            (id) => {
+              const g = window.__wieldbound;
+              return {
+                stillThere: g.items.some((it) => it.id === id),
+                items: g.items.length,
+                wallet: { ...g.wallet },
+              };
+            },
+            result.id,
+          );
+          if (after.stillThere) {
+            const rec = violations.get("salvaged item is still in the bag") ?? { count: 0, first: null, snap: null };
+            rec.count++;
+            rec.first ??= result.id;
+            violations.set("salvaged item is still in the bag", rec);
+          }
+          // Taking something apart must not take materials away with it.
+          for (const [k, v] of Object.entries(after.wallet)) {
+            if (v < (result.before.wallet[k] ?? 0)) {
+              const rec = violations.get("salvage reduced a material") ?? { count: 0, first: null, snap: null };
+              rec.count++;
+              rec.first ??= `${k}: ${result.before.wallet[k]} -> ${v}`;
+              violations.set("salvage reduced a material", rec);
+            }
+          }
+        }
+      }
       const strafe = step(page, [swings % 2 ? "a" : "d"], 700);
       for (const k of keys) {
         await page.keyboard.press(k);
@@ -226,7 +301,7 @@ const run = async () => {
       const snap = await check();
       console.log(
         `t=${((Date.now() - t0) / 60000).toFixed(1)}m checks=${checks} swings=${swings} deaths=${deaths} ` +
-          `blocked=${blocked} travelled=${Math.round(travelled)}px ` +
+          `blocked=${blocked} salvaged=${salvages} travelled=${Math.round(travelled)}px ` +
           `violations=${[...violations.values()].reduce((s, v) => s + v.count, 0)} ${JSON.stringify(snap)}`,
       );
     }
@@ -235,7 +310,7 @@ const run = async () => {
   const minutes = (Date.now() - t0) / 60000;
   console.log(
     `\n=== ${checks} checks over ${minutes.toFixed(1)}m, ${swings} swings, ${deaths} deaths, ` +
-      `${Math.round(travelled)}px travelled, ${blocked} blocked legs ===`,
+      `${Math.round(travelled)}px travelled, ${blocked} blocked legs, ${salvages} salvaged ===`,
   );
 
   // DID THIS RUN ACTUALLY PLAY THE GAME? A soak that finds nothing because the
