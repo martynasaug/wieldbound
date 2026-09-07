@@ -20103,3 +20103,36 @@ cold baseline; that was a different session, and machine state drifts enough
 that the comparison had to be re-measured rather than taken from the notes.)
 
 Suite 39/39.
+
+**Phase 70 M70.174 — the same spam again, in the other channel.** Toured at
+noon this time, since every tour so far had been at night and daylight is the
+common case. The bridge frame was clean; its combat log was not. Eight
+alternating lines:
+
+    You engage. / You break off. / You engage. / You break off. ...
+
+Pressing attack out of range places an order ON PURPOSE — the server's
+`useDefaultAttack` orders before it checks reach, so walking into range opens
+the fight on arrival, which is good design and not what is wrong. The order
+then lapses a moment later with nothing to swing at. Mash the key and the two
+states flap, and every flap earned a line.
+
+THE TOAST FIX DOES NOT TRANSFER, which is the interesting part. Coalescing
+identical neighbours is exactly right for "Slash: nothing in reach" seven times
+over, and useless here, because these lines ALTERNATE rather than repeat. The
+defect is a different one wearing the same clothes: not that a line appears
+twice, but that a state which never held is being reported at all.
+
+So the transition has to survive `ATTACK_LOG_SETTLE_MS` (600ms) before it earns
+a line, and anything that flips back inside that window cancels itself and is
+never written. A scuffle that both starts and ends inside 600ms goes unlogged,
+which is the correct outcome — it was noise. Measured: 40 presses out of range
+went from eight alternating lines to ONE ("You engage.", which is true — the
+order does stand), and a real fight still logs both transitions.
+
+Also looked at and NOT a bug: the hotbar shows one filled slot for a level-235
+character. Skills are per weapon family, and this character is holding a
+boarspear it never trained. Worth writing down because it looks alarming in
+every tour frame and will look alarming again next time.
+
+Suite 39/39.

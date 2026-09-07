@@ -236,6 +236,17 @@ const PLAYER_HEIGHT = 1.8;
  * than a punishment. The whole point is that these are now two events with time
  * between them instead of two statements on adjacent lines.
  */
+/**
+ * How long an engage/break-off has to hold before it earns a line in the
+ * combat log. See the note in `onAttackState`.
+ *
+ * Long enough to swallow the flapping of a key being mashed out of range,
+ * short enough that a real fight is recorded while it is still happening. A
+ * scuffle that both starts and ends inside this window goes unlogged, which is
+ * the correct outcome: it was noise.
+ */
+const ATTACK_LOG_SETTLE_MS = 600;
+
 const DEATH_HOLD_MS = 1500;
 
 /** The gold the toast and the log line already use, so the world agrees with
@@ -4213,19 +4224,53 @@ export class Game {
     intervalMs: number;
     reason?: string;
   }): void {
-    const wasAttacking = this.attacking;
     this.attacking = p.attacking;
     this.hotbar.setAttackState(p.attacking, p.readyInMs, p.intervalMs);
     if (p.reason) {
       const attack = defaultAttackFor(this.appearance.weaponType);
       this.hud.toast(`${attack.name}: ${p.reason}`, "#c98d5e");
     }
+
     // Worth a line in the log: with combat no longer starting itself, knowing
     // whether you are actually fighting is something the player has to be able
     // to check without counting damage numbers.
-    if (p.attacking && !wasAttacking) this.combatLog.push("You engage.", "#ffd873");
-    else if (!p.attacking && wasAttacking) this.combatLog.push("You break off.", "#9a8d76");
+    //
+    // BUT ONLY ONCE IT HAS SETTLED. Pressing attack out of range places an
+    // order deliberately — the server's `useDefaultAttack` orders first so that
+    // walking into range opens the fight on arrival — and that order then
+    // lapses a moment later with nothing to swing at. Mash the key and the two
+    // states flap, which filled the combat log with eight alternating "You
+    // engage. / You break off." lines in the noon tour of the bridge, drowning
+    // the messages the log exists for.
+    //
+    // Coalescing identical neighbours — the fix the toast host got — does
+    // nothing here, because the lines ALTERNATE rather than repeat. What is
+    // wrong is not that the same line appears twice, it is that a state which
+    // never held is being reported at all. So the transition has to survive
+    // ATTACK_LOG_SETTLE_MS before it is worth a line; anything that flips back
+    // inside that window cancels itself and is never written.
+    if (this.attacking === this.loggedAttacking) {
+      if (this.attackLogTimer !== null) {
+        window.clearTimeout(this.attackLogTimer);
+        this.attackLogTimer = null;
+      }
+    } else if (this.attackLogTimer === null) {
+      this.attackLogTimer = window.setTimeout(() => {
+        this.attackLogTimer = null;
+        if (this.attacking === this.loggedAttacking) return;
+        this.loggedAttacking = this.attacking;
+        this.combatLog.push(
+          this.attacking ? "You engage." : "You break off.",
+          this.attacking ? "#ffd873" : "#9a8d76",
+        );
+      }, ATTACK_LOG_SETTLE_MS);
+    }
   }
+
+  /** What the combat log currently says about whether we are fighting, which
+   *  lags `attacking` by up to `ATTACK_LOG_SETTLE_MS`. See `onAttackState`. */
+  private loggedAttacking = false;
+  private attackLogTimer: number | null = null;
 
   private useSkill(skillId: SkillId): void {
     // Cheap local guard against a stale keybinding; the server re-checks the
