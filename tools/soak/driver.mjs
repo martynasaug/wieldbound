@@ -219,6 +219,63 @@ export function gateWaypoint(from) {
   };
 }
 
+/**
+ * Get a wedged character moving again, whatever it is caught on.
+ *
+ * A single alternating sidestep cannot leave a corner, and a character saved
+ * inside a building's footprint is worse than a corner: the server pushes it out
+ * every tick while the client pushes it back in, and the net movement is two or
+ * three pixels a second in whatever direction the argument happens to settle.
+ * Observed on a seeded character parked against the palisade — every harness
+ * pointed at it reported zero fights and a clean pass.
+ *
+ * So try every direction in turn and keep the one that actually goes somewhere.
+ * Returns true if the character is loose.
+ */
+export async function unstick(page, minPx = 120) {
+  const dirs = [["w"], ["d"], ["s"], ["a"], ["w", "d"], ["s", "d"], ["s", "a"], ["w", "a"]];
+  for (const d of dirs) {
+    const r = await step(page, d, 1600);
+    if (r.moved >= minPx) return true;
+  }
+  return false;
+}
+
+/**
+ * One leg of walking toward a target, gate-aware and unstick-aware.
+ *
+ * FACTORED OUT BECAUSE IT WAS LEARNED TWICE. Every harness here has to leave
+ * town through a gate and slide along whatever it walks into, and a harness that
+ * forgets either one does not fail — it quietly does nothing and reports a pass.
+ * `bagspam.mjs` was written without it, walked a character standing inside the
+ * palisade straight at a monster outside it, and reported "0 warnings, 0 swings"
+ * as a clean result.
+ *
+ * Returns how far the character actually moved, so the caller can tell walking
+ * from shoving a fence.
+ */
+export async function approach(page, target, ms = 600, sign = 1) {
+  const p = await page.evaluate(() => ({
+    x: window.__wieldbound.playerX,
+    y: window.__wieldbound.playerY,
+  }));
+  const aim = insideTown(p) && !insideTown(target) ? gateWaypoint(p) : target;
+  const dirs = keysToward(p, aim);
+  const r = await step(page, dirs, ms);
+  if (r.moved < 25) {
+    const perp =
+      dirs.includes("w") || dirs.includes("s")
+        ? [sign > 0 ? "d" : "a"]
+        : [sign > 0 ? "s" : "w"];
+    const side = await step(page, perp, 900);
+    // Sidestepping failed too, so this is not a wall being brushed — it is a
+    // wedge. Escalate rather than spending the rest of the run at three pixels
+    // a second, which is what every harness pointed at a stuck character did.
+    if (side.moved < 25) await unstick(page);
+  }
+  return r.moved;
+}
+
 /** The WASD keys that point from the player toward (x, y). */
 export function keysToward(from, to) {
   const dx = to.x - from.x;

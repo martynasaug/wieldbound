@@ -750,6 +750,17 @@ const stations: CraftingStationState[] = [
 // that", and the first tick in range seeds the clock so walking in and out
 // of reach can't be used to rush attacks.
 const nextAttackAt = new Map<string, number>();
+
+/**
+ * When each player may next be told their bag is full.
+ *
+ * The warning lives in a per-tick sweep over every drop on the ground, so
+ * without this it fires ten times a second for every piece of loot the player
+ * is standing on. Long enough that the log stays readable, short enough that
+ * walking back over a drop after salvaging still tells you why nothing happened.
+ */
+const nextBagFullWarnAt = new Map<string, number>();
+const BAG_FULL_WARN_INTERVAL_MS = 6000;
 // A standing attack order. Empty means the player is not fighting, however
 // close they happen to be standing to something — walking past a camp is not
 // an instruction to draw a weapon.
@@ -2434,6 +2445,26 @@ function dropOnGround(ownerId: string, item: ItemInstance, x: number, y: number)
  * and a pick-up key would be the only thing that was not.
  */
 function collectDrops(now: number): void {
+  // ONE BAG READ PER PLAYER PER TICK, not one per drop.
+  //
+  // `listItems` is a SQLite query, and it was being run once for every
+  // (drop, player) pair in range — twice when the bag was full, since the
+  // warning re-read it to print the count. Ten ticks a second across a fresh
+  // pile of loot is a lot of queries to answer a question whose answer cannot
+  // change until something is picked up.
+  //
+  // Invalidated on a successful pickup below, which is the only thing in this
+  // function that changes a bag.
+  const bags = new Map<string, ReturnType<typeof listItems>>();
+  const bagOf = (playerId: string) => {
+    let items = bags.get(playerId);
+    if (!items) {
+      items = listItems(playerId);
+      bags.set(playerId, items);
+    }
+    return items;
+  };
+
   for (const [id, drop] of drops) {
     if (now >= drop.expiresAt) {
       drops.delete(id);
@@ -2449,15 +2480,30 @@ function collectDrops(now: number): void {
       // of something already in the bag needs no new cell, so a bag the old
       // rule called full can still take it. That is what a cap counting cells
       // rather than instances buys.
-      if (!bagRoomFor(listItems(player.id), drop.item, INVENTORY_CAP)) {
+      if (!bagRoomFor(bagOf(player.id), drop.item, INVENTORY_CAP)) {
         // The drop stays where it is rather than being destroyed, which is what
         // makes a full bag a delay instead of a loss.
-        if (socket) {
-          sendInfo(socket, `Bag is full (${bagSlotsUsed(listItems(player.id))}/${INVENTORY_CAP} slots) — salvage something.`, "#ef5350");
+        //
+        // WARNED AT MOST ONCE EVERY FEW SECONDS. This is inside a per-tick sweep
+        // over every drop, so an unthrottled warning fired ten times a second
+        // PER DROP — standing on a pile of loot with a full bag filled the
+        // combat log with the same red line and pushed everything else out of
+        // it. Reported from play as exactly that.
+        if (socket && now >= (nextBagFullWarnAt.get(player.id) ?? 0)) {
+          nextBagFullWarnAt.set(player.id, now + BAG_FULL_WARN_INTERVAL_MS);
+          sendInfo(
+            socket,
+            `Bag is full (${bagSlotsUsed(bagOf(player.id))}/${INVENTORY_CAP} slots) — salvage something.`,
+            "#ef5350",
+          );
         }
         continue;
       }
 
+      // The bag is about to change, so the memo above must not outlive it —
+      // otherwise a second drop on the same tick is judged against the bag as
+      // it was before the first one landed.
+      bags.delete(player.id);
       const stored = addItem(player.id, {
         baseId: drop.item.baseId,
         slot: drop.item.slot,
@@ -3578,6 +3624,7 @@ wss.on("connection", (socket) => {
     equippedItems.delete(id);
     lastRegenAt.delete(id);
     standingAt.delete(id);
+    nextBagFullWarnAt.delete(id);
   });
 });
 

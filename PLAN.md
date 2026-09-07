@@ -19460,3 +19460,53 @@ on an about:blank origin and silently will not load a `file://` path, which
 produced one perfectly black crop.
 
 Suite 38/38.
+
+**Phase 70 M70.160 — a full bag was shouting ten times a second, and reading the
+database while it did it.** Spotted in a captured frame from the level-up work:
+six identical red lines of "Bag is full (31/30 slots) — salvage something." with
+the actual combat pushed out of the log above them.
+
+**THE WARNING LIVES IN A PER-TICK SWEEP.** `collectDrops` runs every 100ms over
+every drop on the ground crossed with every player in range, and the warning had
+no throttle — so standing on a pile of loot with a full bag produced ten lines a
+second PER DROP. Measured by disabling the throttle again afterwards:
+
+    unthrottled   58.7 warnings/min   FAIL
+    throttled      5.6 warnings/min   OK
+
+which also proves the test discriminates rather than merely passing.
+
+**AND THE SAME LOOP WAS QUERYING SQLITE PER DROP PER PLAYER PER TICK.**
+`listItems` is a database read, and it ran once for every (drop, player) pair to
+ask whether the bag had room — twice when it did not, because the warning
+re-read it to print the count. The answer cannot change until something is picked
+up, so it is memoised for the length of the sweep and invalidated on the one
+thing that changes a bag. Ten ticks a second across a fresh pile of loot is a lot
+of queries to answer a settled question.
+
+The 31/30 is not a bug: `tools/seed.mjs` writes items straight to the database
+without asking the cap, and the game handles being over it gracefully — the drop
+stays on the ground rather than being destroyed, which is what makes a full bag a
+delay instead of a loss.
+
+**THE TEST FOR IT REPORTED A CLEAN PASS THREE TIMES WHILE PROVING NOTHING**, and
+the reason is worth more than the fix. `bagspam.mjs` reported "0 warnings, 0
+swings — OK" because the seeded character was WEDGED: saved at 764px from spawn,
+against the palisade, moving two to four pixels per leg while the server pushed
+it out of a footprint and the client pushed it back in. Every harness pointed at
+that character would have done the same.
+
+Three things came out of it, all in `driver.mjs` so nothing has to learn them
+again:
+
+  `approach`  one leg of travel that is gate-aware AND unstick-aware. Written
+              because `bagspam` walked a character standing inside the palisade
+              straight at a monster outside it — a problem `invariants.mjs` had
+              already solved and that was not shared.
+  `unstick`   tries all eight directions and keeps the one that moves. A single
+              alternating sidestep cannot leave a wedge; this frees it in one
+              call and the same character then closed 659px to 38px.
+  a liveness  assertion in the harness itself: zero warnings means nothing unless
+              the run actually fought and saw loot. It prints RUN VOID otherwise.
+
+Suite 38/38.
