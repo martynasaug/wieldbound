@@ -18,7 +18,8 @@
 // the reason `roadTorches` gives: a typed coordinate agrees with the world on
 // the day it is written. If a waypoint moves, this tours the new road.
 //
-//   node tools/soak/tour.mjs Player3619 ./shots
+//   node tools/soak/tour.mjs Player3619 ./shots        (whatever hour it is)
+//   node tools/soak/tour.mjs Player3619 ./shots 0.12   (frozen at night)
 
 import {
   open, login, probe, hotbarKeys, step, nearestMonster, approach,
@@ -31,6 +32,10 @@ import { placeNameAt } from "../../shared/places.ts";
 
 const NAME = process.argv[2] ?? "Player3619";
 const OUT = process.argv[3] ?? ".";
+/** Freeze the world clock, so a lighting change can be seen at the hour it
+ *  matters instead of whenever the tour happens to run. 0 is midnight, 0.5
+ *  noon; `null` leaves the clock running. */
+const CLOCK = process.argv[4] !== undefined ? Number(process.argv[4]) : null;
 
 const road = roadPath();
 const at = (frac) => road[Math.floor((road.length - 1) * frac)];
@@ -58,6 +63,10 @@ const run = async () => {
   const { browser, page } = await open({ headless: true, width: 1600, height: 900 });
   await login(page, NAME);
   const keys = await hotbarKeys(page);
+  if (CLOCK !== null) {
+    await page.evaluate((t) => window.__wieldbound.world.dayNight.freeze(t), CLOCK);
+    console.log(`clock frozen at ${CLOCK}`);
+  }
 
   for (const [name, dest] of STOPS) {
     // Walk there, sliding along anything solid; give up rather than hang, since
@@ -91,6 +100,9 @@ const run = async () => {
       }
     }
 
+    // Re-freeze: walking here took game-minutes and `approach` knows nothing
+    // about the clock, so without this each stop drifts into a different hour.
+    if (CLOCK !== null) await page.evaluate((t) => window.__wieldbound.world.dayNight.freeze(t), CLOCK);
     const p = await me(page);
     const drift = Math.hypot(dest.x - p.x, dest.y - p.y);
     const shot = `${OUT}/tour-${name}.png`;

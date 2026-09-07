@@ -29,7 +29,61 @@ interface Phase {
   fillIntensity: number;
   /** 0 by day, 1 in full dark. Fades the stars in. */
   starAlpha: number;
-  /** Overall exposure, so night reads dark without crushing everything to black. */
+  /**
+   * Overall exposure.
+   *
+   * THE NIGHT VALUES USED TO BE BELOW 1 AND THAT WAS BACKWARDS. The comment
+   * here said they existed "so night reads dark without crushing everything to
+   * black", and they were doing exactly the crushing they claimed to prevent:
+   * `tour.mjs` photographed the road north at 03:22 and the scene was 95% pure
+   * black with a median pixel luminance of 0.7 out of 255.
+   *
+   * Four causes were ruled out by measurement before this one was found, each
+   * with the scene cropped away from the HUD so the numbers were about the
+   * game:
+   *
+   *   shadows off (with the material recompile three needs, or the toggle does
+   *                nothing at all — the first attempt forgot it and produced a
+   *                confident wrong answer)        87.8% black, no change
+   *   decor hidden                                95.2% black, no change
+   *   fog off                                     95.1% black, no change
+   *   hemisphere fill x2.5                        69.8% black, barely moved
+   *   hemisphere groundColor lightened 3 steps    no change at all
+   *
+   * Only exposure moved it, and the reason the fill did not is the same reason:
+   * ACES tone mapping has a very flat toe, so scaling a MINOR contributor by
+   * 2.5x is still nothing after the curve, while exposure scales the whole
+   * image — sun included — before it. The sun is what carries the scene even at
+   * 0.32, and nothing was scaling the sun.
+   *
+   * Measured at the same spot and hour: exposure 0.94 -> 74% of the frame
+   * near-black; 1.5 -> 60%; 1.9 -> 55%, at which point the canopy, the paving
+   * and the ground read while the scene is still unmistakably night.
+   *
+   * AND THE NIGHT VALUES ARE STILL BELOW 1, BECAUSE RAISING THEM WAS TRIED AND
+   * REVERTED. Exposure is global. The town is lit by its own torches against
+   * pale paving and already reads correctly at 0.95; the forest is shadowed
+   * canopy and needs about 1.9. Shipping 1.70 made Emberhold at 02:52 look like
+   * broad afternoon — no stars, no lamp pools, flat daylight on the flagstones.
+   * Backing off to 1.22 still read as late afternoon in town while barely
+   * helping under the trees. There is no single number that serves both, which
+   * is the actual finding: the problem is CONTRAST between a lit place and an
+   * unlit one, and a whole-image multiplier cannot raise a floor without also
+   * raising the ceiling.
+   *
+   * What would: something local rather than global. A faint light carried by
+   * the player is the standard answer to exactly this and is nearly free here,
+   * since `lightPool.ts` already pools PointLights and only one is lit at noon
+   * — it would rescue the forest and do nothing in town, where the surroundings
+   * are already brighter than it. That is a design decision about how the game
+   * should feel after dark, not a bug fix, so it is written down rather than
+   * done.
+   *
+   * These are the four dark keyframes. They are a table of numbers and they are
+   * meant to be retuned by eye — `tools/soak/nightlight.mjs` re-runs the whole
+   * elimination, and `tools/soak/tour.mjs <name> <dir> 0.12` photographs the
+   * world at any hour.
+   */
   exposure: number;
 }
 

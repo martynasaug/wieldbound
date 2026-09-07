@@ -20009,3 +20009,56 @@ at it, not to me. Recorded here with the frames it came from rather than
 quietly retuned.
 
 Suite 39/39.
+
+**Phase 70 M70.172 — the black forest is not the ambient level, not the
+torches, and not fixable with one number.** Two options were on the table for
+the night darkness found in M70.171: lift the ambient floor, or make the road
+torches carry further. Both were wrong, and so was the fix that replaced them.
+
+`tools/soak/nightlight.mjs` freezes the clock, walks to the exact spot
+`tour.mjs` photographed, and removes one suspect at a time, measuring the scene
+with the HUD cropped away so the numbers describe the game rather than the
+panels:
+
+  as it ships                                 95.6% near-black, median 0.7/255
+  shadows off (with the recompile)            87.8%  — not shadows
+  decor hidden                                95.2%  — not the trees
+  fog off                                     95.1%  — not fog
+  hemisphere fill x2.5                        69.8%  — NOT the ambient level
+  hemisphere groundColor lightened 3 steps    no change at all
+  tone mapping off                            45.2%  — this one
+
+So the first option was measurable nonsense: multiplying the ambient by 2.5
+moved the median pixel from 2.4 to 2.8. The reason is ACES's very flat toe —
+scaling a MINOR contributor is still nothing after the curve, while exposure
+scales the whole image, sun included, before it. The sun carries the scene even
+at 0.32 and nothing was scaling the sun.
+
+THE SHADOW TEST WAS WRONG THE FIRST TIME AND HAPPENED TO BE RIGHT. Toggling
+`shadowMap.enabled` and `sun.castShadow` does nothing without forcing a material
+recompile — three keeps the programs that already sample the shadow map. The
+first run reported "not shadows" from an instrument that had not changed the
+state it claimed to test. Re-run with the recompile and a state check printing
+`shadowPrograms: 0`, the answer held. That is luck, not method, and it is the
+standing rule of this directory: check the instrument reproduces the state.
+
+The exposure fix was then written, measured, SHIPPED INTO A TOUR, AND REVERTED.
+Exposure is global. Town is torch-lit against pale paving and already reads
+correctly at 0.95; the forest needs about 1.9. At 1.70 Emberhold at 02:52 was
+flat afternoon daylight — no stars, no lamp pools. At 1.22 it still read as late
+afternoon while barely helping under the trees. There is no single number that
+serves both, and that is the real finding: the problem is CONTRAST between a lit
+place and an unlit one, and a whole-image multiplier cannot raise a floor
+without raising the ceiling with it.
+
+Reverted to the shipped values — `git diff` on the phase table shows comment
+changes only. What is left behind is the measurement, written where the next
+person will look, and the proposal it points to: a faint light carried by the
+player. That is local rather than global, rescues the forest, and does nothing
+in town where the surroundings are already brighter than it; `lightPool.ts`
+already pools PointLights with one lit at noon, so it is nearly free. It is a
+decision about how the game should feel after dark rather than a bug fix, so it
+is written down and not done.
+
+`tour.mjs` gains an optional clock argument, since lighting cannot be judged at
+whatever hour the harness happens to run. Suite 39/39.
