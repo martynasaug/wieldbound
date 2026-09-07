@@ -19962,3 +19962,50 @@ question "which load are we optimising, the first or the hundredth?", which is
 not mine to answer.
 
 Suite 39/39.
+
+**Phase 70 M70.171 — toured the world, photographed it, and found the same bug
+in all nine frames.** Three milestones of load work fixed things a player cannot
+see, so this went looking for things they can.
+
+`tools/soak/tour.mjs` walks to nine landmarks — town, gate, three points along
+the road, the bridge, the frontier, and two places off the road entirely — and
+photographs each. Landmarks are DERIVED from `roadPath`, `roadRiverCrossings`
+and `NORTH_TOWN_SITE` rather than typed, so it tours the road that exists rather
+than the one that existed when it was written. The design choice that matters is
+that the stops DIFFER: thirty frames of one field at thirty-second intervals is
+one frame with extra steps, and `panels.mjs` already proved that varied captures
+are what surface things.
+
+IT MISLABELLED ITS OWN FIRST RUN, which is worth recording because the failure
+was invisible in the output. The frame was taken after a nine-second fight in
+which `approach` chases whatever is nearest — at ~198px/s that is up to 1,700px
+— so "town" was photographed 1,718px outside town while the log said "reached".
+Every frame was of somewhere else. It now fights IN PLACE, swinging at whatever
+walks into range, and reports the distance from the mark AT SHOOTING TIME rather
+than at arrival: 110px, 94px, 152px, 186px, 159px, 155px, 133px, 118px, and one
+honest `GAVE UP 2601px` for a stop on the far side of the river.
+
+The bug was in all nine frames once they were of the right places: SEVEN
+identical "Slash: nothing in reach" toasts stacked down the left edge. Every
+failed attack press sends its own `ATTACK_STATE` reason and `hud.toast` made a
+fresh element for each, so holding an ability out of range fills the screen with
+one sentence. A player mashing a key gets exactly that.
+
+Fixed in the toast host rather than at the call site, and that is the point. The
+bag-full warning had the same shape and was throttled where it was SENT, which
+fixed that one message and left the next one to be found the same way. A toast
+host that cannot show the same line twice in a row cannot produce this bug at
+all: an identical message bumps a counter on the live toast and refreshes its
+life. Interleaved messages (A, B, A) still make three, because by then the
+second A is news again. Thirty out-of-range presses now produce one element
+reading "Slash: nothing in reach (x30)".
+
+NOT FIXED, AND DELIBERATELY: night is very dark. The `road-north` frame is about
+90% black — the character shows as the occluded-player silhouette against a
+canopy that reads as solid black — and the frontier and bridge frames are close
+behind. Whether that is atmosphere or a playability problem is a lighting
+judgement, and lighting judgements on this project belong to the person looking
+at it, not to me. Recorded here with the frames it came from rather than
+quietly retuned.
+
+Suite 39/39.

@@ -490,6 +490,9 @@ interface PlateState {
   ghostAt: number;
 }
 
+/** How long a toast stays on screen. */
+const TOAST_LIFE_MS = 4200;
+
 export class Hud {
   private readonly root: HTMLElement;
   private readonly nameEl: HTMLElement;
@@ -720,14 +723,48 @@ export class Hud {
     }
   }
 
+  /**
+   * A short message down the left-hand side.
+   *
+   * REPEATS COALESCE, and that is the whole reason this is more than four
+   * lines. Every failed attack press sends its own `ATTACK_STATE` reason, so
+   * holding an ability with nothing in range stacked SEVEN identical "Slash:
+   * nothing in reach" toasts down the screen — visible in every single frame of
+   * `tools/soak/tour.mjs`, at all nine stops. A player mashing a key out of
+   * range gets exactly that.
+   *
+   * The fix belongs here rather than at the call site. The bag-full warning had
+   * the same shape and was throttled where it was sent, which fixed that one
+   * message and left the next one to be found the same way; a toast host that
+   * cannot show the same line twice in a row cannot produce this bug at all.
+   *
+   * Only the MOST RECENT toast coalesces. Interleaved messages — A, B, A —
+   * correctly produce three toasts, because the second A is news again by then.
+   */
   toast(text: string, color = "#f3e3c4"): void {
+    const last = this.lastToast;
+    if (last && last.text === text && last.el.isConnected) {
+      last.n++;
+      last.el.textContent = `${text} (x${last.n})`;
+      // Refresh the life of the existing toast rather than leaving it to expire
+      // on the first one's clock: the message is still true, and a counter that
+      // vanishes mid-climb reads as a glitch.
+      window.clearTimeout(last.timer);
+      last.timer = window.setTimeout(() => last.el.remove(), TOAST_LIFE_MS);
+      return;
+    }
     const el = document.createElement("div");
     el.className = "toast";
     el.style.color = color;
     el.textContent = text;
     this.toastHost.appendChild(el);
-    setTimeout(() => el.remove(), 4200);
+    const timer = window.setTimeout(() => el.remove(), TOAST_LIFE_MS);
+    this.lastToast = { text, el, n: 1, timer };
   }
+
+  /** The newest toast, so an identical one can bump its counter instead of
+   *  adding a second copy. */
+  private lastToast: { text: string; el: HTMLDivElement; n: number; timer: number } | null = null;
 
   // --- nameplates: call begin, then plate() per visible actor, then end ---
 
