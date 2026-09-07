@@ -19768,3 +19768,82 @@ row past the edge. Nothing about it is reachable from a fresh save, and every
 test in the suite uses one.
 
 Suite 39/39.
+
+**Phase 70 M70.168 — the load's texture uploads were decoding on the main
+thread, and the combat test was measuring a naked level-1 character.** Two
+findings, both from building an instrument that could see what the previous ones
+could not.
+
+The load hitches have resisted three attempts now, and every one failed for the
+same structural reason rather than three different ones: the tracker was
+installed after `login()`, and both hitches land at about +9.7s against a ~10s
+load. `texupload.mjs` has this baked in — it locates `Texture.prototype` by
+traversing the scene, which requires a scene, which requires the load to be
+finished. It was switched on after the thing it was built to watch.
+
+`tools/soak/loadhitch.mjs` hooks `WebGLRenderingContext.prototype` from an
+`addInitScript`, so it is in place before the first page script runs and there
+is no window in which an upload is invisible. It also measures the upload rather
+than a proxy for it: three registering a texture is bookkeeping that happens to
+coincide with an upload, whereas `texImage2D` *is* the upload. Every watched
+call is timed; anything over 0.8ms is kept with a stack.
+
+It answered on the first run. Of ~300ms of expensive GL time across a load,
+~250ms was two clusters of `texSubImage2D` whose source was an
+`HTMLImageElement`, at 107ms and 143ms. The glTF textures, which arrive as
+`ImageBitmap` because `GLTFLoader` already does this, cost about 5.5ms for the
+same 1024x1024. The difference is not the transfer — it is that a browser
+decodes an `<img>` lazily and `texSubImage2D` is where that bill finally comes
+due, on the main thread, inside a frame. `createImageBitmap` does the decode on
+a worker thread.
+
+`client/src/three/textureLoad.ts` is a drop-in `TextureLoader` replacement built
+on `ImageBitmapLoader`, used by `terrain.ts`, `assets.ts`, `attacks.ts` and
+`effects.ts`. Total `texSubImage2D` time went 404ms to 195ms and no
+`HTMLImageElement` upload remains anywhere in the run.
+
+THE TRAP IN THAT SWAP IS SILENT, and worth writing down. `uploadTexture` reads
+`if (isImageBitmap === false) { pixelStorei(UNPACK_FLIP_Y_WEBGL, texture.flipY);
+... }` — for an `ImageBitmap` those three unpack settings are **skipped**,
+`flipY` included. `TextureLoader` leaves `flipY` at its default `true`, so
+swapping loaders without moving the flip onto the decoder turns every texture in
+the game upside down: invisible on tiled grass and on a radially symmetric
+impact sprite, and showing up as inverted lighting on the normal maps six weeks
+later. The three `ImageBitmapOptions` in that file are not preferences, they
+each reproduce an unpack flag three will no longer apply. And the option itself
+was verified in the browser rather than assumed, since an unknown key in a
+dictionary argument is not an error.
+
+What this did NOT do is shorten the load: 9.9s before, 10.4s after, which is
+noise. The load is dominated by CPU-side glTF parsing — the 600ms, 467ms and
+350ms frames in the trace have **0ms** of GL in them. What it removed is ~200ms
+of main-thread block, which is stutter rather than duration.
+
+THE SECOND FINDING CAME OUT OF A FLAKE. `fighting.mjs` failed in-suite and
+passed alone, so the first fix was aimed at the assertion: it hard-failed on
+`standing === 0` whenever `aliveInReach > 0`, and those two facts do not
+connect. `aliveInReach` is sampled once, at the end, and 120px is not the reach
+either — contact is `14 + bodyRadiusPx`, about 30–46px. So the standing window
+now counts in-contact ticks per tick, the same way the retreat window already
+did, and only claims "the swing itself is not happening" when something really
+was within arm's length while the order stood.
+
+That made it reproduce, and the reproduction was not a game bug. The standing
+baseline had collapsed from the 49–1,079 range recorded in the notes to 0–4,
+which looks exactly like a combat regression. `Fighter` in the dev database is
+level 1, strength 1, nothing equipped. The header has always said to seed it at
+level 40 first and nothing checked, so the test was measuring a naked character
+punching wolves and missing most swings. A prerequisite that lives in a comment
+is not a prerequisite.
+
+The guard is a band, not a floor, because both ends break it and both were
+observed. Run it as level-234 `Player3619` and it reports 506 damage while
+retreating against 57 standing — a flagrant violation of the rule, except that
+`dealt` is bounded by how much monster HP is standing there rather than by how
+hard you hit: the standing window one-shot the camp and ended with reach for 20
+of 86 ticks, and the retreat window then drew a fresh chasing pack. That is a
+headcount, not a rule. Against level-40 `Closer` the test does what it was built
+to do and passes, with the retreat half honestly INCONCLUSIVE.
+
+`tools/soak/loadhitch.mjs` stays; it is the only instrument here that can see a
+load. Suite 39/39.

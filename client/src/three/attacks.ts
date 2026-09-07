@@ -18,6 +18,7 @@
 // which is the whole reason weapon families exist.
 
 import * as THREE from "three";
+import { bitmapTextures } from "./textureLoad";
 import type { WeaponType } from "../../../shared/protocol-types";
 import { loadModel } from "./assets";
 import type { EffectName } from "./effects";
@@ -35,7 +36,7 @@ import type { SfxName } from "./sfx";
 //
 // Downscaled from Kenney's CC0 "Particle Pack" (see ASSET_CREDITS.txt); four
 // frames out of eighty, at a fraction of their native resolution.
-const PARTICLE_TEX_LOADER = new THREE.TextureLoader();
+const PARTICLE_TEX_LOADER = bitmapTextures;
 const particleTextures = new Map<string, THREE.Texture>();
 // Exported so `skillfx.ts` can share this cache rather than opening its own
 // second `TextureLoader` for the one frame (`ring`) it actually uses.

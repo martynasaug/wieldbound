@@ -92,6 +92,54 @@ ws.on("open", async () => {
   await sleep(1600);
   console.log(`logged in as ${NAME}`);
 
+  // A PREREQUISITE THAT LIVES IN A COMMENT IS NOT A PREREQUISITE.
+  //
+  // The header has always said to seed this character at level 40 first, and
+  // nothing checked. Run it against whatever `Fighter` happens to be in the dev
+  // database — level 1, strength 1, nothing equipped — and it does not error,
+  // it just measures a naked character punching wolves: 0 to 4 damage over ten
+  // seconds of standing in contact, most swings missing outright. The verdict
+  // block then reads that as "the swing itself is not happening" and fails,
+  // intermittently, depending on whether a single punch connected.
+  //
+  // That cost a whole investigation: the standing baseline had collapsed from
+  // the 49–1,079 range recorded in the notes below to 0–4, which looks exactly
+  // like a combat regression and was nothing of the sort. So check the
+  // character and say plainly what is wrong, rather than reporting a number
+  // that cannot mean anything.
+  // AND IT IS A BAND, NOT A FLOOR. Both ends break the comparison, for
+  // opposite reasons, and both were observed:
+  //
+  //   too weak  — level 1, nothing equipped: 0–4 damage over ten seconds of
+  //               standing in contact, most swings missing. Whether the rule
+  //               works is invisible under the noise of a naked character.
+  //   too strong — level 234: `dealt` is bounded by how much monster HP is
+  //               STANDING THERE, not by how hard you hit. The standing window
+  //               one-shots the camp and ends with one monster alive and reach
+  //               for 20 of 86 ticks; the retreat window then draws a fresh
+  //               chasing pack and scores 506 against the standing 57. That
+  //               reads as a flagrant rule violation and is really a headcount.
+  //
+  // Level 40 is what the header asks for and what the recorded 49–1,079 range
+  // came from. The band is generous around it, but it has to have both edges.
+  const LEVEL_BAND = [20, 90];
+  const weapon = items.find((i) => i.slot === "weapon" && i.equipped);
+  const level = me?.level ?? 1;
+  if (!weapon || level < LEVEL_BAND[0] || level > LEVEL_BAND[1]) {
+    const why = !weapon
+      ? `has nothing equipped in the weapon slot`
+      : `is level ${level}, outside the ${LEVEL_BAND[0]}–${LEVEL_BAND[1]} band this test can measure`;
+    console.log(
+      `\nNOT RUN — ${NAME} ${why}.\n\n` +
+        `  This test compares damage dealt across two windows. Too weak and both are ~0; too strong\n` +
+        `  and both are capped by the monsters' own hit points rather than by the rule under test.\n\n` +
+        `  Stop the server, then:  node tools/seed.mjs ${NAME} --level 40\n` +
+        `  Start it again, then:   node tools/test/fighting.mjs ${NAME}\n`,
+    );
+    ws.close();
+    process.exit(0);
+  }
+
   const sword = items.find((i) => i.weaponType === "sword" && i.slot === "weapon");
   if (sword && !sword.equipped) {
     send({ type: "EQUIP_ITEM", payload: { itemId: sword.id } });
@@ -155,16 +203,42 @@ ws.on("open", async () => {
   dealt = 0;
   send({ type: "USE_ATTACK", payload: {} });
   const hold = { x: me.x, y: me.y };
+  // AND COUNT REACH PER TICK, FOR THE SAME REASON THE RETREAT WINDOW DOES.
+  //
+  // This used to sample "how many are alive within 120px" ONCE, at the end, and
+  // hard-fail on `standing === 0` whenever that number was above zero. Those
+  // two facts do not connect: a monster standing next to me at t=10.2s says
+  // nothing about whether the ORDERED TARGET was reachable while the order
+  // stood, and 120px is not the reach either — contact is `14 + bodyRadiusPx`,
+  // about 30–46px. So a run where the target died early, or drifted, or was
+  // never closed with, reported "the swing itself is not happening" on evidence
+  // that could not support it. It failed in-suite and passed alone, which is
+  // the signature of a timing-dependent claim rather than a broken game.
+  //
+  // Counting the ticks where something was genuinely in contact reach gives the
+  // assertion below something real to stand on, and uses the same maths as the
+  // retreat half rather than a second, looser guess at what "in reach" means.
+  let standTicks = 0;
+  let standReachTicks = 0;
   const untilA = Date.now() + 10200;
   while (Date.now() < untilA) {
     send({ type: "MOVE", payload: { x: hold.x, y: hold.y } });
+    standTicks++;
+    const live = nearest(null);
+    if (live) {
+      const contact = 14 + (MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
+      if (Math.hypot(live.x - me.x, live.y - me.y) < contact + 30) standReachTicks++;
+    }
     await sleep(110);
   }
   const standing = dealt;
   const aliveInReach = monsters.filter(
     (m) => m.status === "alive" && Math.hypot(m.x - me.x, m.y - me.y) < 120,
   ).length;
-  console.log(`  standing still: ${standing} damage dealt (${aliveInReach} alive within 120px at the end)`);
+  console.log(
+    `  standing still: ${standing} damage dealt (in contact reach for ${standReachTicks}/${standTicks} ticks, ` +
+      `${aliveInReach} alive within 120px at the end)`,
+  );
 
   // --- Running away ----------------------------------------------------------
   // Straight out from the monster, which `isRetreating` calls leaving.
@@ -243,11 +317,21 @@ ws.on("open", async () => {
   // So this reports what it actually observed rather than claiming a pass it
   // has not earned. A run where nothing was ever in reach proves nothing about
   // the rule, and now says so.
-  if (standing === 0) {
+  if (standing === 0 && standReachTicks >= 10) {
+    // Something was in contact reach for over a second of ticks with an attack
+    // order standing, and nothing landed. That IS the swing failing, and it is
+    // the only arrangement in which this can be said.
     fail(
-      aliveInReach > 0
-        ? `nothing landed while standing still with ${aliveInReach} alive within 120px — the swing itself is not happening`
-        : "nothing landed and nothing was alive in reach either, so the camp was already cleared and this run tested nothing",
+      `nothing landed while standing still, in contact reach for ${standReachTicks}/${standTicks} ticks ` +
+        `— the swing itself is not happening`,
+    );
+  } else if (standing === 0) {
+    // Nothing landed, but nothing was reliably within arm's length either. The
+    // camp cleared early, or the target drifted. That is a run which tested
+    // nothing, not a broken rule — see the note above this block.
+    console.log(
+      `  (nothing landed standing still, but in contact reach for only ${standReachTicks}/${standTicks} ticks ` +
+        `— the camp cleared or the target drifted, so this run tested nothing. INCONCLUSIVE, not a pass)`,
     );
   } else if (inReachTicks < 10) {
     console.log(

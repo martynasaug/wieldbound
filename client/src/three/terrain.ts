@@ -33,6 +33,7 @@
 // ground when the camera moves instead of swimming with it.
 
 import * as THREE from "three";
+import { bitmapTextures } from "./textureLoad";
 import { trackLoad } from "./assets";
 
 const TEXTURE_PATH = "/textures/terrain";
@@ -65,7 +66,7 @@ function loadSurface(
   withNormal: boolean,
   anisotropy: number,
 ): { map: THREE.Texture; normal: THREE.Texture | null; arm: THREE.Texture } {
-  const loader = new THREE.TextureLoader();
+  const loader = bitmapTextures;
   const get = (suffix: string, srgb: boolean) => {
     // Counted by the shared loader, or the loading screen would fill while the
     // heaviest files in the game were still on the wire.

@@ -1,4 +1,5 @@
 import { profiler } from "./profiler";
+import { bitmapTextures } from "./textureLoad";
 // Model loading, caching and instancing for the 3D client.
 //
 // Two things here are not optional and are easy to get wrong:
@@ -65,7 +66,7 @@ function resolveTexture(name: string | undefined): string | null {
 
 const fbxLoader = new FBXLoader();
 const gltfLoader = new GLTFLoader();
-const texLoader = new THREE.TextureLoader();
+const texLoader = bitmapTextures;
 const textureCache = new Map<string, THREE.Texture>();
 const modelCache = new Map<string, Promise<THREE.Group>>();
 

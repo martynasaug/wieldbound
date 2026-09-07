@@ -10,6 +10,7 @@
 // they read as light rather than as cardboard standing in the world.
 
 import * as THREE from "three";
+import { bitmapTextures } from "./textureLoad";
 
 const FX_URL = "/assets/fx.png";
 const FX_COLS = 6;
@@ -73,7 +74,7 @@ export class Effects {
   private shakeAmount = 0;
 
   constructor(private readonly scene: THREE.Scene) {
-    this.base = new THREE.TextureLoader().load(FX_URL);
+    this.base = bitmapTextures.load(FX_URL);
     this.base.colorSpace = THREE.SRGBColorSpace;
     // The atlas is 48px cells of deliberately soft, glowing art; smoothing it
     // is right here, unlike the 16px pixel art the 2D client had to keep sharp.
