@@ -47,7 +47,6 @@ import {
   gearMoveBonus,
   movePxPerSec,
   PLAYER_BODY_RADIUS_PX,
-  resolveBodyCollision,
   playerAccuracy,
   playerAttackIntervalMs,
   playerCritChance,
@@ -180,7 +179,7 @@ import { Presence, type Mark } from "./presence";
 import { ContactShadows, type Contact } from "./contact";
 import { currentWind, updateWind } from "./wind";
 import { NORTH_TOWN_NAME, NORTH_TOWN_SITE } from "../../../shared/road";
-import { resolveRiverCollision } from "../../../shared/river";
+import { resolvePlayerPosition } from "../../../shared/collision";
 import { placeNameAt } from "../../../shared/places";
 import { forestStrengthAt } from "../../../shared/forests";
 import {
@@ -189,7 +188,6 @@ import {
   TOWN_CENTER,
   TOWN_NAME,
   TOWN_RADIUS_PX,
-  resolveTownCollision,
 } from "../../../shared/town";
 import {
   CONSUMABLES,
@@ -5305,7 +5303,18 @@ export class Game {
    * long enough to see.
    */
   private resolvePlayerCollision(): void {
-    const solved = resolveBodyCollision(
+    // ONE SHARED FUNCTION, AND IT REPEATS. This used to be the three resolvers
+    // written out here in order — bodies, then the town, then the river — each
+    // applied exactly once. Every one of them settles on its own; the SEQUENCE
+    // did not, and a troll pushing you into a wall while the wall pushed you
+    // back into the troll left the player oscillating for as long as the monster
+    // stood there. Ten of 1,920 swept arrangements never came to rest.
+    //
+    // The order is unchanged and still matters: bodies first, so a monster that
+    // has shoved you into the inn leaves you standing outside the inn rather
+    // than inside it, and the river last, because the town is four kilometres
+    // from the water and neither can push into the other.
+    const solved = resolvePlayerPosition(
       this.playerX,
       this.playerY,
       PLAYER_BODY_RADIUS_PX,
@@ -5313,25 +5322,6 @@ export class Game {
     );
     this.playerX = solved.x;
     this.playerY = solved.y;
-
-    // And out of everything the town is built of — walls, the palisade, the
-    // well, the monument, the stall, the benches, the lamp posts. Applied AFTER
-    // the bodies, because a monster that has shoved you into the inn should
-    // leave you standing outside the inn; the other order lets a body park you
-    // inside a building until it wanders off.
-    const clear = resolveTownCollision(this.playerX, this.playerY, PLAYER_BODY_RADIUS_PX);
-    this.playerX = clear.x;
-    this.playerY = clear.y;
-
-    // And out of the Coldwater. The only solid thing outside the palisade, and
-    // the exception is argued in shared/river.ts: it is one shape, it is the
-    // reason the bridge exists, and a river you can walk across is a blue
-    // stripe painted on the grass. Applied last, because the town is four
-    // kilometres from the water and nothing either resolves can push you into
-    // the other.
-    const dry = resolveRiverCollision(this.playerX, this.playerY, PLAYER_BODY_RADIUS_PX);
-    this.playerX = dry.x;
-    this.playerY = dry.y;
   }
 
   /** Living monster bodies near enough to matter, as plain circles. Only the

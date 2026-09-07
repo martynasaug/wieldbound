@@ -19552,3 +19552,45 @@ and no browser: the resolver is a pure function over static data, so the whole
 town sweeps in about a second.
 
 The character that started this now moves 380px a second in every direction.
+
+**Phase 70 M70.162 — a monster could pin you against the scenery, and the flaky
+test is fixed.** Following the same thread as the entry before: if the town
+resolver could not settle, what about the SEQUENCE it is part of?
+
+**THE PARTS SETTLE; THE SEQUENCE DID NOT.** `resolvePlayerCollision` applied
+three resolvers once per frame — other bodies, the town, the river. Each is fine
+alone: `resolveBodyCollision` has iterated since it was written and the town one
+iterates and escapes as of M70.161. Nothing checked the combination, and a troll
+pushing you into a wall while the wall pushes you back into the troll is exactly
+the case that does not converge. Swept over 1,920 arrangements — a player at
+building and wall range with the largest body in the game overlapping them from
+eight directions — ten never came to rest.
+
+That is the "pinned against the scenery by a mob" bug, and it is the one a player
+meets most often, because melee happens against buildings.
+
+`shared/collision.ts` now holds `resolvePlayerPosition`, which applies the three
+in the same order and repeats until nothing moves. The order still matters and is
+unchanged: bodies first, so a monster that has shoved you into the inn leaves you
+standing OUTSIDE the inn, and the river last, because the town is four kilometres
+from the water. The client calls that instead of writing the sequence out inline,
+so there is one implementation and the test exercises the real one rather than a
+copy of it. Confirmed sharp by setting the pass count to 1, where the test
+reports the same ten.
+
+**AND `fighting.mjs` IS NOT FLAKY ANY MORE.** It had failed in the suite three
+times across this session while passing alone, and I flagged it twice without
+fixing it — which was the wrong call, because a test that fails for reasons
+unrelated to the code under test teaches everybody to ignore a red line.
+
+The cause: it compares damage dealt while retreating against damage dealt while
+standing, `retreating > standing * 0.25`. The runs before it kill the monsters
+near `Fighter` and `MONSTER_RESPAWN_MS` is longer than the gap between tests, so
+the standing window sometimes lands one or two points of damage — and against a
+baseline of 1, five damage from one late blow reads as a catastrophic failure of
+the retreat rule.
+
+A ratio needs a baseline worth dividing by. Below twenty damage the run is now
+INCONCLUSIVE rather than failed, which is the same distinction the file already
+draws twice: once when nothing was ever in reach while retreating, and once when
+no boss could be made to slam. Suite run twice back to back, 39/39 both times.

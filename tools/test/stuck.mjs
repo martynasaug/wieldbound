@@ -20,8 +20,10 @@
 //
 //   node tools/test/stuck.mjs
 
-import { PLAYER_BODY_RADIUS_PX } from "../../shared/protocol-types.ts";
+import { PLAYER_BODY_RADIUS_PX, resolveBodyCollision } from "../../shared/protocol-types.ts";
 import { TOWN_CENTER, TOWN_RADIUS_PX, resolveTownCollision } from "../../shared/town.ts";
+import { resolveRiverCollision } from "../../shared/river.ts";
+import { resolvePlayerPosition } from "../../shared/collision.ts";
 
 let failures = 0;
 const check = (name, ok, detail = "") => {
@@ -124,6 +126,66 @@ console.log("\n3. you can slide along the inside of the palisade");
     "a tangential step along the wall actually moves you",
     pinned === 0,
     `${pinned} of ${tested} bearings pinned`,
+  );
+}
+
+// --- 4. a monster standing on you against a wall ---------------------------
+//
+// THE COMBINATION IS THE RISK, not any one resolver. `resolvePlayerCollision`
+// runs bodies, then the town, then the river, once per frame. Each of the three
+// settles on its own — `resolveBodyCollision` has iterated since it was written
+// — but nothing checks that the SEQUENCE does. A troll pushing you into a wall
+// while the wall pushes you back into the troll is the classic version of this,
+// and it is the one a player meets constantly: melee happens against scenery.
+console.log("\n4. a monster cannot pin you against the scenery");
+{
+  // The largest body in the game, because the bigger the creature the deeper
+  // the overlap it can force.
+  const MONSTER_R = 58;
+  // The real thing the game runs, not a copy of it — a test that reimplements
+  // the sequence tests the copy.
+  const frame = (x, y, bodies) => resolvePlayerPosition(x, y, R, bodies);
+
+  let stuck = 0;
+  let tested = 0;
+  const worst = { at: null };
+  // Ring the town at the radii where the buildings and the wall are, and put a
+  // monster on every side of the player at contact range.
+  for (let deg = 0; deg < 360; deg += 6) {
+    for (const radius of [560, 640, 720, TOWN_RADIUS_PX - 20]) {
+      const a = (deg * Math.PI) / 180;
+      const px = TOWN_CENTER.x + Math.cos(a) * radius;
+      const py = TOWN_CENTER.y + Math.sin(a) * radius;
+      for (let mdeg = 0; mdeg < 360; mdeg += 45) {
+        const m = (mdeg * Math.PI) / 180;
+        // Overlapping on purpose: a body that has walked into you.
+        const bodies = [
+          { x: px + Math.cos(m) * (MONSTER_R * 0.6), y: py + Math.sin(m) * (MONSTER_R * 0.6), radiusPx: MONSTER_R },
+        ];
+        tested++;
+        let p = { x: px, y: py };
+        let settled = false;
+        for (let f = 0; f < 12; f++) {
+          const q = frame(p.x, p.y, bodies);
+          const moved = Math.hypot(q.x - p.x, q.y - p.y);
+          p = q;
+          if (moved <= 0.5) {
+            settled = true;
+            break;
+          }
+        }
+        if (!settled) {
+          stuck++;
+          if (!worst.at) worst.at = { x: Math.round(px), y: Math.round(py), monsterDeg: mdeg };
+        }
+      }
+    }
+  }
+  console.log(`  ${tested} player/monster arrangements around the town`);
+  check(
+    "the player comes to rest with a body on top of them",
+    stuck === 0,
+    `${stuck} never settled, first at ${JSON.stringify(worst.at)}`,
   );
 }
 

@@ -29,6 +29,12 @@
 import WebSocket from "ws";
 import { MONSTER_STATS, STATUSES, isRetreating } from "../../shared/protocol-types.ts";
 
+/**
+ * The least damage a standing window must land before the retreat comparison
+ * below means anything. See the INCONCLUSIVE branch at the verdict.
+ */
+const MIN_BASELINE_DAMAGE = 20;
+
 const NAME = process.argv[2] ?? "Fighter";
 const ws = new WebSocket("ws://localhost:8080");
 const send = (m) => ws.send(JSON.stringify(m));
@@ -247,6 +253,24 @@ ws.on("open", async () => {
     console.log(
       `  (in reach for only ${inReachTicks}/${retreatTicks} ticks while retreating, so "0 damage" is ` +
         "the sprint outrunning the monster and not the rule — INCONCLUSIVE, not a pass)",
+    );
+  } else if (standing < MIN_BASELINE_DAMAGE) {
+    // A RATIO NEEDS A BASELINE WORTH DIVIDING BY.
+    //
+    // The comparison below is `retreating > standing * 0.25`, and when the
+    // standing window only managed a point or two of damage that threshold is
+    // effectively zero: five damage against one reads as a catastrophic failure
+    // of the retreat rule when it is really a nearly-dead camp and one late
+    // blow. This test passed alone and failed inside the suite for exactly that
+    // reason — the runs before it kill the monsters near `Fighter`, and
+    // `MONSTER_RESPAWN_MS` is longer than the gap between tests.
+    //
+    // The file already separates INCONCLUSIVE from FAILED twice above; this is
+    // the third case and it was missing. A flaky test is worse than a missing
+    // one, because it teaches everybody to ignore a red line.
+    console.log(
+      `  (only ${standing} damage landed while standing still, which is too small a baseline to ` +
+        `judge ${retreating} against — the camp was nearly dead. INCONCLUSIVE, not a pass)`,
     );
   } else if (retreating > standing * 0.25) {
     fail(
