@@ -680,11 +680,27 @@
       }
       .bag-slot:hover .bag-sell { display: block; }
       .bag-sell:hover { background: #5a3a16; border-color: var(--gold); }
+      /* WRAPS, because the contents outgrew the panel and flex does not clip.
+         Six material counters at five digits each need 341px, the four
+         consumable buttons need 226px, and the footer is 400px wide — so the
+         consumables were pushed 187px PAST the panel's right edge and drawn on
+         top of whatever was beside it. With the character window open that is
+         its tab bar, and the word "Attributes" ended up underneath a row of
+         potion counts.
+         Nothing about that is visible until a character is rich enough for the
+         numbers to get wide, which is why it survived: a new character's
+         balances are one or two digits and fit. */
       .inv-footer {
-        display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 10px; row-gap: 6px; flex-wrap: wrap;
         padding: 8px 12px; border-top: 1px solid var(--gold-dim);
       }
-      .inv-currency, .inv-consumables { display: flex; gap: 12px; align-items: center; }
+      .inv-currency, .inv-consumables {
+        display: flex; gap: 12px; align-items: center;
+        /* And wrap internally too, so a single row of counters cannot force the
+           footer wider than the window on its own. */
+        flex-wrap: wrap; min-width: 0;
+      }
       .cur { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--parchment); }
       .cur span.cur-icon { font-size: 15px; }
       .use-btn {

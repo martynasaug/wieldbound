@@ -19737,3 +19737,34 @@ Nothing was wrong, which is worth recording as a result rather than silence: thi
 is the first time any of it has been exercised at all.
 
 The zero blocked legs are the steering from M70.163 holding up over a second run.
+
+**Phase 70 M70.167 — the inventory footer was drawing on top of the character
+window, and I found it by looking.** The standing instruction on this project is
+that I should find these myself rather than wait to be told, and the last two
+visual bugs — a death animation on the respawn tile, a level-up that hid the
+character behind a slab — were both reported by the person watching, from frames
+I had already captured and skimmed for numbers.
+
+So `panels.mjs` opens every window in turn, over live combat, and saves it. No
+assertions: an assertion only encodes what I already thought to look for, and the
+point is a set of pictures to examine.
+
+**THE BUG, IN NUMBERS.** With the bag open beside the character window, the word
+"Attributes" was rendered underneath a row of potion counts. `.inv-footer` is a
+flex row that neither wraps nor clips:
+
+    six material counters   341px
+    four consumable buttons 226px
+    the footer itself       400px
+    footer scrollWidth      588px against clientWidth 400
+
+so the consumables were pushed 187px PAST the panel's right edge and drawn over
+whatever was beside it. It wraps now, and the strip ends 163px INSIDE the panel.
+
+**IT NEEDED A RICH CHARACTER TO APPEAR, WHICH IS WHY IT SURVIVED.** A new
+character's balances are one or two digits and fit comfortably; this one is
+carrying 10,098 wood and 10,122 ore, and five-digit counters are what push the
+row past the edge. Nothing about it is reachable from a fresh save, and every
+test in the suite uses one.
+
+Suite 39/39.
