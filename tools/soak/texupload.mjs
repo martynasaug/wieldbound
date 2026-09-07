@@ -17,7 +17,7 @@
 // its image's `src`, its dimensions — plus which meshes in the scene reference
 // it, which is usually the answer on its own.
 
-import { open, login, hotbarKeys, step, nearestMonster, keysToward, insideTown, gateWaypoint } from "./driver.mjs";
+import { open, login, hotbarKeys, step, nearestMonster, approach } from "./driver.mjs";
 
 const NAME = process.argv[2] ?? "Player3619";
 const MINUTES = Number(process.argv[3] ?? 12);
@@ -133,6 +133,27 @@ const run = async () => {
     if (t.includes("[hitch]") && !t.includes("BETWEEN")) hitches.push({ at: Date.now(), text: t.slice(0, 240) });
   });
 
+  // THE CONSOLE HOOK GOES IN BEFORE ANY PAGE SCRIPT DOES.
+  //
+  // It used to be installed with the texture tracker, after login — so any
+  // hitch during the load itself landed in the gap between Playwright's console
+  // listener (attached before navigation) and the page-side recorder. The two
+  // counts then disagreed by one and NOTHING SAID SO: the report printed the
+  // page-side zero and the Node-side one was counted and never shown. An
+  // instrument that quietly disagrees with itself is worse than no instrument,
+  // which is this directory's whole standing rule.
+  await page.addInitScript(() => {
+    window.__hitches = [];
+    const origWarn = console.warn.bind(console);
+    console.warn = (...args) => {
+      const text = args.map((a) => String(a)).join(" ");
+      if (text.includes("[hitch]") && !text.includes("BETWEEN")) {
+        window.__hitches.push({ t: performance.now(), text: text.slice(0, 240) });
+      }
+      return origWarn(...args);
+    };
+  });
+
   await login(page, NAME);
   const installed = await page.evaluate(INSTALL);
   console.log("tracker:", JSON.stringify(installed));
@@ -153,20 +174,13 @@ const run = async () => {
     while (Date.now() < until) {
       const p = await me(page);
       if (Math.hypot(wp.x - p.x, wp.y - p.y) < 280) break;
-      const aim = insideTown(p) && !insideTown(wp) ? gateWaypoint(p) : wp;
-      const dirs = keysToward(p, aim);
-      const r = await step(page, dirs, 600);
-      if (r.moved < 25) {
-        await step(page, [sign > 0 ? "d" : "a"], 900);
-        sign = -sign;
-      }
+      if ((await approach(page, wp, 600, sign)) < 25) sign = -sign;
     }
     const fightUntil = Date.now() + 22000;
     while (Date.now() < fightUntil) {
       const t = await nearestMonster(page);
       if (t && t.d > 240) {
-        const p = await me(page);
-        await step(page, keysToward(p, t), 600);
+        await approach(page, t, 600);
         continue;
       }
       swings++;
@@ -186,7 +200,33 @@ const run = async () => {
   console.log(`\n=== ${uploads.length} texture uploads total, ${late.length} after the first 25s ===`);
   console.log(`swings=${swings}, frame-cost hitches=${hitches.length}\n`);
 
-  for (const h of hitches) console.log(`HITCH  ${h.text}`);
+  const pageHitches = await page.evaluate(() => window.__hitches ?? []);
+  if (pageHitches.length !== hitches.length) {
+    console.log(
+      `
+*** INSTRUMENT DISAGREES WITH ITSELF: ${hitches.length} hitches seen from Node, ` +
+        `${pageHitches.length} from the page. Trust neither until that is explained.`,
+    );
+    for (const h of hitches) console.log(`    node-side: ${h.text}`);
+  }
+  console.log(`
+--- ${pageHitches.length} frame-cost hitches, and what went to the GPU around each ---`);
+  for (const h of pageHitches) {
+    console.log(`
+HITCH at +${(h.t / 1000).toFixed(1)}s  ${h.text}`);
+    // A generous window: the upload happens inside the frame, but the hitch is
+    // logged at the end of it, and a slow frame is by definition long.
+    const near = uploads.filter((u) => u.t > h.t - 400 && u.t < h.t + 120);
+    if (!near.length) {
+      console.log("   nothing uploaded within 400ms — this hitch is NOT an upload");
+      continue;
+    }
+    for (const u of near) {
+      console.log(
+        `   +${(u.t - h.t).toFixed(0)}ms  ${u.ctor} <- ${u.imageType} ${u.size ?? ""} ${u.src ?? ""} name=${u.name}`,
+      );
+    }
+  }
 
   // THE QUESTION THAT DECIDES WHAT THIS IS. Every upload here is three.js
   // registering a texture it had not registered a moment ago. If each one is a

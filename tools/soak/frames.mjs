@@ -65,6 +65,31 @@ const run = async () => {
     if (t.includes("[hitch]")) hitches.push(t.slice(0, 220));
   });
 
+  // HITCHES STAMPED IN PAGE TIME, BEFORE THE GAME'S FIRST SCRIPT RUNS.
+  //
+  // Every hitch this harness has ever reported was undated: Playwright's console
+  // event carries the Node clock, so "one hitch in ten minutes" could not say
+  // WHEN. It turns out to matter more than the count. A census with the same
+  // hooks found both of its hitches at +10.3s and +10.4s against a ten-second
+  // load — the warm-up settling, not gameplay — while eighteen minutes and 570
+  // swings of actual play produced none at all.
+  //
+  // A load-time hitch is a different animal from an in-play one: nobody is
+  // controlling anything yet, and it costs a moment of a loading screen rather
+  // than a moment of a fight. Counting them together made the game look like it
+  // stuttered during play when the evidence says it does not.
+  await page.addInitScript(() => {
+    window.__hitches = [];
+    const origWarn = console.warn.bind(console);
+    console.warn = (...args) => {
+      const text = args.map((a) => String(a)).join(" ");
+      if (text.includes("[hitch]")) {
+        window.__hitches.push({ t: performance.now(), text: text.slice(0, 240) });
+      }
+      return origWarn(...args);
+    };
+  });
+
   const loadMs = await login(page, NAME);
   console.log(`mode=${HEADLESS ? "headless (SwiftShader)" : "headed"}  load ${(loadMs / 1000).toFixed(1)}s`);
   await page.evaluate(INSTALL);
@@ -147,10 +172,37 @@ const run = async () => {
   // frames" timed a gap in scheduling — and a gap is exactly what throttling
   // manufactures. A previous session chased one of those as far as blaming
   // `net:STATE_SNAPSHOT`, whose handler took 8ms.
-  const costHitches = hitches.filter((h) => !h.includes("BETWEEN"));
+  //
+  // AND SPLIT BY WHEN, which turned out to matter more than the count. Every
+  // hitch this harness ever reported was undated — Playwright's console event
+  // carries the NODE clock — so "one hitch in ten minutes" could not say whether
+  // it happened in a fight or while the loading screen was still lifting. Dated
+  // on the page's own clock, they were the latter: two hitches at +10.3s and
+  // +10.4s against a ten-second load, and eighteen minutes of play with none.
+  //
+  // A load hitch costs a moment of a progress bar. An in-play hitch costs a
+  // moment of a fight. Counting them together made the game look like it
+  // stutters during play when the evidence says it does not.
+  const paged = await page.evaluate(() => window.__hitches ?? []);
+  const playFrom = loadMs + 3000;
+  const costHitches = paged.filter((h) => !h.text.includes("BETWEEN") && h.t >= playFrom);
+  const loadHitches = paged.filter((h) => !h.text.includes("BETWEEN") && h.t < playFrom);
   const gapHitches = hitches.filter((h) => h.includes("BETWEEN"));
-  console.log(`\nreal frame-cost hitches: ${costHitches.length}   scheduling gaps: ${gapHitches.length}`);
-  for (const h of costHitches.slice(0, 25)) console.log("  ", h);
+
+  // The two counts must agree, or neither is worth reading. See the same check
+  // in `texupload.mjs`: it silently disagreed by one there for a whole session.
+  const nodeCost = hitches.filter((h) => !h.includes("BETWEEN")).length;
+  if (nodeCost !== costHitches.length + loadHitches.length) {
+    console.log(
+      `\n*** INSTRUMENT DISAGREES WITH ITSELF: ${nodeCost} frame-cost hitches from Node, ` +
+        `${costHitches.length + loadHitches.length} from the page. Trust neither.`,
+    );
+  }
+
+  console.log(`\nwhile loading (before +${(playFrom / 1000).toFixed(1)}s): ${loadHitches.length}`);
+  for (const h of loadHitches) console.log(`   +${(h.t / 1000).toFixed(1)}s ${h.text}`);
+  console.log(`IN PLAY frame-cost hitches: ${costHitches.length}   scheduling gaps: ${gapHitches.length}`);
+  for (const h of costHitches.slice(0, 25)) console.log(`   +${(h.t / 1000).toFixed(1)}s ${h.text}`);
   console.log("\nfinal:", JSON.stringify(p));
   console.log("console errors:", page.__errors.length);
   for (const e of page.__errors.slice(0, 5)) console.log("  ", e);

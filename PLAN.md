@@ -19666,3 +19666,48 @@ rate rather than the exit code; and a character can be SAVED into a stuck
 position, which is how one seeded character sat wedged against the palisade for
 an unknown number of sessions while every harness pointed at it reported a clean
 pass.
+
+**Phase 70 M70.165 — the remaining hitches are not in gameplay, and the reason
+nobody could tell is that they were never dated.**
+
+Chased on request. The answer is not either theory this signature had already
+killed.
+
+**EVERY HITCH THIS PROJECT HAS REPORTED WAS UNDATED.** They were captured through
+Playwright's console event, which carries the NODE clock — hundreds of
+milliseconds and an IPC hop from the `performance.now()` everything else is
+stamped with. So a run could say "one frame-cost hitch in ten minutes" and could
+not say whether it happened in a fight or while the loading screen was still
+lifting. Stamped inside the page instead, on the same clock as the uploads:
+
+    12.3 minutes, 44,257 frames, unthrottled (max 50ms, one frame over 33ms)
+      while loading, before +13.3s:  2   at +9.7s and +9.8s
+      IN PLAY:                       0
+
+and an eighteen-minute census with the same hooks: two hitches, at +10.3s and
++10.4s against a ten-second load, with 570 swings of play producing none.
+
+**SO THE `+4tex` THAT SURVIVED TWO FIXES WAS LOAD-TIME WORK ALL ALONG.** The
+texture census reported "nothing uploaded within 400ms" for both hitches, which
+looked like a contradiction and is not: the texture hook installs immediately
+after login, at about +10.3s, microseconds AFTER the uploads it was meant to
+catch. The signature was never reachable by the instrument aimed at it.
+
+**AND THE INSTRUMENT WAS DISAGREEING WITH ITSELF IN SILENCE.** `texupload.mjs`
+counts hitches twice — once from Node, once in the page — and in one run those
+were 1 and 0. It printed the zero. The page-side hook was installed after login,
+so a hitch during the load fell in the gap between the two listeners, and the
+report simply showed the smaller number. Both harnesses now install the hook
+through `addInitScript`, before the game's first script runs, and print a loud
+INSTRUMENT DISAGREES WITH ITSELF when the counts differ. An instrument that
+quietly disagrees with itself is worse than no instrument, which is the standing
+rule of this directory and had just been broken by it.
+
+**WHAT IS ACTUALLY LEFT.** Two frames of about 60-70ms as the loading screen
+lifts, both `render`, both carrying two texture uploads. That is the warm settling
+into the first real frames, it costs a moment of a progress bar rather than a
+moment of a fight, and it is a different and much smaller problem than the one
+this phase opened with. In-play frame time is p50 16.7ms, p99 16.8ms, and across
+two clean unthrottled runs — 89,000 frames — exactly one frame exceeded 33ms.
+
+No game code changed in this entry; the whole of it is measurement.
