@@ -19847,3 +19847,61 @@ to do and passes, with the retreat half honestly INCONCLUSIVE.
 
 `tools/soak/loadhitch.mjs` stays; it is the only instrument here that can see a
 load. Suite 39/39.
+
+**Phase 70 M70.169 — the load profiled on the CPU, and `distanceToRoad` was
+third on the list.** With the GPU side settled, the long frames that remain have
+zero milliseconds of GL in them, so a GL hook cannot see any further.
+`tools/soak/loadcpu.mjs` runs V8's sampling profiler over CDP, started before
+navigation and stopped when the loading screen lifts, and reports SELF time per
+function and per file. Self time rather than total, because total up a call tree
+only says that the load calls the loader.
+
+The shape of a load, measured rather than assumed:
+
+  46.0%  (idle)                      — the load is mostly WAITING
+   8.1%  three's `onFirstUse`        — shader link and uniform reflection
+   3.3%  `distanceToRoad`            — shared/road.ts
+   1.6%  `riverAt`                   — shared/river.ts
+
+The third line is the only one that is mine, and it is a distance function.
+`distanceToRoad` walked all 144 spline segments per call with a `Math.hypot`
+each, re-deriving every segment's constant geometry every time, and the load
+asks it hundreds of thousands of times: every terrain vertex through
+`heightfield.ts`, every tree through `forest.ts`, every scatter placement
+through `World.ts`, and since the minimap rework every PIXEL of the minimap
+tile — which makes it a frame cost as well as a load cost.
+
+Per-segment constants now precompute once, and the loop compares squared
+distances so it takes one square root at the end instead of 144 calls to
+`Math.hypot`. `hypot` is variadic and guards against overflow and underflow that
+two world coordinates cannot produce. `riverAt` gets the same treatment inside
+its existing bucket. On the real load: road.ts 387ms to 44ms, river.ts 177ms to
+46ms, and `distanceToRoad` is out of the top fifteen entirely.
+
+AND THE PART THAT DID NOT SHIP, which is the more useful half. I also wrote a
+bucket index over y for the road, mirroring the one `river.ts` uses over x. It
+was faster still — 6.3ms to 4.3ms per 20,000 queries. It was also wrong. A
+y-index is exact only within its margin, and the road is 429px wide against
+4,224px tall, so for a point far to the west the nearest segment can sit at a
+completely different y: at (-2000, 2371) it returned 9,914 against the true
+9,766. Every threshold any caller actually uses is 240px or less and a sweep
+found zero disagreements at any of them, so it would have shipped and behaved
+perfectly until someone asked the function a question at range and believed the
+answer. Two milliseconds is not worth a shared function that is exact only where
+it happens to be convenient.
+
+What survived was checked the same way it was rejected: 145,266 points across
+the world plus a 2,000px border, against the original algorithm kept verbatim as
+the reference. Worst difference 3.6e-12, checksums identical to the digit.
+
+The load's wall clock did not move — 11.0s to 10.4s is noise on a load that is
+46% idle. THAT is the number worth staring at next: the CPU is not the
+bottleneck and neither is the GPU, so the load is waiting on bytes.
+
+Noted and not chased: `compileSafely`'s poll shows 178ms of self time, and is
+responsible for most of the 64,200 `getProgramParameter` calls in the GL trace —
+it re-queries every pending program every 10ms. It overlaps the idle wait, so
+whether shortening it would buy anything is a guess, and guessing is what this
+directory is supposed to have stopped doing.
+
+Suite 39/39.

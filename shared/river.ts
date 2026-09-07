@@ -220,6 +220,13 @@ export function riverAt(x: number, y: number): { distancePx: number; along: numb
   let best = Infinity;
   let bestIdx = 1;
   let bestT = 0;
+  // SQUARED, for the reason spelled out over `distanceToRoad`: `Math.hypot`
+  // guards against overflow and underflow that two world coordinates cannot
+  // produce, and it is several times the cost of the multiply-add here. The
+  // comparison picks the same segment either way, so this is one square root
+  // per call instead of one per candidate. Same change, same measurement — it
+  // took the road's version of this loop from 30.5ms to 6.3ms per 20,000
+  // queries with identical results.
   for (const i of candidates) {
     const a = path[i - 1];
     const c = path[i];
@@ -227,7 +234,9 @@ export function riverAt(x: number, y: number): { distancePx: number; along: numb
     const dy = c.y - a.y;
     const lenSq = dx * dx + dy * dy;
     const t = lenSq > 0 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lenSq)) : 0;
-    const d = Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t));
+    const ex = x - (a.x + dx * t);
+    const ey = y - (a.y + dy * t);
+    const d = ex * ex + ey * ey;
     if (d < best) {
       best = d;
       bestIdx = i;
@@ -235,7 +244,7 @@ export function riverAt(x: number, y: number): { distancePx: number; along: numb
     }
   }
   if (best === Infinity) return { distancePx: Infinity, along: 0 };
-  return { distancePx: best, along: (bestIdx - 1 + bestT) / (path.length - 1) };
+  return { distancePx: Math.sqrt(best), along: (bestIdx - 1 + bestT) / (path.length - 1) };
 }
 
 /** Distance from the river's centreline alone. */

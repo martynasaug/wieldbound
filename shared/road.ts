@@ -227,17 +227,100 @@ export function roadTorches(): RoadTorch[] {
  * afterwards.
  */
 export function distanceToRoad(x: number, y: number): number {
-  const path = roadPath();
+  const seg = roadSegments();
   let best = Infinity;
-  for (let i = 1; i < path.length; i++) {
-    const a = path[i - 1];
-    const b = path[i];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const lenSq = dx * dx + dy * dy;
-    const t = lenSq > 0 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lenSq)) : 0;
-    const d = Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t));
+  for (let i = 0; i < seg.count; i++) {
+    const px = x - seg.ax[i];
+    const py = y - seg.ay[i];
+    const dx = seg.dx[i];
+    const dy = seg.dy[i];
+    const lenSq = seg.lenSq[i];
+    // The division is kept rather than turned into a multiply by a stored
+    // reciprocal. A reciprocal is not the same number, and this feeds
+    // thresholds that `tools/test/road.mjs` and `tools/test/crossing.mjs` pin
+    // to the pixel. It is also not what made this slow.
+    let t = lenSq > 0 ? (px * dx + py * dy) / lenSq : 0;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const ex = px - dx * t;
+    const ey = py - dy * t;
+    const d = ex * ex + ey * ey;
     if (d < best) best = d;
   }
-  return best;
+  return Math.sqrt(best);
+}
+
+// --- Answering "how far from the road am I" fast -----------------------------
+//
+// This is the single most-asked question in the file, and a profile of the load
+// says so out loud. `tools/soak/loadcpu.mjs` samples V8 across the whole load:
+// `distanceToRoad` was 362ms of SELF time, 3.3% of everything the CPU did,
+// behind only three's shader linking and the idle wait.
+//
+// The callers are the expensive loops. Every terrain vertex through
+// `heightfield.ts`, every tree through `forest.ts`, every ground-cover
+// placement through `World.ts` — and, since the minimap rework, every PIXEL of
+// the minimap's terrain tile through `minimapTerrain.ts`, which makes this a
+// frame-time cost as well as a load cost.
+//
+// TWO CHANGES, AND ONLY ONE OF THEM SURVIVED THE CHECK.
+//
+// What is here: the per-segment constants are computed once instead of being
+// re-derived on every call, and the loop compares SQUARED distances so it needs
+// one square root at the end rather than 144 calls to `Math.hypot`. `hypot` is
+// variadic and guards carefully against overflow and underflow, neither of
+// which can happen to two world coordinates, and it costs several times the
+// multiply-add that replaces it. Squaring is monotonic on non-negatives, so the
+// same segment wins. Measured: 30.5ms to 6.3ms for 20,000 queries spread over
+// the whole world, with checksums identical and a worst-case difference of
+// 3.6e-12 across 145,266 points.
+//
+// What is NOT here, deliberately: a bucket index over y, mirroring the one
+// `river.ts` uses over x. It was written, and it was faster still — 6.3ms to
+// 4.3ms. It was also WRONG. A y-index is only exact within its margin, and the
+// road is 429px wide against 4,224px tall, so for a point far to the west the
+// nearest segment can sit at a completely different y: at (-2000, 2371) it
+// returned 9,914 against the true 9,766. Every threshold any caller actually
+// uses is 240px or less and none of them disagreed, so it would have shipped
+// and been fine — until someone asked this function a question at range and
+// believed the answer. Two milliseconds is not worth a shared function that is
+// exact only where it was convenient. (The same caveat applies to `riverAt`'s
+// index, which is sound there because the river IS monotone in x.)
+interface RoadSegments {
+  count: number;
+  ax: Float64Array;
+  ay: Float64Array;
+  dx: Float64Array;
+  dy: Float64Array;
+  lenSq: Float64Array;
+}
+
+let cachedSegments: RoadSegments | null = null;
+
+/** Per-segment constants, computed once. The old loop rebuilt all five of these
+ *  on every call, for every segment — that is 144 subtractions and two
+ *  multiplies per query to re-derive a curve that never changes. */
+function roadSegments(): RoadSegments {
+  if (cachedSegments) return cachedSegments;
+  const path = roadPath();
+  const count = path.length - 1;
+  const s: RoadSegments = {
+    count,
+    ax: new Float64Array(count),
+    ay: new Float64Array(count),
+    dx: new Float64Array(count),
+    dy: new Float64Array(count),
+    lenSq: new Float64Array(count),
+  };
+  for (let i = 0; i < count; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    s.ax[i] = a.x;
+    s.ay[i] = a.y;
+    s.dx[i] = b.x - a.x;
+    s.dy[i] = b.y - a.y;
+    s.lenSq[i] = s.dx[i] * s.dx[i] + s.dy[i] * s.dy[i];
+  }
+  cachedSegments = s;
+  return s;
 }
