@@ -3,7 +3,7 @@
 //
 //   node tools/soak/ornaments.mjs Player3619 ./out
 
-import { open, login, step, nearestMonster, keysToward, insideTown, gateWaypoint } from "./driver.mjs";
+import { open, login, step, nearestMonster, keysToward, insideTown, gateWaypoint, approach } from "./driver.mjs";
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
 
@@ -24,8 +24,7 @@ for (let i = 0; i < 30; i++) {
     y: window.__wieldbound.playerY,
   }));
   if (!t) { await step(page, ["w"], 700); continue; }
-  const aim = insideTown(p) && !insideTown(t) ? gateWaypoint(p) : t;
-  await step(page, keysToward(p, aim), 600);
+  await approach(page, t, 600);
 }
 
 for (const style of STYLES) {

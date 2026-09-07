@@ -24,7 +24,7 @@
 // lines naming the worst section during the stutter. Those are captured here
 // rather than inferred.
 
-import { open, login, probe, hotbarKeys, step, nearestMonster, keysToward } from "./driver.mjs";
+import { open, login, probe, hotbarKeys, step, nearestMonster, keysToward, approach } from "./driver.mjs";
 
 const NAME = process.argv[2] ?? "Player3619";
 const MINUTES = Number(process.argv[3] ?? 6);
@@ -82,21 +82,14 @@ const run = async () => {
     while (Date.now() < until) {
       const p = await me(page);
       if (Math.hypot(wp.x - p.x, wp.y - p.y) < 260) break;
-      const dirs = keysToward(p, wp);
-      const r = await step(page, dirs, 650);
-      if (r.moved < 25) {
-        const perp = dirs.includes("w") || dirs.includes("s") ? [sign > 0 ? "d" : "a"] : [sign > 0 ? "s" : "w"];
-        await step(page, perp, 900);
-        sign = -sign;
-      }
+      if ((await approach(page, wp, 650, sign)) < 25) sign = -sign;
     }
     // Fight here, moving.
     const fightUntil = Date.now() + 22000;
     while (Date.now() < fightUntil) {
       const t = await nearestMonster(page);
       if (t && t.d > 240) {
-        const p = await me(page);
-        await step(page, keysToward(p, t), 600);
+        await approach(page, t, 600);
         continue;
       }
       swings++;

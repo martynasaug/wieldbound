@@ -10,7 +10,7 @@
 // the source. A seeded endgame character levels roughly once a minute while
 // fighting, so it does not take long.
 
-import { open, login, hotbarKeys, step, nearestMonster, keysToward } from "./driver.mjs";
+import { open, login, hotbarKeys, step, nearestMonster, keysToward, approach } from "./driver.mjs";
 
 const NAME = process.argv[2] ?? "Player3619";
 const OUT = process.argv[3] ?? ".";
@@ -31,11 +31,7 @@ const run = async () => {
   while (Date.now() < deadline) {
     const t = await nearestMonster(page);
     if (!t || t.d > 240) {
-      const p = await page.evaluate(() => ({
-        x: window.__wieldbound.playerX,
-        y: window.__wieldbound.playerY,
-      }));
-      if (t) await step(page, keysToward(p, t), 500);
+      if (t) await approach(page, t, 500);
       else await step(page, ["w"], 600);
     } else {
       swings++;

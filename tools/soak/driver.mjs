@@ -30,6 +30,7 @@
 // readable at runtime and none of them need a debug hook added to ship code.
 
 import { chromium } from "playwright";
+import { TOWN_PROPS, TOWN_BUILDINGS, propPosition } from "../../shared/town.ts";
 
 export const CLIENT_URL = "http://localhost:5173";
 
@@ -219,6 +220,69 @@ export function gateWaypoint(from) {
   };
 }
 
+// STEERING AROUND THINGS, RATHER THAN DISCOVERING THEM BY WALKING INTO THEM.
+//
+// Reported from watching a run: "your gameplay is running into a town fence and
+// into building wall", and then "and running into town decoration objects".
+// Both true. Every harness aimed straight at its destination and only reacted
+// AFTER a leg failed — so the bot ground along the palisade, shouldered
+// buildings and shoved benches for seconds at a time. It eventually got there,
+// which is why the measurements were not obviously wrong, but a character
+// scraping down a wall is not playing the game and anything measured while it
+// does is measuring that instead.
+//
+// The obstacles are not a mystery: the town is built from `TOWN_PROPS` and
+// `TOWN_BUILDINGS` in `shared/`, the same tables the collision resolver reads.
+// So the bot can know where they are for the same reason the game does.
+const OBSTACLES = [
+  ...TOWN_PROPS.filter((p) => p.blockRadiusPx > 0).map((p) => {
+    const at = propPosition(p);
+    return { x: at.x, y: at.y, r: p.blockRadiusPx };
+  }),
+  // Buildings as circles. An overestimate — a rectangle's corner is further out
+  // than its edge — and deliberately so: the cost of steering a little wide of a
+  // wall is nothing, and the cost of clipping it is the grinding this exists to
+  // remove.
+  ...TOWN_BUILDINGS.map((b) => ({ x: b.x, y: b.y, r: Math.max(b.widthPx, b.depthPx) * 0.55 })),
+];
+
+/** Closest approach of a circle centre to a segment. */
+function distanceToSegment(cx, cy, ax, ay, bx, by) {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const len2 = vx * vx + vy * vy;
+  const t = len2 > 0 ? Math.max(0, Math.min(1, ((cx - ax) * vx + (cy - ay) * vy) / len2)) : 0;
+  return Math.hypot(cx - (ax + vx * t), cy - (ay + vy * t));
+}
+
+/** Is the straight line from `from` to `to` clear of everything solid? */
+function pathClear(from, to, pad) {
+  for (const o of OBSTACLES) {
+    if (distanceToSegment(o.x, o.y, from.x, from.y, to.x, to.y) < o.r + pad) return false;
+  }
+  return true;
+}
+
+/**
+ * An aim point that heads toward `to` without walking through anything.
+ *
+ * Fans out from the direct bearing until it finds one that is clear for a
+ * lookahead, which is the cheapest steering that actually works: the bot leans
+ * around a bench a stride before reaching it instead of finding it with its
+ * face. Falls back to the direct line when everything is blocked, so a bot
+ * boxed in still tries rather than standing still.
+ */
+export function steerToward(from, to, lookaheadPx = 240, pad = 26) {
+  const base = Math.atan2(to.y - from.y, to.x - from.x);
+  const reach = Math.min(lookaheadPx, Math.hypot(to.x - from.x, to.y - from.y));
+  for (const offset of [0, 18, -18, 36, -36, 54, -54, 74, -74, 96, -96, 120, -120]) {
+    const a = base + (offset * Math.PI) / 180;
+    const probe = { x: from.x + Math.cos(a) * reach, y: from.y + Math.sin(a) * reach };
+    if (pathClear(from, probe, pad)) return probe;
+  }
+  return to;
+}
+
 /**
  * Get a wedged character moving again, whatever it is caught on.
  *
@@ -259,7 +323,10 @@ export async function approach(page, target, ms = 600, sign = 1) {
     x: window.__wieldbound.playerX,
     y: window.__wieldbound.playerY,
   }));
-  const aim = insideTown(p) && !insideTown(target) ? gateWaypoint(p) : target;
+  // The wall first — it is the one obstacle with a door, and steering cannot
+  // find a door. Then steer around whatever furniture is on the way.
+  const gated = insideTown(p) && !insideTown(target) ? gateWaypoint(p) : target;
+  const aim = steerToward(p, gated);
   const dirs = keysToward(p, aim);
   const r = await step(page, dirs, ms);
   if (r.moved < 25) {

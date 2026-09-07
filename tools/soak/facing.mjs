@@ -21,7 +21,7 @@
 // Both matter. The second is the behaviour the override was added for, and a
 // fix that pointed everyone at their feet always would break it.
 
-import { open, login, hotbarKeys, step, nearestMonster, keysToward } from "./driver.mjs";
+import { open, login, hotbarKeys, step, nearestMonster, keysToward, approach } from "./driver.mjs";
 
 const NAME = process.argv[2] ?? "Player3619";
 
@@ -72,12 +72,8 @@ const run = async () => {
   for (let i = 0; i < 40; i++) {
     const t = await nearestMonster(page);
     if (t && t.d < 300) break;
-    const p = await page.evaluate(() => ({
-      x: window.__wieldbound.playerX,
-      y: window.__wieldbound.playerY,
-    }));
     if (!t) { await step(page, ["w"], 700); continue; }
-    await step(page, keysToward(p, t), 600);
+    await approach(page, t, 600);
   }
   const arrived = await nearestMonster(page);
   console.log(`nearest monster: ${arrived ? Math.round(arrived.d) + "px" : "none"}`);
@@ -121,7 +117,7 @@ const run = async () => {
       y: window.__wieldbound.playerY,
     }));
     if (!t) break;
-    await step(page, keysToward(p, t), 500);
+    await approach(page, t, 500);
   }
   const closed = await nearestMonster(page);
   console.log(`   closed back to ${closed ? Math.round(closed.d) + "px" : "nothing"}`);

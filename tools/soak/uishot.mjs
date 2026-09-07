@@ -10,7 +10,7 @@
 // on it says nothing about how it displays things: "camp" heads for the nearest
 // monsters, "town" heads for Emberhold.
 
-import { open, login, step, nearestMonster, keysToward, insideTown, gateWaypoint } from "./driver.mjs";
+import { open, login, step, nearestMonster, keysToward, insideTown, gateWaypoint, approach } from "./driver.mjs";
 
 const NAME = process.argv[2] ?? "Player3619";
 const SELECTOR = process.argv[3] ?? "#minimap";
@@ -32,8 +32,7 @@ const run = async () => {
         y: window.__wieldbound.playerY,
       }));
       if (!t) { await step(page, ["w"], 700); continue; }
-      const aim = insideTown(p) && !insideTown(t) ? gateWaypoint(p) : t;
-      await step(page, keysToward(p, aim), 600);
+      await approach(page, t, 600);
     }
   } else if (GO === "town") {
     for (let i = 0; i < 60; i++) {
@@ -42,7 +41,7 @@ const run = async () => {
         y: window.__wieldbound.playerY,
       }));
       if (Math.hypot(p.x - SPAWN.x, p.y - SPAWN.y) < 260) break;
-      await step(page, keysToward(p, SPAWN), 600);
+      await approach(page, SPAWN, 600);
     }
   }
 

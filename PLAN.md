@@ -19594,3 +19594,42 @@ A ratio needs a baseline worth dividing by. Below twenty damage the run is now
 INCONCLUSIVE rather than failed, which is the same distinction the file already
 draws twice: once when nothing was ever in reach while retreating, and once when
 no boss could be made to slam. Suite run twice back to back, 39/39 both times.
+
+**Phase 70 M70.163 — the bot walks around things now.** Reported while watching a
+run: "your gameplay is running into a town fence and into building wall", then
+"and running into town decoration objects". All three true, and the same
+complaint made twice before in this project's history.
+
+**EVERY HARNESS AIMED STRAIGHT AT ITS DESTINATION AND ONLY REACTED AFTER A LEG
+FAILED.** So the bot ground along the palisade, shouldered buildings and shoved
+benches for seconds at a time. It arrived eventually, which is why the numbers
+never looked obviously wrong — but a character scraping down a wall is not
+playing the game, and everything measured while it does that is measuring the
+scraping.
+
+An audit found the shared `approach` — gate-aware and unstick-aware, written for
+M70.160 — was used by exactly ONE of the nine harnesses. The other eight still
+had their own inline "walk at it and sidestep when stuck" loop, including two
+that had the gate half copied in and the furniture half missing.
+
+**REACTING IS NOT ENOUGH ANYWAY.** Even `approach` only sidestepped after a leg
+had already failed, which is a bot discovering a bench with its face. The town is
+built from `TOWN_PROPS` and `TOWN_BUILDINGS` in `shared/` — the same tables the
+collision resolver reads — so the driver can simply know where they are.
+`steerToward` fans out from the direct bearing until it finds one that is clear
+for a lookahead, which is the cheapest steering that works: the bot leans around
+a bench a stride before reaching it. Buildings are treated as circles, an
+overestimate on purpose, because steering wide of a wall costs nothing and
+clipping it costs the grinding this removes.
+
+The wall is handled first and separately, because it is the one obstacle with a
+door and steering cannot find a door.
+
+    blocked legs      22  ->  10, and all ten in the opening two minutes
+    travel rate    4,581  ->  13,622 px/min
+
+Three times the ground covered, and the blocked count goes flat after the start
+rather than climbing all run. Every harness uses the shared path now; `keysToward`
+has no direct callers left outside the driver.
+
+Suite 39/39.

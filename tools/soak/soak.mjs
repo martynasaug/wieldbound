@@ -20,7 +20,7 @@
 // fights than usual should be read as "the table drifted", not "the game got
 // quieter".
 
-import { open, login, probe, hotbarKeys, step, nearestMonster, keysToward } from "./driver.mjs";
+import { open, login, probe, hotbarKeys, step, nearestMonster, keysToward, approach } from "./driver.mjs";
 
 const NAME = process.argv[2] ?? "Player3619";
 const LAPS = Number(process.argv[3] ?? 3);
@@ -123,15 +123,11 @@ async function travelTo(page, wp, budgetMs) {
     const p = await me(page);
     const d = Math.hypot(wp.x - p.x, wp.y - p.y);
     if (d < 260) return { arrived: true, blocked };
-    const dirs = keysToward(p, wp);
-    const r = await step(page, dirs, 650);
-    if (r.moved < 25) {
+    // Steers around the town wall, the buildings and the furniture rather than
+    // discovering them by walking into them. See `approach` in driver.mjs.
+    const moved = await approach(page, wp, 650, sign);
+    if (moved < 25) {
       blocked++;
-      const perp =
-        dirs.includes("w") || dirs.includes("s")
-          ? [sign > 0 ? "d" : "a"]
-          : [sign > 0 ? "s" : "w"];
-      await step(page, perp, 1000);
       sign = -sign;
     }
   }
@@ -145,8 +141,7 @@ async function fightHere(page, keys, ms) {
   while (Date.now() < until) {
     const t = await nearestMonster(page);
     if (t && t.d > 240) {
-      const p = await me(page);
-      await step(page, keysToward(p, t), 600);
+      await approach(page, t, 600);
       continue;
     }
     swings++;

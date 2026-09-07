@@ -22,7 +22,7 @@
 
 import { PLAYER_BODY_RADIUS_PX, resolveBodyCollision } from "../../shared/protocol-types.ts";
 import { TOWN_CENTER, TOWN_RADIUS_PX, resolveTownCollision } from "../../shared/town.ts";
-import { resolveRiverCollision } from "../../shared/river.ts";
+import { resolveRiverCollision, bridgeAt, BRIDGE_HALF_SPAN_PX, BRIDGE_RAMP_PX } from "../../shared/river.ts";
 import { resolvePlayerPosition } from "../../shared/collision.ts";
 
 let failures = 0;
@@ -184,6 +184,52 @@ console.log("\n4. a monster cannot pin you against the scenery");
   console.log(`  ${tested} player/monster arrangements around the town`);
   check(
     "the player comes to rest with a body on top of them",
+    stuck === 0,
+    `${stuck} never settled, first at ${JSON.stringify(worst.at)}`,
+  );
+}
+
+// --- 5. the bridge, which is the other place with real geometry ------------
+//
+// The town is not the only thing a player can be pushed around by. The Coldwater
+// is solid, the bridge is the one way across it, and the parapets are two walls
+// with a gap between them — which is the same shape as the pockets that caused
+// all of this. A player stuck on the only crossing in the world would be stuck
+// for good.
+console.log("\n5. nothing on or around the bridge pins a player");
+{
+  const crossing = bridgeAt();
+  const MONSTER_R = 58;
+  let stuck = 0;
+  let tested = 0;
+  const worst = { at: null };
+  // A grid over the whole crossing — deck, parapets, ramps and the banks either
+  // side — with and without something standing on the player.
+  for (let dx = -BRIDGE_HALF_SPAN_PX - 120; dx <= BRIDGE_HALF_SPAN_PX + 120; dx += 10) {
+    for (let dy = -BRIDGE_RAMP_PX - 120; dy <= BRIDGE_RAMP_PX + 120; dy += 10) {
+      for (const bodies of [[], [{ x: crossing.x + dx + 24, y: crossing.y + dy, radiusPx: MONSTER_R }]]) {
+        tested++;
+        let p = { x: crossing.x + dx, y: crossing.y + dy };
+        let settled = false;
+        for (let f = 0; f < 12; f++) {
+          const q = resolvePlayerPosition(p.x, p.y, R, bodies);
+          const moved = Math.hypot(q.x - p.x, q.y - p.y);
+          p = q;
+          if (moved <= 0.5) {
+            settled = true;
+            break;
+          }
+        }
+        if (!settled) {
+          stuck++;
+          if (!worst.at) worst.at = { x: Math.round(p.x), y: Math.round(p.y), withBody: bodies.length > 0 };
+        }
+      }
+    }
+  }
+  console.log(`  ${tested} positions across the crossing, with and without a body on top`);
+  check(
+    "the crossing never pins a player",
     stuck === 0,
     `${stuck} never settled, first at ${JSON.stringify(worst.at)}`,
   );

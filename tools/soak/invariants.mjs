@@ -15,7 +15,7 @@
 // Headless: nothing here is timing-sensitive, so SwiftShader is fine and the
 // backgrounding throttle cannot contaminate a boolean.
 
-import { open, login, hotbarKeys, step, nearestMonster, keysToward, insideTown, gateWaypoint } from "./driver.mjs";
+import { open, login, hotbarKeys, step, nearestMonster, keysToward, insideTown, gateWaypoint, approach } from "./driver.mjs";
 
 const NAME = process.argv[2] ?? "Player3619";
 const MINUTES = Number(process.argv[3] ?? 10);
@@ -180,35 +180,21 @@ const run = async () => {
     while (Date.now() < travelUntil) {
       const p = await me(page);
       if (Math.hypot(wp.x - p.x, wp.y - p.y) < 260) break;
-      // Leave through a gate before heading anywhere outside the wall.
-      const aim = insideTown(p) && !insideTown(wp) ? gateWaypoint(p) : wp;
-      const dirs = keysToward(p, aim);
-      const r = await step(page, dirs, 600);
-      travelled += r.moved;
+      // Gate-aware AND obstacle-aware, from the shared driver — this file had
+      // the gate half inline and still walked into the furniture.
+      const moved = await approach(page, wp, 600, sign);
+      travelled += moved;
       await check();
-      if (r.moved < 25) {
+      if (moved < 25) {
         blocked++;
-        // A SINGLE ALTERNATING SIDESTEP CANNOT LEAVE A CONCAVE CORNER, and the
-        // town palisade is full of them. A level 1 walked into one and spent
-        // seven minutes there while the run reported no invariant violations,
-        // which was true and worthless. Escalate: sidestep first, and if that
-        // keeps failing, commit to a long run in one direction until something
-        // changes.
-        const perp = dirs.includes("w") || dirs.includes("s") ? [sign > 0 ? "d" : "a"] : [sign > 0 ? "s" : "w"];
-        await step(page, perp, 900);
         sign = -sign;
-        if (blocked % 4 === 0) {
-          const away = [["w"], ["a"], ["s"], ["d"]][(blocked / 4) % 4];
-          await step(page, away, 2500);
-        }
       }
     }
     const fightUntil = Date.now() + 25000;
     while (Date.now() < fightUntil) {
       const t = await nearestMonster(page);
       if (t && t.d > 240) {
-        const p = await me(page);
-        await step(page, keysToward(p, t), 600);
+        travelled += await approach(page, t, 600);
         await check();
         continue;
       }

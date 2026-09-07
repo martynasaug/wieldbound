@@ -27,7 +27,7 @@
 // answer is worth nothing, so that comparison is printed on every sample rather
 // than buried.
 
-import { open, login, probe, hotbarKeys, step, nearestMonster, keysToward } from "./driver.mjs";
+import { open, login, probe, hotbarKeys, step, nearestMonster, keysToward, approach } from "./driver.mjs";
 
 const NAME = process.argv[2] ?? "Player3619";
 const MINUTES = Number(process.argv[3] ?? 12);
@@ -163,18 +163,9 @@ const run = async () => {
         x: window.__wieldbound.playerX,
         y: window.__wieldbound.playerY,
       }));
-      const dirs = keysToward(me, target);
-      const r = await step(page, dirs, 700);
-      // BLOCKED, NOT WALKING. A fence, a tree or a building absorbs the whole
-      // leg and the naive loop pushes into it forever. Slide along it instead,
-      // alternating sides so a corner cannot trap the bot in a two-step cycle.
-      if (r.moved < 25) {
+      const moved = await approach(page, target, 700, sidestepSign);
+      if (moved < 25) {
         blocked++;
-        const perp =
-          dirs.includes("w") || dirs.includes("s")
-            ? [sidestepSign > 0 ? "d" : "a"]
-            : [sidestepSign > 0 ? "s" : "w"];
-        await step(page, perp, 900);
         sidestepSign = -sidestepSign;
       }
     } else {
