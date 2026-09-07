@@ -19633,3 +19633,36 @@ rather than climbing all run. Every harness uses the shared path now; `keysTowar
 has no direct callers left outside the driver.
 
 Suite 39/39.
+
+**Phase 70 M70.164 — the collision change validated, and the README caught up.**
+The frame check that M70.162 needed, re-run after the steering fix so it measures
+the game rather than a bot scraping a wall.
+
+    10.2 minutes, p50 16.7ms, 1 genuine frame-cost hitch (134ms, render 124.7ms)
+    console errors 0, heap 102.5MB, programs 131
+
+One hitch in ten minutes is the same background rate measured before the
+iterated resolver went in, so repeating the sequence every frame costs nothing
+observable — which `collcost.mjs` already said in isolation: 2.1us in open field,
+3.6us in town, 6.3us pinned against a wall with a body on top, against a 16,700us
+frame.
+
+**THE LAST HITCH IS PARKED, DELIBERATELY.** It still carries `uploads=+4tex`, and
+the post-fix texture census says the survivors are `.shadowMap` at 2048x2048 plus
+a couple of small data textures — `setQuality` disposes the shadow map and
+three.js reallocates it, which is real work and does explain a long render. But
+it is one frame per ten minutes, the large cause is gone (M70.154 removed
+nineteen full-atlas uploads a minute), and the honest next step is to NAME the
+four textures rather than reason about them. Not worth another round on a
+134ms frame nobody has reported feeling; `texupload.mjs` is pointed at it the day
+somebody does.
+
+**THE README HAD DRIFTED.** Its file table listed seven of twenty-one harnesses,
+which for a directory whose entire purpose is "do not rebuild this again" is the
+same failure it was written to prevent. It lists all of them now, and carries the
+three pathing lessons: never write a movement loop in a harness (use `approach`);
+a bot grinding a wall still finishes the run, so watch `blocked` and the travel
+rate rather than the exit code; and a character can be SAVED into a stuck
+position, which is how one seeded character sat wedged against the palisade for
+an unknown number of sessions while every harness pointed at it reported a clean
+pass.

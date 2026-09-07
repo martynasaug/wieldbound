@@ -79,6 +79,23 @@ Each of these produced a confident, wrong number before the cause was found.
   The tell was values alternating between two states and a counter jumping in a
   way one run cannot.
 
+- **Never write a movement loop in a harness.** Use `approach` from
+  `driver.mjs`. It routes through a town gate, steers around props and
+  buildings, sidesteps, and escalates to `unstick` when wedged. This was
+  learned three separate times: the gate half was solved in `invariants.mjs`
+  and not shared, the wedge half in `bagspam.mjs` and not shared, and the
+  steering half only after somebody watched a run and said "your gameplay is
+  running into a town fence". Nine harnesses, one of them using the shared
+  helper. `keysToward` should have no callers outside the driver.
+- **A bot grinding a wall still finishes the run.** That is what makes this
+  dangerous rather than obvious: the numbers come back, they are just partly
+  a measurement of scraping. Watch `blocked` and the travel rate — 4,581px/min
+  with 22 blocked legs was the grinding, 13,622px/min with 10 was the fix.
+- **A character can be saved into a stuck position.** One seeded character sat
+  wedged against the palisade for an unknown number of sessions, and every
+  harness pointed at it reported zero fights and a clean pass. `unstick` frees
+  it; the liveness checks catch it if anything else does not.
+
 ## The standing rule
 
 That last one generalises, and it is the rule this directory exists under:
@@ -101,6 +118,17 @@ readable from a probe without adding a debug hook to ship code.
 | `loadtime.mjs` | `Game.loadPhases` — what each load phase cost and how many shader programs it added. Headed, for the reason above. |
 | `gearcheck.mjs` | swaps every weapon in the bag and checks each one still has drawable, renderer-registered geometry. |
 | `raritytint.mjs` | checks that sharing geometry across rarities did not also share the tint. |
+| `invariants.mjs` | asserts state coherence several times a second while playing. Prints RUN VOID if it never actually fought. |
+| `death.mjs` | walks a fresh level 1 into a camp and asserts the whole defeat and respawn sequence. |
+| `multiplayer.mjs` | two clients in one world; checks each sees the other and that the gap between them stays bounded. |
+| `qualityswitch.mjs` | cycles graphics quality 24 times while fighting — the path `compileSafely` most affects. |
+| `bagspam.mjs` | counts "Bag is full" warnings per minute with a full bag standing on loot. |
+| `facing.mjs` | measures the angle between where the body points and where it is walking, fighting and not. |
+| `texupload.mjs` | names every texture uploaded mid-session by what backs it, with a creation stack. |
+| `fxshot.mjs` | fires one effect somewhere quiet and captures it with real elapsed timings. |
+| `uishot.mjs` / `crop.mjs` | screenshot one element, and magnify a region of a frame. A 190px widget cannot be judged inside a 1600px screenshot. |
+| `collcost.mjs` | what the iterated collision resolver costs per call, in the worst place for it. |
+| `whereami.mjs` | where is this character and can it move. The first thing to run when a soak reports nothing happening. |
 
 ### How the geometry census works
 
