@@ -5004,6 +5004,20 @@ export class Game {
    * So: not the traversal, not the variant. The only lever left is fewer
    * distinct materials in the ART, which is a content change and not a code
    * one. Accept the phase or reduce the material count.
+   *
+   * AND EVERY NUMBER ABOVE IS A COLD-CACHE NUMBER, which nothing here said
+   * until M70.170. Playwright launches Chromium with a throwaway profile, so
+   * the on-disk GPU program cache starts empty and all 126 programs compile
+   * from scratch on every measured run. A player pays that once per machine.
+   * Measured with one persistent profile (`tools/soak/loadcache.mjs`):
+   *
+   *     cold 9.6s -> warm 5.9s;  the warm-up phases 5.8s -> 3.0s
+   *
+   * So this phase costs ~2.4s on a first visit and ~1.2s on every visit after.
+   * Both halves are true and they answer different questions. Before spending
+   * art on the material count, decide WHICH load is the one that matters —
+   * cutting materials helps the first visit most, and the returning player is
+   * already paying half of what this comment used to claim.
    */
   private async warmFadedOccluders(): Promise<void> {
     const mats = new Set<THREE.Material>();

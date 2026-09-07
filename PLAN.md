@@ -19905,3 +19905,60 @@ whether shortening it would buy anything is a guess, and guessing is what this
 directory is supposed to have stopped doing.
 
 Suite 39/39.
+
+**Phase 70 M70.170 — every load number in this repository was a cold-cache
+number, and nothing said so.** Following the 46%-idle finding from M70.169 to
+what the load is actually waiting for.
+
+First, the wrong answer, checked and discarded. `tools/soak/loadbytes.mjs`
+censuses the network from the page's own Resource Timing (the first version read
+Playwright's `request.timing()` and printed 0ms for all 417 requests — an
+instrument reporting nothing and calling it a measurement). 48MB decoded across
+250 requests, and EVERY REQUEST FINISHES BY +0.5s. On localhost the load is not
+waiting for bytes. It also cleared a false alarm: `grass_nor.jpg` and
+`gravel_diff.jpg` appear twice each in the raw request log, but `transferSize`
+says the repeats are cache hits — 0.02MB actually re-transferred, not the 1.4MB
+apiece it looked like.
+
+The game's own `__wieldbound.loadPhases` had the answer all along:
+
+  +1.9s   1861ms    0 programs   start
+  +3.1s   1226ms   +2 programs   assets
+  +5.0s   1869ms  +40 programs   warmUp(scene)
+  +7.4s   2433ms  +35 programs   warmFadedOccluders
+  +9.6s   2189ms  +51 programs   warmWholeScene
+
+6.5s of a 10.4s load is shader compilation, 126 programs at ~51ms each, and the
+idle is the main thread waiting on the driver's compile threads. That matches
+the CPU profile exactly — three's `onFirstUse`, the uniform reflection that
+follows a link, was the largest non-idle entry at 8.1%.
+
+`KHR_parallel_shader_compile` is present (ANGLE D3D11, RTX A4000), so the
+compiles already overlap and there is no sequencing win hiding here. The
+existing conclusion in `warmFadedOccluders` — that the only lever is fewer
+distinct materials in the art — survives.
+
+WHAT DOES NOT SURVIVE IS THE NUMBER ATTACHED TO IT. Playwright launches
+Chromium with a throwaway profile. Chromium caches compiled programs on disk.
+So every load ever measured in this repository — the 28.6s that started this,
+the 10.4s in M70.169, all of it — was a first-ever load on a fresh machine, and
+no harness here could see any other kind. Three loads against one persistent
+profile:
+
+    cold 9.6s  ->  warm 5.9s, 5.7s        (39% of the first load)
+    warm-up phases 5.8s -> 3.0s
+
+`tools/soak/loadcache.mjs` is that measurement, kept, because it is the only
+harness here that can see a RETURNING player and that is the common case. It
+restarts the browser process between runs rather than reloading the page, so
+only the on-disk cache carries over — reloading would keep the in-memory cache
+too, which is not what closing a tab and coming back gives you.
+
+The comment in `warmFadedOccluders` has been corrected in place rather than left
+to mislead: that phase costs ~2.4s on a first visit and ~1.2s on every visit
+after. This does not change the art recommendation, it changes the size of the
+prize — and it means the question "cut the material count?" is really the
+question "which load are we optimising, the first or the hundredth?", which is
+not mine to answer.
+
+Suite 39/39.
