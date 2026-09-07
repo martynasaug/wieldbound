@@ -19,7 +19,7 @@ import {
 } from "./quality";
 import { windyGeometry } from "./wind";
 import { seededRandom } from "../../../shared/rng";
-import { DayNight } from "./daynight";
+import { DayNight, nightAmount } from "./daynight";
 import { ROAD_HALF_WIDTH_PX, distanceToRoad } from "../../../shared/road";
 import { RIVER_HALF_WIDTH_PX, riverAt } from "../../../shared/river";
 import { FORESTS, forestStrengthAt } from "../../../shared/forests";
@@ -90,6 +90,25 @@ const MAX_GROUND_SLOPE = 1.5;
  * stopped at 100%.
  */
 const COMPILE_WAIT_LIMIT_MS = 8000;
+
+/**
+ * The lamp the player carries after dark. See the note where it is constructed
+ * for why it exists and why the two obvious alternatives were measured and
+ * rejected.
+ *
+ * Warm rather than white: every other light in this world after dark is a
+ * flame, and a cold fill reads as fog rather than as light. The range and decay
+ * are set so it lights the ground the player is about to walk onto and has
+ * fallen away well before it could flatten what the town torches are doing.
+ */
+const PLAYER_LAMP_COLOR = 0xffd6a2;
+const PLAYER_LAMP_RANGE = 15;
+const PLAYER_LAMP_DECAY = 1.4;
+/** Peak intensity, reached in full dark and gone entirely by day. */
+const PLAYER_LAMP_INTENSITY = 2.6;
+/** Chest height, so the ground AROUND the player is lit rather than a bright
+ *  disc directly underneath their feet. */
+const PLAYER_LAMP_HEIGHT = 1.15;
 
 /**
  * Seats a flat unit quad on the ground AS DRAWN, tilted to the local slope.
@@ -226,7 +245,9 @@ export class World {
   private qualityWarm: Promise<void> | null = null;
   private shadowTick = 0;
 
+
   private readonly sun: THREE.DirectionalLight;
+  private readonly playerLamp: THREE.PointLight;
   private readonly fill: THREE.HemisphereLight;
   /** The hour, and everything it changes: sun angle, colour, sky, fog, stars. */
   readonly dayNight = new DayNight();
@@ -357,6 +378,34 @@ export class World {
     this.fill = new THREE.HemisphereLight(0xbcd7ff, 0x4a5233, 0.8);
     this.scene.add(this.fill);
     this.scene.add(this.dayNight.stars);
+
+    // THE LIGHT THE PLAYER CARRIES.
+    //
+    // M70.172 measured why the forest is black after dark and why neither
+    // obvious fix works. Under the canopy the scene is 95% pure black with a
+    // median pixel of 0.7 out of 255; the ambient is not the cause (x2.5 moves
+    // the median from 2.4 to 2.8, because ACES has a flat toe and the fill is a
+    // minor contributor), and the one lever that does move it — exposure — is
+    // GLOBAL: the value that makes the forest navigable, about 1.9, turns
+    // Emberhold at 02:52 into flat afternoon daylight. That was written,
+    // toured, and reverted.
+    //
+    // The problem is contrast between a lit place and an unlit one, so the
+    // answer has to be local. A faint lamp on the player raises the floor where
+    // there is no floor and does nothing where the surroundings already exceed
+    // it — the town's torches and pale paving are far brighter than this, so
+    // Emberhold is unchanged, which is the whole point.
+    //
+    // ADDED HERE, IN THE CONSTRUCTOR, AND NEVER REMOVED. That is the same rule
+    // `lightPool.ts` exists to enforce: the renderer bakes NUM_POINT_LIGHTS
+    // into every lit program, so a light appearing later would recompile every
+    // material in view. Added before the warm-up phases, it costs nothing —
+    // they compile with it already present. It does not borrow from the pool,
+    // which is sized for transient combat effects and would be permanently one
+    // slot short.
+    this.playerLamp = new THREE.PointLight(PLAYER_LAMP_COLOR, 0, PLAYER_LAMP_RANGE, PLAYER_LAMP_DECAY);
+    this.playerLamp.castShadow = false;
+    this.scene.add(this.playerLamp);
 
     this.sun = new THREE.DirectionalLight(0xffe9c4, 2.0);
     this.sun.castShadow = true;
@@ -946,6 +995,22 @@ export class World {
     // The star dome is centred on the viewer, which is what makes it read as
     // sky: a fixed dome would visibly slide as the player crossed the field.
     this.dayNight.stars.position.set(this.lookTarget.x, 0, this.lookTarget.z);
+
+    // The carried lamp rides the look target rather than the camera, same as
+    // the sun above and for the same reason: it belongs to where the player is
+    // standing, not to where the camera happens to have swung.
+    //
+    // Faded by `nightAmount` rather than by the clock, so it is tied to how
+    // dark the scene actually looks. Change a keyframe to make dusk gloomier
+    // and the lamp comes up earlier to match, with no second table to keep in
+    // step — the same argument that function's own comment makes for the town
+    // lanterns.
+    this.playerLamp.position.set(
+      this.lookTarget.x,
+      PLAYER_LAMP_HEIGHT,
+      this.lookTarget.z,
+    );
+    this.playerLamp.intensity = PLAYER_LAMP_INTENSITY * nightAmount(this.dayNight.clock);
 
     // From the LOOK TARGET rather than the camera. The camera swings around the
     // player on a zoom and a wall clamp, and culling off it would re-evaluate

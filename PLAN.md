@@ -20062,3 +20062,44 @@ is written down and not done.
 
 `tour.mjs` gains an optional clock argument, since lighting cannot be judged at
 whatever hour the harness happens to run. Suite 39/39.
+
+**Phase 70 M70.173 — the player carries a lamp after dark.** The fix M70.172
+argued for, built and measured.
+
+A single `THREE.PointLight` on the look target, warm (0xffd6a2), range 15,
+decay 1.4, peak intensity 2.6, at chest height so it lights the ground AROUND
+the player rather than a bright disc under their feet. Faded by `nightAmount`
+rather than by the clock, for the reason that function's own comment gives:
+tie it to how dark the scene actually looks and a retuned dusk keyframe brings
+the lamp up to match, with no second table to keep in step.
+
+Constructed in `World`'s constructor and never removed, which is the rule
+`lightPool.ts` exists to enforce — the renderer bakes NUM_POINT_LIGHTS into
+every lit program, so a light appearing later would recompile every material in
+view. Added before the warm-up phases, they compile with it already there. It
+does NOT borrow from the pool, which is sized for transient combat effects and
+would be permanently one slot short.
+
+WHY LOCAL BEATS GLOBAL, which is the whole point and was established the hard
+way in M70.172. Exposure raised the floor and the ceiling together: at 1.70 the
+forest became navigable and Emberhold at 02:52 became flat afternoon daylight.
+The lamp raises the floor only where there is no floor. Toured frozen at
+`clock 0.12`:
+
+  road-north  was ~95% pure black; now the canopies, the bridge deck and its
+              red railings all read, and it is still unmistakably night
+  town        unchanged — warm torchlight, dark corners, the brazier still the
+              brightest thing in frame, because the town's own lights are far
+              brighter than the lamp and it simply disappears into them
+
+IT IS NOT FREE AND THE COST IS MEASURED. Every lit program now compiles for 17
+point lights instead of 16. Like-for-like in one session, two runs each:
+
+  without lamp   cold 10.8s, 10.8s   warm 6.8s, 6.7s
+  with lamp      cold 11.2s, 11.1s   warm 6.9s, 7.0s
+
+About +0.3s cold and +0.2s warm, roughly 3%. (An earlier entry quotes a 9.6s
+cold baseline; that was a different session, and machine state drifts enough
+that the comparison had to be re-measured rather than taken from the notes.)
+
+Suite 39/39.
