@@ -19510,3 +19510,45 @@ again:
               the run actually fought and saw loot. It prints RUN VOID otherwise.
 
 Suite 38/38.
+
+**Phase 70 M70.161 — 637 places in town where a player could be stuck forever.**
+Found by following up the wedged harness character from M70.160 instead of
+treating it as a fixture problem, which is what it looked like.
+
+**THE RESOLVER NEVER SETTLED.** `resolveTownCollision` applied each prop in turn
+and then the palisade, once. Pushes are sequential, so a later one can undo an
+earlier one — a player in a pocket between two overlapping keep-out circles is
+shoved a little one way each frame and a little back the next. From the inside
+that is not a nudge, it is being unable to move, and there is no unstick command
+in this game.
+
+Swept as pure geometry over the whole town at 6px spacing, 73,843 positions:
+
+    original resolver     637 positions never come to rest within five frames
+    iterated + escape       0
+
+**TWO CHANGES.** The pushes now repeat until the position stops moving, up to
+sixteen passes, which takes it from 3,522 unsettled positions to 84. The rest are
+clusters of street furniture whose keep-out circles genuinely overlap — a bench,
+a lantern and two planters around one corner of the square, where being outside
+the bench puts you inside the lantern. No ordering of pushes resolves those, so
+there is a guaranteed escape: walk outward from the stuck point, toward the open
+square first and then around the compass, and stop at the first position that
+does settle. At the worst of those points 346 of the 961 positions within 60px
+are free, so the escape is always close. It only runs when the loop has already
+failed.
+
+**THE TEST ASKS THE RIGHT QUESTION, AND THE FIRST VERSION DID NOT.** It began by
+demanding that resolving twice land in the same place, and failed on two
+positions out of 73,843 that resolve perfectly well one frame later. That is not
+a stuck player, it is a single 15px nudge — tightening the code to satisfy it
+would have been polishing a number. What matters is BOUNDED CONVERGENCE: no
+position may still be moving after five frames. Confirmed sharp by running it
+against the original single-pass resolver with the escape removed, where it
+reports the 637.
+
+`tools/test/stuck.mjs` joins the suite, which is 39 tests now. It needs no server
+and no browser: the resolver is a pure function over static data, so the whole
+town sweeps in about a second.
+
+The character that started this now moves 380px a second in every direction.

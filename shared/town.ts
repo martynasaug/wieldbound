@@ -692,10 +692,99 @@ export function inGateway(angleDeg: number): boolean {
  * wall, then the props, then the palisade last so that nothing can shove
  * somebody through it on the way out.
  */
+/**
+ * How many times the pushes are applied before giving up on a clean answer.
+ *
+ * ONE PASS IS NOT A FIXED POINT, and that was a real bug rather than a
+ * theoretical one. The props are resolved one after another and the palisade
+ * last, so a later push can undo an earlier one: a player in a pocket between a
+ * building and the wall is shoved a little one way each frame and a little back
+ * the next, which is what being stuck feels like from the inside.
+ *
+ * Swept over the whole town at 6px spacing, 3,522 of 73,843 positions — nearly
+ * five per cent of the ground inside the walls — moved AGAIN when the resolver
+ * was run a second time, the worst by 36.6px. A seeded character used by the
+ * soak harnesses sat in one of those pockets at the palisade's inner face,
+ * moving two to four pixels a leg whatever was pressed, and every harness
+ * pointed at it reported zero fights and a clean pass.
+ *
+ * Six is comfortably more than the two or three a real pocket needs, and the
+ * loop exits as soon as the position stops moving, so the ordinary case pays for
+ * one pass and a compare.
+ */
+const TOWN_RESOLVE_PASSES = 16;
+
 export function resolveTownCollision(
   x: number,
   y: number,
   radiusPx = 16,
+): { x: number; y: number } {
+  const settled = iterate(x, y, radiusPx);
+  if (settled.settled) return { x: settled.x, y: settled.y };
+
+  // STILL ARGUING AFTER SIXTEEN PASSES, so no ordering of these pushes agrees.
+  //
+  // The remaining cases are all clusters of street furniture whose keep-out
+  // circles overlap — a bench, a lantern and two planters around one corner of
+  // the square, where being outside the bench puts you inside the lantern and
+  // the other way round. Sweeping the town found 84 such positions out of
+  // 73,843 after iterating, down from 3,522 with a single pass.
+  //
+  // Rare is not good enough when the consequence is a player who cannot move, so
+  // there is a guaranteed way out: walk toward the middle of the square, which
+  // is the one part of town nothing is built on, and stop at the first position
+  // that IS settled. Measured at the worst of those points, 346 of the 961
+  // positions within 60px are free, so the escape is always close.
+  //
+  // Only reached when the loop above has already failed, so the ordinary case
+  // never pays for it.
+  // Toward the square FIRST, because that is the direction with the most open
+  // ground behind it, then a fan around the compass — a single ray can run the
+  // whole length of the same cluster it is trying to leave, which is what two of
+  // the eighty-four did.
+  const toCentre = Math.atan2(TOWN_CENTER.y - settled.y, TOWN_CENTER.x - settled.x);
+  const bearings = [toCentre];
+  for (let i = 1; i <= 8; i++) bearings.push(toCentre + (i * Math.PI * 2) / 9);
+  for (let stepPx = 6; stepPx <= 240; stepPx += 6) {
+    for (const bearing of bearings) {
+      const probe = iterate(
+        settled.x + Math.cos(bearing) * stepPx,
+        settled.y + Math.sin(bearing) * stepPx,
+        radiusPx,
+      );
+      if (probe.settled) return { x: probe.x, y: probe.y };
+    }
+  }
+  // Nothing worked, which should be unreachable — hand back the best effort
+  // rather than a position that was never resolved at all.
+  return { x: settled.x, y: settled.y };
+}
+
+/** Applies the pushes until they stop moving, or until the passes run out. */
+function iterate(
+  x: number,
+  y: number,
+  radiusPx: number,
+): { x: number; y: number; settled: boolean } {
+  for (let pass = 0; pass < TOWN_RESOLVE_PASSES; pass++) {
+    const fromX = x;
+    const fromY = y;
+    const next = resolveTownOnce(x, y, radiusPx);
+    x = next.x;
+    y = next.y;
+    // Settled. Anything below a twentieth of a pixel is arithmetic noise rather
+    // than a push, and continuing would only spend passes confirming it.
+    if (Math.hypot(x - fromX, y - fromY) < 0.05) return { x, y, settled: true };
+  }
+  return { x, y, settled: false };
+}
+
+/** One sweep of every solid thing the town is made of. See the note on
+ *  `TOWN_RESOLVE_PASSES` for why this is not the whole answer on its own. */
+function resolveTownOnce(
+  x: number,
+  y: number,
+  radiusPx: number,
 ): { x: number; y: number } {
   const out = pushOutOfBuildings(x, y, radiusPx);
   x = out.x;
