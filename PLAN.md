@@ -20358,3 +20358,37 @@ Suite 40/40.
 STILL THE USER'S CALL and unchanged by any of this: the client authority itself
 is deliberate. What is now enforced is only that a client cannot claim to have
 travelled further than its own stat allows.
+
+**Phase 70 M70.179 — what the move speed fix actually changed, measured.**
+M70.178 made the movement integrator use the same speed as the character sheet.
+That is a bug fix, and it is also a balance change, so it is worth a number
+rather than a shrug. Walked, not computed:
+
+    Player3619 (235)   422 -> 527 px/s   +25%
+    Fighter    (53)    285 -> 345 px/s   +21%
+    Closer     (40)    285 -> 285 px/s    +0%   (no boots equipped)
+
+All of the gain is BOOTS RARITY, which the integrator was dropping. Every one of
+these characters reports `moveSpeedBonus: 0`, so the affix, matched-set and
+talent channel is wired up but latent — none of them happen to carry those
+bonuses. A character that did would gain on top of this, and the three talent
+lines are +10, +12 and +14 A RANK to five ranks.
+
+So the honest summary is: geared characters just got about a quarter faster,
+because they were always supposed to be and the sheet always said so.
+
+AND THE TWO SIDES AGREE, which is the thing that was broken. Client integration
+against server clamp: 101%, 101%, 100%. `tools/soak/movecheck.mjs` keeps that
+check, because the failure mode is silent and hits the fastest characters first
+— a server computing a slower speed than the client rubber-bands exactly the
+players who earned the boots. That harness needs a browser, so it lives in
+`soak/` rather than the suite; the suite's `movespeed.mjs` covers the stat's
+arithmetic and the server's budget without one.
+
+FOR THE USER, and not mine to decide: +21-25% on a geared character is a real
+shift in how easily anything can be outrun or escaped. It can be scaled back by
+tuning `RARITY_MOVE_SPEED_BONUS` without touching any of the machinery — the
+point of the change was that the number is now honest and in one place, not that
+this particular number is right.
+
+Suite 40/40.
