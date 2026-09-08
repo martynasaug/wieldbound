@@ -39,7 +39,7 @@ const INSTALL = () => {
   };
   let last = 0;
   const tick = (ts) => {
-    if (last > 0) window.__frames.push(ts - last);
+    if (last > 0) window.__frames.push({ dt: ts - last, at: ts });
     last = ts;
     requestAnimationFrame(tick);
   };
@@ -78,6 +78,9 @@ await page.evaluate(async (k) => {
   }
 }, KIT);
 
+// The page-clock instant play actually began, so load frames can be told apart
+// from gameplay ones. Everything before this is the loading screen.
+const playFrom = await page.evaluate(() => performance.now());
 const keys = await page.evaluate(() => window.__wieldbound.hotbar?.layout?.keys ?? []);
 const t0 = Date.now();
 const endAt = t0 + MINUTES * 60000;
@@ -136,11 +139,29 @@ while (Date.now() < endAt) {
 const frames = await page.evaluate(() => window.__frames);
 const hitches = await page.evaluate(() => window.__hitches);
 
-const inBusy = [];
-for (const [a, b] of busy) for (let i = a; i < b && i < frames.length; i++) inBusy.push(frames[i]);
+// THREE BUCKETS, NOT TWO, AND THE THIRD IS WHY THE FIRST REPORT WAS WRONG.
+//
+// The recorder is installed by `addInitScript`, so it starts counting before the
+// game does — every frame of the ten-second load is in the list. "Walking
+// between fights" was defined as "not in a fight", which silently swallowed all
+// of them, and the load has 600ms, 467ms and 350ms frames in it (M70.169). So
+// the alarming `max 1400` attributed to walking around was the LOADING SCREEN,
+// and the game's own profiler agreed all along by logging no in-play gap at all.
+//
+// `playFrom` is the page-clock moment the loading screen lifted.
 const busySet = new Set();
 for (const [a, b] of busy) for (let i = a; i < b; i++) busySet.add(i);
-const idle = frames.filter((_, i) => !busySet.has(i));
+const busyAt = (f) => busy.some(([a,b]) => { const i = frames.indexOf(f); return i >= a && i < b; });
+const loading = frames.filter((f) => f.at < playFrom).map((f) => f.dt);
+const inBusy = [];
+for (const [a, b] of busy) {
+  for (let i = a; i < b && i < frames.length; i++) {
+    if (frames[i].at >= playFrom) inBusy.push(frames[i].dt);
+  }
+}
+const idle = frames
+  .filter((f, i) => !busySet.has(i) && f.at >= playFrom)
+  .map((f) => f.dt);
 
 /** Frames sitting in a tight band around a second are a backgrounded renderer
  *  idling, not the game — see `frames.mjs`, which learned this the hard way. */
@@ -164,15 +185,23 @@ const report = (label, xs) => {
 console.log(
   `\n${camps} pack fights, ${casts} area casts, ${((Date.now() - t0) / 60000).toFixed(1)} minutes\n`,
 );
+report("still loading", loading);
 report("in a pack fight", inBusy);
 report("walking between", idle);
 
-const throttled = frames.filter((f) => f > 900 && f < 1100).length;
+const throttled = frames.filter((f) => f.dt > 900 && f.dt < 1100).length;
 if (throttled) {
   console.log(
     `\n(${throttled} frames across the whole run sit in a band around 1000ms — a backgrounded ` +
       `window idling. Any row marked void above is that; a row without the mark is not.)`,
   );
+}
+
+const worst = [...frames].sort((a, b) => b.dt - a.dt).slice(0, 6);
+console.log("\nthe six slowest frames of the run, dated on the page clock:");
+for (const f of worst) {
+  const where = f.at < playFrom ? "LOADING" : busyAt(f) ? "in a fight" : "walking";
+  console.log(`   +${(f.at / 1000).toFixed(1)}s  ${f.dt.toFixed(0).padStart(5)}ms  ${where}`);
 }
 
 // HITCHES, SPLIT THE SAME WAY. A "BETWEEN frames" hitch is a gap in scheduling,

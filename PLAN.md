@@ -20792,3 +20792,35 @@ hitch is a scheduling gap — exactly what throttling manufactures — and a "Nm
 frame" hitch timed real work and survives it.
 
 No changes to the game. Suite 41/41.
+
+**Phase 70 M70.189 — the 1400ms frame was the loading screen, and the bucket was
+mislabelled.** M70.188 reported "walking between fights" with p99 83ms and a
+max of 1400ms, and explained it away as the shape of an OS stall. It was asked
+about, which was right: a 1400ms freeze in play would be serious.
+
+There was a contradiction in that report that should have been followed rather
+than talked around. The rAF recorder saw a 1400ms interval; the game's own
+profiler logged ZERO in-play scheduling gaps. Both cannot be true of gameplay.
+
+The recorder is installed by `addInitScript`, so it starts counting before the
+game does and every frame of the ten-second load is in the list. "Walking
+between fights" was defined as "not in a fight", which swallowed all of them.
+Dated on the page clock, with a third bucket for before-play:
+
+    still loading      n=  423  p50 16.7ms  p95 33.3  p99 266.6  max 833  >50ms 20
+    in a pack fight    n=14768  p50 16.7ms  p95 16.8  p99  16.9  max  18  >50ms  0
+    walking between    n=    5  p50 16.7ms  p95 16.7  p99  16.7  max  17  >50ms  0
+
+    six slowest frames: 833ms, 500ms, 467ms, 333ms, 267ms, 250ms — ALL LOADING
+
+So there is no in-play stall to fix. The spikes are the load, already
+characterised in M70.169: frames of 600ms, 467ms and 350ms carrying ZERO
+milliseconds of GL, which is CPU-side glTF parsing, against a load that is 46%
+idle waiting on shader compilation. The remaining lever there is the material
+count, which is the art decision that stays with the user.
+
+The harness now splits three ways and prints the six slowest frames dated and
+labelled, so a spike can be placed rather than guessed at. "A frame nobody can
+locate in time" is how the last one got explained away.
+
+No changes to the game. Suite 41/41.
