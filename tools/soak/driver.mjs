@@ -31,6 +31,7 @@
 
 import { chromium } from "playwright";
 import { TOWN_PROPS, TOWN_BUILDINGS, propPosition } from "../../shared/town.ts";
+import { riverPath, roadRiverCrossings, BRIDGE_HALF_SPAN_PX } from "../../shared/river.ts";
 
 export const CLIENT_URL = "http://localhost:5173";
 
@@ -220,6 +221,167 @@ export function gateWaypoint(from) {
   };
 }
 
+// AND THE TOWN IS AN OBSTACLE TWICE, depending on which side of it you start.
+//
+// `gateWaypoint` handles LEAVING: you are inside, the destination is outside,
+// so walk to a door. It does nothing for PASSING, where both ends are outside
+// and the straight line happens to run through Emberhold — and `steerToward`
+// cannot save that either, because it fans bearings over a 240px lookahead and
+// the palisade is sixteen hundred pixels across. The bot walks into the wall
+// and grinds.
+//
+// This showed up the moment the river routing started working. With the
+// south-east wilds finally reachable, the next stop was the WEST wilds, and the
+// line between them goes straight through the town: `wilds-west GAVE UP 2436px`
+// having stopped dead against the eastern palisade.
+//
+// A door is the wrong answer here. Nobody walks in the front gate and out the
+// back to get past a town, and routing that way needs the gate logic to know
+// which door it came in by, which it deliberately does not. You walk AROUND.
+// So: take the tangent to the palisade on whichever side is shorter, which is
+// the path a person takes without thinking about it.
+
+/** Distance from `c` to the segment `a`-`b`. */
+function pointToSegment(c, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  const t = lenSq > 0 ? Math.max(0, Math.min(1, ((c.x - a.x) * dx + (c.y - a.y) * dy) / lenSq)) : 0;
+  return Math.hypot(c.x - (a.x + dx * t), c.y - (a.y + dy * t));
+}
+
+/** True when the straight line from `from` to `to` runs through the town but
+ *  neither end is in it — the "passing through" case, not the "leaving" one. */
+export function crossesTown(from, to) {
+  if (insideTown(from) || insideTown(to)) return false;
+  return pointToSegment(TOWN_CENTER, from, to) < TOWN_RADIUS_PX + 40;
+}
+
+/**
+ * A point on the tangent to the palisade, on the shorter side.
+ *
+ * Two tangents leave any point outside a circle. Whichever ends up closer to
+ * the destination is the way round, and aiming at the tangent POINT rather than
+ * along the tangent line means the leg re-decides as the character rounds the
+ * wall instead of committing to one long arc.
+ */
+export function skirtTown(from, to) {
+  const R = TOWN_RADIUS_PX + 200;
+  const dx = TOWN_CENTER.x - from.x;
+  const dy = TOWN_CENTER.y - from.y;
+  const d = Math.hypot(dx, dy);
+  if (d <= R) return to; // already inside the skirt; the gate logic owns this
+  const base = Math.atan2(dy, dx);
+  const spread = Math.acos(Math.min(1, R / d));
+  // The tangent points, as bearings FROM the town centre.
+  const options = [base + Math.PI - spread, base + Math.PI + spread].map((a) => ({
+    x: TOWN_CENTER.x + Math.cos(a) * R,
+    y: TOWN_CENTER.y + Math.sin(a) * R,
+  }));
+  let best = options[0];
+  let bestCost = Infinity;
+  for (const o of options) {
+    const cost = Math.hypot(o.x - from.x, o.y - from.y) + Math.hypot(to.x - o.x, to.y - o.y);
+    if (cost < bestCost) {
+      bestCost = cost;
+      best = o;
+    }
+  }
+  return best;
+}
+
+// THE RIVER IS THE SECOND OBSTACLE WITH A DOOR.
+//
+// `tour.mjs` reported `wilds-east  GAVE UP  2601px from the mark` on three runs
+// out of three, always stopped at the water with "The Coldwater" under its feet.
+// Nothing was broken: the stop is south-east of spawn, the tour reaches it after
+// the frontier, and `river.ts` says in capitals that THE BRIDGE IS THE ONLY WAY
+// ACROSS. The bot walked to the bank and pushed.
+//
+// This is exactly the case the gate logic already handles for the palisade —
+// "the one obstacle with a door, and steering cannot find a door" — and
+// `steerToward` fails at it for the same reason: it fans bearings looking for a
+// clear line, and every bearing across a river is clear as far as the town
+// geometry is concerned. A barrier with a single crossing has to be routed to,
+// not steered around.
+//
+// The consequence of leaving it was not a failed harness, it was a blind spot:
+// the whole south-east of the map went unphotographed on every tour, so
+// anything wrong there could not be seen.
+
+/** Inside this of the crossing you are on the bridge approach, not travelling
+ *  to it, so aim straight across. Comfortably more than the deck plus its
+ *  ramps (`BRIDGE_HALF_SPAN_PX` 320 plus `BRIDGE_RAMP_PX` 420 either side). */
+const BRIDGE_APPROACH_PX = 620;
+
+/** The river's y at a given x. The course is monotone in x by construction —
+ *  `river.ts` relies on that for its own bucket index — so this is a lookup
+ *  along the polyline rather than a nearest-point search. */
+function riverYAt(x) {
+  const path = riverPath();
+  if (x <= path[0].x) return path[0].y;
+  const last = path[path.length - 1];
+  if (x >= last.x) return last.y;
+  for (let i = 1; i < path.length; i++) {
+    if (path[i].x >= x) {
+      const a = path[i - 1];
+      const b = path[i];
+      const span = b.x - a.x;
+      return span === 0 ? a.y : a.y + ((b.y - a.y) * (x - a.x)) / span;
+    }
+  }
+  return last.y;
+}
+
+/** Which bank a point is on: -1 north of the water, +1 south of it. */
+export function riverSide(p) {
+  return p.y < riverYAt(p.x) ? -1 : 1;
+}
+
+/**
+ * Where to aim when the water is between here and there.
+ *
+ * TWO STAGES, because one is not enough. Aiming straight at the far abutment
+ * from anywhere cuts the corner and walks into the river, since nothing between
+ * here and there is solid in the sense `pathClear` understands. So: walk to the
+ * near abutment first, and only once standing on it aim past the far one.
+ *
+ * The far point is placed BEYOND the deck rather than on it. The side test
+ * flips halfway across, and a leg that ends mid-span would hand control back to
+ * a caller that now believes it has arrived — which aims at the destination and
+ * walks off the parapet.
+ */
+export function bridgeWaypoint(from, to) {
+  const crossing = roadRiverCrossings()[0];
+  if (!crossing) return to;
+  const a = (crossing.angleDeg * Math.PI) / 180;
+  const reach = BRIDGE_HALF_SPAN_PX + 300;
+  const ends = [
+    { x: crossing.x + Math.cos(a) * reach, y: crossing.y + Math.sin(a) * reach },
+    { x: crossing.x - Math.cos(a) * reach, y: crossing.y - Math.sin(a) * reach },
+  ];
+  const wantSide = riverSide(to);
+  const far = ends.find((e) => riverSide(e) === wantSide) ?? ends[0];
+  const near = ends.find((e) => e !== far) ?? ends[1];
+
+  // STAGE ON THE DISTANCE TO THE CROSSING, NOT TO THE NEAR ABUTMENT, and that
+  // distinction is the whole of the first attempt's bug. Keyed on the abutment,
+  // a character standing 170px from the deck on the wrong bank was sent 449px
+  // back down the road to "approach properly" before turning round — so the
+  // northbound stops, which arrive at the bridge and then want to cross it,
+  // walked away from the water and ran out of budget. `road-north` and
+  // `frontier` both gave up at (7951, 2764), one hundred and seventy pixels
+  // from the door.
+  //
+  // Anyone already within the approach is at the door and should just walk
+  // through it. Staging is for arriving from somewhere else entirely — the
+  // south-east wilds, where the bank is two thousand pixels of open ground away
+  // from any part of the road.
+  const toCrossing = Math.hypot(crossing.x - from.x, crossing.y - from.y);
+  const toNear = Math.hypot(near.x - from.x, near.y - from.y);
+  return toCrossing < BRIDGE_APPROACH_PX || toNear < 240 ? far : near;
+}
+
 // STEERING AROUND THINGS, RATHER THAN DISCOVERING THEM BY WALKING INTO THEM.
 //
 // Reported from watching a run: "your gameplay is running into a town fence and
@@ -323,9 +485,20 @@ export async function approach(page, target, ms = 600, sign = 1) {
     x: window.__wieldbound.playerX,
     y: window.__wieldbound.playerY,
   }));
-  // The wall first — it is the one obstacle with a door, and steering cannot
-  // find a door. Then steer around whatever furniture is on the way.
-  const gated = insideTown(p) && !insideTown(target) ? gateWaypoint(p) : target;
+  // The two barriers with doors first, in the order they are met — steering
+  // cannot find a door, so both have to be routed to. The palisade comes first
+  // because the town sits south of the water: leaving through a gate and then
+  // crossing at the bridge is the order a player walks it, and re-deciding
+  // every leg means the chain needs no state.
+  //
+  // Then steer around whatever furniture is on the way.
+  const gated = insideTown(p) && !insideTown(target)
+    ? gateWaypoint(p)
+    : riverSide(p) !== riverSide(target)
+      ? bridgeWaypoint(p, target)
+      : crossesTown(p, target)
+        ? skirtTown(p, target)
+        : target;
   const aim = steerToward(p, gated);
   const dirs = keysToward(p, aim);
   const r = await step(page, dirs, ms);

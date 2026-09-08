@@ -20136,3 +20136,47 @@ boarspear it never trained. Worth writing down because it looks alarming in
 every tour frame and will look alarming again next time.
 
 Suite 39/39.
+
+**Phase 70 M70.175 — the tour reaches all nine stops for the first time.**
+`wilds-east` had reported `GAVE UP ~2600px` on three runs out of three, always
+stopped at the water. Nothing was broken: `river.ts` says in capitals that THE
+BRIDGE IS THE ONLY WAY ACROSS, and the bot walked to the bank and pushed. The
+cost was not a failed harness but a BLIND SPOT — the whole south-east of the map
+went unphotographed every time, so anything wrong there could not be seen.
+
+The river is the same shape of problem the palisade already solved: a barrier
+with exactly one door, which `steerToward` can never find because it fans
+bearings looking for a clear line and every bearing across a river is clear as
+far as town geometry is concerned. `riverSide` (the course is monotone in x, so
+the side test is a lookup along the polyline) plus a two-stage `bridgeWaypoint`
+— walk to the near abutment, then past the far one — puts it in `approach`
+alongside the gate logic.
+
+FIRST ATTEMPT STAGED ON THE WRONG DISTANCE and broke the opposite direction. A
+character 170px from the deck on the wrong bank was sent 449px back down the
+road to "approach properly" before turning round, so `road-north` and `frontier`
+both gave up at (7951, 2764), one hundred and seventy pixels from the door.
+Staging is for arriving from somewhere else; anyone inside `BRIDGE_APPROACH_PX`
+is at the door and should walk through it. Keyed on the distance to the crossing
+rather than to the abutment, both directions work.
+
+THEN THE TOWN BECAME AN OBSTACLE IN A SECOND WAY. With the south-east finally
+reachable, the next leg ran from the east wilds to the west ones — straight
+through Emberhold — and `wilds-west GAVE UP 2436px` against the eastern
+palisade. `gateWaypoint` only handles LEAVING (inside, destination outside); it
+has nothing for PASSING, and steering cannot help because the lookahead is 240px
+and the palisade is sixteen hundred across. A door is the wrong answer anyway:
+nobody walks in the front gate and out the back to get past a town, and routing
+that way would need the gate logic to remember which door it came in by. So
+`crossesTown` + `skirtTown` take the tangent on the shorter side — the path a
+person takes without thinking about it.
+
+Nine of nine, both river directions and the town transit. The south-east wilds
+photograph clean: meadow, Armabees, a combat log reading exactly as it should.
+No bug there — which is a real answer, and one that could not be given before.
+
+OPEN, AND NOT MINE: `throwers.mjs` failed in-suite and passes 3/3 alone. It
+imports `ws` and shared types only, never the soak driver, so this change cannot
+be the cause; it is the same in-suite interaction `fighting.mjs` had. Suite is
+38/39 with that one intermittent, and it is written down rather than reported as
+a clean run.

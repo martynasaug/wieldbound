@@ -71,7 +71,7 @@ const run = async () => {
   for (const [name, dest] of STOPS) {
     // Walk there, sliding along anything solid; give up rather than hang, since
     // a stop that cannot be reached is itself worth seeing in the log.
-    const until = Date.now() + 70000;
+    const until = Date.now() + 100000;
     let sign = 1;
     let reached = false;
     while (Date.now() < until) {
