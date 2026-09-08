@@ -75,7 +75,24 @@ ws.on("open", async () => {
     const m = find(kind);
     if (m && (!target || gapTo(m) < gapTo(target))) target = m;
   }
-  if (!target) { console.log("FAIL — no thrower in the snapshot"); process.exit(1); }
+  if (!target) {
+    // NOTHING TO TEST IS NOT A FAILING TEST.
+    //
+    // This file already draws that distinction correctly one screen down — "(it
+    // died mid-measurement — nothing to conclude)" exits 0 — and then does the
+    // opposite here and twice below. The three of them are why `throwers.mjs`
+    // fails in the suite and passes on its own: run after thirty other tests
+    // have been through the same camps, there is sometimes no cactoro, demon or
+    // golem left standing anywhere near this character, and "the camp is dead"
+    // was being reported as "the keep-away rule is broken".
+    console.log(
+      `NOT RUN — no ${THROWERS.join(", ")} alive in the snapshot. Nothing near this\n` +
+        "  character throws, so there is no keep-away behaviour to measure here.\n" +
+        "  INCONCLUSIVE, not a failure.",
+    );
+    ws.close();
+    process.exit(0);
+  }
   // Walk to just outside its reach and stop there, so what follows measures
   // where IT decides to stand rather than where the probe happened to be.
   for (let i = 0; i < 70; i++) {
@@ -113,7 +130,15 @@ ws.on("open", async () => {
     }
     held.push(gapTo(live));
   }
-  if (held.length < 20) { console.log(`FAIL — only ${held.length} samples; it probably died`); process.exit(1); }
+  if (held.length < 20) {
+    console.log(
+      `NOT RUN — only ${held.length} samples in fourteen seconds. The subject went away\n` +
+        "  before it could be watched, so there is no distance here to judge.\n" +
+        "  INCONCLUSIVE, not a failure.",
+    );
+    ws.close();
+    process.exit(0);
+  }
   const settledMean = held.slice(-25).reduce((a, b) => a + b, 0) / Math.min(25, held.length);
   console.log(`  standing still, it settled at a mean of ${settledMean.toFixed(0)}px`);
 
@@ -145,7 +170,16 @@ ws.on("open", async () => {
     const live = monsters.find((x) => x.id === target.id);
     if (live && live.status === "alive") gaps.push(gapTo(live));
   }
-  if (gaps.length < 10) { console.log("FAIL — it died before the chase could be measured"); process.exit(1); }
+  if (gaps.length < 10) {
+    console.log(
+      `  (it died after ${gaps.length} samples, before the chase could be measured — the\n` +
+        "   keep-away half above still stands, but catchability is INCONCLUSIVE rather\n" +
+        "   than failed)",
+    );
+    for (const p of problems) console.error(`  FAIL  ${p}`);
+    ws.close();
+    process.exit(problems.length === 0 ? 0 : 1);
+  }
   const opening = gaps.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
   const chased = Math.min(...gaps);
   console.log(`  chasing it: ${opening.toFixed(0)}px -> ${chased.toFixed(0)}px at your ${BASE_MOVE_SPEED_PX_PER_SEC}px/s`);

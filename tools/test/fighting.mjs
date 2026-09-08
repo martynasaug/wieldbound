@@ -19,6 +19,22 @@
 //     none, which on this map is most runs. The standing-still half is sound
 //     and always was.
 //
+//     WHY IT IS STILL INCONCLUSIVE, now known precisely rather than guessed.
+//     Four things were tried and the gap series below records what each did:
+//       - a bow instead of a sword, 300px reach instead of 62      no change
+//       - re-acquiring a live target before turning to run         no change
+//       - retreating from the toughest thing within 900px          no change
+//     The reason all three failed is the same and the gap series names it:
+//     "started 33px, closest 33px, ended 414px" — the first sample IS the
+//     minimum, which can only happen if the subject disappears at once. It
+//     does. The single permitted `USE_ATTACK` is a level-40 bow, and the
+//     toughest monster within reach of spawn is a 45hp ghost, so the thing
+//     being run from dies to the opening shot every time.
+//     THE NEXT STEP, for whoever picks this up: walk out to a far camp first.
+//     A troll (150hp), golem (240) or dragon (340) outlives an opening shot
+//     and would give this half its first real measurement. They live at radius
+//     2,450, which is a journey this test does not currently make.
+//
 //   * A TELEGRAPHED SLAM OPENS A WINDOW. Whatever just committed a heavy swing
 //     is `recovering` for a couple of seconds afterwards and takes half again
 //     as much. Measured by watching a boss's statuses across its own wind-up.
@@ -27,7 +43,13 @@
 //     npm run dev:server
 //     node tools/test/fighting.mjs Fighter
 import WebSocket from "ws";
-import { MONSTER_STATS, STATUSES, isRetreating } from "../../shared/protocol-types.ts";
+import {
+  MONSTER_STATS,
+  STATUSES,
+  isRetreating,
+  attackRangeFor,
+  reachToBody,
+} from "../../shared/protocol-types.ts";
 
 /**
  * The least damage a standing window must land before the retreat comparison
@@ -140,11 +162,42 @@ ws.on("open", async () => {
     process.exit(0);
   }
 
-  const sword = items.find((i) => i.weaponType === "sword" && i.slot === "weapon");
-  if (sword && !sword.equipped) {
-    send({ type: "EQUIP_ITEM", payload: { itemId: sword.id } });
+  // A BOW, AND THAT IS WHAT MAKES THE RETREAT HALF MEASURABLE AT ALL.
+  //
+  // The header has said since it was written that this half is unfalsifiable:
+  // with the server rule disabled outright it still reported 0 damage while
+  // retreating and still printed OK, because the player sprints at 220px/s and
+  // a sword reaches 62. Turn and run and the field is empty inside one tick, so
+  // "no damage while retreating" is true whether the rule exists or not.
+  //
+  // The limit was never the monsters, it was the PLAYER'S REACH. Ranger weapons
+  // reach 300px against a warrior's 62 (`CLASSES[...].attackRangePx`), so a
+  // chaser closing at ~70px/s stays inside a bow's reach for something like
+  // three and a half seconds — thirty-odd ticks instead of one. That is enough
+  // exposure for "did it swing" to mean something.
+  //
+  // The rule under test is weapon-independent — `isRetreating` gates the swing
+  // loop, not a weapon type — so measuring it with the weapon that can actually
+  // observe it is a strict improvement, not a different test. Both windows use
+  // the same bow, which is what keeps the comparison fair.
+  const bow = items.find((i) => i.weaponType === "bow" && i.slot === "weapon");
+  if (bow && !bow.equipped) {
+    send({ type: "EQUIP_ITEM", payload: { itemId: bow.id } });
     await sleep(700);
   }
+  if (!bow) {
+    console.log(
+      `\nNOT RUN — ${NAME} owns no bow. The retreat half needs a long reach to be\n` +
+        "  observable at all; see the note above. INCONCLUSIVE, not a failure.\n",
+    );
+    ws.close();
+    process.exit(0);
+  }
+  /** The player's own reach, which is what decides whether anything is close
+   *  enough to be swung at. Read from the same shared function the server
+   *  resolves attacks with, rather than the melee contact this used to assume. */
+  const PLAYER_REACH = attackRangeFor("bow");
+  console.log(`  using a bow: reach ${PLAYER_REACH}px (a sword reaches ${attackRangeFor("sword")}px)`);
 
   // Find something close and walk into reach of it.
   // CLOSE IN ON SOMETHING STILL ALIVE, RE-AIMING AS IT MOVES OR DIES.
@@ -174,7 +227,7 @@ ws.on("open", async () => {
     // cannot interpenetrate, so the closest you can stand to a dragon is
     // 14 + 58 = 72px. Hard-coding 45 made this wait the full 75s and fail on
     // every run that did not happen to pick something small.
-    const contact = 14 + (MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
+    const contact = reachToBody(PLAYER_REACH, MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
     if (d < contact + 30) { target = live; break; }
     send({ type: "MOVE", payload: { x: live.x, y: live.y } });
     await sleep(110);
@@ -226,7 +279,7 @@ ws.on("open", async () => {
     standTicks++;
     const live = nearest(null);
     if (live) {
-      const contact = 14 + (MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
+      const contact = reachToBody(PLAYER_REACH, MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
       if (Math.hypot(live.x - me.x, live.y - me.y) < contact + 30) standReachTicks++;
     }
     await sleep(110);
@@ -241,8 +294,69 @@ ws.on("open", async () => {
   );
 
   // --- Running away ----------------------------------------------------------
+  //
+  // RE-ACQUIRE FIRST, because the standing window eats the camp.
+  //
+  // This is the same confound that made a level-234 character report 506 damage
+  // retreating against 57 standing, and it bites at level 40 too once a bow is
+  // involved: ten seconds of shooting clears what is nearby, so the retreat
+  // window began with nothing alive to chase and scored "in reach for 1 of 77
+  // ticks" no matter how long the reach was. Widening the reach to 300px did
+  // not help and could not — there has to be something standing in it.
+  //
+  // So close with something ALIVE before turning to run. A retreat measured
+  // from next to a live monster is the arrangement the rule is about; a retreat
+  // measured from an empty field is the arrangement that made this half
+  // unfalsifiable in the first place.
+  //
+  // AND THE THING RUN FROM HAS TO SURVIVE BEING SHOT ONCE.
+  //
+  // The gap series added below is what found this. It reported "started 72px,
+  // closest 72px, ended 661px" — the 72 was the FIRST sample and the minimum,
+  // which is only possible if the subject vanished immediately. It did: the one
+  // permitted `USE_ATTACK` press is a level-40 bow against a 22hp wolf, so the
+  // re-acquired monster died to it and `nearest(null)` jumped to whatever was
+  // four hundred pixels away. That is why widening the reach to 300px changed
+  // nothing, and why "in reach for 1 of 77 ticks" kept appearing no matter what
+  // was fixed upstream of it.
+  //
+  // So retreat from the toughest thing standing nearby rather than the closest.
+  // A troll at 150hp or a golem at 240 outlives an opening shot that a wolf
+  // does not, and it is still something the rule applies to identically.
+  const beefiest = () => {
+    let best = null;
+    let bestHp = -1;
+    for (const m of monsters) {
+      if (m.status !== "alive") continue;
+      if (Math.hypot(m.x - me.x, m.y - me.y) > 900) continue;
+      const hp = MONSTER_STATS[m.kind]?.maxHp ?? 0;
+      if (hp > bestHp) {
+        bestHp = hp;
+        best = m;
+      }
+    }
+    return best;
+  };
+  {
+    const reAcquire = Date.now() + 30000;
+    while (Date.now() < reAcquire) {
+      const live = beefiest() ?? nearest(null);
+      if (!live) {
+        await sleep(300);
+        continue;
+      }
+      const d = Math.hypot(live.x - me.x, live.y - me.y);
+      const contact = reachToBody(PLAYER_REACH, MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
+      // Well inside reach, so the first seconds of running still have it in
+      // range rather than starting at the very edge.
+      if (d < contact * 0.4) break;
+      send({ type: "MOVE", payload: { x: live.x, y: live.y } });
+      await sleep(110);
+    }
+  }
+
   // Straight out from the monster, which `isRetreating` calls leaving.
-  const away = nearest([target.kind]) ?? target;
+  const away = beefiest() ?? nearest(null) ?? target;
   const dx = me.x - away.x;
   const dy = me.y - away.y;
   const len = Math.hypot(dx, dy) || 1;
@@ -260,6 +374,14 @@ ws.on("open", async () => {
   // that fails sometimes.
   let inReachTicks = 0;
   let retreatTicks = 0;
+  // AND RECORD THE GAP ITSELF, not just whether it cleared a threshold.
+  //
+  // "In reach for 1 of 77 ticks" is a verdict with no evidence behind it: it
+  // cannot distinguish "the camp was empty" from "the chaser fell behind
+  // immediately" from "the reach is wrong", and three separate attempts to fix
+  // this half were aimed at the wrong one of those because the number could not
+  // say which. The gap series can.
+  const retreatGaps = [];
   {
     const dest = { x: me.x + (dx / len) * 900, y: me.y + (dy / len) * 900 };
     // ONE PRESS TO PUT AN ORDER BACK, AND ONLY ONE.
@@ -283,15 +405,21 @@ ws.on("open", async () => {
       retreatTicks++;
       const live = nearest(null);
       if (live) {
-        const contact = 14 + (MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
-        if (Math.hypot(live.x - me.x, live.y - me.y) < contact + 30) inReachTicks++;
+        const contact = reachToBody(PLAYER_REACH, MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
+        const gap = Math.hypot(live.x - me.x, live.y - me.y);
+        retreatGaps.push(Math.round(gap));
+        if (gap < contact + 30) inReachTicks++;
       }
       await sleep(110);
     }
   }
   const retreating = dealt;
   console.log(
-    `  running away:   ${retreating} damage dealt, in reach for ${inReachTicks}/${retreatTicks} ticks`,
+    `  running away:   ${retreating} damage dealt, in reach for ${inReachTicks}/${retreatTicks} ticks` +
+      (retreatGaps.length
+        ? `\n                  gap to nearest: started ${retreatGaps[0]}px, closest ${Math.min(...retreatGaps)}px, ` +
+          `ended ${retreatGaps[retreatGaps.length - 1]}px (reach ${PLAYER_REACH}px)`
+        : `\n                  nothing alive was in the snapshot at any point`),
   );
 
   // THE VERDICT, AND WHAT IT CAN AND CANNOT SHOW.

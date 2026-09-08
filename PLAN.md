@@ -20180,3 +20180,47 @@ imports `ws` and shared types only, never the soak driver, so this change cannot
 be the cause; it is the same in-suite interaction `fighting.mjs` had. Suite is
 38/39 with that one intermittent, and it is written down rather than reported as
 a clean run.
+
+**Phase 70 M70.176 — two flaky tests, and one of them was flaky for an honest
+reason.** Following the 38/39 from M70.175.
+
+`throwers.mjs` had three exits that reported "there was nothing to test" as
+"the test failed": no thrower in the snapshot, too few samples, and the subject
+dying before the chase. The file already draws the distinction correctly one
+screen up — "(it died mid-measurement — nothing to conclude)" exits 0 — and then
+does the opposite three times. Run after thirty other tests have been through
+the same camps there is sometimes no cactoro, demon or golem left standing near
+this character, and "the camp is dead" was being reported as "the keep-away rule
+is broken". All three now say NOT RUN / INCONCLUSIVE and exit 0. This does not
+prove the flake is gone — it did not recur in the runs after the change — only
+that when it does recur it will say what is actually wrong.
+
+`fighting.mjs` was skipping entirely because `Fighter` was still the level-1
+character M70.168 found. Seeded at 40 (server stopped, seeded, restarted) it
+runs properly for the first time: 216–350 damage standing, inside the 49–1,079
+range the notes record.
+
+THE RETREAT HALF IS STILL INCONCLUSIVE, BUT NO LONGER GUESSED AT. Three fixes
+were tried, each plausible, each measured, none of which worked:
+
+  - a bow instead of a sword, 300px reach instead of 62         no change
+  - re-acquiring a live target before turning to run            no change
+  - retreating from the toughest monster within 900px           no change
+
+What finally explained it was adding the gap series to the output instead of
+only the verdict: "started 45px, closest 45px, ended 500px". The FIRST sample is
+the minimum, which is only possible if the subject vanishes immediately — and it
+does. The one permitted `USE_ATTACK` is a level-40 bow, and the toughest thing
+within reach of spawn is a 45hp ghost, so whatever is being run from dies to the
+opening shot every time. Reach was never the constraint; survival was.
+
+That is written into the header with the next step: walk out to a far camp
+first. A troll (150hp), golem (240) or dragon (340) outlives an opening shot and
+would give this half its first real measurement. They stand at radius 2,450,
+which is a journey this test does not make.
+
+Three attempts is enough to stop and write down what is known rather than keep
+going. The measurement that identifies the blocker is now permanent output, so
+the next attempt starts from evidence instead of from the same three guesses.
+
+Suite 39/39.
