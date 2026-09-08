@@ -20528,3 +20528,49 @@ does 168. They survive because the effect ends, not because they can run — for
 as unfair is a judgement, and `SLOW_MULTIPLIER` is the one number.
 
 Suite 40/40.
+
+**Phase 70 M70.183 — played all eight weapons; the bug was not in any of them.**
+`tools/soak/weapons.mjs` equips each family in turn, fights with it, and
+photographs it mid-fight, recording hits, misses, damage, kills and console
+errors. Eight families across four classes:
+
+    sword  62px  450ms      axe   65px  608ms      mace  59px  540ms
+    dagger 60px  270ms      bow  300px  450ms      staff 250px 450ms
+    wand  200px  315ms      fist  54px  360ms
+
+ALL EIGHT WORK. Every one lands hits, kills, animates and logs; zero console
+errors across the whole run. Two claims I nearly made and did not:
+
+  - "The mace is broken" — it scored 0 hits, 0 misses, 0 kills on the first
+    pass. Run alone it scores 6 and 8. The sword and axe before it had cleared
+    that camp and respawns take ten seconds.
+  - "The axe strictly dominates the sword" — 65px against 62 and 67.5 dps
+    against 63.3, both warrior weapons, so why hold a sword? Because at max
+    talents the sword takes +25% attack speed and the axe takes none: 117 dps
+    against 103. The axe only dominates an UNTALENTED character.
+
+THE HARNESS LIED TWICE BEFORE IT WAS RIGHT, both worth recording. It closed to a
+flat 160px and then swung, which is outside a mace (59px) and a dagger (60px)
+entirely — both read as broken. And it counted hits with `/You hit/`, but THE
+VERB VARIES BY WEAPON: "You seared the Troll for 78" scored zero, so every
+elemental weapon looked dead.
+
+WHAT THE PICTURES FOUND, which the numbers could not. World labels were drawing
+underneath the right-hand furniture and off the top edge: a dropped "Adderfang"
+printed behind the window rail buttons and clipped by the screen edge, a
+quiver's name half under the minimap, and floating damage numbers reading "81"
+and "93" cut in half by the top.
+
+`hud.ts` already solved exactly this for the unit frame and stopped at the left
+side of the screen. It now measures the minimap and the window rail in
+`syncLayout` — measured rather than hardcoded, for the reason the note on
+`HUD_FRAME_RECT` gives about constants going stale — and suppresses plates
+behind either, plus any plate too close to the top to draw whole.
+
+Floaters get the OPPOSITE treatment and that is deliberate: they are clamped
+against the top edge rather than suppressed. A plate must stay attached to the
+thing it names or it is lying, so it hides; a floater is already detached — that
+is what it is — and the information it carries is the damage number, so holding
+it against the edge keeps the part worth keeping.
+
+Suite 40/40.

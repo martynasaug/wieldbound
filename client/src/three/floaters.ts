@@ -142,6 +142,10 @@ interface Float {
   fan: number;
 }
 
+/** How close a floating number may get to the top of the screen. Enough for a
+ *  crit at its punched-up scale to stay whole. */
+const FLOATER_TOP_MARGIN_PX = 26;
+
 /** How long a float lives. Crits linger, because they are the ones worth reading. */
 const LIFE_MS = 1150;
 const CRIT_LIFE_MS = 1450;
@@ -289,7 +293,17 @@ export class Floaters {
       // point, which is the exact frame a cleave into a pack most needs to be
       // readable — the separation has to exist before the motion does.
       const x = screen.x + f.driftX * (0.55 + 0.45 * t);
-      const y = screen.y - rise;
+      // CLAMPED AT THE TOP, where a nameplate would instead be suppressed.
+      //
+      // These rise as they live, so anything thrown off a body near the top of
+      // the screen climbs straight out of it — a dragon fight photographed by
+      // `weapons.mjs` had two hits reading "81" and "93" cut in half by the
+      // edge. The opposite call to `hud.ts`'s plates, and for a reason rather
+      // than an inconsistency: a plate must stay attached to the thing it names
+      // or it is lying, so it hides. A floater is ALREADY detached — that is
+      // what it is — and the information it carries is the damage number, so
+      // holding it against the edge keeps the thing worth keeping.
+      const y = Math.max(FLOATER_TOP_MARGIN_PX, screen.y - rise);
 
       // The spawn punch: overshoot the size for the first fifth of the life,
       // which is the whole reason a crit registers as an event. Crits punch

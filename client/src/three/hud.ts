@@ -409,6 +409,12 @@ const STYLE = `
 // bar, which reads as a rendering glitch rather than as a stale constant.
 const HUD_FRAME_RECT = { w: 300, h: 130 };
 
+/** How much room a plate needs above its anchor before it is worth drawing. A
+ *  label clipped by the top of the screen is a truncated word. A plate is
+ *  anchored bottom-centre and draws upward — name, bar and, for an elite, a
+ *  frame — so the margin has to cover the tallest of them, not the shortest. */
+const PLATE_TOP_MARGIN_PX = 42;
+
 /** Which nameplate treatment something gets. */
 export type PlateKind = "monster" | "player" | "node" | "station" | "drop" | "npc";
 
@@ -515,6 +521,15 @@ export class Hud {
   private nextSyncAt = 0;
   /** Live bottom edge of the unit frames, refreshed by syncLayout. */
   private framesBottom = HUD_FRAME_RECT.h;
+  /** Live edges of the right-hand furniture, so world labels are suppressed
+   *  behind the minimap and the window rail the same way they already are
+   *  behind the unit frame. Infinity until the first syncLayout, which means
+   *  suppress nothing — the right answer before anything has been measured. */
+  private railLeft = Infinity;
+  private railTop = 0;
+  private railBottom = 0;
+  private minimapLeft = Infinity;
+  private minimapBottom = 0;
   /** Looked up once: it lives in index.html and is never replaced. */
   private readonly targetFrameEl = document.getElementById("target-frame");
   private readonly clockIcon: HTMLElement;
@@ -652,6 +667,23 @@ export class Hud {
     const showing = target?.classList.contains("shown") ?? false;
     const targetHeight = showing ? Math.round(target!.getBoundingClientRect().height) : 0;
     this.framesBottom = (showing ? targetTop + targetHeight : 14 + height) + 6;
+
+    // The right-hand furniture, measured on the same throttle. Both are fixed
+    // panels that only move when the window resizes, so this costs one more
+    // read on a call that is already reading.
+    const rail = document.getElementById("window-rail");
+    if (rail) {
+      const r = rail.getBoundingClientRect();
+      this.railLeft = r.left - 4;
+      this.railTop = r.top - 4;
+      this.railBottom = r.bottom + 4;
+    }
+    const minimap = document.getElementById("minimap");
+    if (minimap) {
+      const m = minimap.getBoundingClientRect();
+      this.minimapLeft = m.left - 4;
+      this.minimapBottom = m.bottom + 4;
+    }
   }
 
   setHp(hp: number, maxHp: number): void {
@@ -779,6 +811,24 @@ export class Hud {
     // rather than reposition: a label yanked away from the thing it names is
     // worse than a label that briefly is not there.
     if (screen.x < HUD_FRAME_RECT.w && screen.y < this.framesBottom) return;
+    // AND THE RIGHT-HAND SIDE, which had the same problem and no fix.
+    //
+    // The exclusion above was written for the unit frame and stops at the left
+    // edge of the screen, so everything down the other side — the minimap and
+    // the window rail — went on drawing world labels underneath itself. Seen in
+    // `weapons.mjs`: a dropped "Adderfang" printed behind the rail buttons and
+    // clipped off the edge, and a quiver's name half under the minimap.
+    //
+    // Measured in `syncLayout` rather than hardcoded, for the reason the note
+    // on `HUD_FRAME_RECT` gives — the last set of constants here stopped
+    // covering the frames the moment a row was added, and the failure reads as
+    // a rendering glitch rather than as a stale number.
+    if (screen.x > this.railLeft && screen.y > this.railTop && screen.y < this.railBottom) return;
+    if (screen.x > this.minimapLeft && screen.y < this.minimapBottom) return;
+    // A label whose top is off the screen is a truncated word, which is worse
+    // than nothing: the same argument as suppressing rather than repositioning.
+    // Plates are anchored bottom-centre, so `screen.y` is their BASE.
+    if (screen.y < PLATE_TOP_MARGIN_PX) return;
     this.seenThisFrame.add(id);
 
     let st = this.plates.get(id);
