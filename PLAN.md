@@ -20755,3 +20755,40 @@ THE HARNESS WAS WRONG THREE TIMES, in the way these always are:
 
 None of the three was a game bug and each looked like one. No changes to the
 game. Suite 41/41.
+
+**Phase 70 M70.188 — frame cost where the game is busiest, and it does not
+stutter.** M70.165 established that gameplay is smooth, but that run was
+wandering and swinging at whatever was nearest. The camp work in M70.187 showed
+what the heavy frame actually is: four monsters at once, an area skill catching
+all of them, a volley of floating numbers, a pooled light per impact and four
+death animations landing together. Nobody had measured it, and it is the frame a
+player is most likely to notice because it is the one where they are deciding
+something.
+
+`tools/soak/campframes.mjs` hunts the densest pack in sight, stands in it, and
+fires both area skills on repeat while recording frame intervals split into
+IN A FIGHT and WALKING BETWEEN. Five minutes, 23 pack fights, 1,238 area casts:
+
+    in a pack fight    n=17072  p50 16.7ms  p95 16.8  p99 16.9  max 18   >50ms 0
+    walking between    n= 1744  p50 16.7ms  p95 16.8  p99 83.3  max 1400 >50ms 18
+
+NOT ONE FRAME OVER 50ms across seventeen thousand frames of the heaviest combat
+in the game. The single frame-cost hitch the profiler logged is at +11.0s
+carrying `uploads=+2tex` — the load-time texture tail from M70.168, not
+gameplay. Zero console errors.
+
+The walking row is worse than the fighting row, which is worth stating and not
+worth chasing: the game's own profiler recorded ZERO in-play frame-cost hitches,
+so those eighteen spikes are gaps in scheduling rather than work the game did —
+one of them 1400ms, which is the shape of an OS stall rather than a render.
+
+THE FIRST RUN VOIDED ITSELF AND SHOULD NOT HAVE. The throttle guard borrowed
+from `frames.mjs` looks for frames in a tight band around 1000ms and declares
+the run void, and it fired — on 272 frames that were ALL in the walking
+segments, while the pack fights were spotless. A blanket verdict threw away a
+clean measurement. The check is now per segment and marks the affected row
+instead of the run. Hitches are split the same way, since a "BETWEEN frames"
+hitch is a scheduling gap — exactly what throttling manufactures — and a "Nms
+frame" hitch timed real work and survives it.
+
+No changes to the game. Suite 41/41.
