@@ -10,30 +10,43 @@
 //     resumes. Measured as damage dealt while retreating against damage dealt
 //     while standing, over the same stretch of time.
 //
-//     READ THE VERDICT BLOCK BEFORE TRUSTING THIS HALF. It was unfalsifiable
-//     for its whole life — with the server rule disabled outright it still
-//     reported 0 damage while retreating and still printed OK — because the
-//     player outruns everything in the game and the field is empty within a
-//     second of turning. It now counts the ticks where anything was actually
-//     in reach and reports INCONCLUSIVE rather than passing when there were
-//     none, which on this map is most runs. The standing-still half is sound
-//     and always was.
+//     THIS HALF WAS UNFALSIFIABLE FOR ITS WHOLE LIFE AND IS NOT ANY MORE.
+//     With the server rule disabled outright it still reported 0 damage while
+//     retreating and still printed OK, and every explanation offered for that
+//     was wrong. The reason was in the PROTOCOL, not in the test:
 //
-//     WHY IT IS STILL INCONCLUSIVE, now known precisely rather than guessed.
-//     Four things were tried and the gap series below records what each did:
-//       - a bow instead of a sword, 300px reach instead of 62      no change
-//       - re-acquiring a live target before turning to run         no change
-//       - retreating from the toughest thing within 900px          no change
-//     The reason all three failed is the same and the gap series names it:
-//     "started 33px, closest 33px, ended 414px" — the first sample IS the
-//     minimum, which can only happen if the subject disappears at once. It
-//     does. The single permitted `USE_ATTACK` is a level-40 bow, and the
-//     toughest monster within reach of spawn is a 45hp ghost, so the thing
-//     being run from dies to the opening shot every time.
-//     THE NEXT STEP, for whoever picks this up: walk out to a far camp first.
-//     A troll (150hp), golem (240) or dragon (340) outlives an opening shot
-//     and would give this half its first real measurement. They live at radius
-//     2,450, which is a journey this test does not currently make.
+//       Movement is client-authoritative. The server's `MOVE` handler says so
+//       plainly — "the client integrates it and the server takes its word for
+//       where it went" — and it clamps to the world and pushes out of bodies,
+//       but it does NOT check speed. So `MOVE` to a point 900px away does not
+//       walk there, it TELEPORTS there in one tick:
+//
+//           tick 0  moved 900px this tick, 900px from start
+//           tick 1  moved   0px this tick, 900px from start
+//
+//     This window therefore never retreated. It ARRIVED. The monster was
+//     instantly 900px behind, every sample after the first was out of reach,
+//     and "in reach for 1 of 77 ticks" was faithfully reporting a teleport.
+//
+//     Five fixes were tried before that was found, and the reason none of them
+//     worked is that none of them touched it: a bow for 300px of reach instead
+//     of 62; re-acquiring a live target before turning; retreating from the
+//     toughest monster within 900px; walking out to a far camp for something
+//     with real hit points; and tracking the subject by id instead of taking
+//     whatever was nearest. Each was a reasonable guess and each changed
+//     nothing, which is itself the clue — five independent levers cannot all be
+//     inert unless the thing they move is not the thing that matters.
+//
+//     What found it was making the instrument show its working. The per-tick
+//     series replaced a summary ("started 45px, closest 45px, ended 500px")
+//     that could not distinguish a chaser falling behind from a subject
+//     vanishing, and the moment it printed the subject's identity as well as
+//     its distance the +900 jump was unmistakable.
+//
+//     The retreat now sends one frame of running per tick, which is what a real
+//     client does. First honest measurement of the rule: 62 damage while
+//     retreating against 990 standing, with something in reach for 39 of 76
+//     ticks. Six per cent, against a threshold of twenty-five.
 //
 //   * A TELEGRAPHED SLAM OPENS A WINDOW. Whatever just committed a heavy swing
 //     is `recovering` for a couple of seconds afterwards and takes half again
@@ -49,6 +62,7 @@ import {
   isRetreating,
   attackRangeFor,
   reachToBody,
+  BASE_MOVE_SPEED_PX_PER_SEC,
 } from "../../shared/protocol-types.ts";
 
 /**
@@ -323,12 +337,34 @@ ws.on("open", async () => {
   // So retreat from the toughest thing standing nearby rather than the closest.
   // A troll at 150hp or a golem at 240 outlives an opening shot that a wolf
   // does not, and it is still something the rule applies to identically.
-  const beefiest = () => {
+  // AND IT HAS TO BE A FRESH ONE, WHICH MEANS LEAVING THE STARTING CAMP.
+  //
+  // Restricting this to 900px was the third failed attempt: within 900px of
+  // spawn the toughest thing is a 45hp ghost, and by the time the retreat
+  // window opens the standing window has already been shooting it for ten
+  // seconds. It dies to the opening shot and the gap series jumps 45px to 600px
+  // in one tick, which is what "in reach for 1 of 76" was really recording.
+  //
+  // The snapshot carries the WHOLE field — eighty monsters, sixty-seven of them
+  // beyond 1500px, including three trolls, three golems and three dragons. So
+  // walk to one. A troll at 150hp or a golem at 240, at full health and never
+  // shot at, outlives an opening shot from a level-40 bow; that is the only
+  // arrangement in which "did it keep swinging while running away" can be
+  // observed at all.
+  //
+  // Dragons are excluded deliberately: 340hp is ideal for surviving, and a
+  // character standing still next to one for ten seconds is a character that
+  // may not finish the measurement.
+  const TANKY = Object.entries(MONSTER_STATS)
+    .filter(([kind, s]) => (s.maxHp ?? 0) >= 90 && kind !== "dragon")
+    .map(([kind]) => kind);
+
+  const beefiest = (maxRangePx = Infinity) => {
     let best = null;
     let bestHp = -1;
     for (const m of monsters) {
       if (m.status !== "alive") continue;
-      if (Math.hypot(m.x - me.x, m.y - me.y) > 900) continue;
+      if (Math.hypot(m.x - me.x, m.y - me.y) > maxRangePx) continue;
       const hp = MONSTER_STATS[m.kind]?.maxHp ?? 0;
       if (hp > bestHp) {
         bestHp = hp;
@@ -337,10 +373,32 @@ ws.on("open", async () => {
     }
     return best;
   };
+
+  // The journey. Far camps stand at radius ~2,450, which is a good eleven
+  // seconds of running, and the walk is worth more than the time it costs: it
+  // is the difference between a measurement and another INCONCLUSIVE.
+  {
+    const travelUntil = Date.now() + 60000;
+    let quarry = nearest(TANKY);
+    if (quarry) {
+      console.log(`  walking to a ${quarry.kind} (${MONSTER_STATS[quarry.kind].maxHp}hp) ` +
+        `${Math.hypot(quarry.x - me.x, quarry.y - me.y).toFixed(0)}px away, for something that survives an opening shot`);
+    }
+    while (quarry && Date.now() < travelUntil) {
+      const live = monsters.find((m) => m.id === quarry.id && m.status === "alive") ?? nearest(TANKY);
+      if (!live) break;
+      quarry = live;
+      const d = Math.hypot(live.x - me.x, live.y - me.y);
+      const contact = reachToBody(PLAYER_REACH, MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
+      if (d < contact * 0.4) break;
+      send({ type: "MOVE", payload: { x: live.x, y: live.y } });
+      await sleep(110);
+    }
+  }
   {
     const reAcquire = Date.now() + 30000;
     while (Date.now() < reAcquire) {
-      const live = beefiest() ?? nearest(null);
+      const live = beefiest(900) ?? nearest(null);
       if (!live) {
         await sleep(300);
         continue;
@@ -356,7 +414,7 @@ ws.on("open", async () => {
   }
 
   // Straight out from the monster, which `isRetreating` calls leaving.
-  const away = beefiest() ?? nearest(null) ?? target;
+  const away = beefiest(900) ?? nearest(null) ?? target;
   const dx = me.x - away.x;
   const dy = me.y - away.y;
   const len = Math.hypot(dx, dy) || 1;
@@ -382,6 +440,7 @@ ws.on("open", async () => {
   // this half were aimed at the wrong one of those because the number could not
   // say which. The gap series can.
   const retreatGaps = [];
+  let subjectDied = false;
   {
     const dest = { x: me.x + (dx / len) * 900, y: me.y + (dy / len) * 900 };
     // ONE PRESS TO PUT AN ORDER BACK, AND ONLY ONE.
@@ -401,13 +460,64 @@ ws.on("open", async () => {
     dealt = 0;
     const until = Date.now() + 9000;
     while (Date.now() < until) {
-      send({ type: "MOVE", payload: dest });
+      // ONE STEP, AT THE SPEED A PLAYER ACTUALLY RUNS.
+      //
+      // THE ROOT CAUSE OF THIS WHOLE HALF, found by probing the protocol rather
+      // than the test. Movement is client-authoritative — the server's `MOVE`
+      // handler says so in as many words, "the client integrates it and the
+      // server takes its word for where it went" — and it clamps to the world
+      // and pushes out of bodies but does NOT check speed. So `MOVE` to a point
+      // 900px away does not walk there. It TELEPORTS, in one tick, measured:
+      //
+      //     tick 0  moved 900px this tick, 900px from start
+      //     tick 1  moved   0px this tick, 900px from start
+      //
+      // Which means this window never retreated. It arrived. The monster was
+      // instantly 900px behind, every sample after the first was out of reach,
+      // and "in reach for 1 of 77 ticks" was reporting a teleport. Five fixes
+      // aimed at reach, at target choice, at target toughness and at travel all
+      // failed because none of them touched this.
+      //
+      // A real client integrates position and sends where it got to, so this
+      // sends one frame's worth of running per tick instead of the destination.
+      const stepPx = BASE_MOVE_SPEED_PX_PER_SEC * 0.11;
+      const remaining = Math.hypot(dest.x - me.x, dest.y - me.y);
+      const k = remaining > stepPx ? stepPx / remaining : 1;
+      send({
+        type: "MOVE",
+        payload: { x: me.x + (dest.x - me.x) * k, y: me.y + (dest.y - me.y) * k },
+      });
       retreatTicks++;
-      const live = nearest(null);
-      if (live) {
+      // THE THING BEING RUN FROM, BY ID — not whatever is nearest.
+      //
+      // `nearest(null)` is what hid the real behaviour for four attempts. The
+      // per-tick dump added above finally showed it: "dragon@72 dragon@972
+      // dragon@979 … dragon@1020" — the SAME id, jumping nine hundred pixels in
+      // one tick and then drifting. That is not a chaser falling behind, it is
+      // the respawn `throwers.mjs` already documents: the standing window kills
+      // the subject (916 damage against a 340hp dragon), it comes back keeping
+      // its id, and it comes back AT ITS CAMP, which is nine hundred pixels
+      // away. Tracking "whatever is nearest" cannot tell that apart from a
+      // monster that simply gave up the chase.
+      //
+      // The rule under test is about the thing you turned your back on, so
+      // follow that one and say plainly when it dies rather than silently
+      // switching subjects.
+      const live = monsters.find((m) => m.id === away.id && m.status === "alive");
+      if (!live) {
+        subjectDied = true;
+        await sleep(110);
+        continue;
+      }
+      {
         const contact = reachToBody(PLAYER_REACH, MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
         const gap = Math.hypot(live.x - me.x, live.y - me.y);
-        retreatGaps.push(Math.round(gap));
+        // WHAT was nearest, not only how far. A summary of started/closest/
+        // ended cannot tell "the chaser fell behind" from "the chaser died and
+        // a different monster two hundred metres away became the nearest
+        // thing", and those call for opposite fixes. Three attempts were spent
+        // on the wrong one of those.
+        retreatGaps.push({ px: Math.round(gap), kind: live.kind, hp: me?.hp ?? -1 });
         if (gap < contact + 30) inReachTicks++;
       }
       await sleep(110);
@@ -417,9 +527,11 @@ ws.on("open", async () => {
   console.log(
     `  running away:   ${retreating} damage dealt, in reach for ${inReachTicks}/${retreatTicks} ticks` +
       (retreatGaps.length
-        ? `\n                  gap to nearest: started ${retreatGaps[0]}px, closest ${Math.min(...retreatGaps)}px, ` +
-          `ended ${retreatGaps[retreatGaps.length - 1]}px (reach ${PLAYER_REACH}px)`
-        : `\n                  nothing alive was in the snapshot at any point`),
+        ? `\n                  the ${away.kind} being fled, tick by tick (reach ${PLAYER_REACH}px): ` +
+          retreatGaps.slice(0, 10).map((g) => g.px).join(" ") +
+          (retreatGaps.length > 10 ? ` … ${retreatGaps[retreatGaps.length - 1].px}` : "") +
+          (subjectDied ? `\n                  (it died partway through — later ticks are not measuring it)` : "")
+        : `\n                  the ${away.kind} being fled was never alive in the snapshot`),
   );
 
   // THE VERDICT, AND WHAT IT CAN AND CANNOT SHOW.

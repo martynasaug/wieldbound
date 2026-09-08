@@ -20224,3 +20224,57 @@ going. The measurement that identifies the blocker is now permanent output, so
 the next attempt starts from evidence instead of from the same three guesses.
 
 Suite 39/39.
+
+**Phase 70 M70.177 — the retreat rule is measured for the first time, and the
+reason it never could be was in the protocol.** `fighting.mjs` has carried a
+note since it was written saying this half was unfalsifiable: with the server
+rule disabled outright it still reported 0 damage while retreating and still
+printed OK.
+
+Five fixes were tried first, each reasonable, each measured, each changing
+nothing:
+
+  - a bow instead of a sword — 300px reach instead of 62      no change
+  - re-acquiring a live target before turning to run          no change
+  - retreating from the toughest monster within 900px         no change
+  - walking 2,475px to a far camp for something with real hp  no change
+  - tracking the subject by id instead of taking the nearest  no change
+
+Five independent levers cannot all be inert unless the thing they move is not
+the thing that matters. What found the real cause was making the instrument show
+its working: the summary line ("started 45px, closest 45px, ended 500px") cannot
+tell a chaser falling behind from a subject vanishing, and those want opposite
+fixes. Printing the subject's IDENTITY beside its distance made it unmistakable
+— `dragon@72 dragon@972 dragon@979 … dragon@1020`, the same id, nine hundred
+pixels in one tick.
+
+That is not the monster. That is the PLAYER. Movement is client-authoritative:
+the server's `MOVE` handler says so in as many words — "the client integrates it
+and the server takes its word for where it went" — and it clamps to the world
+and pushes out of bodies but does NOT check speed. Probed directly:
+
+    at (10439, 4081), MOVE to 900px east
+      tick 0  moved 900px this tick, 900px from start
+      tick 1  moved   0px this tick, 900px from start
+
+So the retreat window never retreated. It ARRIVED. The monster was instantly
+900px behind and "in reach for 1 of 77 ticks" was faithfully reporting a
+teleport. Every socket harness in `tools/test/` that "walks" by naming a
+destination has been teleporting; the browser harnesses are unaffected, since
+they press keys and the client integrates properly.
+
+The retreat now sends one frame of running per tick, which is what a real client
+does. THE RULE'S FIRST HONEST MEASUREMENT, over three runs: 0, 0 and 62 damage
+while retreating against 990–1,264 standing, with something genuinely in reach
+for 17, 34 and 39 of ~76 ticks. It passes, and for the first time that pass
+means something — the exposure is real, so a broken rule would now show.
+
+WORTH THE USER'S ATTENTION, and not a bug in the sense of an oversight: the
+client authority is deliberate and documented. What is not written down anywhere
+is the consequence — because there is no speed check, any client can cross the
+map instantly by sending one `MOVE`. Bodies and world bounds are enforced; the
+distance travelled between two messages is not. That is a design decision to
+make knowingly rather than a defect to fix quietly, so it is recorded here and
+raised rather than acted on.
+
+Suite 39/39.
