@@ -119,7 +119,15 @@ ws.on("open", async () => {
   // distance to something on the other side of the map and calling it cowardice.
   {
     const m = monsters.find((x) => x.id === target.id) ?? target;
-    if (gapTo(m) > MONSTER_STATS[target.kind].attackRangePx * 3) {
+    // AND THE BAR HERE IS THE ONE THE LOOP ABOVE USED, not a looser one. It
+    // was `attackRangePx * 3` while the loop declares arrival at `* 1.15`, and
+    // everything in between was being measured as behaviour: a suite run failed
+    // with "it settled at 343px but only reaches 185px — it is fleeing rather
+    // than fighting" when 343px is simply where the probe ran out of budget and
+    // stopped. Five standalone runs settled at 148-176px, so the creature was
+    // never doing anything wrong. Two different thresholds for one question is
+    // how a probe reports its own shortfall as a fault in what it is watching.
+    if (gapTo(m) > MONSTER_STATS[target.kind].attackRangePx * 1.15) {
       console.log(
         `NOT RUN — could not close on the ${target.kind}; it is still ${gapTo(m).toFixed(0)}px away\n` +
           "  after walking the whole budget. Nothing here is about keep-away distance.\n" +

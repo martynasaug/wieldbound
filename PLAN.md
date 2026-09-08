@@ -20919,3 +20919,63 @@ Kept: `__wieldboundProfiler`, which is how the 36-second impossibility was
 spotted and is the only way to read those sections from outside.
 
 Suite 41/41.
+
+**Phase 70 M70.192 — the `start` phase, opened up; and a thrower test that was
+accusing the monsters of its own shortfall.** M70.191 left one lead: the load's
+biggest frame sits inside `start`, which is everything from navigation to the
+end of the Game constructor and had never been broken down. The suspect was
+obvious — `buildTerrain` walks 90,000 vertices calling `riverAt` and
+`forestStrengthAt` on each one.
+
+It is not the suspect. Four real `profiler.begin`/`end` pairs inside
+`buildTerrain` (a probe cannot reach in there; it runs before `__wieldbound`
+exists) say vertices 39ms, normals 10ms, plane 8ms, material 1ms. Fifty-eight
+milliseconds of a ten-second load. The marks stay, at two `performance.now()`
+calls each, because they are the only thing standing between that loop and
+being blamed a third time.
+
+THE PHASE TABLE HAS ALWAYS RECORDED A PROGRAM COUNT AND NOBODY HAD PRINTED IT.
+`tools/soak/loadphases.mjs` does, and the answer arrives in one line:
+
+    1617ms  +  0 programs  start
+    1326ms  +  2 programs  assets (decor, anims, kit, body, people)
+    1876ms  + 40 programs  warmUp(scene): compile the world
+    2325ms  + 35 programs  warmFadedOccluders
+    2171ms  + 51 programs  warmWholeScene
+
+`start` builds NO shaders. Its 1.6s is module parse and WebGL context creation,
+and there was never anything to find in it. The load is 128 shader programs.
+
+AND MEASURED AGAINST A PRODUCTION BUILD FOR THE FIRST TIME, which every previous
+load number in this file was not. `tools/soak/loadslice.mjs` buckets CPU self
+time into 100ms slices and breaks down the busiest window: 86% of it is three's
+`onFirstUse`, ~690ms, in a build where `checkShaderErrors` is already off
+(verified in the bundle — it minifies to `checkShaderErrors=!1`). So the
+remaining cost is the programs themselves rather than the error queries, which
+M70.190 removed. That is the material-count question above `warmFadedOccluders`,
+where three attempts have already failed, and it is a content decision.
+
+TWO INSTRUMENTS WERE WRONG BEFORE EITHER WAS RIGHT, both in the house style.
+The first `loadslice` bucketed every sample and reported a flat 100ms of "CPU"
+in all 138 buckets — V8 samples the idle thread too, and the breakdown under it
+was 98.8% `(idle)`: the instrument describing itself. And an unfocused Chromium
+throttles rAF to about 1Hz, so its "worst frames" came back as
+1417/1017/1017/1017ms, which is the throttle and not the game. Both are now
+handled and both are written down in the file, because the timeline is printed
+specifically so the alignment can be checked before the breakdown under it is
+believed.
+
+`CLIENT_URL` in the soak driver now honours `WB_CLIENT_URL`, so any harness in
+that directory can be pointed at `vite preview` instead of the dev server. The
+dev server and a build are not the same program to measure.
+
+SEPARATELY, `tools/test/throwers.mjs` failed once in a suite run — "it settled
+at 343px but only reaches 185px — it is fleeing rather than fighting" — and
+passed five times standing alone at 148-176px. The creature was never wrong.
+The approach loop declares it has arrived at `attackRangePx * 1.15`, and the
+guard that checks whether it arrived rejected only beyond `* 3`; every gap in
+between was measured as behaviour when it was the probe running out of walking
+budget. One question, one threshold. This is the same fault as the tour harness
+that shot a screenshot 1,718px outside town and labelled it "town".
+
+Suite 41/41.

@@ -457,6 +457,20 @@ export class World {
   }
 
   private buildTerrain(): void {
+    // INSTRUMENTED, because the load's largest single frame sat inside the
+    // `start` phase — everything from navigation to the end of the Game
+    // constructor — which had never been broken down, and a 90k-vertex loop
+    // calling `riverAt` and `forestStrengthAt` per vertex was the obvious
+    // suspect. The marks have to be real rather than a probe: this runs before
+    // `__wieldbound` exists, so nothing external can reach in here.
+    //
+    // IT IS NOT THE SUSPECT. Vertices 39ms, normals 10ms, plane 8ms, material
+    // 1ms — 58ms of a ten-second load. The marks stay because they are two
+    // `performance.now()` calls each and they are the only thing standing
+    // between this loop and being blamed again; see `tools/soak/loadphases.mjs`
+    // for the phase table they belong to, and for where the load actually goes
+    // (128 shader programs, none of them created in `start`).
+    profiler.begin("build:terrainPlane");
     const span = TERRAIN_SPAN;
     // 170 segments was two units a quad on the old world and nine on this one,
     // which is coarser than the hills it now has to describe: the shortest term
@@ -481,6 +495,8 @@ export class World {
     // and the riverbank is six across.
     const canopy = new Float32Array(pos.count);
     const wet = new Float32Array(pos.count);
+    profiler.end("build:terrainPlane");
+    profiler.begin("build:terrainVertices");
     for (let i = 0; i < pos.count; i++) {
       // Authored in XY then rotated into XZ, so local y is world z.
       const x = pos.getX(i);
@@ -498,12 +514,17 @@ export class World {
     }
     geo.setAttribute("aCanopy", new THREE.BufferAttribute(canopy, 1));
     geo.setAttribute("aWet", new THREE.BufferAttribute(wet, 1));
+    profiler.end("build:terrainVertices");
+    profiler.begin("build:terrainNormals");
     geo.computeVertexNormals();
+    profiler.end("build:terrainNormals");
+    profiler.begin("build:terrainMaterial");
 
     const ground = new THREE.Mesh(geo, createTerrainMaterial(span, QUALITY[this.quality].anisotropyCap));
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
+    profiler.end("build:terrainMaterial");
   }
 
   /**

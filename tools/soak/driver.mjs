@@ -33,7 +33,14 @@ import { chromium } from "playwright";
 import { TOWN_PROPS, TOWN_BUILDINGS, propPosition } from "../../shared/town.ts";
 import { riverPath, roadRiverCrossings, BRIDGE_HALF_SPAN_PX } from "../../shared/river.ts";
 
-export const CLIENT_URL = "http://localhost:5173";
+// OVERRIDABLE, because the dev server and a production build are not the same
+// program to measure. `checkShaderErrors` is on under `vite dev` and off in a
+// build (see World.ts), and it turned out to be 85% of the load's busiest
+// 800ms — so a load profile taken against :5173 describes a machine no player
+// runs. Point this at `vite preview` to profile what ships:
+//
+//   WB_CLIENT_URL=http://localhost:4173 node tools/soak/loadslice.mjs
+export const CLIENT_URL = process.env.WB_CLIENT_URL ?? "http://localhost:5173";
 
 /** Opens a browser and returns { browser, page }. Headless by default; see the
  *  note above for the one case where that is the wrong choice. */
