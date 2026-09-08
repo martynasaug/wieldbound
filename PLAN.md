@@ -20635,3 +20635,45 @@ Tuning the game to satisfy that would be tuning to false precision, so the check
 now allows 10% and says why.
 
 Suite 41/41.
+
+**Phase 70 M70.185 — fired all forty-five skills; they all work.** `weapons.mjs`
+played every family and only ever pressed the default attack, so the forty-three
+skills behind those trees had never been used by anything in this repository. A
+skill that costs mana and does nothing would have sat there indefinitely.
+
+`tools/soak/skills.mjs` equips each family, resets its tree, buys every active it
+can, and fires each one at something — taking its verdict from the server's own
+`SKILL_RESULT` rather than from the combat log. That distinction matters: the
+message carries `ok`, a `reason` when it refuses, and per-target `hits` with
+their damage, which separates "did not fire" from "fired and missed" from
+"fired, hit, and dealt nothing". The log cannot tell those apart, and
+`weapons.mjs` already proved log parsing gets the verb wrong.
+
+RESULT: 45 skills used, zero console errors, nothing hit for zero. Two refusals
+with sensible reasons ("already at full health", "unhurt, and nothing on you to
+lift"), four ordinary misses, one cast interrupted by drift.
+
+THE HARNESS INVENTED THREE BUGS BEFORE IT WAS RIGHT, which is the useful part:
+
+  1. It learned four of the sword's six actives and reported the rest as absent.
+     `canLearnTalent` gates on a `requires` prerequisite, and a skill never
+     learned looks exactly like a skill that does not exist. It now walks each
+     active's prerequisite chain and passes over the list until nothing more can
+     be bought.
+  2. It reported `rainofarrows` as returning NO ANSWER AT ALL, against a protocol
+     comment promising a result for every use. `rainofarrows` casts for exactly
+     900ms and the harness waited exactly 900ms — a dead-on race. Everything
+     else with a cast finishes in 780ms or less.
+  3. It reported four skills as "HIT SOMETHING FOR ZERO". `hits` is one entry per
+     target the skill REACHED, each with its own `hit` flag, so `targets > 0 &&
+     damage === 0` is the ordinary case of rolling a miss. Only a blow that
+     connected and did nothing is worth looking at, and none did.
+
+ONE REAL FINDING, small and documentary. A cast interrupted by walking out of
+`CAST_CANCEL_PX` is reported through `CAST_STATE` and NEVER produces a
+`SKILL_RESULT` — so the comment on that message, "sent back for every USE_SKILL,
+successful or not", is not true of an interrupted cast. The client handles both
+paths correctly; only the comment was wrong, and it is now corrected where the
+next person will read it.
+
+Suite 41/41.

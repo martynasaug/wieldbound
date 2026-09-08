@@ -4144,6 +4144,13 @@ export interface UseSkillMessage {
 // Sent back for every USE_SKILL, successful or not, so the client can start
 // its cooldown sweep from the server's clock rather than guessing — the
 // server is the authority on whether the skill actually fired.
+//
+// WITH ONE EXCEPTION, which cost `tools/soak/skills.mjs` a false bug report. A
+// skill with a cast time answers when the CAST COMPLETES, not when it is
+// requested — and a cast interrupted by walking out of `CAST_CANCEL_PX` is
+// reported through `CAST_STATE` with reason "moved" and never produces a
+// `SKILL_RESULT` at all. The client is told either way and handles both; it is
+// only "every" from the point of view of a cast that finishes.
 export interface SkillResultMessage {
   type: "SKILL_RESULT";
   payload: {
