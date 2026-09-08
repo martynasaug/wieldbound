@@ -2511,9 +2511,9 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
   // Axe: the heavy hitter. Slow swings, so everything here is about making the
   // ones that land count.
   axe: [
-    t("axe", "heft", 0, "Heft", "heft", 6, "+6% damage per rank.", { passive: { damagePercent: 6 } }),
+    t("axe", "heft", 0, "Heft", "heft", 6, "+8% damage per rank.", { passive: { damagePercent: 8 } }),
     t("axe", "rend", 0, "Rend", "rend", 1, "Unlocks Rend.", { active: "rend" }),
-    t("axe", "brutality", 1, "Brutality", "brutality", 5, "+12% critical damage per rank.", { passive: { critDamagePercent: 12 } }),
+    t("axe", "brutality", 1, "Brutality", "brutality", 5, "+2% critical chance and +12% critical damage per rank.", { passive: { critChance: 2, critDamagePercent: 12 } }),
     t("axe", "thickskin", 1, "Thick Skin", "thickskin", 5, "+3 armour per rank.", { passive: { armor: 3 } }),
     t("axe", "charge", 2, "Charge", "charge", 1, "Unlocks Charge.", { active: "charge" }),
     t("axe", "reckless", 2, "Reckless Swing", "reckless", 1, "Unlocks Reckless Swing.", { active: "reckless", requires: "brutality" }),
@@ -2545,14 +2545,14 @@ export const WEAPON_TREES: Record<WeaponType, TalentNode[]> = {
   dagger: [
     t("dagger", "quick", 0, "Quickened", "quick", 6, "+6% attack speed per rank.", { passive: { attackSpeedPercent: 6 } }),
     t("dagger", "backstab", 0, "Backstab", "backstab", 1, "Unlocks Backstab.", { active: "backstab" }),
-    t("dagger", "deadly", 1, "Deadly Aim", "deadly", 6, "+4% critical chance per rank.", { passive: { critChance: 4 } }),
+    t("dagger", "deadly", 1, "Deadly Aim", "deadly", 6, "+2% critical chance per rank.", { passive: { critChance: 2 } }),
     t("dagger", "slippery", 1, "Slippery", "slippery", 5, "+4 evasion and +12 movement per rank.", { passive: { evasion: 4, moveSpeedBonus: 12 } }),
     t("dagger", "flurry", 2, "Flurry", "flurry", 1, "Unlocks Flurry.", { active: "flurry" }),
     t("dagger", "venom", 2, "Envenom", "venom", 1, "Unlocks Poison Arrow - a coated blade works as well.", { active: "poisonarrow", requires: "deadly" }),
-    t("dagger", "opportunist", 3, "Opportunist", "opportunist", 5, "+12% critical damage per rank.", { passive: { critDamagePercent: 12 } }),
+    t("dagger", "opportunist", 3, "Opportunist", "opportunist", 5, "+8% critical damage per rank.", { passive: { critDamagePercent: 8 } }),
     t("dagger", "disengage", 3, "Disengage", "disengage", 1, "Unlocks Disengage.", { active: "disengage" }),
     t("dagger", "expose", 3, "Expose Weakness", "expose", 1, "Unlocks Expose Weakness.", { active: "expose", requires: "backstab" }),
-    t("dagger", "assassin", 4, "Assassin", "assassin", 4, "+7% damage and +4% critical chance per rank.", { passive: { damagePercent: 7, critChance: 4 } }),
+    t("dagger", "assassin", 4, "Assassin", "assassin", 4, "+7% damage and +2% critical chance per rank.", { passive: { damagePercent: 7, critChance: 2 } }),
     t("dagger", "exploit", 4, "Exploit", "exploit", 1, "Unlocks Exploit.", { active: "exploit", requires: "expose" }),
   ],
 
