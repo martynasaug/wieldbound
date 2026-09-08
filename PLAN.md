@@ -20979,3 +20979,40 @@ budget. One question, one threshold. This is the same fault as the tour harness
 that shot a screenshot 1,718px outside town and labelled it "town".
 
 Suite 41/41.
+
+**Phase 70 M70.193 — a shader budget, because the game is going to get much
+bigger.** The load is the programs: 129 of them, ~50ms each, ~6.4s of a ~10s
+cold load. The old note said the lever was fewer materials in the art, and
+M70.192 repeated it. Measured, it is close to wrong.
+
+`tools/soak/programs.mjs` asks three.js for its own program list and builds, per
+material, the signature three actually keys a program on. A thousand materials
+in the scene collapse into THIRTY archetypes. Texture content — a different
+bark, a different stone — never forks a program; only the feature mix does:
+skinned, transparent, double-sided, alpha-tested, which maps are present. So
+cutting the number of distinct materials would have bought very little, and I
+was one step from spending art time on it. The art is already, by accident,
+almost following the rule that matters.
+
+WHICH MAKES THE RULE WORTH WRITING DOWN, because the accident will not hold
+through a lot more content. `tools/soak/archetypes.mjs` walks the live scene,
+builds that signature, and fails against a blessed baseline in
+`archetypes.json` when an asset introduces a combination the game did not have.
+A thousand new models that reuse the existing thirty cost ZERO extra load; one
+that arrives double-sided-and-alpha-tested when nothing else is costs a program,
+plus its depth program, plus its faded variant — call it 50-150ms on every
+player's first visit, forever, whether or not anyone notices.
+
+`--bless` accepts a new archetype. It is a separate command precisely so that
+adding one is a decision somebody made rather than a number that drifted.
+
+Stable across runs: 30 archetypes, 1,037 materials, 129 programs, twice. It
+cannot live in `tools/test/` — every test there is Node-only, and a material's
+feature mix does not exist until a real WebGL context has loaded the models.
+
+This is the half of the scaling problem that keeps the program COUNT flat. The
+other half — that the loading screen compiles all of them before the player is
+let in, so time-to-play scales with total content rather than with what is on
+screen — is next, and it has to be measured rather than argued: the tail phases
+exist because a shader compiled mid-fight is a freeze exactly when a monster
+appears, and that was hard-won.
