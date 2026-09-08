@@ -42,6 +42,9 @@ export class StatusBar {
    *  sweep animates smoothly instead of being rebuilt sixty times a second. */
   private readonly cells = new Map<StatusId, { el: HTMLElement; sweep: HTMLElement; endsAt: number }>();
   private current: ActiveStatus[] = [];
+  /** The last server-synced clock `update` was given, so `active` can prune by
+   *  the same time base the countdown sweep is drawn from. */
+  private lastServerNow = 0;
   /** Last published height, so the CSS variable is written on change only. */
   private lastHeight = -1;
 
@@ -155,7 +158,22 @@ export class StatusBar {
    * client whose clock is a second off would show every effect ending early.
    */
   update(serverNow: number): void {
-    for (const [id, cell] of this.cells) {
+    this.lastServerNow = serverNow;
+    for (const [id, cell] of [...this.cells]) {
+      // EXPIRED ONES GO, and until now none of them did.
+      //
+      // The server sends a status when it LANDS and says nothing when it
+      // lapses, so a cell built here stayed until some later message happened
+      // to omit it. That was cosmetic — a lingering icon — right up until
+      // `statusMoveMultiplier` began reaching the player, at which point a
+      // chill that never expired meant a character stuck at 40% speed for as
+      // long as nothing else updated their statuses. Measured at fourteen
+      // seconds and still going, for an effect that lasts three and a half.
+      if (cell.endsAt <= serverNow) {
+        cell.el.remove();
+        this.cells.delete(id);
+        continue;
+      }
       const def = STATUSES[id];
       const remaining = cell.endsAt - serverNow;
       const fraction = Math.max(0, Math.min(1, remaining / def.durationMs));
@@ -170,6 +188,15 @@ export class StatusBar {
   /** What is running, for anything that wants to ask — the character sheet
    *  shows a buff's contribution beside the gear's. */
   get active(): ActiveStatus[] {
-    return this.current;
+    // PRUNED BY THE SERVER CLOCK, not this machine's, for the same reason
+    // `update` takes one: end times are the server's, and a client running a
+    // second fast would shrug off every debuff a second early — which is a
+    // cheat as much as it is a bug, now that this list decides how fast the
+    // character moves.
+    //
+    // Before the first frame there is no server clock yet, and the unfiltered
+    // list is the right answer.
+    if (!this.lastServerNow) return this.current;
+    return this.current.filter((s) => s.endsAt > this.lastServerNow);
   }
 }

@@ -20487,3 +20487,44 @@ ratio 1.00 and the verdict meaningless. Every one of those printed a confident
 wrong answer first.
 
 `tools/soak/slowcheck.mjs` keeps that check. Suite 40/40.
+
+**Phase 70 M70.182 — the chill never ended, and nobody could tell until it
+mattered.** Following M70.181 to its consequence: slows now reach the player, so
+what happens to a player who gets slowed?
+
+The arithmetic looked alarming. A new player chilled is 88px/s and the ghost
+that chilled them moves at 168 — nearly twice as fast — with a 3.5s duration and
+a 25% chance to re-apply every 1.7s swing. On paper that is a loop with no exit.
+Staggered (110 against a troll's 92) and poisoned (143 against a cactoro's 112)
+still escape; chilled does not.
+
+So it was run rather than argued, and running it found something worse and more
+concrete than a tuning problem. `tools/soak/chillspiral.mjs` reported "chilled
+for 100% of the run" while the ghost fell 1,500px behind, which is impossible —
+nothing was re-applying it. A direct probe: fourteen seconds after the chill
+landed, still chilled, still 150px/s, for an effect that lasts three and a half.
+
+THE CLIENT NEVER EXPIRED A STATUS. `StatusBar.update` drew the countdown sweep
+down to empty and left the cell in place; `active` returned whatever the server
+last sent. The server sends a status when it LANDS and says nothing when it
+lapses, so an effect stayed until some later message happened to omit it. That
+was COSMETIC — an icon that lingered — for as long as nothing read the list, and
+M70.181 made it read: a chill that never expired meant a character stuck at 40%
+speed indefinitely. A bug fix turned a stale icon into a permanent crippling.
+
+`update` now removes cells whose end time has passed, and `active` filters by
+the same SERVER clock the sweep is drawn from — not the local one, for the
+reason that method already gave about clock skew, which is now a cheat as well
+as a display bug since this list decides how fast a character moves.
+
+Measured after: the chill expires at +4s (376px/s, no statuses), is re-applied
+while the ghost is still on top of the character, and the run ends with the
+player chilled 18% of the time and the ghost out of sight. Dangerous, not a
+trap, which is what a ghost should be.
+
+STILL WORTH THE USER'S EYE: a new player at 220 base drops to 88 while a ghost
+does 168. They survive because the effect ends, not because they can run — for
+3.5 seconds the ghost closes about 280px on them. Whether that reads as tense or
+as unfair is a judgement, and `SLOW_MULTIPLIER` is the one number.
+
+Suite 40/40.
