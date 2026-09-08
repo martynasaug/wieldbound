@@ -95,11 +95,39 @@ ws.on("open", async () => {
   }
   // Walk to just outside its reach and stop there, so what follows measures
   // where IT decides to stand rather than where the probe happened to be.
-  for (let i = 0; i < 70; i++) {
+  //
+  // AND WALKING NOW TAKES TIME, which it did not when this loop was written.
+  // The server used to accept any `MOVE` destination outright, so naming a
+  // monster's position teleported to it and seventy ticks was seventy times
+  // more than enough. With the speed budget in place a step is a step: seventy
+  // ticks of 120ms covers about 1,850px at 220px/s, and this test picks the
+  // nearest thrower of three kinds, which can easily be further than that. The
+  // failure was loud and misleading — "it settled at a mean of 2269px … it is
+  // fleeing rather than fighting" — when the truth was that the probe never
+  // arrived.
+  //
+  // Budgeted by distance rather than by a fixed count, with slack for going
+  // around whatever is in the way.
+  const travelTicks = Math.ceil((gapTo(target) / BASE_MOVE_SPEED_PX_PER_SEC / 0.12) * 1.8) + 40;
+  for (let i = 0; i < travelTicks; i++) {
     const m = monsters.find((x) => x.id === target.id) ?? target;
     if (gapTo(m) <= MONSTER_STATS[target.kind].attackRangePx * 1.15) break;
     send({ type: "MOVE", payload: { x: m.x, y: m.y } });
     await sleep(120);
+  }
+  // And say so plainly if it still did not get there, rather than measuring the
+  // distance to something on the other side of the map and calling it cowardice.
+  {
+    const m = monsters.find((x) => x.id === target.id) ?? target;
+    if (gapTo(m) > MONSTER_STATS[target.kind].attackRangePx * 3) {
+      console.log(
+        `NOT RUN — could not close on the ${target.kind}; it is still ${gapTo(m).toFixed(0)}px away\n` +
+          "  after walking the whole budget. Nothing here is about keep-away distance.\n" +
+          "  INCONCLUSIVE, not a failure.",
+      );
+      ws.close();
+      process.exit(0);
+    }
   }
   const stats = MONSTER_STATS[target.kind];
   console.log(`walking at a ${target.kind} (holds at ${stats.keepAwayPx}px, reaches ${stats.attackRangePx}px)`);

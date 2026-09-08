@@ -80,6 +80,8 @@ let me = null;
 let items = [];
 let monsters = [];
 let dealt = 0;
+/** Damage dealt, keyed by the monster that took it. See the handler below. */
+const dealtTo = new Map();
 const problems = [];
 const fail = (m) => problems.push(m);
 
@@ -99,7 +101,17 @@ ws.on("message", (raw) => {
   }
   // Every landed player swing, which is the only honest measure of "did it
   // attack" — the attack STATE says an order stands, not that a blow fell.
-  if (msg.type === "BATTLE_RESULT" && msg.payload.playerHit) dealt += msg.payload.playerDamage;
+  if (msg.type === "BATTLE_RESULT" && msg.payload.playerHit) {
+    dealt += msg.payload.playerDamage;
+    // AND PER MONSTER, because the rule is per target. "You do not swing at
+    // something behind you" says nothing about the rest of the camp: with a
+    // 300px bow, running from a troll while shooting a wolf that happens to be
+    // ahead is CORRECT, and a total that lumps them together reads it as a
+    // flagrant violation. Measured that way the test failed three runs out of
+    // three at ~55% of the standing baseline, all of it legal.
+    const id = msg.payload.monsterId;
+    dealtTo.set(id, (dealtTo.get(id) ?? 0) + msg.payload.playerDamage);
+  }
 });
 
 const nearest = (kinds) => {
@@ -211,6 +223,15 @@ ws.on("open", async () => {
    *  enough to be swung at. Read from the same shared function the server
    *  resolves attacks with, rather than the melee contact this used to assume. */
   const PLAYER_REACH = attackRangeFor("bow");
+
+  /** Kinds that outlive an opening shot, so one subject can serve both windows.
+   *  Dragons are excluded deliberately: 340hp is ideal for surviving, and a
+   *  character standing still beside one for ten seconds may not finish the
+   *  measurement. */
+  const TANKY = Object.entries(MONSTER_STATS)
+    .filter(([kind, st]) => (st.maxHp ?? 0) >= 90 && kind !== "dragon" && st.keepAwayPx === undefined)
+    .map(([kind]) => kind);
+
   console.log(`  using a bow: reach ${PLAYER_REACH}px (a sword reaches ${attackRangeFor("sword")}px)`);
 
   // Find something close and walk into reach of it.
@@ -233,7 +254,19 @@ ws.on("open", async () => {
     // heading is toward it and the swing is allowed: 276 damage with 24 of 76
     // ticks in reach, correct behaviour reported as a bug. A test that fails
     // a third of the time is worse than the flake it replaced.
-    const live = nearest(null);
+    // TOUGH FIRST, AND THE SAME ONE FOR BOTH WINDOWS.
+    //
+    // Picking whatever was nearest meant the standing window shot a wolf camp
+    // flat and the retreat window then walked off to find something else, so
+    // the two halves were measured against different monsters at different
+    // health. That is the headcount confound in its purest form, and it
+    // produced "324 against 140 standing" — a flagrant-looking rule violation
+    // that was really a depleted camp on one side and a fresh golem on the
+    // other.
+    //
+    // One subject, tough enough to outlive both windows, used for standing and
+    // for running away. `TANKY` is defined above the retreat block.
+    const live = nearest(TANKY) ?? nearest(null);
     if (!live) { await sleep(1000); continue; }        // everything is dead; wait
     const d = Math.hypot(live.x - me.x, live.y - me.y);
     // MEASURED TO THE SURFACE, NOT THE CENTRE — the same correction M70.110
@@ -268,6 +301,7 @@ ws.on("open", async () => {
   // the number is small rather than absent, and `retreating` is still measured
   // against a real one.
   dealt = 0;
+  dealtTo.clear();
   send({ type: "USE_ATTACK", payload: {} });
   const hold = { x: me.x, y: me.y };
   // AND COUNT REACH PER TICK, FOR THE SAME REASON THE RETREAT WINDOW DOES.
@@ -298,7 +332,8 @@ ws.on("open", async () => {
     }
     await sleep(110);
   }
-  const standing = dealt;
+  // Only what the SUBJECT took, so both windows measure the same monster.
+  const standing = dealtTo.get(target.id) ?? 0;
   const aliveInReach = monsters.filter(
     (m) => m.status === "alive" && Math.hypot(m.x - me.x, m.y - me.y) < 120,
   ).length;
@@ -355,9 +390,6 @@ ws.on("open", async () => {
   // Dragons are excluded deliberately: 340hp is ideal for surviving, and a
   // character standing still next to one for ten seconds is a character that
   // may not finish the measurement.
-  const TANKY = Object.entries(MONSTER_STATS)
-    .filter(([kind, s]) => (s.maxHp ?? 0) >= 90 && kind !== "dragon")
-    .map(([kind]) => kind);
 
   const beefiest = (maxRangePx = Infinity) => {
     let best = null;
@@ -398,7 +430,14 @@ ws.on("open", async () => {
   {
     const reAcquire = Date.now() + 30000;
     while (Date.now() < reAcquire) {
-      const live = beefiest(900) ?? nearest(null);
+      // THE SAME SUBJECT THE STANDING WINDOW FOUGHT, if it is still alive.
+      // Two windows measured against two different monsters at two different
+      // healths is not a comparison, and it produced the only failure this test
+      // has ever reported that looked like a real rule violation: "324 against
+      // 140 standing", a depleted camp on one side and a fresh golem on the
+      // other.
+      const live = monsters.find((m) => m.id === target.id && m.status === "alive")
+        ?? beefiest(900) ?? nearest(null);
       if (!live) {
         await sleep(300);
         continue;
@@ -414,7 +453,8 @@ ws.on("open", async () => {
   }
 
   // Straight out from the monster, which `isRetreating` calls leaving.
-  const away = beefiest(900) ?? nearest(null) ?? target;
+  const away = monsters.find((m) => m.id === target.id && m.status === "alive")
+    ?? beefiest(900) ?? nearest(null) ?? target;
   const dx = me.x - away.x;
   const dy = me.y - away.y;
   const len = Math.hypot(dx, dy) || 1;
@@ -422,6 +462,7 @@ ws.on("open", async () => {
     `  heading away is ${isRetreating(dx / len, dy / len, away.x - me.x, away.y - me.y) ? "retreating" : "NOT retreating — the probe is aimed wrong"}`,
   );
   dealt = 0;
+  dealtTo.clear();
   // COUNT THE TICKS WHERE ANYTHING WAS ACTUALLY IN REACH.
   //
   // Without this the comparison is unfalsifiable, and it was: disabling the
@@ -456,8 +497,33 @@ ws.on("open", async () => {
     // loop is. That one blow is then discarded, so every damage number counted
     // below comes from the loop the rule actually governs.
     send({ type: "USE_ATTACK", payload: {} });
-    await sleep(500);
+    // LET THE TURN FINISH BEFORE COUNTING, and run away during it.
+    //
+    // The server does not know which way you are facing from a single message:
+    // `noteMovement` smooths a heading at 0.35 per sample and `headingOf`
+    // refuses to answer until its magnitude passes 0.2, so a character that was
+    // walking TOWARD a troll needs several movement samples before the server
+    // agrees it is now walking away. Blows landing during that turn are the
+    // rule not yet applying rather than the rule failing, and counting them
+    // made this fail one run in three at about half the standing baseline while
+    // the other two runs scored a clean zero.
+    //
+    // So spend the discard actually retreating rather than standing still —
+    // a stationary character generates no movement samples at all and the
+    // heading would still be pointing at the troll when counting began.
+    const turnUntil = Date.now() + 1200;
+    while (Date.now() < turnUntil) {
+      const stepPx = BASE_MOVE_SPEED_PX_PER_SEC * 0.11;
+      const remaining = Math.hypot(dest.x - me.x, dest.y - me.y);
+      const k = remaining > stepPx ? stepPx / remaining : 1;
+      send({
+        type: "MOVE",
+        payload: { x: me.x + (dest.x - me.x) * k, y: me.y + (dest.y - me.y) * k },
+      });
+      await sleep(110);
+    }
     dealt = 0;
+    dealtTo.clear();
     const until = Date.now() + 9000;
     while (Date.now() < until) {
       // ONE STEP, AT THE SPEED A PLAYER ACTUALLY RUNS.
@@ -523,7 +589,7 @@ ws.on("open", async () => {
       await sleep(110);
     }
   }
-  const retreating = dealt;
+  const retreating = dealtTo.get(away.id) ?? 0;
   console.log(
     `  running away:   ${retreating} damage dealt, in reach for ${inReachTicks}/${retreatTicks} ticks` +
       (retreatGaps.length

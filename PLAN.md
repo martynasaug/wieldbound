@@ -20278,3 +20278,83 @@ make knowingly rather than a defect to fix quietly, so it is recorded here and
 raised rather than acted on.
 
 Suite 39/39.
+
+**Phase 70 M70.178 — move speed becomes one stat, and the server can finally
+hold you to it.** Asked for directly: movement speed should be a stat in its own
+right, sourced from items and enchantments, with future skills using it.
+
+MOST OF IT ALREADY EXISTED AND NONE OF IT WORKED. Move speed had real sources —
+boots rarity, agility, the `fleet` and `stag` affixes, three matched sets and the
+footwork/slippery/fleet-footed talent lines — and nothing assembled them in one
+place. The client did it inline in TWO spots with different arguments, and the
+one that mattered was wrong:
+
+    moveSpeed()            boots + agility + gear + passives   (character sheet)
+    the movement integrator  movePxPerSec(null, agility, gear) (how fast you ran)
+
+So every move-speed source in the game except agility and the boots/cape roll was
+decorative. The sheet promised movement the game did not give, and had for as
+long as those talents have existed.
+
+`moveSpeedFor` is now the single answer, and both sides call it. It also gains a
+`moveSpeedPercent` channel that nothing pays into yet, which is the point:
+every existing source is FLAT, and flat numbers do not compose into a temporary
+effect — a sprint granting +40px/s is worth a lot to a slow character and almost
+nothing to a fast one, which is backwards. Statuses already total into the
+passive bag through `statusModifiers`, so a future Sprint granting
+`{ moveSpeedPercent: 40 }` reaches movement with no new plumbing, the way War Cry
+reaches damage. Percent applies after flat, so it rewards boots rather than
+flattening them, and a floor stops a snare stranding anyone.
+
+THE SERVER CAN NOW COMPUTE IT, which is why the speed check was impossible
+before rather than merely absent: `movePxPerSec` was only ever called in the
+client, so the side that had to validate a step had no idea what a legal step
+was. Every input was already server-side — `bootsRarities`, `attributes`,
+`equippedItems`, and `passivesOf`, which totals affixes, sets, talents and
+running statuses — and nothing had put them together.
+
+The clamp took three tries and each failure taught the next:
+
+  1. per-message budget, skipped when no previous move was recorded. The first
+     MOVE of a session was free, and a reconnect is one socket away.
+  2. per-message budget with a flat 40px grace. The grace was PER MESSAGE, so a
+     client sending a hundred a second collected 4,000px/s — fifteen times a
+     legal run — without ever exceeding its per-message budget. A rule a client
+     beats by talking faster is not a rule.
+  3. a token bucket. Allowance accrues with time, capped at 60px, and each step
+     spends from it, so distance over an interval is bounded by that interval
+     however many messages carry it.
+
+Measured: one MOVE asking 900px moves 60px; 39 messages and 78 messages over the
+same 1,200ms window travel 775px and 773px; an honest client asking 440px gets
+440px; and `tour.mjs` still reaches 9 of 9 stops, so real play is untouched.
+
+AND IT BROKE THREE TESTS, WHICH IS THE FINDING UNDERNEATH. Every socket test that
+"walked" by naming a destination had been teleporting. `throwers.mjs` budgeted 70
+ticks to reach a monster and now needed distance-based travel; it had been
+reporting "it settled at a mean of 2269px … it is fleeing rather than fighting"
+when the truth was the probe never arrived. `movespeed.mjs` walked itself into
+something solid and blamed the budget. And `fighting.mjs` failed properly.
+
+That last one took four more corrections, each a real confound rather than a
+bug:
+  - both windows must use the SAME monster, or a depleted camp on one side and a
+    fresh golem on the other reads as "324 against 140 standing"
+  - the subject must not be a THROWER: golems and demons reposition and can end
+    up in front, where attacking them is correct — the file's own note warned of
+    this and the tanky list had reintroduced it
+  - damage must be attributed PER MONSTER (`BATTLE_RESULT.monsterId`): with a
+    300px bow, shooting a wolf that is ahead while fleeing a troll is legal, and
+    a lumped total called it a violation at ~55% of baseline
+  - the turn must finish before counting. `noteMovement` smooths heading at 0.35
+    a sample and `headingOf` will not answer below 0.2, so the server needs
+    several movement samples to agree you have turned; blows during that turn are
+    the rule not yet applying. The discard is now spent retreating, since a
+    stationary character generates no samples at all.
+
+Four runs, zero damage while retreating, 10–18 of ~76 ticks genuinely in reach.
+Suite 40/40.
+
+STILL THE USER'S CALL and unchanged by any of this: the client authority itself
+is deliberate. What is now enforced is only that a client cannot claim to have
+travelled further than its own stat allows.

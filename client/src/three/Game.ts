@@ -45,7 +45,7 @@ import {
   gearDamageBonus,
   gearEvasion,
   gearMoveBonus,
-  movePxPerSec,
+  moveSpeedFor,
   PLAYER_BODY_RADIUS_PX,
   playerAccuracy,
   playerAttackIntervalMs,
@@ -3418,11 +3418,12 @@ export class Game {
   }
 
   private moveSpeed(): number {
-    return movePxPerSec(
-      this.bootsRarity,
-      this.agility,
-      gearMoveBonus(equippedBySlot(this.items)) + this.passives().moveSpeedBonus,
-    );
+    return moveSpeedFor({
+      bootsRarity: this.bootsRarity,
+      agility: this.agility,
+      gearBonus: gearMoveBonus(equippedBySlot(this.items)),
+      passives: this.passives(),
+    });
   }
 
   /** Passive totals from the held weapon's learned talents — the same shared
@@ -5284,8 +5285,19 @@ export class Game {
       actor.play("idle");
     } else {
       const len = Math.hypot(dx, dy) || 1;
-      const eq = equippedBySlot(this.items);
-      const speed = movePxPerSec(null, this.agility, gearMoveBonus(eq));
+      // THE SAME SPEED THE CHARACTER SHEET SHOWS, which it was not.
+      //
+      // This line integrated `movePxPerSec(null, agility, gearMoveBonus(eq))` —
+      // no boots rarity, no passives — while `moveSpeed()` a few thousand lines
+      // up summed all of it for display. So every move-speed source in the game
+      // except agility and the boots/cape roll was decorative: the `fleet` and
+      // `stag` affixes, all three matched sets, and the footwork, slippery and
+      // fleet-footed talent lines each promised movement on the sheet and
+      // changed nothing about how fast you actually ran.
+      //
+      // Two call sites computing "how fast am I" from different inputs is how
+      // that survives unnoticed, which is why there is now one function.
+      const speed = this.moveSpeed();
       this.playerX = clamp(this.playerX + (dx / len) * speed * dt, 0, WORLD_WIDTH);
       this.playerY = clamp(this.playerY + (dy / len) * speed * dt, 0, WORLD_HEIGHT);
       actor.play("run");

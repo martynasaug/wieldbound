@@ -78,6 +78,8 @@ import {
   WEAKENED_DURATION_MS,
   WEAKENED_DAMAGE_PENALTY,
   BASE_MOVE_SPEED_PX_PER_SEC,
+  moveSpeedFor,
+  gearMoveBonus,
   SLOW_MULTIPLIER,
   SLOW_DURATION_MS,
   WARCRY_DURATION_MS,
@@ -246,6 +248,38 @@ import {
 const PORT = 8080;
 const TICK_MS = 100;
 const SAVE_INTERVAL_MS = 1000;
+
+// --- The movement budget ----------------------------------------------------
+//
+// See the note in the MOVE handler for why any of this exists. These three
+// numbers are deliberately loose: the job is to make crossing the map in one
+// message impossible, not to police the last few pixels of a jittery frame.
+
+/** How far over the theoretical maximum a step may go before it is pulled
+ *  back. Timer jitter, batched messages and a frame that ran long all make an
+ *  honest client briefly look fast; none of them make it look twice as fast. */
+const MOVE_SPEED_TOLERANCE = 2;
+
+/** How much unspent allowance a player may bank while not moving, in pixels.
+ *
+ * This is the ONLY slack in the rule, and it is a stock rather than a per
+ * message handout for the reason spelled out at the clamp: anything paid per
+ * message is multiplied by however fast a client chooses to talk. Sixty pixels
+ * is a quarter second of running — enough to absorb a stutter or a batched
+ * frame, nowhere near enough to travel on.
+ */
+const MOVE_CREDIT_CAP_PX = 60;
+
+/** When each player's last accepted MOVE arrived, and how much unspent
+ *  allowance they have banked since.
+ *
+ *  Both are cleared on disconnect and stamped on join, so a reconnect cannot
+ *  carry a stale clock. Banking the gap since this character last PLAYED rather
+ *  than since it last MOVED paid out 340px in a single step, and is how the
+ *  first version of this rule was caught — by the test passing alone and
+ *  failing after another test had used the same character. */
+const lastMoveAt = new Map<string, number>();
+const moveCredit = new Map<string, number>();
 const MONSTER_RESPAWN_MS = 10000;
 const MAX_AOE_TARGETS = 5;
 const HP_REGEN_INTERVAL_MS = 5000; // 1 HP per interval while below max, no regen needed once full
@@ -354,6 +388,31 @@ function weaponLevelOf(playerId: string, weapon = heldWeapon(playerId)): number 
 
 /** Passive totals from the held weapon's learned talents. Replaces the old
  *  class+level lookup: bonuses now come from what you chose, on this weapon. */
+/**
+ * How fast this player is entitled to move, in px/s.
+ *
+ * THE SERVER COULD NOT ANSWER THIS BEFORE, and that is why movement had no
+ * speed check: `movePxPerSec` was only ever called in the client, so the one
+ * side that needed to validate a step had no idea what a legal step was. Every
+ * input was already here — `bootsRarities`, `attributes`, `equippedItems` and
+ * `passivesOf`, which totals affixes, matched sets, talents and any running
+ * status — and nothing had ever put them together.
+ *
+ * Shared with the client through `moveSpeedFor` rather than reimplemented, for
+ * the reason every other formula in `protocol-types.ts` is shared: two
+ * implementations of "how fast am I" is how the client and the server come to
+ * disagree, and a disagreement here is a player being rubber-banded for playing
+ * honestly.
+ */
+function moveSpeedOf(playerId: string): number {
+  return moveSpeedFor({
+    bootsRarity: bootsRarities.get(playerId) ?? null,
+    agility: (attributes.get(playerId) ?? EMPTY_ATTRS).agility,
+    gearBonus: gearMoveBonus(equippedItems.get(playerId)),
+    passives: passivesOf(playerId),
+  });
+}
+
 function passivesOf(playerId: string): ReturnType<typeof talentPassives> {
   const weapon = heldWeapon(playerId);
   const total = talentPassives(weapon, ranksOf(playerId, weapon));
@@ -2747,6 +2806,15 @@ wss.on("connection", (socket) => {
       const characterItems = listItems(id);
       equippedItems.set(id, computeEquipped(characterItems));
 
+      // Start the movement clock now, so the first MOVE of a session is measured
+      // from the moment of joining rather than from whenever this character last
+      // played. `lastMoveAt` is keyed by character id and outlives the socket, so
+      // without this a reconnect banks the whole catch-up window and spends it on
+      // one step — 340px, measured, which is a third of the way to cheating and
+      // was caught by the test failing only when it ran AFTER another test had
+      // used the same character.
+      lastMoveAt.set(id, Date.now());
+      moveCredit.set(id, 0);
       players.set(id, {
         id: character.id,
         name: character.name,
@@ -2873,9 +2941,79 @@ wss.on("connection", (socket) => {
       // shared function the client already ran. A client that honoured the rule
       // sees no change; one that skipped it gains nothing, because every range
       // check in combat reads the corrected position.
+      // AND "TAKES ITS WORD" NOW INCLUDES HOW FAR IT CLAIMS TO HAVE GONE.
+      //
+      // It did not, and the consequence was never written down: with no speed
+      // check, one `MOVE` crossed any distance. Measured against this server —
+      //
+      //     at (10439, 4081), MOVE to 900px east
+      //       tick 0  moved 900px this tick, 900px from start
+      //       tick 1  moved   0px this tick, 900px from start
+      //
+      // — which deletes the bridge as the only crossing, the road as the safe
+      // way through, and the journey that gates the far camps. It also made
+      // `tools/test/fighting.mjs` unfalsifiable for its whole life: its retreat
+      // window teleported instead of running, so nothing was ever in reach to
+      // measure. That is how this was found.
+      //
+      // CLAMPED, NOT REJECTED, and the difference matters. Rejecting punishes a
+      // bad connection: a laggy client sends fewer, larger steps, and a server
+      // that refuses them freezes the player who can least afford it. Clamping
+      // pulls the step back along its own direction, so an honest client never
+      // notices and a dishonest one simply does not arrive.
+      //
+      // `MOVE_SPEED_TOLERANCE` is what covers timer jitter and batching: an
+      // honest client may briefly look fast, but never twice as fast.
+      // THE FIRST MOVE IS BUDGETED TOO, and skipping it was this change's own
+      // first bug. Exempting "no previous move recorded" looks harmless and is
+      // a reconnect away from being no rule at all: drop the socket, connect
+      // again, and the one free step crosses the world. Caught by the test,
+      // which sends exactly one MOVE after logging in and so walked straight
+      // into it.
+      //
+      // With no previous timestamp the elapsed time is zero, which leaves the
+      // grace as the whole budget. That is correct rather than merely safe — a
+      // client's first step after connecting is one frame of walking, and forty
+      // pixels is more than one frame.
+      // A BUCKET, NOT A PER-MESSAGE ALLOWANCE, and the difference is the whole
+      // rule. The first version gave every message a time budget plus a flat
+      // forty pixels of slack, which is fine until you notice that the slack is
+      // PER MESSAGE: send a hundred a second and it pays out four thousand
+      // pixels a second, fifteen times a legal run. A rule that a client can
+      // beat by talking faster is not a rule.
+      //
+      // So allowance accrues with time into a small bucket and each step spends
+      // from it. Distance over any interval is then bounded by that interval,
+      // whether it arrives in three messages or three hundred, which is the
+      // property actually wanted. The cap is what a client may bank while
+      // quiet — enough to ride out jitter, far too little to travel on.
+      const nowMs = Date.now();
+      const prevAt = lastMoveAt.get(id) ?? nowMs;
+      const elapsedMs = Math.max(0, nowMs - prevAt);
+      lastMoveAt.set(id, nowMs);
+      let credit = Math.min(
+        MOVE_CREDIT_CAP_PX,
+        (moveCredit.get(id) ?? 0) + (moveSpeedOf(id) * MOVE_SPEED_TOLERANCE * elapsedMs) / 1000,
+      );
+      let askedX = clamp(msg.payload.x, 0, WORLD_WIDTH);
+      let askedY = clamp(msg.payload.y, 0, WORLD_HEIGHT);
+      {
+        const stepX = askedX - p.x;
+        const stepY = askedY - p.y;
+        const step = Math.hypot(stepX, stepY);
+        if (step > credit) {
+          const k = credit / step;
+          askedX = p.x + stepX * k;
+          askedY = p.y + stepY * k;
+          credit = 0;
+        } else {
+          credit -= step;
+        }
+      }
+      moveCredit.set(id, credit);
       const wanted = resolveBodyCollision(
-        clamp(msg.payload.x, 0, WORLD_WIDTH),
-        clamp(msg.payload.y, 0, WORLD_HEIGHT),
+        askedX,
+        askedY,
         PLAYER_BODY_RADIUS_PX,
         aliveMonsterBodies(),
       );
@@ -3590,6 +3728,8 @@ wss.on("connection", (socket) => {
       }
     }
     players.delete(id);
+    lastMoveAt.delete(id);
+    moveCredit.delete(id);
     casting.delete(id);
     headings.delete(id);
     sockets.delete(id);

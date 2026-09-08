@@ -1008,6 +1008,7 @@ const PASSIVE_LABEL: Record<keyof PassiveBonus, string> = {
   maxManaBonus: "maximum mana",
   manaRegenBonus: "mana regen",
   moveSpeedBonus: "movement",
+  moveSpeedPercent: "movement",
   healOnKill: "health on kill",
   evasion: "evasion",
   maxHpBonus: "maximum health",
@@ -1028,6 +1029,7 @@ const PASSIVE_LABEL: Record<keyof PassiveBonus, string> = {
 
 const PASSIVE_UNIT: Record<keyof PassiveBonus, string> = {
   armor: "", critChance: "%", maxManaBonus: "", manaRegenBonus: "", moveSpeedBonus: "",
+  moveSpeedPercent: "%",
   healOnKill: "", evasion: "", maxHpBonus: "", accuracyBonus: "",
   damagePercent: "%", attackSpeedPercent: "%", critDamagePercent: "%", rangePercent: "%",
   skillPowerPercent: "%", manaCostPercent: "%", cooldownPercent: "%",

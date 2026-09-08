@@ -1872,7 +1872,25 @@ export interface PassiveBonus {
   critChance?: number;
   maxManaBonus?: number;
   manaRegenBonus?: number;
+  /** Flat px/s added to move speed. Boots and cape affixes, matched sets and
+   *  the footwork/slippery/fleet talent lines all pay into this. */
   moveSpeedBonus?: number;
+  /**
+   * Percentage added to move speed, applied AFTER every flat source.
+   *
+   * Nothing pays into this yet, and it exists anyway. Every move-speed source
+   * in the game today is flat — +5 from an affix, +14 from a set, +14 a rank
+   * from Fleet Footed — and flat numbers do not compose into a temporary
+   * effect: a sprint that grants +40px/s is worth a great deal to a slow
+   * character and almost nothing to a fast one, which is backwards.
+   *
+   * A percentage channel makes a skill possible with NO new plumbing, which is
+   * the same argument the resist keys make above: statuses already total into
+   * the passive bag through `statusModifiers`, so a Sprint buff granting
+   * `{ moveSpeedPercent: 40 }` reaches movement the way War Cry reaches damage
+   * — through code written before it existed.
+   */
+  moveSpeedPercent?: number;
   healOnKill?: number;
   evasion?: number;
   // Added with the talent trees. Percentages are whole numbers: 10 means +10%.
@@ -1934,7 +1952,7 @@ export const EMPTY_PASSIVES: Required<PassiveBonus> = {
   armor: 0, critChance: 0, maxManaBonus: 0, manaRegenBonus: 0, moveSpeedBonus: 0,
   healOnKill: 0, evasion: 0, maxHpBonus: 0, accuracyBonus: 0, damagePercent: 0,
   attackSpeedPercent: 0, critDamagePercent: 0, rangePercent: 0, skillPowerPercent: 0,
-  manaCostPercent: 0, cooldownPercent: 0,
+  manaCostPercent: 0, cooldownPercent: 0, moveSpeedPercent: 0,
   resistFire: 0, resistFrost: 0, resistNature: 0, resistArcane: 0, resistLightning: 0,
 };
 
@@ -3343,6 +3361,51 @@ export function movePxPerSec(bootsRarity: ItemRarity | null, agility = 0, bootsB
     bootsBonusSpeed
   );
 }
+
+/**
+ * How fast this character moves, from every source, in px/s.
+ *
+ * THE POINT IS THAT THERE IS ONE OF THESE. Move speed already had real sources
+ * — boots rarity, agility, the `fleet` and `stag` affixes, three matched sets,
+ * and the footwork/slippery/fleet-footed talent lines — but nothing assembled
+ * them in one place. The client did it inline in two spots with different
+ * arguments, and THE SERVER DID NOT DO IT AT ALL. That is not a tidiness
+ * complaint: it is why movement had no speed check, because the server had no
+ * idea how fast a given character was entitled to be. A rule cannot enforce a
+ * number nobody computes.
+ *
+ * So both sides call this, and neither can drift from the other. It is the same
+ * argument `passivesOf` makes on the server about combat totals: one bag, one
+ * adder, one place a new source has to be taught about.
+ *
+ * Flat first, then the percentage, because that is the order that makes a
+ * future sprint feel the same to everyone — a multiplier on top of your own
+ * boots rewards the boots rather than flattening them.
+ */
+export function moveSpeedFor(opts: {
+  bootsRarity?: ItemRarity | null;
+  agility?: number;
+  /** Flat px/s off equipped gear's secondary rolls. See `gearMoveBonus`. */
+  gearBonus?: number;
+  /** Everything `passivesOf`/`talentPassives` totals: affixes, sets, talents,
+   *  and any status currently running. */
+  passives?: PassiveBonus;
+}): number {
+  const flat =
+    BASE_MOVE_SPEED_PX_PER_SEC +
+    (opts.bootsRarity ? RARITY_MOVE_SPEED_BONUS[opts.bootsRarity] : 0) +
+    (opts.agility ?? 0) * AGILITY_MOVE_STEP_PX_PER_SEC +
+    (opts.gearBonus ?? 0) +
+    (opts.passives?.moveSpeedBonus ?? 0);
+  const percent = opts.passives?.moveSpeedPercent ?? 0;
+  // Never below a crawl: a future snare or a badly rolled debuff should slow a
+  // character, not strand them somewhere unable to walk out of it.
+  return Math.max(MIN_MOVE_SPEED_PX_PER_SEC, flat * (1 + percent / 100));
+}
+
+/** The floor `moveSpeedFor` clamps to. A third of base — slow enough to hurt,
+ *  fast enough to leave. */
+export const MIN_MOVE_SPEED_PX_PER_SEC = Math.round(BASE_MOVE_SPEED_PX_PER_SEC / 3);
 
 export function rarityRank(rarity: ItemRarity): number {
   return RARITY_ORDER.indexOf(rarity);
