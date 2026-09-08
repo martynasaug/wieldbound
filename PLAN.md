@@ -20677,3 +20677,45 @@ paths correctly; only the comment was wrong, and it is now corrected where the
 next person will read it.
 
 Suite 41/41.
+
+**Phase 70 M70.186 — modelled monster balance, then threw the test away and
+kept the report.** The obvious next gap after the weapon and skill passes: are
+the thirteen kinds tuned against the damage a player actually deals?
+
+It was written as a suite test asserting two things — that kinds within a
+difficulty band cost about the same, and that the bands form a ladder — and it
+failed nine ways. Both assertions were wrong, for different reasons, and one of
+them was a design requirement nobody had stated.
+
+FIRST, THE INSTRUMENT. A single level-20 reference character clears bands 1 to 4
+for nought to two health, so the intra-band ratios were dividing rounding noise:
+"an orcbrute costs 11.9x a wolf" on 2 against 0.17. That is the small-baseline
+trap for the third time in this repository, after `fighting.mjs` twice. Fixed by
+giving each ring a character who would plausibly be standing in it.
+
+THEN THE PREMISE, WHICH WAS THE REAL PROBLEM. Monsters are placed by
+`ringPack(prefix, KIND, radius, angle)` — every camp holds ONE kind. A player at
+a given radius therefore CHOOSES which camp to walk into, so an orcbrute camp
+being harder than a wolf camp at the same distance is not an inconsistency, it
+is the choice the layout exists to offer. Enforcing uniformity inside a band
+would have flattened exactly that decision.
+
+I was one step from changing monster stats to satisfy a rule I had invented.
+What stopped it was checking how camps are actually built rather than assuming
+a ring is a mixed encounter.
+
+So it is a report in `tools/soak/` rather than a test in the suite: the table is
+worth having, the assertions were not. What it shows, with its assumptions
+stated in the file — one monster fought alone, gear a real player may not have
+at that level, where real fights are four-at-once camps:
+
+    band 1  slime 2.8s     mushnub 4.6s
+    band 2  spikyblob 1.8  armabee 1.3   goblin 2.3
+    band 3  wolf 0.4       cactoro 0.8   orcbrute 2.3
+    band 4  ghost 1.0      troll 2.4     demon 1.6
+    band 5  golem 3.2      dragon 3.5
+
+Every ring has a soft option and a hard one, which is the shape the layout
+wants. Nothing is unkillable and nothing kills outright. No changes made.
+
+Suite 41/41.
