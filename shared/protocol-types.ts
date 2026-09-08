@@ -3398,9 +3398,14 @@ export function moveSpeedFor(opts: {
     (opts.gearBonus ?? 0) +
     (opts.passives?.moveSpeedBonus ?? 0);
   const percent = opts.passives?.moveSpeedPercent ?? 0;
+  // Rounded, because this is a number the character sheet shows and every flat
+  // source is a whole px/s. A percentage of a flat total is not — 4.5% of 377
+  // is 393.965 — and there is no reason to carry that into either the display
+  // or the server's step budget.
+  //
   // Never below a crawl: a future snare or a badly rolled debuff should slow a
   // character, not strand them somewhere unable to walk out of it.
-  return Math.max(MIN_MOVE_SPEED_PX_PER_SEC, flat * (1 + percent / 100));
+  return Math.max(MIN_MOVE_SPEED_PX_PER_SEC, Math.round(flat * (1 + percent / 100)));
 }
 
 /** The floor `moveSpeedFor` clamps to. A third of base — slow enough to hurt,

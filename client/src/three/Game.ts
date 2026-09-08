@@ -3418,11 +3418,21 @@ export class Game {
   }
 
   private moveSpeed(): number {
+    // GEAR PASSIVES TOO, and leaving them out was a second version of the same
+    // bug. `passives()` is talents and running statuses ONLY — the server's
+    // `passivesOf` adds `gearPassives` on top, which is where affixes and
+    // matched sets live. So `fleet` (+5 a band), `of the Stag` (+4) and the
+    // three sets that grant movement reached nothing on this side at all:
+    // not the sheet, and not the legs.
+    //
+    // Caught by enchanting a pair of boots and watching the character walk at
+    // exactly the same speed afterwards.
+    const eq = equippedBySlot(this.items);
     return moveSpeedFor({
       bootsRarity: this.bootsRarity,
       agility: this.agility,
-      gearBonus: gearMoveBonus(equippedBySlot(this.items)),
-      passives: this.passives(),
+      gearBonus: gearMoveBonus(eq),
+      passives: addPassives(this.passives(), gearPassives(eq)),
     });
   }
 

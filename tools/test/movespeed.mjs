@@ -31,6 +31,7 @@ import {
   MIN_MOVE_SPEED_PX_PER_SEC,
   AGILITY_MOVE_STEP_PX_PER_SEC,
 } from "../../shared/protocol-types.ts";
+import { ITEM_BASES, rollItem, gearPassives } from "../../shared/items.ts";
 
 const NAME = process.argv[2] ?? "Closer";
 const problems = [];
@@ -69,6 +70,37 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   }
   if (both <= percentOnly) {
     fail(`a sprint must reward boots rather than flatten them: ${both} vs ${percentOnly}`);
+  }
+
+  // AND AN ACTUAL ITEM REACHES IT, which is the end of the wiring rather than
+  // the middle. `of Quickening` is the first thing in the game to pay into the
+  // percentage channel, and it has to travel affix -> `gearPassives` ->
+  // `moveSpeedFor` without any of those three knowing about the others. That
+  // is the whole reason affixes, set bonuses and talents share one bag.
+  {
+    const bootsBases = Object.values(ITEM_BASES).filter((b) => b && b.slot === "boots");
+    const base = bootsBases.find((b) => (b.band ?? 1) >= 3);
+    if (!base) {
+      fail("no boots base at band 3 or above, so `of Quickening` can never roll");
+    } else {
+      const boots = rollItem(base, "enchanted", () => 0.5, "quickening");
+      if (!(boots.affixes ?? []).includes("quickening")) {
+        fail(`forging with chosenAffix "quickening" produced ${(boots.affixes ?? []).join(",")}`);
+      }
+      const gp = gearPassives({ boots });
+      if (!gp.moveSpeedPercent) {
+        fail("an item carrying `of Quickening` contributes no moveSpeedPercent");
+      }
+      const bare = moveSpeedFor({ agility: 26, bootsRarity: "enchanted" });
+      const shod = moveSpeedFor({ agility: 26, bootsRarity: "enchanted", passives: gp });
+      if (shod <= bare) {
+        fail(`equipping \`of Quickening\` did not change speed: ${bare} -> ${shod}`);
+      }
+      console.log(
+        `an item reaches it: ${base.id} of Quickening (+${gp.moveSpeedPercent}%) ` +
+          `takes ${bare} px/s to ${shod} px/s`,
+      );
+    }
   }
 
   // And a snare can slow but never strand.

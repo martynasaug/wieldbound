@@ -20392,3 +20392,48 @@ point of the change was that the number is now honest and in one place, not that
 this particular number is right.
 
 Suite 40/40.
+
+**Phase 70 M70.180 — the first thing to pay into the percentage channel, and a
+second copy of the bug it exposed.** `of Quickening`: a boots-and-cape suffix,
+band 3 and up, +1.5% movement a band.
+
+It is a suffix and a percentage on purpose, because the game already has flat
+movement everywhere — `fleet` +5 a band, `of the Stag` +4, three talent lines at
++10/+12/+14 a rank — and a flat number is worth the same to everyone, which
+makes speed a stat you buy rather than one you build. At band 5 `fleet` gives
++25px/s flat: better than Quickening on a 285px/s character, worse on a 597px/s
+one. Two affixes whose ranking depends on the rest of your gear is a decision;
+a strictly-better ladder is not. Band 3 for the reason the resistances give — a
+modifier whose value depends on what else you wear is only a choice for someone
+who already has gear to choose between.
+
+Nothing else needed writing. Etching, reforge survival, tooltips and the
+character sheet all picked it up untouched, because affixes, matched sets and
+talents share one `PassiveBonus` bag and `moveSpeedFor` reads that bag. The type
+checker even named the two display maps that had to learn the new key.
+
+AND ENCHANTING A REAL PAIR OF BOOTS FOUND A SECOND COPY OF M70.178'S BUG. The
+character walked at exactly the same speed afterwards. The client's `passives()`
+is talents and running statuses ONLY; the server's `passivesOf` adds
+`gearPassives` on top, which is where affixes and matched sets live. So every
+movement affix and every set's movement bonus reached NOTHING on the client —
+not the sheet, not the legs — and had not since affixes existed. M70.178 fixed
+one of the two places the client computed speed and left this, because the fix
+was aimed at the arguments rather than at what was in them.
+
+Measured on live characters, walking rather than computing:
+
+    Fighter      345 -> 360 px/s   (its `fleet` affix, finally)
+                 360 -> 376 px/s   (+ the Quickening enchantment, +4.5%)
+    Player3619   527 -> 597 px/s
+    Closer       285 -> 300 px/s
+
+Client and server still agree at 101% across all three, so nothing rubber-bands.
+`movecheck.mjs` is what caught this and what keeps catching it.
+
+Suite 40/40, and the retreat rule still measures — 12 of 76 ticks in reach and
+zero damage — even with the faster character.
+
+The percentage channel now has a live customer, which was the point: a future
+Sprint skill granting `{ moveSpeedPercent: 40 }` needs no plumbing at all,
+because a status already totals into the same bag this affix does.

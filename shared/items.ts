@@ -863,6 +863,22 @@ export const AFFIXES: AffixDef[] = [
   { id: "boar", label: "of the Boar", kind: "suffix", minBand: 2, per: { damagePercent: 1.5, maxHpBonus: 3 } },
   { id: "adder", label: "of the Adder", kind: "suffix", minBand: 2, per: { critChance: 0.9, critDamagePercent: 3 } },
   { id: "stag", label: "of the Stag", kind: "suffix", minBand: 2, per: { moveSpeedBonus: 4, evasion: 0.6 } },
+  // THE ONE PERCENTAGE MOVE-SPEED ROLL, and the first thing to pay into that
+  // channel at all. Everything else that touches movement is FLAT — `fleet`
+  // +5 a band, `stag` +4, the three talent lines +10/+12/+14 a rank — and a
+  // flat number is worth the same to everyone, which makes speed a stat you
+  // buy rather than one you build.
+  //
+  // A percentage is the opposite trade and that is the point of having both.
+  // At band 5 `fleet` gives a flat +25px/s: better than this on a 285px/s
+  // character, worse on a 527px/s one. So the choice between them is a real
+  // one that depends on the rest of your gear, rather than a strictly-better
+  // ladder.
+  //
+  // Band 3 and up for the reason the resistances give below: a modifier whose
+  // value depends on what else you are wearing is only a decision for someone
+  // who already has gear to choose between.
+  { id: "quickening", label: "of Quickening", kind: "suffix", slots: ["boots", "cape"], minBand: 3, per: { moveSpeedPercent: 1.5 } },
   { id: "wellspring", label: "of the Wellspring", kind: "suffix", minBand: 2, per: { maxManaBonus: 7 } },
   { id: "current", label: "of Flowing", kind: "suffix", minBand: 3, per: { manaRegenBonus: 0.7 } },
   { id: "leech", label: "of the Leech", kind: "suffix", minBand: 3, per: { healOnKill: 1.4 } },
