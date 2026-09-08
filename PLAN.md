@@ -20437,3 +20437,53 @@ zero damage — even with the faster character.
 The percentage channel now has a live customer, which was the point: a future
 Sprint skill granting `{ moveSpeedPercent: 40 }` needs no plumbing at all,
 because a status already totals into the same bag this affix does.
+
+**Phase 70 M70.181 — rechecked the whole movement system, and found the third
+copy of the same bug.** Asked for directly, and worth doing: this was built
+across several edits and the same mistake had already been made twice.
+
+The audit was "what else computes a player's speed, and who reads what it
+produces". Three things came out of it.
+
+ONE: `movePxPerSec` was dead. No callers, only comments. Leaving a second
+function that answers "how fast am I" is the exact arrangement that produced
+the first two bugs — each caller imported whichever one it happened to reach for
+and no two agreed — so it is deleted rather than deprecated.
+
+TWO, AND THE REAL ONE: `statusMoveMultiplier` was applied to MONSTERS AND
+NOTHING ELSE. Three kinds inflict a movement debuff on the player — troll
+staggered 0.5, cactoro poisoned 0.65, ghost chilled 0.4 — and none of them
+slowed the player at all. Chilled's own blurb reads "Moving at a fraction of its
+usual pace" while the character ran at full speed, and had done since statuses
+existed. That is the same shape as the two bugs before it: a modifier the
+interface promises and the legs never receive.
+
+It now goes through `moveSpeedFor` as a `statusMultiplier`, kept separate from
+`passives` because it is a different kind of thing — `items.ts` already says so,
+`moveMultiplier` being one of the effects with no `PassiveBonus` vocabulary
+because it multiplies rather than adds. Chilled is 0.4 on whoever wears it,
+which is the point of a snare; good boots should not shrug it off the way they
+would a flat penalty. Applied last, so it bites the speed you actually built.
+
+Verified by standing a character in front of a ghost and walking:
+
+    unslowed   sheet 376 px/s, walked 376
+    chilled    sheet 150 px/s, walked 150     40% of normal, matching 0.4
+
+THREE: the MOVE budget must NOT count statuses, and the first version did. A
+debuff only ever makes a player slower, so counting it in an anti-cheat budget
+can only punish — and it would, at the exact moment a chill expires: the client
+resumes full speed as its status bar clears while a server still holding the
+status budgets 0.4x, and rubber-bands an honest player for the skew between two
+clocks. `moveSpeedOf(id, { withStatuses: false })` for the budget; the slow is
+enforced by the client integrating at the speed the same function reports WITH
+statuses, which it now does.
+
+THE PROBE TOOK THREE CORRECTIONS OF ITS OWN, each recorded in it: a flat 90px
+"in range" that a 150px-keepaway cactoro will never allow; a best-of-four walk
+that took the MAX across six seconds of a 3.5-second debuff and so reported an
+unslowed leg; and a baseline measured while already chilled, which makes the
+ratio 1.00 and the verdict meaningless. Every one of those printed a confident
+wrong answer first.
+
+`tools/soak/slowcheck.mjs` keeps that check. Suite 40/40.

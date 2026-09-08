@@ -404,12 +404,17 @@ function weaponLevelOf(playerId: string, weapon = heldWeapon(playerId)): number 
  * disagree, and a disagreement here is a player being rubber-banded for playing
  * honestly.
  */
-function moveSpeedOf(playerId: string): number {
+function moveSpeedOf(playerId: string, { withStatuses = true } = {}): number {
   return moveSpeedFor({
     bootsRarity: bootsRarities.get(playerId) ?? null,
     agility: (attributes.get(playerId) ?? EMPTY_ATTRS).agility,
     gearBonus: gearMoveBonus(equippedItems.get(playerId)),
     passives: passivesOf(playerId),
+    // The same slow the client applies, from the same helper — but see the
+    // caller. The MOVE budget deliberately asks for this WITHOUT statuses.
+    statusMultiplier: withStatuses
+      ? statusMoveMultiplier(statusesOf(playerId, Date.now()))
+      : 1,
   });
 }
 
@@ -2993,7 +2998,17 @@ wss.on("connection", (socket) => {
       lastMoveAt.set(id, nowMs);
       let credit = Math.min(
         MOVE_CREDIT_CAP_PX,
-        (moveCredit.get(id) ?? 0) + (moveSpeedOf(id) * MOVE_SPEED_TOLERANCE * elapsedMs) / 1000,
+        // WITHOUT STATUSES, ON PURPOSE. A debuff only ever makes a player
+        // slower, so counting it here can only ever punish someone — and it
+        // would, at the exact moment a chill expires: the client resumes full
+        // speed the instant its status bar clears, while a server still holding
+        // the status budgets 0.4x and rubber-bands an honest player for the
+        // skew between the two clocks. The budget's job is to make a teleport
+        // impossible, not to enforce the slow; the slow is enforced by the
+        // client integrating at the speed `moveSpeedOf` reports WITH statuses,
+        // which it does.
+        (moveCredit.get(id) ?? 0) +
+          (moveSpeedOf(id, { withStatuses: false }) * MOVE_SPEED_TOLERANCE * elapsedMs) / 1000,
       );
       let askedX = clamp(msg.payload.x, 0, WORLD_WIDTH);
       let askedY = clamp(msg.payload.y, 0, WORLD_HEIGHT);

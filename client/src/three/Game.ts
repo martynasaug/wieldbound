@@ -46,6 +46,7 @@ import {
   gearEvasion,
   gearMoveBonus,
   moveSpeedFor,
+  statusMoveMultiplier,
   PLAYER_BODY_RADIUS_PX,
   playerAccuracy,
   playerAttackIntervalMs,
@@ -3433,6 +3434,12 @@ export class Game {
       agility: this.agility,
       gearBonus: gearMoveBonus(eq),
       passives: addPassives(this.passives(), gearPassives(eq)),
+      // Chilled, poisoned and staggered all carry a `moveMultiplier`, and until
+      // now NOTHING applied it to the player. `statusMoveMultiplier` was wired
+      // to monsters only, so a ghost's chill said "moving at a fraction of its
+      // usual pace" in the tooltip while the player ran at full speed. Three
+      // monsters inflict one: troll 0.5, cactoro 0.65, ghost 0.4.
+      statusMultiplier: statusMoveMultiplier(this.statusBar.active),
     });
   }
 

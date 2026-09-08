@@ -103,6 +103,33 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     }
   }
 
+  // A SLOW MULTIPLIES, WHERE AN AFFIX ADDS, and it has to be last.
+  //
+  // `moveMultiplier` is one of the status effects that deliberately has no
+  // `PassiveBonus` vocabulary, because chilled is 0.4 on whoever wears it —
+  // that is what a snare is for, and good boots should not shrug it off the way
+  // they would a flat penalty. It was applied to MONSTERS ONLY until M70.181, so
+  // three kinds inflicted a slow on the player that did nothing at all: troll
+  // 0.5, cactoro 0.65, ghost 0.4, while chilled's own tooltip read "moving at a
+  // fraction of its usual pace".
+  {
+    const fast = moveSpeedFor({ gearBonus: 100, passives: { moveSpeedPercent: 25 } });
+    const chilled = moveSpeedFor({
+      gearBonus: 100,
+      passives: { moveSpeedPercent: 25 },
+      statusMultiplier: 0.4,
+    });
+    if (chilled !== Math.round(fast * 0.4)) {
+      fail(`a 0.4x slow on ${fast} gave ${chilled}, expected ${Math.round(fast * 0.4)}`);
+    }
+    // Last, so it bites the speed you actually had rather than the base.
+    const slowBase = moveSpeedFor({ statusMultiplier: 0.4 });
+    if (chilled <= slowBase) {
+      fail(`a slow must scale the speed you built, not flatten it: ${chilled} vs ${slowBase}`);
+    }
+    console.log(`a slow multiplies last: ${fast} px/s chilled to ${chilled} px/s (0.4x)`);
+  }
+
   // And a snare can slow but never strand.
   const snared = moveSpeedFor({ passives: { moveSpeedPercent: -95 } });
   if (snared !== MIN_MOVE_SPEED_PX_PER_SEC) {

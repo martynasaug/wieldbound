@@ -3353,14 +3353,12 @@ export const INVENTORY_CAP = 30;
 
 export const BASE_MOVE_SPEED_PX_PER_SEC = 220;
 
-export function movePxPerSec(bootsRarity: ItemRarity | null, agility = 0, bootsBonusSpeed = 0): number {
-  return (
-    BASE_MOVE_SPEED_PX_PER_SEC +
-    (bootsRarity ? RARITY_MOVE_SPEED_BONUS[bootsRarity] : 0) +
-    agility * AGILITY_MOVE_STEP_PX_PER_SEC +
-    bootsBonusSpeed
-  );
-}
+// `movePxPerSec` used to live here: base + boots rarity + agility + one flat
+// bonus, with no way to express an affix, a set, a talent or a snare. It is
+// gone rather than deprecated, and deliberately so — leaving a second function
+// that answers "how fast am I" is precisely the arrangement that produced three
+// separate bugs in a row, because each caller picked whichever one it happened
+// to import and no two agreed. There is one answer now and it is below.
 
 /**
  * How fast this character moves, from every source, in px/s.
@@ -3390,6 +3388,20 @@ export function moveSpeedFor(opts: {
   /** Everything `passivesOf`/`talentPassives` totals: affixes, sets, talents,
    *  and any status currently running. */
   passives?: PassiveBonus;
+  /**
+   * Statuses that scale movement outright, from `statusMoveMultiplier`.
+   *
+   * SEPARATE FROM `passives` BECAUSE IT IS A DIFFERENT KIND OF THING, and the
+   * distinction is `items.ts`'s, not mine: `moveMultiplier` is one of the
+   * status effects that deliberately has no `PassiveBonus` vocabulary, because
+   * it multiplies rather than adds. Chilled is 0.4 whoever wears it, which is
+   * the point of a snare — it should not be shrugged off by good boots the way
+   * a flat penalty would be.
+   *
+   * Applied last, after the flat sources and the percentage, so a slow bites
+   * the speed you actually had.
+   */
+  statusMultiplier?: number;
 }): number {
   const flat =
     BASE_MOVE_SPEED_PX_PER_SEC +
@@ -3403,9 +3415,12 @@ export function moveSpeedFor(opts: {
   // is 393.965 — and there is no reason to carry that into either the display
   // or the server's step budget.
   //
-  // Never below a crawl: a future snare or a badly rolled debuff should slow a
+  // Never below a crawl: a snare or a badly rolled debuff should slow a
   // character, not strand them somewhere unable to walk out of it.
-  return Math.max(MIN_MOVE_SPEED_PX_PER_SEC, Math.round(flat * (1 + percent / 100)));
+  return Math.max(
+    MIN_MOVE_SPEED_PX_PER_SEC,
+    Math.round(flat * (1 + percent / 100) * (opts.statusMultiplier ?? 1)),
+  );
 }
 
 /** The floor `moveSpeedFor` clamps to. A third of base — slow enough to hurt,
