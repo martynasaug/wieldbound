@@ -1570,6 +1570,18 @@ export class Game {
           // seen. That is exactly what came back the moment the driven test
           // started moving continuously instead of standing still.
           actor.root.visible = true;
+          // AND PARKED FAR BELOW THE GROUND. It has to stay VISIBLE — an
+          // object three skips is an object that never creates its program,
+          // which is the whole point of these — but "visible" and "where the
+          // player can see it" are separable, and only the first is needed.
+          // At the origin these fifteen rigs stand in a heap in the middle of
+          // the world; that is invisible today only because the loading screen
+          // is still up when they are hidden again, which stops being true the
+          // moment the tail warm runs after the first frame (`?deferwarm=1`).
+          // The warm pass turns frustum culling off, so distance costs it
+          // nothing, and a program depends on the material and the light count
+          // rather than on where the thing is standing.
+          actor.root.position.set(0, -1000, 0);
           this.world.scene.add(actor.root);
           await this.world.warmUp(actor.root);
           this.monsterShaderKeepAlive.push(actor.root);
@@ -1610,6 +1622,50 @@ export class Game {
     this.projectiles.prewarm(this.world);
     this.effects.prewarm(this.world);
     this.drops.prewarm(this.world);
+    // THE TAIL, AND WHETHER THE PLAYER WAITS FOR IT.
+    //
+    // These two phases are ~4.5s of a ~10s cold load and they build 86 of the
+    // game's 129 programs — the see-through variant of every tree and wall,
+    // every monster, every effect. None of it is on screen when the loading
+    // screen lifts. It is compiled first because a shader compiled mid-fight
+    // is a freeze exactly when a monster appears, which is worse than a wait
+    // where a wait is expected; that lesson is written all over this file and
+    // is not being thrown away on an argument.
+    //
+    // But it is the half of the load that SCALES. Everything above is fixed
+    // cost; this grows with every monster, weapon and effect added to the
+    // game, so a much larger game means a proportionally longer loading
+    // screen. `?deferwarm=1` opens the door first and compiles the tail behind
+    // it, so both arms can be measured from one build — see
+    // `tools/soak/deferwarm.mjs`. Default off until the numbers say otherwise:
+    // the freeze it risks is the one this file spent a dozen milestones
+    // removing.
+    if (new URLSearchParams(location.search).get("deferwarm") === "1") {
+      // Announced, so a harness can prove the branch was taken rather than
+      // infer it from a timing that looks about right.
+      (window as unknown as Record<string, unknown>).__wieldboundDeferredWarm = true;
+      this.loop();
+      // AFTER A REAL YIELD, not just unawaited. `void this.warmTail()` still
+      // runs the function body synchronously as far as its first await, and
+      // that reaches `renderer.compile()`, which creates every program on the
+      // main thread before returning a promise. So the door did not open one
+      // millisecond earlier: 9.9s deferred against 10.6s, with the branch
+      // provably taken and every tail phase already finished by the time the
+      // loading screen came down. Two frames of daylight first.
+      requestAnimationFrame(() => requestAnimationFrame(() => void this.warmTail()));
+      return;
+    }
+    await this.warmTail();
+    this.loop();
+  }
+
+  /**
+   * The programs nothing on screen needs yet.
+   *
+   * Split out of `start` so it can run either before the first frame or after
+   * it without the two paths drifting apart.
+   */
+  private async warmTail(): Promise<void> {
     await this.warmFadedOccluders();
     this.loadMark("warmFadedOccluders");
     this.effects.warmByPlaying();
@@ -1618,8 +1674,6 @@ export class Game {
     this.loadMark("warmWholeScene");
     // Out of sight again, but never disposed — see `monsterShaderKeepAlive`.
     for (const root of this.monsterShaderKeepAlive) root.visible = false;
-
-    this.loop();
   }
 
   // ------------------------------------------------------------------ socket

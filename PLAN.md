@@ -21016,3 +21016,54 @@ let in, so time-to-play scales with total content rather than with what is on
 screen — is next, and it has to be measured rather than argued: the tail phases
 exist because a shader compiled mid-fight is a freeze exactly when a monster
 appears, and that was hard-won.
+
+**Phase 70 M70.194 — opening the door early does not work, and the reason is
+the design constraint for what will.** The other half of the scaling problem:
+the loading screen compiles all 129 programs before the player is let in, and
+86 of them are for things not on screen. That tail is ~4.5s of a ~10s load and
+it GROWS with the game, so a much larger game means a proportionally longer
+wait. `?deferwarm=1` starts the loop and compiles the tail behind it.
+
+It buys nothing. Measured, with the branch provably taken and the URL printed:
+
+    current    10.6s to playable   p50 16.7ms  max 17ms   0 hitches
+    deferred   10.0s to playable   p50 16.7ms  max 17ms   0 hitches
+
+`renderer.compile()` is SYNCHRONOUS. `void this.warmTail()` runs the function
+body as far as its first await, and that await is on the far side of program
+creation, so the whole tail executes before `start()` resolves. Yielding two
+animation frames first does not help either: the work then blocks the loading
+screen's OWN removal timers — `finish()` fades on a 160ms and a 500ms timeout,
+and a main thread busy for four seconds serves neither. The screen stays up for
+exactly as long as it did before, which is why both arms agree to within noise.
+
+SO THE WORK CANNOT BE MOVED, ONLY DIVIDED. And the constraint that makes that
+harder than it sounds is that both tail phases MUTATE THE LIVE SCENE to do their
+job — `warmFadedOccluders` turns every tree and wall transparent,
+`warmWholeScene` makes hidden things visible, turns off frustum culling and
+drops instance counts to one. That is safe today only because nothing else
+draws while it happens. Chunk it across frames naively and the player watches
+the town turn to glass and the stars come out at noon.
+
+The shape that works, for whoever builds it: mutate, call `renderer.compile`,
+restore — all inside one synchronous span, so the render loop never observes a
+mutated scene — and yield only BETWEEN chunks, with the readiness poll awaited
+after the restore rather than before it. Cost per chunk is then one program's
+worth of main-thread work, and the queue can be ordered so the things most
+likely to be seen next are compiled first.
+
+Three earlier attempts at per-subset compiling are recorded above
+`warmFadedOccluders` as failures, and they are not evidence against this one:
+all three were trying to reduce TOTAL load time and were slower. Being slower
+in total is acceptable here and was not acceptable there — the goal is a load
+that does not grow with the game, not a load that is shorter.
+
+The measuring apparatus is `tools/soak/deferwarm.mjs`, which reports
+time-to-playable and frame quality split into the first ten seconds of play and
+the rest, because a deferred compile would land at the start. It prints the URL
+and the phases that finished before the door opened, on every run: the first
+version of it passed `--defer` to its own heading and never to the page, and
+produced a tidy null result from two identical arms.
+
+The flag stays, defaulted off, because it is the switch the chunked version
+will turn on.
