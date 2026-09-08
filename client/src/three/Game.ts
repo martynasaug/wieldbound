@@ -1267,6 +1267,12 @@ export class Game {
     // screenshot alone, and this is how the "keys stick after a panel steals
     // focus" bug was found.
     (window as unknown as Record<string, unknown>).__wieldbound = this;
+    // The profiler beside it, for the same reason and one it earned: it already
+    // times every model parse as `loaderParse:<name>` and every dress pass, and
+    // none of that was reachable from outside the module. The load's long frames
+    // were being chased by wrapping `renderer.render` from a probe when the
+    // measurement already existed in here.
+    (window as unknown as Record<string, unknown>).__wieldboundProfiler = profiler;
     // The rule tables alongside the live state, so a console session can ask
     // "should these two be touching?" without guessing at the numbers. Body
     // radii in particular are invisible — there is nothing on screen that

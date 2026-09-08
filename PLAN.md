@@ -20873,3 +20873,49 @@ distinct materials — the art decision that stays with the user — plus ~1.5s 
 model parsing in the asset phases, which is inside the loaders.
 
 Suite 41/41.
+
+**Phase 70 M70.191 — a load smoothing idea, measured and thrown away.** After
+M70.190 removed 350ms from a build, the biggest remaining load frame was 817ms
+at +1.6s of every run. This chased it and got it wrong twice before getting a
+useful answer, which is that there was nothing here to fix.
+
+FIRST WRONG TURN: the profiler's own numbers. Exposing it as
+`__wieldboundProfiler` — it already times every model as `loaderParse:<name>`
+and nothing outside the module could read it — reported 92 parses totalling
+36,051ms inside a ten-second load, every one about 1,040ms. That is impossible,
+and the uniformity is the tell: `GLTFLoader.parse` hands back through a callback
+and resolves textures asynchronously, so `begin`/`end` around it measures an
+ELAPSED SPAN and the spans all overlap. It is not 36 seconds of work. The FBX
+path is the honest one — `fbxLoader.parse` returns synchronously — and it totals
+573ms of real blocking, 477ms of that in the five character rigs at 115, 106,
+95, 83 and 78ms.
+
+SECOND WRONG TURN, AND THE ONE WORTH RECORDING. From "five rigs at 477ms" and
+"localhost resolves their fetches within milliseconds of each other" I concluded
+they must all parse in one frame, and built a per-frame parse budget to spread
+them. It typechecked, it was well argued, and it did nothing:
+
+    budget off   assets-phase blocking 1417ms / 1733ms   worst frame 250ms / 483ms
+    budget 60ms  assets-phase blocking 2200ms / 1750ms   worst frame 817ms / 633ms
+
+No improvement, and the 817ms frame was untouched — because it is at +1.6s,
+which is inside the `start` phase, BEFORE any model is parsed. I had assumed the
+frames landed together without ever checking that they did; they were already
+spread across separate tasks. Reverted rather than shipped: an unproven
+optimisation is a permanent cost against a benefit nobody measured.
+
+WHAT IS ACTUALLY LEFT, now attributed rather than guessed:
+
+    +1.6s  817ms   the `start` phase — world generation, before models load
+    +5.8s  733ms   warm-up, of which a 320ms render finalising six new programs
+    +9.9s  483ms   warm-up, a 352ms render finalising three more
+
+The render half is `onFirstUse`, one synchronous driver query per program, which
+scales with the number of distinct materials — still the art decision. The
+`start` half is world generation and has never been broken down; that is the
+next honest lead, and it is a bigger piece of work than anything tried here.
+
+Kept: `__wieldboundProfiler`, which is how the 36-second impossibility was
+spotted and is the only way to read those sections from outside.
+
+Suite 41/41.
