@@ -20719,3 +20719,39 @@ Every ring has a soft option and a hard one, which is the shape the layout
 wants. Nothing is unkillable and nothing kills outright. No changes made.
 
 Suite 41/41.
+
+**Phase 70 M70.187 — fought whole camps, which is the unit combat is actually
+in.** Everything before this measured one target at a time. A camp is four:
+`ringPack` places them on `DIAMOND_OFFSETS`, 70px from the centre, so the pack
+is ~140px across against an aggro range of 260. Three things follow that
+single-target work cannot see, and all three are falsifiable.
+
+  1. Standing in the middle should bring the pack, since every member is inside
+     aggro range of the centre.
+  2. An area skill should catch it. Cleave's radius is 95 against members at 70.
+  3. It should be survivable — four at once is where the health actually goes,
+     and every play session so far has ended in the low tens against a full bar
+     without anything measuring why.
+
+ALL THREE HOLD. A troll camp: both survivors in the fight, cleave reached 3 of
+the 3 inside its radius, camp cleared, 60% of the health bar spent. An orcbrute
+camp: same shape, 57%. Zero console errors. That last number is the useful one —
+a band-3/4 camp costing well over half a bar is a real fight, and it is the
+first time anything here has measured the cost of the encounter rather than of
+one monster.
+
+THE HARNESS WAS WRONG THREE TIMES, in the way these always are:
+
+  - It picked the NEAREST camp and found four slimes at 15hp, which the
+    character deleted during the aggro measurement. "0 of 4 closed on us (0
+    still alive)" is what a pack that is already dead looks like. It now picks
+    the toughest camp in sight.
+  - It counted engagement as "distance fell by 20px" and reported 1 of 3 trolls
+    engaging — the other two were already standing in contact and could not
+    close any further. A pack on top of you is as engaged as it gets.
+  - It counted how many were inside cleave's radius AFTER the cast, so a cleave
+    that killed everything it touched reported "0 inside its radius", which
+    reads as a skill that hit nothing.
+
+None of the three was a game bug and each looked like one. No changes to the
+game. Suite 41/41.
