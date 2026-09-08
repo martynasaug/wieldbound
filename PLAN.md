@@ -20824,3 +20824,52 @@ labelled, so a spike can be placed rather than guessed at. "A frame nobody can
 locate in time" is how the last one got explained away.
 
 No changes to the game. Suite 41/41.
+
+**Phase 70 M70.190 — chased the load's long frames to their causes; one of them
+had a switch.** Gameplay is smooth (M70.188: 14,768 frames of pack combat, max
+18ms). The load is not, and that is the remaining rough edge.
+
+ATTRIBUTED PROPERLY THIS TIME, by elimination rather than by guessing:
+
+  - `renderer.compile()` is NOT the block. Wrapped and timed: every call is
+    0-97ms, and the 800ms frames merely overlap 2ms ones.
+  - The renders around them ARE. Wrapping `renderer.render` and recording the
+    program count either side: +5.1s cost 320ms while programs went 42 -> 48,
+    and +9.8s cost 352ms going 125 -> 128. That is 50-120ms PER NEWLY DRAWN
+    PROGRAM.
+  - The rest — 800ms at +1.7s, and three more between +0.8s and +2.7s — have no
+    render inside them at all. They are the asset phases parsing models.
+
+The per-program cost is `onFirstUse`, and reading three's source rather than
+assuming showed it fetches `getProgramInfoLog`, `getShaderInfoLog` and
+`LINK_STATUS` for each program — but only inside
+`if (renderer.debug.checkShaderErrors)`, which three defaults to TRUE and this
+project had never turned off.
+
+THE NOTE IN `World.ts` ALREADY NAMED IT AND WAS TOO OPTIMISTIC. It says that
+after parallel compile "every program it touches is already linked and its
+first-use query returns immediately". The program IS linked; the queries are not
+free. A render of six new programs costs 320ms.
+
+A/B, two runs each:
+
+    on   load 11.2s / 11.1s   7 slow renders totalling 1030ms / 1070ms   worst 783 / 817ms
+    off  load 10.8s / 10.6s   4 slow renders totalling  759ms /  655ms   worst 750 / 617ms
+
+About 350ms of blocked main thread and three of the seven long frames. Switched
+off in a BUILD only, via `import.meta.env.DEV` — with it off a shader that fails
+to link says nothing and its geometry silently disappears, which is worth 350ms
+while shaders are being changed and not worth it afterwards. The project had no
+Vite ambient types; `client/src/vite-env.d.ts` adds them.
+
+HONEST ABOUT WHO BENEFITS: the dev server keeps the diagnostics, so this changes
+nothing for someone running `npm run dev` — it is a shipping win. Confirmed
+either way: dev reports `checkShaderErrors: true`, 130 programs, 359 draw calls,
+zero console errors, and `vite build` succeeds.
+
+What remains after it is ~650ms of first-use across the load, which is one
+synchronous driver query per program and therefore scales with the number of
+distinct materials — the art decision that stays with the user — plus ~1.5s of
+model parsing in the asset phases, which is inside the loaders.
+
+Suite 41/41.

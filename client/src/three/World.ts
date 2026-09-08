@@ -295,6 +295,29 @@ export class World {
       // every frame, for a feature that was never used.
       stencil: false,
     });
+    // SHADER ERROR CHECKING COSTS A THIRD OF THE LOAD'S BLOCKING TIME.
+    //
+    // three defaults `checkShaderErrors` to true, and the note further down
+    // about the 22.7-second block already names it in passing without ever
+    // turning it off. It matters more than that note assumed: `onFirstUse`
+    // fetches `getProgramInfoLog`, `getShaderInfoLog` and `LINK_STATUS` for
+    // every program the first time it is drawn, and each is a synchronous
+    // round-trip that makes the driver finish what it is doing. Parallel
+    // compile means the program is already linked; it does not make the
+    // queries free, and the same note claims first use "returns immediately"
+    // when measurement says a render of six new programs costs 320ms.
+    //
+    // Measured, two runs each, on this machine:
+    //
+    //     on   load 11.2s / 11.1s   7 slow renders totalling 1030ms / 1070ms
+    //     off  load 10.8s / 10.6s   4 slow renders totalling  759ms /  655ms
+    //
+    // So it is worth about 350ms of blocked main thread and three of the seven
+    // long frames of a load. It is NOT free to switch off, which is why this is
+    // tied to the build rather than simply removed: with it off a shader that
+    // fails to link says nothing at all and the geometry silently disappears.
+    // Development keeps the diagnostics; a built game keeps the time.
+    this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     // Pixel ratio, shadow map size and shadow filter are all set by
     // `applyQuality` at the end of this constructor. They used to be three
