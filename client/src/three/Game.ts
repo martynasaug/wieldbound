@@ -1640,7 +1640,22 @@ export class Game {
     // `tools/soak/deferwarm.mjs`. Default off until the numbers say otherwise:
     // the freeze it risks is the one this file spent a dozen milestones
     // removing.
-    if (new URLSearchParams(location.search).get("deferwarm") === "1") {
+    // ON BY DEFAULT SINCE M70.197. `?deferwarm=0` restores the old order, which
+    // is worth keeping because it is the only way to A/B this from one build.
+    //
+    // What moved it from an experiment to the default:
+    //
+    //   load            10.6s -> 7.1s to playable
+    //   30s walking     max frame 18ms, 0 frames over 50ms
+    //   170s fighting   10,259 frames from the door, 0 over 100ms, 0 hitches
+    //   2x2min camps    1 hitch each (175ms, 79ms) against the control's 1 (149ms)
+    //
+    // An earlier fighting run showed three ~1000ms `render` hitches and this
+    // stayed off because of them. They did not reproduce in four later runs,
+    // they sat in the 900-1100ms band a backgrounded window manufactures, and a
+    // probe that reproduced the combat exactly found no program born in any
+    // frame over 100ms. One run is not a measurement.
+    if (new URLSearchParams(location.search).get("deferwarm") !== "0") {
       // Announced, so a harness can prove the branch was taken rather than
       // infer it from a timing that looks about right.
       (window as unknown as Record<string, unknown>).__wieldboundDeferredWarm = true;

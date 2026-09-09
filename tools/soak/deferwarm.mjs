@@ -33,7 +33,7 @@ const DEFER = process.argv.includes("--defer");
 // dynamic import. Static imports are hoisted above everything and would run
 // first no matter where the assignment was written.
 process.env.WB_CLIENT_URL =
-  (process.env.WB_CLIENT_URL ?? "http://localhost:5173") + (DEFER ? "/?deferwarm=1" : "");
+  (process.env.WB_CLIENT_URL ?? "http://localhost:5173") + (DEFER ? "/?deferwarm=1" : "/?deferwarm=0");
 const { open, login, step } = await import("./driver.mjs");
 const PLAY_MS = 30000;
 
@@ -114,7 +114,9 @@ const late = frames.filter((f) => f.at >= playFrom + 10000).map((f) => f.dt);
 const worstOf = (xs) => (xs.length ? Math.max(...xs) : 0);
 const overOf = (xs) => xs.filter((f) => f > 50).length;
 
-console.log(`\n=== ${DEFER ? "DEFERRED (door opened early)" : "CURRENT (everything warmed first)"} ===`);
+console.log(
+  `\n=== ${DEFER ? "deferwarm=1 — door opened early (THE DEFAULT since M70.197)" : "deferwarm=0 — everything warmed first (the old order)"} ===`,
+);
 console.log(`time to playable      ${(loadMs / 1000).toFixed(1)}s`);
 if (!sorted.length) {
   console.log("no frames after the loading screen — nothing to report");

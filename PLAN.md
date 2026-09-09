@@ -21177,3 +21177,59 @@ explanation, and a body that no longer fits read as a path that no longer
 exists. Its own comment records the same false failure once before.
 
 Suite 41/41. Default path unchanged.
+
+**Phase 70 M70.197 — the demand warm is the default; the hitch that stopped it
+was never there.** M70.196 held the flag off because a three-minute fighting
+session showed four hitches against the control's one, three of them near
+1000ms as monster kinds first appeared, and filed a hypothesis: the shadow-depth
+program, which `frustumCulled` might not be putting inside the sun's shadow
+frustum during the warm.
+
+The hypothesis was testable, so it was tested rather than acted on.
+`tools/soak/latecompile.mjs` watches `renderer.info.programs` grow frame by
+frame, so a new program carries the length of the frame it was born in — a
+program created inside a 1000ms frame is the one doing the damage and its cache
+key says what it is. Its first run reported "nothing compiled late" from a
+session that walked around unarmed and never stuttered, which is worth nothing;
+it now equips the sword, learns both area talents and casts into whatever is
+nearest, and it PRINTS WHETHER THE RUN STUTTERED AT ALL before saying anything
+about causes.
+
+Then a second instrument error, and a more interesting one. Both this probe and
+`campframes.mjs` stamped their clock AFTER equipping gear and learning talents,
+which takes a few seconds — so the window just after the loading screen lifts,
+where the deferred tail is still warming and where every one of those hitches
+actually landed, was being filed as LOADING and excluded from the in-play
+numbers. Measured from the DOOR instead: 10,259 frames, none over 100ms, no
+hitches, and 21 programs created after the door, every one of them in a frame
+under 100ms.
+
+So the three hitches were re-run for. They did not come back:
+
+    control (deferwarm=0)   15 fights, 834 casts   1 hitch  149ms
+    demand,  run 1           9 fights, 494 casts   1 hitch  175ms
+    demand,  run 2           8 fights, 442 casts   1 hitch   79ms
+
+All three sat in the 900-1100ms band a backgrounded window manufactures, which
+`frames.mjs` has warned about since M70.66 and which this file has been caught by
+before. One run is not a measurement, and a hypothesis explaining a
+non-reproducible fault would have sent the next session hunting a depth program
+that was never late.
+
+DEFAULT ON, with `?deferwarm=0` kept because it is the only way to A/B this
+from one build:
+
+    deferwarm=0   10.1s to playable   max 18ms   0 frames >50ms
+    deferwarm=1    7.5s to playable   max 17ms   0 frames >50ms
+
+Verified on a plain URL, which is what a player opens: demand path taken, 7.4s,
+scene 128/157 visible — identical to the control — 0 console errors, and the
+screenshot shows the world, the stars and a minimap with its river and road.
+
+Two and a half to three and a half seconds off every load, and the part that was
+removed is the part that GREW with the game. What remains under the loading
+screen is world construction, assets and one scene compile; monsters, effects
+and faded occluders now warm as they are needed. Adding a hundred monster kinds
+no longer adds a hundred monsters' worth of loading screen.
+
+Suite 41/41.
