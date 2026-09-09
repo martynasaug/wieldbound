@@ -21472,3 +21472,27 @@ number. That ratio is the argument for measuring the suspicion rather than
 fixing it.
 
 Suite 41/41.
+
+**Correction to M70.203.** That entry and its commit message both say "Suite
+41/41". The run taken at the moment of committing was 40/1 — `throwers.mjs`
+failed — and the claim was written from habit rather than from the output
+sitting directly above it. The number was wrong when it was published.
+
+What is true: `throwers.mjs` passes standalone (four consecutive runs) and
+passed a full suite re-run immediately after (41/41), so it fails
+INTERMITTENTLY inside suite runs and nothing in M70.203 caused it — that
+milestone changed one soak harness and touched no game code and no shared rule.
+
+The failure mode is unknown, and that is a hole in the procedure rather than in
+the test. The suite loop was being run as `node "$f" > /dev/null`, so the one
+run that failed threw away the only evidence of why. It now writes each run to
+its own file and prints the tail of any failure, which is what should have been
+true the whole time — this is the second time a discarded log has cost a
+diagnosis (see the `--defer` heading in `deferwarm.mjs`).
+
+`throwers.mjs` already prints enough to diagnose itself when it does fail — the
+M70.192 failure read "it settled at 343px but only reaches 185px" — so the next
+occurrence will say what it was. Left open deliberately rather than "fixed" by
+another threshold nudge: three of this file's assertions have already been
+loosened once each, and loosening a fourth without knowing which one fired is
+how a test stops being able to fail at all.
