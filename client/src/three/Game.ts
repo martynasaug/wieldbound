@@ -1652,7 +1652,7 @@ export class Game {
       // millisecond earlier: 9.9s deferred against 10.6s, with the branch
       // provably taken and every tail phase already finished by the time the
       // loading screen came down. Two frames of daylight first.
-      requestAnimationFrame(() => requestAnimationFrame(() => void this.warmTail()));
+      requestAnimationFrame(() => requestAnimationFrame(() => void this.warmTail({ chunked: true })));
       return;
     }
     await this.warmTail();
@@ -1665,11 +1665,27 @@ export class Game {
    * Split out of `start` so it can run either before the first frame or after
    * it without the two paths drifting apart.
    */
-  private async warmTail(): Promise<void> {
-    await this.warmFadedOccluders();
+  private async warmTail({ chunked = false } = {}): Promise<void> {
+    if (chunked) await this.warmFadedOccludersChunked();
+    else await this.warmFadedOccluders();
     this.loadMark("warmFadedOccluders");
     this.effects.warmByPlaying();
     this.skillFx.warmByPlaying();
+    // NOT CHUNKED, AND IT WAS TRIED. This phase ends in one render of
+    // everything, which is where fifty-one programs have their first use
+    // forced — about two seconds. Sliced by top-level scene child it got worse,
+    // not better: the scene has 166 of them, so that is 166 full renders each
+    // with its own shadow pass, and the slices are wildly uneven — one group is
+    // 385 meshes and, drawn with frustum culling off, took 5.4 SECONDS on its
+    // own. Measured: max frame 5467ms against the 2017ms it was meant to fix.
+    //
+    // The fault is the approach rather than the tuning. Per-slice rendering
+    // pays a fixed cost per slice and the programs still cost what they cost,
+    // so dividing by N multiplies the overhead by N. What would actually work
+    // is warming by DEMAND with lookahead — a monster's programs built when it
+    // spawns nearby rather than when it is first drawn — which makes the cost
+    // proportional to what is around the player instead of to everything that
+    // exists. That is the real shape of the fix and a bigger piece of work.
     await this.world.warmWholeScene();
     this.loadMark("warmWholeScene");
     // Out of sight again, but never disposed — see `monsterShaderKeepAlive`.
@@ -5168,6 +5184,68 @@ export class Game {
     for (const [m, transparent, depthWrite] of was) {
       m.transparent = transparent;
       m.depthWrite = depthWrite;
+    }
+  }
+
+  /**
+   * The same programs, built a piece at a time with the render loop running.
+   *
+   * WHY THIS IS NOT JUST `warmFadedOccluders` WITH AWAITS IN IT. The version
+   * above turns every tree, wall and resource node in the world transparent,
+   * warms, and puts them back — which is invisible only because it runs under
+   * the loading screen with nothing else drawing. Sprinkle yields through it
+   * once the game is live and the player watches the town turn to glass.
+   *
+   * So the mutation is per material set and never outlives a synchronous span:
+   * flip this object's materials, compile, flip them back, and only THEN yield.
+   * `compileNow` is the blocking half and `awaitReady` is the driver finishing
+   * its links, which is safe to wait on with the world already restored — see
+   * `World.compileNow`. No frame can observe a transparent town because no
+   * frame runs between the flip and the flip back.
+   *
+   * MEASURED IN TOTAL COST, THIS IS WORSE, and that is the trade being made
+   * deliberately. Three earlier attempts at compiling subsets are recorded
+   * above as failures, all of them slower than one whole-scene pass — but they
+   * were trying to shorten the load, and this is trying to remove it from the
+   * player's wait entirely. Slower in total is acceptable when none of it is
+   * spent on a loading screen.
+   */
+  private async warmFadedOccludersChunked(): Promise<void> {
+    const roots: THREE.Object3D[] = [
+      ...this.world.decor.children,
+      ...this.town.buildings,
+      ...this.nodes.values(),
+    ];
+    for (const root of roots) {
+      const mats = new Set<THREE.Material>();
+      root.traverse((c) => {
+        const mesh = c as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          if (m) mats.add(m);
+        }
+      });
+      if (mats.size === 0) continue;
+
+      const was: [THREE.Material, boolean, boolean][] = [];
+      let pending: Set<THREE.Material>;
+      for (const m of mats) {
+        was.push([m, m.transparent, m.depthWrite]);
+        m.transparent = true;
+        m.depthWrite = false;
+      }
+      try {
+        pending = this.world.compileNow(root);
+      } finally {
+        // IN A `finally`, because a throw here would leave the world made of
+        // glass permanently rather than for one frame.
+        for (const [m, transparent, depthWrite] of was) {
+          m.transparent = transparent;
+          m.depthWrite = depthWrite;
+        }
+      }
+      await this.world.awaitReady(pending);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
     }
   }
 

@@ -21067,3 +21067,51 @@ produced a tidy null result from two identical arms.
 
 The flag stays, defaulted off, because it is the switch the chunked version
 will turn on.
+
+**Phase 70 M70.195 — the chunking technique works; slicing a render does not.**
+M70.194 established that the warm tail cannot be moved, only divided, and that
+dividing it is hard because both phases mutate the live scene. The rule it
+proposed — mutate, compile, restore inside ONE synchronous span, and yield only
+between chunks, with the driver's link poll awaited after the restore — is now
+built, and it does exactly what it was supposed to.
+
+`World.compileSafely` is split into `compileNow` (the blocking half) and
+`awaitReady` (the driver finishing), which is what makes the rule expressible at
+all. `warmFadedOccludersChunked` then walks the fadeable objects one at a time,
+flipping only that object's materials transparent and back before it yields. No
+frame can observe a transparent town because no frame runs inside the span.
+
+    current                        10.6s to playable   max 17ms    0 hitches
+    deferred, faded pass chunked    7.9s to playable   max 2017ms  1 hitch
+
+Two point seven seconds off the wait and the chunked phase produced no hitch of
+its own. The 2017ms that remains is `warmWholeScene`, which was still whole.
+
+SLICING THAT ONE MADE IT WORSE, and the way it failed is the useful part. The
+phase ends in a single render of everything, which is where fifty-one programs
+have their first use forced. Sliced by top-level scene child that becomes 166
+renders, each with its own shadow pass, over slices that are nothing like equal
+— one group is 385 meshes and, drawn with frustum culling off, took 5.4 SECONDS
+by itself:
+
+    deferred, both chunked          7.7s to playable   max 5467ms  15 frames >50ms
+
+Per-slice rendering pays a fixed cost per slice while the programs still cost
+what they cost, so dividing by N multiplies the overhead by N. Reverted, with
+the numbers left above `warmWholeScene`.
+
+SO THE FLAG STAYS OFF. As it stands, `?deferwarm=1` trades 2.9s of loading
+screen for a 1.95s freeze during play, and a freeze while the player is doing
+something is worse than a wait while they are not — which is the reason the tail
+was put under the loading screen in the first place.
+
+WHAT ACTUALLY FIXES IT, now that two mechanisms have been tried and measured:
+warming BY DEMAND, WITH LOOKAHEAD. A monster's programs built when it spawns
+within some radius rather than when it is first drawn; an effect's when the
+skill is slotted. Cost becomes proportional to what is near the player instead
+of to everything that exists, which is the property this whole thread has been
+looking for, and it does not need the whole-scene render at all. The chunking
+rule and the `compileNow`/`awaitReady` split are the groundwork for it and stay.
+
+Default path unchanged and re-measured: 10.6s, p50 16.7ms, max 17ms, 0 hitches.
+Suite 41/41.

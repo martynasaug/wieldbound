@@ -1155,7 +1155,32 @@ export class World {
    * costs the session.
    */
   private compileSafely(object: THREE.Object3D, targetScene: THREE.Scene | null): Promise<void> {
-    const materials = this.renderer.compile(object, this.camera, targetScene);
+    return this.awaitReady(this.compileNow(object, targetScene));
+  }
+
+  /**
+   * The SYNCHRONOUS half of a warm-up: everything that actually blocks.
+   *
+   * `renderer.compile` builds the programs on the main thread and returns the
+   * materials whose drivers are still linking. Splitting it out from the wait
+   * is what makes warming in the background possible at all, and the reason is
+   * not speed — it is that both warm passes MUTATE THE LIVE SCENE to do their
+   * work (everything transparent, hidden things shown, culling off, instance
+   * counts dropped to one). That is safe today only because nothing else draws
+   * while it happens, which stops being true the moment the render loop is
+   * already running.
+   *
+   * With the halves separate, a caller can mutate, call this, and restore
+   * inside ONE synchronous span — so no frame ever observes a mutated scene —
+   * and then wait on `awaitReady` afterwards, with the world already put back.
+   */
+  compileNow(object: THREE.Object3D, targetScene: THREE.Scene | null = this.scene): Set<THREE.Material> {
+    return this.renderer.compile(object, this.camera, targetScene);
+  }
+
+  /** The ASYNCHRONOUS half: the driver finishing its links. Safe to await with
+   *  the scene already restored — nothing here touches it. */
+  awaitReady(materials: Set<THREE.Material>): Promise<void> {
     const properties = (this.renderer as unknown as {
       properties: { get(m: THREE.Material): { currentProgram?: { isReady(): boolean } } };
     }).properties;
