@@ -128,6 +128,37 @@ ws.on("open", async () => {
     }
   }
 
+  // --- the facts the lore leans on -------------------------------------------
+  //
+  // The Herald gives two pieces of tactical advice that are only true because of
+  // the resist table: "a troll knits itself back together unless you burn it"
+  // and "a golem has lightning for a seam", repeated by Cabel as "do not go
+  // looking at the golem until you have something with lightning in it". Both
+  // hold today — troll fire -45, golem lightning -45.
+  //
+  // GUARDING THE FACT RATHER THAN THE SENTENCE, and that is a deliberate choice
+  // after trying the other way. Matching monsters against schools mentioned near
+  // them produces nonsense, because one answer lists all six schools by name
+  // ("Six schools: physical, fire, frost, nature, arcane and lightning") so
+  // every creature in it co-occurs with every school, and a wolf picks up the
+  // golem's lightning from the sentence next door. A check that reads English
+  // would fire constantly and be muted within a week.
+  //
+  // So this asserts the mechanical claims instead. Rebalance the troll out of
+  // its fire weakness and this fails with the reason; reword the advice and it
+  // does not care, which is the right way round.
+  const leans = [
+    { kind: "troll", school: "fire", why: 'the Herald: "a troll knits itself back together unless you burn it"' },
+    { kind: "golem", school: "lightning", why: 'the Herald and Cabel both send players at the golem with lightning' },
+  ];
+  for (const { kind, school, why } of leans) {
+    const r = (MONSTER_STATS[kind]?.resist ?? {})[school];
+    if (!(typeof r === "number" && r < 0)) {
+      fail(`${kind} is no longer weak to ${school} (resist ${r ?? "neutral"}), but ${why}`);
+    }
+  }
+  console.log(`  lore leans on: ${leans.map((l) => `${l.kind} weak to ${l.school}`).join(", ")} — both hold`);
+
   console.log(problems.length ? `\n${problems.length} failure(s).` : "\nOK — the advice describes the world it is given in");
   for (const p of problems) console.log(`  FAIL  ${p}`);
   ws.close();

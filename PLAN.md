@@ -21870,3 +21870,38 @@ an unrelated answer, and reported prose and table as disagreeing when they never
 had. Scoped to the line that makes the claim, both orderings check out.
 
 Suite 44/44.
+
+**Phase 70 M70.213 — the third seam, and one guard deliberately not written.**
+Continuing the sweep for prose that a table decides. The Herald gives two pieces
+of TACTICAL advice which are only true because of the resist table: "a troll
+knits itself back together unless you burn it", and "a golem has lightning for a
+seam" — the second repeated by Cabel as "do not go looking at the golem until
+you have something with lightning in it". Both hold: troll fire -45, golem
+lightning -45.
+
+THE GENERAL VERSION OF THIS CHECK DOES NOT WORK, and trying it first is the
+useful part. Matching every monster against every damage school mentioned near
+it produces nonsense, because one answer names all six schools in a row —
+"Six schools: physical, fire, frost, nature, arcane and lightning" — so every
+creature in that sentence co-occurs with every school, and a wolf picks up the
+golem's lightning from the sentence next door. Fourteen co-mentions, twelve of
+them meaningless. A check that read English there would fire constantly and be
+muted inside a week, which is worse than no check.
+
+So the guard asserts THE FACT THE PROSE LEANS ON rather than the prose: troll
+must be weak to fire, golem must be weak to lightning, each carrying the line it
+protects in its failure message. Rebalance the troll out of its fire weakness
+and it fails with "troll is no longer weak to fire (resist 20), but the Herald:
+'a troll knits itself back together unless you burn it'". Reword the advice and
+it does not care, which is the right way round — lore should be free to be
+rewritten, and the mechanics it promises should not be free to move silently.
+
+That is the general principle from these three milestones, worth stating once:
+where prose and a table must agree, guard the CLAIM in whichever form is
+mechanically checkable, and never try to parse the sentence. M70.211 checked a
+geometric fact (nothing gatherable inside the walls), M70.212 an ordering
+(bands never go backwards) and a multiset (the numbers in a tooltip are the
+numbers applied), and this one a pair of named facts. None of them reads
+English, and all four would have caught the bug that started the sweep.
+
+Suite 44/44.
