@@ -58,6 +58,8 @@
 import {
   WEAPONS,
   WEAPON_TREES,
+  WEAPON_STAT_ADVICE,
+  CLASSES,
   SKILLS,
   attackRangeFor,
   playerAttackIntervalMs,
@@ -250,6 +252,52 @@ for (const r of armed) {
 }
 
 console.log();
+// --- and the advice points at the stat the weapon actually uses --------------
+//
+// `WEAPON_STAT_ADVICE` is what a player is told to spend points on, in prose,
+// beside a table that decides what the weapon actually scales off: damage comes
+// from `primaryStatValue`, which reads `CLASSES[classId].primaryStat`. Two
+// separate places, edited separately, and nothing compared them. Re-home a
+// weapon family to another class — which is exactly what a rebalance does —
+// and its advice keeps recommending the old stat.
+//
+// ONE FAMILY DISAGREES ON PURPOSE and the rule has to allow it. Fists are an
+// adventurer's, so their primary is Strength, while the advice leads with
+// Agility — and says why in the same breath: "Fists scale off Strength but hit
+// for very little either way — Agility keeps you alive and moving until you
+// find a real weapon." That is a deliberate recommendation to ignore the damage
+// stat on the one weapon whose damage does not matter.
+//
+// So the rule is not "advice must lead with the primary". It is: lead with it,
+// or SAY the primary out loud, so a player is never left thinking a stat does
+// nothing for them when it is the one their damage comes from.
+{
+  for (const [family, def] of Object.entries(WEAPONS)) {
+    const primary = CLASSES[def.classId].primaryStat;
+    const advice = WEAPON_STAT_ADVICE[family];
+    const leadsWithIt = advice.order[0] === primary;
+    const namesIt = advice.why.toLowerCase().includes(primary);
+    if (!leadsWithIt && !namesIt) {
+      fail(
+        `${family}: damage scales off ${primary} (via ${def.classId}), but the advice leads with ` +
+          `${advice.order[0]} and never mentions ${primary} — "${advice.why}"`,
+      );
+    }
+  }
+  const odd = Object.entries(WEAPONS).filter(
+    ([f, d]) => WEAPON_STAT_ADVICE[f].order[0] !== CLASSES[d.classId].primaryStat,
+  );
+  console.log(
+    `\nstat advice: ${Object.keys(WEAPONS).length - odd.length}/${Object.keys(WEAPONS).length} lead with their damage stat` +
+      (odd.length ? `; ${odd.map(([f]) => f).join(", ")} deliberately do not, and say so` : ""),
+  );
+}
+
+// PRINTED HERE, AFTER EVERY CHECK HAS RUN. This loop used to sit halfway up the
+// file, before the stat-advice section was appended below it — so a failure
+// raised down there was counted in the total and never named, and the run said
+// "1 balance problem(s)." with no indication of which. Found by adding a check
+// and watching its own negative control come back silent.
 for (const p of problems) console.error(`  FAIL  ${p}`);
 console.log(
   problems.length === 0

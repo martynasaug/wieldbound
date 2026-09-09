@@ -47,7 +47,24 @@ const THROWERS = Object.entries(MONSTER_STATS)
   .filter(([, s]) => s.keepAwayPx !== undefined)
   .map(([k]) => k);
 
-const find = (kind) => monsters.find((m) => m.kind === kind && m.status === "alive");
+// A HEALTHY ONE, AND THAT IS THE FIX FOR THIS FILE'S FLAKINESS.
+//
+// Monsters with a `fleeThreshold` change behaviour when they are hurt: the
+// server flips them from "chase" to "flee" below that fraction of health and
+// broadcasts `fleeing`. A fleeing creature runs from the player as far as its
+// leash allows, which is nothing whatever to do with the keep-away distance
+// this file exists to measure.
+//
+// That is what the intermittent suite failure was. Thirty-odd tests fight
+// through the same camps before this one runs, and a cactoro left wounded by an
+// earlier test settles hundreds of pixels away — 686px against a 150px
+// keep-away in the run that was finally captured, having passed the arrival
+// check first. The failure text even said it: "it is fleeing rather than
+// fighting". It was, and correctly.
+//
+// So: only a creature at full health is evidence about keeping distance.
+const find = (kind) =>
+  monsters.find((m) => m.kind === kind && m.status === "alive" && !m.fleeing && m.hp >= m.maxHp);
 const gapTo = (m) => Math.hypot(m.x - me.x, m.y - me.y);
 
 ws.on("open", async () => {
@@ -185,6 +202,23 @@ ws.on("open", async () => {
       `it settled at ${settledMean.toFixed(0)}px, which is contact — it is a melee monster ` +
         `with a long tooltip`,
     );
+  }
+  // AND IF IT STARTED FLEEING WHILE BEING WATCHED, none of the above is about
+  // keep-away either. The target is chosen at full health, but the probe is
+  // standing next to it and other things are not: it can be hurt mid-
+  // measurement and flip to "flee" for real reasons. Say so rather than
+  // reporting the distance as a fault in the AI.
+  {
+    const now = monsters.find((m) => m.id === target.id);
+    if (now && (now.fleeing || now.hp < now.maxHp)) {
+      console.log(
+        `NOT RUN — the ${target.kind} was hurt during the measurement (${now.hp}/${now.maxHp}` +
+          `${now.fleeing ? ", fleeing" : ""}), so its distance is a retreat rather than a stand-off.\n` +
+          "  INCONCLUSIVE, not a failure.",
+      );
+      ws.close();
+      process.exit(0);
+    }
   }
   // And it must settle somewhere it can actually shoot from, rather than
   // drifting to the edge of aggro and stopping the fight.

@@ -21905,3 +21905,47 @@ numbers applied), and this one a pair of named facts. None of them reads
 English, and all four would have caught the bug that started the sweep.
 
 Suite 44/44.
+
+**Phase 70 M70.214 — the fourth seam, a silent failure printer, and the thrower
+flake finally caught.** Three things, and the last one closes a thread open since
+M70.203.
+
+THE ADVICE POINTS AT THE STAT THE WEAPON USES. `WEAPON_STAT_ADVICE` is what a
+player is told to spend points on, in prose; damage comes from
+`primaryStatValue`, which reads `CLASSES[classId].primaryStat`. Two tables,
+edited separately, never compared. Re-home a family to another class — which is
+what a rebalance does — and its advice keeps recommending the old stat.
+
+Seven of eight lead with their damage stat. Fists deliberately do not: they are
+an adventurer's, so Strength is primary, while the advice leads with Agility and
+says why in the same breath — "Fists scale off Strength but hit for very little
+either way — Agility keeps you alive and moving until you find a real weapon."
+So the rule is not "lead with the primary" but "lead with it, or NAME it", which
+is the checkable form of the thing that actually matters: a player must never be
+left thinking a stat does nothing for them when it is the one their damage comes
+from. Verified by re-homing the dagger to warrior and watching it name the line.
+
+AND THAT CONTROL CAME BACK SILENT THE FIRST TIME, which found a second fault.
+`weaponbalance.mjs` printed its failures halfway up the file, before the section
+I had appended below — so a failure raised down there was counted in the total
+and never named. The run said "1 balance problem(s)." and nothing else. Moved to
+the end, after every check has run.
+
+THE THROWER FLAKE, open since M70.203 and now caught with its output. A cactoro
+settled 686px from a player against a 150px keep-away, having passed the arrival
+check first. Monsters with a `fleeThreshold` flip from "chase" to "flee" below a
+fraction of health and run as far as their leash allows — and thirty-odd tests
+fight through the same camps before this one runs, so it had been measuring a
+creature left wounded by an earlier test. The failure text said it outright:
+"it is fleeing rather than fighting". It was, and correctly.
+
+Fixed at the source of the evidence rather than by widening a threshold, which
+this file has already had done to it three times: a target is now chosen at FULL
+health and not already fleeing, and if it is hurt mid-measurement the run says
+INCONCLUSIVE instead of reporting a retreat as a stand-off. Three consecutive
+clean runs and a clean suite.
+
+That also settles the correction filed after M70.203: the suite number published
+there was wrong, and the failure behind it was never a game fault.
+
+Suite 44/44.
