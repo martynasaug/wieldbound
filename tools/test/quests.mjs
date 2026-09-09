@@ -245,6 +245,36 @@ for (const q of QUESTS) {
   if (!q.done || q.done.length < 10) fail(`"${q.name}" has nothing to say on hand-in`);
   if (!objectiveLabel(q.objective)) fail(`"${q.name}" has no objective label`);
   if (!rewardLabel(q.reward)) fail(`"${q.name}" has no reward label`);
+
+  // AND THE BRIEF HAS TO SAY THE NUMBER IT IS ASKING FOR.
+  //
+  // The objective is a table — `{ kind: "kill", monster: "slime", count: 4 }` —
+  // and the brief is prose written beside it: "Four slimes, east gate". They
+  // are edited separately, and tuning a quest is exactly the edit that changes
+  // one and not the other. A player then reads "Four slimes", kills four, and
+  // watches a counter sitting at 4/6 with no explanation.
+  //
+  // Counts are written as WORDS in this file — "Four slimes", "Five of them",
+  // "Six.", "Thirty wood", "Forty herb" — so digits alone would miss every one
+  // of them. Both spellings are accepted; the brief only has to state the
+  // figure somehow.
+  //
+  // Only counts above one are checked. The four waystone quests are `count: 1`
+  // and say "Walk to it and walk back", which is the right way to write them.
+  if (typeof q.objective.count === "number" && q.objective.count > 1) {
+    const WORDS = [
+      "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+      "eleven", "twelve", "fifteen", "twenty", "thirty", "forty", "fifty",
+    ];
+    const n = q.objective.count;
+    const low = q.brief.toLowerCase();
+    const asWord = { 15: "fifteen", 20: "twenty", 30: "thirty", 40: "forty", 50: "fifty" }[n] ?? WORDS[n];
+    if (!low.includes(String(n)) && !(asWord && low.includes(asWord))) {
+      fail(
+        `"${q.name}" asks for ${n} but its brief never says so — "${q.brief.slice(0, 80)}…"`,
+      );
+    }
+  }
 }
 console.log(`  ${QUESTS.length} quests, all well-formed`);
 

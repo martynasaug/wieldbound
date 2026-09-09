@@ -21949,3 +21949,42 @@ That also settles the correction filed after M70.203: the suite number published
 there was wrong, and the failure behind it was never a game fault.
 
 Suite 44/44.
+
+**Phase 70 M70.215 — the same lie, in the other table.** Sweeping the last
+prose-versus-table seam turned up a second copy of the bug M70.211 fixed.
+
+Marda's herb quest read: "Forty herb. There are bushes in the square, which is
+convenient for you and means I have no sympathy at all if you take your time
+about it." There are no bushes in the square — no gatherable node stands inside
+the 800px walls at all, and the nearest is at 1000px. It is the worse of the two
+versions, because it calls the walk convenient and then teases the player for
+being slow at something they cannot find.
+
+M70.211's guard did not catch it FOR A REASON WORTH RECORDING: it read
+`TOWN_NPCS`, which is the dialogue table, and quest briefs live in
+`shared/quests.ts`. A guard scoped to one of the two tables a player reads finds
+one of the two bugs. It now reads both.
+
+AND THE SEAM THAT LED THERE. Quest objectives are structured —
+`{ kind: "kill", monster: "slime", count: 4 }` — with prose written beside them:
+"Four slimes, east gate". Tuning a quest is precisely the edit that changes one
+and not the other, and the player then kills four and watches a counter stop at
+4/6 with nothing explaining it. `quests.mjs` now requires a brief to state the
+number it asks for, in digits or in words — the counts in this file are written
+as "Four slimes", "Five of them", "Six.", "Thirty wood", "Forty herb", so digits
+alone would have missed every one. Counts of one are exempt: the four waystone
+quests say "Walk to it and walk back", which is how they should read.
+
+Both verified by breaking them: a count changed from 4 to 7 names the quest and
+quotes the brief; the old "bushes in the square" wording restored into the QUEST
+file is now caught by the widened advice guard, which it was not before.
+
+Statuses were swept too and need nothing. `statuses.mjs` already asserts every
+status does something, that buffs carry no penalty, that debuffs are genuinely
+bad including move and damage-taken direction, and that icons are distinct — so
+the blurb-versus-modifier seam is guarded from the mechanical side already.
+
+Five seams now checked across M70.211-215: geometry, ordering, tooltip
+multisets, named facts, and quest counts. None of them reads English.
+
+Suite 44/44.

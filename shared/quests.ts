@@ -235,8 +235,15 @@ export const QUESTS: QuestDef[] = [
     giver: "marda",
     name: "Something For The Pot",
     brief:
-      "Forty herb. There are bushes in the square, which is convenient for you and means I have " +
-      "no sympathy at all if you take your time about it.",
+      // THE SECOND PLACE THAT PROMISED BUSHES IN THE SQUARE. M70.211 corrected
+      // the Herald's version of this and its guard read `TOWN_NPCS` — which is
+      // not where quest briefs live, so this one survived. There are no
+      // gatherable nodes inside the 800px walls at all; the nearest bush is at
+      // 1000px. The line was also the more misleading of the two, because it
+      // called the walk convenient and then teased the player for being slow at
+      // something they could not find.
+      "Forty herb. The bushes are a short way past the wall — no distance at all, and I will " +
+      "have no sympathy if you take your time about it.",
     done: "Stew tonight, then. You have earned a bowl and something better besides.",
     objective: { kind: "gather", resource: "herb", count: 40 },
     requiresLevel: 2,

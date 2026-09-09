@@ -25,6 +25,7 @@
 import WebSocket from "ws";
 import { TOWN_CENTER, TOWN_RADIUS_PX, TOWN_NPCS } from "../../shared/town.ts";
 import { MONSTER_STATS } from "../../shared/protocol-types.ts";
+import { QUESTS } from "../../shared/quests.ts";
 
 const problems = [];
 const fail = (m) => problems.push(m);
@@ -50,9 +51,19 @@ ws.on("open", async () => {
   const nearest = Math.round(Math.min(...nodes.map(dist)));
   console.log(`${nodes.length} resource nodes; ${inside.length} inside the ${TOWN_RADIUS_PX}px walls; nearest at ${nearest}px`);
 
-  // Every line any NPC says, so this keeps working when the advice moves or a
-  // second character starts giving directions.
-  const said = JSON.stringify(TOWN_NPCS).toLowerCase();
+  // EVERY LINE THE TOWN SAYS, AND QUEST BRIEFS ARE LINES THE TOWN SAYS.
+  //
+  // This read `TOWN_NPCS` alone, which is the dialogue table — and quest briefs
+  // live in `shared/quests.ts`. So when M70.211 corrected the Herald for
+  // promising bushes in the square, Marda's "Forty herb. There are bushes in
+  // the square, which is convenient for you" was sitting in the other file
+  // saying the same untrue thing, and this guard passed. Worse than the
+  // Herald's: it called the walk convenient and then teased the player for
+  // being slow at something they could not find.
+  //
+  // A guard scoped to one of the two tables a player reads is a guard that
+  // finds one of the two bugs.
+  const said = JSON.stringify([TOWN_NPCS, QUESTS]).toLowerCase();
 
   // The claim under test is narrow and checkable: nobody may tell a player to
   // gather IN TOWN while nothing gatherable is in town. Phrased as the two
