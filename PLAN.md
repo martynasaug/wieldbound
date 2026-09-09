@@ -21665,3 +21665,39 @@ about the game before checking what it was actually measuring, or which moment
 it belonged to.
 
 Suite 41/41.
+
+**Phase 70 M70.208 — the shop had no test at all.** Four investigations in a row
+ending in "the game is fine, the instrument was wrong" is a signal about where
+to look, not just an embarrassment: the parts of this game that get photographed
+and driven are in good shape, so the next real fault is more likely somewhere
+nothing has ever pointed at.
+
+Comparing `shared/*.ts` against `tools/test/*.mjs` gives four modules with no
+matching suite file: `collision` (covered indirectly by `sliding`, `stuck` and
+`crossing`), `landmarks`, `places`, and `shop`. The shop is the economy — the
+one module in the project that is a table of prices — and nothing checked it.
+
+The failures it can produce are all quiet:
+
+  * A stock row whose `ref` no longer names anything. The catalogue moves, bases
+    get renamed, and NOTHING ELSE IN THE CODEBASE JOINS THOSE TWO TABLES — the
+    server looks the ref up at purchase time and the client draws the row
+    regardless. A renamed base leaves a line in Oswyn's list that cannot be
+    bought.
+  * A rate that makes trading worth doing in a circle. Six ordered pairs share
+    one number; at 1:1, wood -> ore -> wood is free and the gathering loop the
+    early game rests on stops mattering.
+  * A starter shop stocking something no starter can use, which is what a band-5
+    base slipping into the list would be.
+
+`tools/test/shop.mjs` covers all three plus the structural ones: ids unique,
+every ordered pair of gatherables present in both directions at the stated rate,
+`SHOP_OUTPUT_RARITY` a real rarity, and essence NOT tradeable — essence is the
+only raw material that is not gathered, which is what holds the top of the
+reforge ladder together, and a trade into it would let the ladder be bought.
+
+Everything passes today: 9 rows all resolving, all band 1, sold at "honed"; 6
+offers at 4:1 across wood, ore and herb. Verified by breaking it both ways — a
+renamed `ref` and a 1:1 rate — and watching the right checks fail.
+
+Suite 42/42.
