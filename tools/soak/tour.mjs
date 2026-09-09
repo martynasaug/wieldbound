@@ -37,6 +37,33 @@ const OUT = process.argv[3] ?? ".";
  *  noon; `null` leaves the clock running. */
 const CLOCK = process.argv[4] !== undefined ? Number(process.argv[4]) : null;
 
+// AND REJECTED IF IT IS NOT ONE, because the failure is silent and total.
+//
+// `DayNight` normalises with `((t % 1) + 1) % 1`, so an hour passed by mistake
+// wraps instead of complaining: 12 becomes 12 % 1 = 0, which is MIDNIGHT. A
+// tour asked for noon was photographed in the dark, every frame, while the log
+// said "clock frozen at 12" — a run that looks successful, produces nine
+// screenshots, and answers a different question than the one asked. Nothing
+// downstream can tell.
+//
+// The units were documented directly above and the argument was still wrong,
+// which is the argument for checking rather than documenting harder.
+if (CLOCK !== null && !(CLOCK >= 0 && CLOCK <= 1)) {
+  console.error(
+    `clock must be a FRACTION of a day between 0 and 1, not ${process.argv[4]}.\n` +
+      `  0 = midnight, 0.25 = 06:00, 0.5 = noon, 0.75 = 18:00.\n` +
+      `  For ${process.argv[4]}:00 pass ${(Number(process.argv[4]) / 24).toFixed(3)}.`,
+  );
+  process.exit(1);
+}
+/** The frozen clock as a wall-clock time, so the log can be checked against the
+ *  picture it describes rather than trusted. */
+const clockLabel = (t) => {
+  const h = Math.floor(t * 24);
+  const m = Math.round((t * 24 - h) * 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+};
+
 const road = roadPath();
 const at = (frac) => road[Math.floor((road.length - 1) * frac)];
 const bridge = roadRiverCrossings()[0];
@@ -65,7 +92,7 @@ const run = async () => {
   const keys = await hotbarKeys(page);
   if (CLOCK !== null) {
     await page.evaluate((t) => window.__wieldbound.world.dayNight.freeze(t), CLOCK);
-    console.log(`clock frozen at ${CLOCK}`);
+    console.log(`clock frozen at ${CLOCK} (${clockLabel(CLOCK)})`);
   }
 
   for (const [name, dest] of STOPS) {

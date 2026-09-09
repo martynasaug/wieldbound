@@ -19,7 +19,7 @@
 //     npm run dev:server
 //     node tools/test/camps.mjs
 import WebSocket from "ws";
-import { MONSTER_STATS, MONSTER_WANDER_RADIUS_PX, PLAYER_SPAWN } from "../../shared/protocol-types.ts";
+import { AGGRO_RANGE_PX, MONSTER_STATS, MONSTER_WANDER_RADIUS_PX, PLAYER_SPAWN } from "../../shared/protocol-types.ts";
 
 const NAME = process.argv[2] ?? `Watcher${Math.floor(Math.random() * 90000)}`;
 const WATCH_MS = 22000;
@@ -31,6 +31,11 @@ let me = null;
 const first = new Map();
 const last = new Map();
 const drift = new Map();
+/** Closest each creature ever came to the watcher. Anything that crossed the
+ *  aggro line chased a player and is not evidence about wandering. */
+const closest = new Map();
+/** Anyone else on the server during the watch. See the note by the wander check. */
+let otherPlayers = 0;
 const problems = [];
 const fail = (m) => problems.push(m);
 
@@ -38,6 +43,9 @@ ws.on("message", (raw) => {
   const msg = JSON.parse(raw.toString());
   if (msg.type === "WELCOME") me = msg.payload;
   if (msg.type !== "STATE_SNAPSHOT") return;
+  if (me) {
+    otherPlayers = Math.max(otherPlayers, (msg.payload.players ?? []).filter((p) => p.id !== me.id).length);
+  }
   for (const m of msg.payload.monsters ?? []) {
     if (m.status !== "alive") continue;
     if (!first.has(m.id)) first.set(m.id, { x: m.x, y: m.y, kind: m.kind });
@@ -47,6 +55,8 @@ ws.on("message", (raw) => {
       // Ignore teleports (a respawn snapping home), which are not wandering.
       if (step < 60) drift.set(m.id, (drift.get(m.id) ?? 0) + step);
     }
+    const toWatcher = Math.hypot(m.x - PLAYER_SPAWN.x, m.y - PLAYER_SPAWN.y);
+    closest.set(m.id, Math.min(closest.get(m.id) ?? Infinity, toWatcher));
     last.set(m.id, { x: m.x, y: m.y, kind: m.kind });
   }
 });
@@ -87,17 +97,76 @@ ws.on("open", async () => {
 
   // And nothing walked off its post. The wander radius is the leash; anything
   // past it with slack has escaped the band it was placed in.
+  // STANDING STILL IS NOT THE SAME AS TOUCHING NOTHING, which is what this
+  // measured before and why it failed about one suite run in four.
+  //
+  // The comment above says anything that moves "does so because it wanted to".
+  // That holds only while every creature stays outside AGGRO_RANGE_PX, and
+  // nothing keeps them there: a wanderer drifting toward spawn crosses the line
+  // on its own and chases the watcher, which is a CHASE, bounded by
+  // MONSTER_LEASH_PX at 520 rather than by the 90px wander radius. Measuring
+  // that as wandering produced "a orcbrute got 276px from its post" — 276 being
+  // impossible for a wanderer, which is clamped to `home ± 90` on the server and
+  // so can be displaced at most ~180px between two sightings. The number was
+  // the proof that it was not wandering, and it was read as proof that wander
+  // was broken.
+  //
+  // So creatures that came within aggro range are excluded and COUNTED. If that
+  // leaves too few, the run says it is inconclusive rather than passing on an
+  // empty sample — the failure this file exists to catch would otherwise hide
+  // behind its own exclusion rule.
+  // AND NOT ALONE IS NOT MEASURABLE FROM HERE AT ALL.
+  //
+  // Excluding creatures that came near THE WATCHER is necessary and nowhere
+  // near sufficient: a monster chasing somebody else is doing something this
+  // vantage point cannot distinguish from a very energetic wander, because the
+  // snapshot carries positions and not `ai.home` or `ai.state`.
+  //
+  // That is not hypothetical. Four consecutive runs failed with drifts of 260,
+  // 270 and 511px while reporting 80/80 creatures outside aggro range, and the
+  // cause was a suite running in another shell whose characters were dragging
+  // camps around the map. It read exactly like a game bug — 511px is impossible
+  // for a wanderer clamped to `home ± 90`, so the number even looked like proof
+  // — and the same four runs pass at 171-177px with nobody else online. I was
+  // one step from reporting that monster camps drift with server uptime.
+  //
+  // So: if anyone else is connected, this says so and declines to judge.
+  if (otherPlayers > 0) {
+    console.log(
+      `  INCONCLUSIVE — ${otherPlayers} other player(s) online. Their chases are ` +
+        "indistinguishable from wandering from here, and drag camps hundreds of pixels.",
+    );
+    console.log(problems.length ? `\n${problems.length} failure(s).` : "\nOK — not judged, but nothing else broke.");
+    ws.close();
+    process.exit(problems.length ? 1 : 0);
+  }
+  const undisturbed = seen.filter((id) => (closest.get(id) ?? Infinity) > AGGRO_RANGE_PX);
+  const aggroed = seen.length - undisturbed.length;
+  console.log(
+    `  ${undisturbed.length}/${seen.length} never came within aggro range (${aggroed} did, and chase is ` +
+      `leashed at 520px, not ${MONSTER_WANDER_RADIUS_PX})`,
+  );
   let worst = 0;
   let worstKind = "";
-  for (const id of seen) {
+  for (const id of undisturbed) {
     const a = first.get(id);
     const b = last.get(id);
     const away = Math.hypot(b.x - a.x, b.y - a.y);
     if (away > worst) { worst = away; worstKind = a.kind; }
   }
-  console.log(`  furthest anything got from where it started: ${worst.toFixed(0)}px (${worstKind}), leash is ${MONSTER_WANDER_RADIUS_PX}`);
-  if (worst > MONSTER_WANDER_RADIUS_PX * 2.4) {
-    fail(`a ${worstKind} got ${worst.toFixed(0)}px from its post — a wander with no leash walks a camp out of its own band`);
+  if (undisturbed.length < 5) {
+    console.log(
+      `  INCONCLUSIVE — only ${undisturbed.length} creature(s) stayed out of aggro range, which is` +
+        " too few to say anything about wandering.",
+    );
+  } else {
+    console.log(
+      `  furthest an undisturbed creature got from where it started: ${worst.toFixed(0)}px ` +
+        `(${worstKind}), wander radius is ${MONSTER_WANDER_RADIUS_PX}`,
+    );
+    if (worst > MONSTER_WANDER_RADIUS_PX * 2.4) {
+      fail(`a ${worstKind} got ${worst.toFixed(0)}px from its post — a wander with no leash walks a camp out of its own band`);
+    }
   }
 
   // A boss stands where the stories put it.

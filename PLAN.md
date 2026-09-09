@@ -21496,3 +21496,57 @@ occurrence will say what it was. Left open deliberately rather than "fixed" by
 another threshold nudge: three of this file's assertions have already been
 loosened once each, and loosening a fourth without knowing which one fired is
 how a test stops being able to fail at all.
+
+**Phase 70 M70.204 — three instruments corrected, and a game bug that was not
+one.** Continuing the looking pass, and this entry is mostly about how nearly it
+went wrong.
+
+THE TOUR WAS PHOTOGRAPHING MIDNIGHT AND SAYING NOON. `tour.mjs` takes the clock
+as a FRACTION of a day — its own header says "0 is midnight, 0.5 noon" and its
+usage line passes 0.12 — and it was handed `12`, meaning hours. `DayNight`
+normalises with `((t % 1) + 1) % 1`, so 12 became 0: midnight. Nine frames, all
+dark, under a log line reading "clock frozen at 12". The units were documented
+directly above the argument and the argument was still wrong, which is the case
+for CHECKING rather than documenting harder: out-of-range values are now
+rejected with the conversion spelled out, and the log prints "0.5 (12:00)" so
+the claim can be checked against the picture. Re-run at 0.5, every stop was
+reached including town, which had previously "GAVE UP".
+
+"THE ENEMY HITS YOU FOR 1" IN TOWN, with no monster in sight, looked like an
+attacker the client could not name — `vis ? MONSTER_LABELS[vis.kind] : "enemy"`.
+Hooked the handler and watched 53 incoming attacks: 0 unknown, furthest known
+attacker 52px. It is a login transient, before the monster snapshot registers,
+and not systemic. The first version of that probe reached for a private socket
+field, attached nothing, and reported "0 incoming attacks" — a clean answer from
+an instrument that was not listening. It now prints whether it hooked.
+
+AND THE ONE THAT NEARLY BECAME A FALSE BUG REPORT. `camps.mjs` failed with
+"a orcbrute got 276px from its post", then 260, 270 and 511px on three more
+runs, while reporting 80/80 creatures outside aggro range. 511px is impossible
+for a wanderer — the server clamps wander targets to `home ± 90`, so displacement
+between two sightings cannot exceed ~180px — so the number looked like proof
+that wandering was unleashed. I had drafted "monster camps drift with server
+uptime".
+
+It was my own background suite running in another shell, whose characters were
+dragging camps across the map. Stop it, and the same test passes four times at
+171-177px, right at the theoretical ceiling. The game was correct the whole
+time.
+
+`camps.mjs` now refuses to judge rather than guessing. Creatures that came
+within `AGGRO_RANGE_PX` of the watcher are excluded and counted; and because a
+monster chasing SOMEBODY ELSE is indistinguishable from an energetic wander at
+this vantage point — the snapshot carries positions, not `ai.home` or
+`ai.state` — the run reports INCONCLUSIVE when any other player is connected.
+
+MOVESPEED, LEFT OPEN HONESTLY. One suite run failed with the spam arm covering
+2700px against the other's 778px, which is the anti-teleport budget being
+beaten by message rate. It has not reproduced in four attempts, including one
+immediately after a cold server restart, and the passing runs match theory
+exactly: ~640px/s, which is the character's real 318px/s times
+`MOVE_SPEED_TOLERANCE`. The mechanism is not understood and the bucket looks
+correct on inspection, so nothing has been changed. What has changed is that
+both arms now print px/s alongside the distance, because the A/B ratio alone
+left an outlier uninterpretable after the fact. Recorded as open.
+
+Suite 41/41 on a quiet server.

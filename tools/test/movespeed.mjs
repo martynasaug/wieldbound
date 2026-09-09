@@ -209,9 +209,25 @@ ws.on("open", async () => {
       sent++;
       await sleep(gapMs);
     }
+    const sendingMs = Date.now() - (until - windowMs);
     await sleep(260);
     const px = Math.hypot(me.x - from.x, me.y - from.y);
-    console.log(`  ${label.padEnd(12)} ${String(sent).padStart(4)} MOVEs asking 500px each -> ${px.toFixed(0)}px`);
+    // THE RATE, NOT JUST THE DISTANCE. The A/B answers "does talking faster get
+    // you further", which is the property, and says nothing about whether a
+    // number is sane on its own — so an outlier is uninterpretable after the
+    // fact. One suite run reported 2700px against the other arm's 778px and
+    // then passed four times in a row at ~770px each, including immediately
+    // after a cold server restart; with no rate printed there was nothing to
+    // reason from about what the server had granted.
+    //
+    // Both arms cover the same wall-clock window by construction (the loop is
+    // `while (Date.now() < until)`), so px/s is directly comparable between
+    // them and against the character's real speed — about 318px/s here, doubled
+    // by MOVE_SPEED_TOLERANCE, which is why a healthy arm lands near 640px/s.
+    console.log(
+      `  ${label.padEnd(12)} ${String(sent).padStart(4)} MOVEs asking 500px each -> ${px.toFixed(0)}px` +
+        ` over ${sendingMs}ms (${((px / sendingMs) * 1000).toFixed(0)}px/s)`,
+    );
     return px;
   };
   console.log(`spam, same 1200ms window at two message rates:`);
