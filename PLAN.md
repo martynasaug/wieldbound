@@ -21115,3 +21115,65 @@ rule and the `compileNow`/`awaitReady` split are the groundwork for it and stay.
 
 Default path unchanged and re-measured: 10.6s, p50 16.7ms, max 17ms, 0 hitches.
 Suite 41/41.
+
+**Phase 70 M70.196 — warming by demand: the load halves, and the last mile is
+not walked yet.** M70.195 concluded that the fix had to be demand with
+lookahead. Built:
+
+`World.warmDraw(object)` is the missing half of a demand warm. `warmUp` prepares
+a material; only a DRAW creates the program the real frame ends up using, which
+is why a monster warmed on spawn still cost a frame the first time it was truly
+seen, and why `warmWholeScene` had to exist at all. `warmDraw` hides the other
+top-level children — 157 property writes, not 157 renders — shows the object and
+every ancestor of it, draws once into the 4x4 target with a shadow pass, and
+restores everything inside one synchronous span. Lights are never hidden: a
+program's cache key carries the light count.
+
+Wired into the monster spawn path, and `warmWholeScene` dropped from the
+deferred arm entirely. With `warmHiddenChunked` covering what nothing spawns —
+the mist, the stars and the town's lantern flames, which are shown by the HOUR
+and would otherwise light up mid-frame at dusk, twenty-four minutes in:
+
+    current    10.6s to playable   p50 16.7ms  max 17ms  0 frames >50ms
+    demand      7.1s to playable   p50 16.7ms  max 18ms  0 frames >50ms
+
+Three and a half seconds, with a thirty-second walking session showing nothing.
+The screenshots match: same world, same 128/157 top-level children visible. The
+demand arm's minimap starts blank and fills in a few seconds later — the map
+tiles are a 2D canvas built off pure functions and the chunked warm was
+competing with them for the main thread. Transient, not missing.
+
+`warmcost.mjs` names what each warm costs, and that is how the two objects worth
+knowing about were found: `flames:town` at 854ms and `flames:road` at 380ms,
+three programs each against a ~50ms-per-program average, because they are custom
+fire shaders. Deferring THOSE behind the door just relocates a nine-hundred-
+millisecond freeze into the player's first seconds, so they are warmed under the
+loading screen. That is the whole reason the demand arm is 7.1s rather than 6.8s
+and it is the right trade.
+
+BUT IT IS NOT READY TO BE THE DEFAULT, AND A THIRTY-SECOND WALK IS WHY IT LOOKED
+LIKE IT WAS. Three minutes of real fighting says otherwise:
+
+    control   15 pack fights, 834 casts   1 hitch  (149ms)
+    demand    13 pack fights, 726 casts   4 hitches (53ms, and three near 1000ms)
+
+Those three are `render` hitches inside real frames, arriving as monster kinds
+first appear — an inline compile, which is exactly what the warm draw was
+supposed to prevent. So `warmDraw` is not covering something the real draw
+needs. The likeliest candidate is the shadow-depth program: `frustumCulled` is
+switched off for the object, but whether that is enough to put it in the sun's
+shadow frustum during the warm has NOT been verified, and it is the specific
+failure `warmWholeScene` documents — a depth program compiling the first time
+its owner falls inside a shadow window that follows the player.
+
+Naming the program that compiles late is the next step and it is a small one:
+`warmcost.mjs` already reads a per-object log, and `renderer.info.programs`
+grows by one when it happens. The flag stays off until a fighting session is as
+clean as the control's.
+
+The suite's `warmup.mjs` matched actor build paths inside an 800-character
+window rather than 400; the monster path gained a `warmDraw` call and its
+explanation, and a body that no longer fits read as a path that no longer
+exists. Its own comment records the same false failure once before.
+
+Suite 41/41. Default path unchanged.

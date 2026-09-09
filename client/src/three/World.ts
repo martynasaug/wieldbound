@@ -1456,6 +1456,172 @@ export class World {
     for (const [child, visible] of wasVisible) child.visible = visible;
   }
 
+  /**
+   * ONE object, drawn once, out of sight — the missing half of a demand warm.
+   *
+   * `warmUp` prepares a material but does not create the program the real draw
+   * ends up using; only an actual draw does. That gap is the entire reason
+   * `warmWholeScene` exists, and it is why a monster warmed on spawn STILL cost
+   * a frame the first time it was really seen.
+   *
+   * This closes it for a single object, which is what a demand warm needs. The
+   * whole-scene version cannot be sliced — M70.195 measured 166 renders and a
+   * 5.4-second slice — but one object at a time is a different proposition
+   * entirely: hiding the other top-level children is 166 property writes, and
+   * the render that follows draws a nearly empty scene plus this one thing.
+   * The failure there was doing it 166 times to cover a world that is already
+   * standing; here it happens once per genuinely new thing, and a spawn whose
+   * programs already exist pays nothing at all.
+   *
+   * SYNCHRONOUS FROM END TO END, and it must stay that way: every mutation
+   * below is undone before this returns, so no frame can observe a world with
+   * its scenery switched off. That is the same rule as `compileNow`.
+   *
+   * LIGHTS ARE NEVER HIDDEN — a program's cache key carries the scene's light
+   * count, so a draw with the sun switched off warms a program for a world that
+   * does not exist.
+   */
+  warmDraw(object: THREE.Object3D): void {
+    const undo: (() => void)[] = [];
+    const prevTarget = this.renderer.getRenderTarget();
+    // Its own top-level ancestor stays visible: an object nested in a group
+    // cannot be drawn while its parent is hidden.
+    let top: THREE.Object3D = object;
+    while (top.parent && top.parent !== this.scene) top = top.parent;
+    try {
+      // EVERY ANCESTOR SHOWN, not just the object. three skips an invisible
+      // object and its whole subtree before any per-object work, so warming
+      // something nested inside a hidden group drew precisely nothing — the
+      // call returned looking successful and the program was still missing.
+      for (let a: THREE.Object3D | null = object; a && a !== this.scene; a = a.parent) {
+        if (a.visible) continue;
+        const node = a;
+        node.visible = true;
+        undo.push(() => {
+          node.visible = false;
+        });
+      }
+      for (const child of this.scene.children) {
+        if (child === top || (child as THREE.Light).isLight || !child.visible) continue;
+        child.visible = false;
+        undo.push(() => {
+          child.visible = true;
+        });
+      }
+      object.traverse((child) => {
+        if (!child.visible) {
+          child.visible = true;
+          undo.push(() => {
+            child.visible = false;
+          });
+        }
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const culled = mesh.frustumCulled;
+        mesh.frustumCulled = false;
+        undo.push(() => {
+          mesh.frustumCulled = culled;
+        });
+      });
+      this.renderer.setRenderTarget(this.bufferWarmTarget);
+      // The shadow pass too: a caster's depth material is a program of its own
+      // that no amount of compiling its own materials will build. See M70.91.
+      this.renderer.shadowMap.needsUpdate = true;
+      this.renderer.render(this.scene, this.camera);
+    } catch {
+      // A warm that fails is a frame that stutters later, never a monster that
+      // stays invisible — the same contract as `warmUp`.
+    } finally {
+      this.renderer.setRenderTarget(prevTarget);
+      // Whatever that left in the shadow map is not the real one.
+      this.renderer.shadowMap.needsUpdate = true;
+      for (let i = undo.length - 1; i >= 0; i--) undo[i]();
+    }
+  }
+
+  /**
+   * The things that are hidden right now, warmed one at a time.
+   *
+   * THE ONE GAP A DEMAND WARM CANNOT CLOSE BY ITSELF. Warming on demand covers
+   * anything that arrives — a monster spawns, an effect plays — but three
+   * things in this game are hidden and shown by the HOUR: the mist bank, the
+   * star dome and the town's lantern glows. Nothing spawns them. Load in
+   * daylight and they are simply switched off, and they switch on hours later,
+   * mid-frame, in front of the player.
+   *
+   * That is the failure `warmWholeScene` documented and it does not announce
+   * itself: a full day is twenty-four minutes, so it reads as an occasional
+   * spike that tracks the clock rather than anything anybody did, and every
+   * driven test here is far too short to cross the boundary. It cannot be
+   * caught later, so it is paid for now.
+   *
+   * Only the TOPMOST hidden object is warmed — descending into one would draw
+   * the same subtree again for every branch of it — and one animation frame is
+   * yielded between each, so this costs a frame's worth of work at a time
+   * rather than a freeze.
+   */
+  async warmHiddenChunked(): Promise<void> {
+    const hidden: THREE.Object3D[] = [];
+    const meshCount = (o: THREE.Object3D): number => {
+      let n = 0;
+      o.traverse((c) => {
+        if ((c as THREE.Mesh).isMesh) n++;
+      });
+      return n;
+    };
+    // BROKEN DOWN WHEN IT IS BIG. Warming each hidden object whole produced one
+    // 850ms frame, because a single group can carry enough distinct materials
+    // to force a dozen programs in one draw — which is the same mistake as
+    // slicing `warmWholeScene` by top-level child, at the other end of the
+    // scale. Anything above this many meshes is warmed by its parts instead, so
+    // the yield between chunks actually falls somewhere useful.
+    const SPLIT_ABOVE = 24;
+    // Two passes, because `visible` means different things above and below the
+    // line. `walk` is looking for the boundary — the topmost switched-off
+    // object. `collect` is already inside one, where a child's own `visible`
+    // is almost always true and says nothing: the whole subtree is dark
+    // because an ancestor is. Recursing with `walk` inside a hidden group
+    // therefore found nothing at all and warmed none of it.
+    const collect = (o: THREE.Object3D): void => {
+      const n = meshCount(o);
+      if (n === 0) return;
+      if (n > SPLIT_ABOVE && o.children.length > 1) {
+        for (const child of o.children) collect(child);
+        return;
+      }
+      hidden.push(o);
+    };
+    const walk = (o: THREE.Object3D): void => {
+      if (!o.visible) {
+        collect(o);
+        return;
+      }
+      for (const child of o.children) walk(child);
+    };
+    for (const child of this.scene.children) walk(child);
+    // WHAT EACH ONE COST, kept for anything over a frame. Splitting big groups
+    // did not move an 867ms draw, which means the cost is the PROGRAMS a draw
+    // forces rather than the geometry in it, and those two are not
+    // distinguishable from a total. Named here so the expensive ones can be
+    // argued about individually instead of guessed at.
+    const slow = ((window as unknown as Record<string, unknown>).__wieldboundWarmSlow = [] as unknown[]);
+    for (const object of hidden) {
+      const before = this.renderer.info.programs?.length ?? 0;
+      const at = performance.now();
+      this.warmDraw(object);
+      const ms = performance.now() - at;
+      if (ms > 16) {
+        slow.push({
+          ms: Math.round(ms),
+          name: object.name || object.type,
+          meshes: meshCount(object),
+          programs: (this.renderer.info.programs?.length ?? 0) - before,
+        });
+      }
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    }
+  }
+
   render(): void {
     // HOLD THE PICTURE WHILE A QUALITY CHANGE RELINKS. See `applyQuality`:
     // drawing now would force every invalidated program to link serially on

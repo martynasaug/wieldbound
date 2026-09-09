@@ -104,7 +104,13 @@ section("2. nothing is drawn before its shaders exist");
   // promise shape: the monster path grew a .finally() when actor builds were
   // bounded in M70.38, and a test recognising only .then(async () => {})
   // reported "both paths found - 1" for a refactor that changed no behaviour.
-  const spawns = [...game.matchAll(/\.load\(\)[\s\S]{0,80}?\.then\(async \(\) => \{([\s\S]{0,400}?)\n\s*\}\)/g)];
+  // AND THE WINDOW IS 800, NOT 400, FOR THE SAME REASON AGAIN. The monster
+  // path gained a `warmDraw` call and the comment explaining it in M70.196, and
+  // a body that no longer fits the window reads to this test as a path that no
+  // longer exists — "both paths found - 1" for a change that added warming
+  // rather than removing it. A size limit is there to stop the match running
+  // away into the next function, not to cap how much may be explained.
+  const spawns = [...game.matchAll(/\.load\(\)[\s\S]{0,80}?\.then\(async \(\) => \{([\s\S]{0,800}?)\n\s*\}\)/g)];
   check("both actor build paths were found", spawns.length === 2, String(spawns.length));
   for (const [i, m] of spawns.entries()) {
     const body = m[1];

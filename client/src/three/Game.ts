@@ -1644,6 +1644,21 @@ export class Game {
       // Announced, so a harness can prove the branch was taken rather than
       // infer it from a timing that looks about right.
       (window as unknown as Record<string, unknown>).__wieldboundDeferredWarm = true;
+      // THE SWITCHED-OFF THINGS FIRST, AND STILL UNDER THE LOADING SCREEN.
+      //
+      // Everything else in the tail can be warmed on demand — a monster warms
+      // as it spawns, an effect as it plays. These cannot: the mist, the stars
+      // and the town's lantern flames are shown by the HOUR, so nothing ever
+      // arrives to trigger them and they would light up mid-frame at dusk,
+      // twenty-four minutes in, where no test here reaches.
+      //
+      // And two of them are not cheap. `flames:town` costs 854ms for three
+      // programs and `flames:road` 380ms for three — about 285ms each against a
+      // ~50ms average, because they are custom fire shaders. Deferring those
+      // behind the door just moves a nine-hundred-millisecond freeze into the
+      // player's first seconds, which is the trade this whole change exists to
+      // refuse. A second of loading screen is the right place for them.
+      await this.world.warmHiddenChunked();
       this.loop();
       // AFTER A REAL YIELD, not just unawaited. `void this.warmTail()` still
       // runs the function body synchronously as far as its first await, and
@@ -1686,7 +1701,17 @@ export class Game {
     // spawns nearby rather than when it is first drawn — which makes the cost
     // proportional to what is around the player instead of to everything that
     // exists. That is the real shape of the fix and a bigger piece of work.
-    await this.world.warmWholeScene();
+    // SKIPPED ENTIRELY ON THE DEMAND PATH. Monsters now warm-draw themselves
+    // as they spawn (`World.warmDraw` at the spawn site), which is what this
+    // whole-scene render was covering for them, and paying it per kind as they
+    // first appear is what makes the cost track what is near the player rather
+    // than everything the game contains.
+    // On the demand path this is already covered: monsters warm-draw themselves
+    // as they spawn, and the things nothing ever spawns were warmed under the
+    // loading screen before the door opened.
+    if (!chunked) {
+      await this.world.warmWholeScene();
+    }
     this.loadMark("warmWholeScene");
     // Out of sight again, but never disposed — see `monsterShaderKeepAlive`.
     for (const root of this.monsterShaderKeepAlive) root.visible = false;
@@ -1930,6 +1955,11 @@ export class Game {
           actor.root.visible = false;
           this.world.scene.add(actor.root);
           await this.world.warmUp(actor.root);
+          // AND DRAWN ONCE, OUT OF SIGHT. `warmUp` prepares the material;
+          // only a draw creates the program the real frame uses, which is why
+          // a monster warmed on spawn still cost a frame the first time it was
+          // genuinely seen. A kind whose programs already exist pays nothing.
+          this.world.warmDraw(actor.root);
           actor.root.visible = true;
           this.world.warmBuffers(actor.root, s.kind);
         })
