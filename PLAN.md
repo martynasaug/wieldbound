@@ -21747,3 +21747,44 @@ reasoning had stopped describing this map. The test measures the actual
 geometry, so the next resize cannot leave a number there to be believed.
 
 Suite 43/43.
+
+**Phase 70 M70.210 — the opening, played for the first time.** Every driven
+harness here runs the seeded endgame fixture: level 235, 463 spare points, a bag
+of band-5 gear, every talent mastered. That character cannot see the early game
+— it one-shots band-1 creatures and never gathers, levels or meets a wall.
+`death.mjs` is the only thing that starts from nothing, and it does so to
+measure dying. So the part every new player meets, and the only part most will
+ever see, had never been played and looked at.
+
+`tools/soak/firstminutes.mjs` starts a character that has never logged in and
+plays for a stretch. The first run said "still level 1 after eight minutes",
+which is the kind of number that gets reported as a finding and should not have
+been: it had no evidence the bot ever fought. Instrumented — 638 sightings,
+closest approach 30px, 198 swings, 9 experience of the 20 needed for level 2 in
+six minutes — and only then worth reading.
+
+THE ARITHMETIC BEHIND THAT, which the run matches exactly. Bare-handed at level
+1: accuracy 50 against a slime's 5 evasion is a 45% hit; average damage 1.5
+times the fist's 0.6 multiplier is ~0.68 a swing; a fist swings every 1152ms. So
+a 15hp slime is about TWENTY-SIX SECONDS of continuous punching, and level 2 is
+four of them.
+
+AND IT IS NOT A FINDING, because that is not the opening. The Herald's own
+"What should I do first?" answer says: take work from Cabel and Marda, both of
+which pay in materials, gather from the bushes in the square and the trees
+outside the wall, then stand at the anvil and forge something. "Bare-handed you
+are an adventurer" — fists are deliberately the worst thing in the game to hold.
+The design is coherent and signposted in the one place a new player is pointed
+at; the bot ignored all of it and punched slimes.
+
+Which makes the number a measurement of what happens when a player ignores every
+piece of guidance the game gives them — worth having, and worth labelling as
+that rather than as the early game. Making the bot take the quests, gather and
+forge is what would measure the intended opening, and the file says so.
+
+One incidental check: a fresh character starts with 20 wood, 20 ore, 15 herb and
+can afford 2 of the 9 shop rows — a potion and boots, but not the 28-ore starter
+blade. That is consistent with the advice, which sends them to the anvil rather
+than the shop.
+
+Suite 43/43.
