@@ -21312,3 +21312,47 @@ the arithmetic is the part that can be checked forever.
 Both new checks verified by deleting the guard and watching them fail.
 
 Suite 41/41.
+
+**Phase 70 M70.200 — accuracy stopped paying at level 35, and a lot of the game
+was inert because of it.** The same combat screenshot that produced M70.199 also
+showed a level 87 Fighter missing a Goblin over and over. That is not variance:
+
+    playerAccuracy(agility, bonus) = Math.min(95, 50 + agility * 2 + bonus)
+
+Agility 23 reaches 95 unaided. Stat points are 3 a level and a spread build puts
+a quarter into Agility, so the cap starts biting around LEVEL 35, and a level 87
+character sits at Agility 62 — accuracy 174, of which 79 was discarded. Against
+a Goblin's 15 evasion that is 80%, permanently, and no level, no gear and no
+talent could move it.
+
+AND EVERYTHING THE GAME SELLS AS ACCURACY WAS INERT WITH IT: the `True` and
+`of the Hawk` affixes, three set bonuses, and the accuracy halves of `Precision`
+(sword), `Relentless` (mace) and `Eagle Eye` (bow). All of it bought nothing on
+any character past the mid game, and nothing said so.
+
+The cap was in the wrong place. `resolveAttack` ALREADY clamps the final hit
+chance to 5-95, so the miss floor was never at risk from removing it — the only
+thing `Math.min(95, ...)` did was truncate accuracy BEFORE evasion was
+subtracted. Removed:
+
+    goblin (ev 15)     lvl 35 spread 81%   lvl 87 spread 95%   lvl 87 strength 55%
+    ghost  (ev 38)     lvl 35 spread 58%   lvl 87 spread 95%   lvl 87 strength 32%
+
+IT ALSO REPAIRS THE ONE MONSTER BUILT AROUND ACCURACY. The ghost carries 38
+evasion and its own note says that exists to "answer accuracy rather than
+damage" — a low-Agility build should struggle where an Agility build does not.
+With every build pinned at 95 it asked nothing of anyone; the check only exists
+once accuracy can vary. It now does, and a Strength build still meets it at 32%.
+
+Verified in play: the log went from "You miss the Goblin" repeating to "You hit
+the Slime for 18. You defeated the Slime." Four checks added to `balance.mjs`,
+all four verified by restoring the cap and watching them fail.
+
+AND ONE LINE OF WORDING, because reading that screenshot closely is what caught
+it. The combat log coalesces repeated incoming hits into "Hit 2 times for 2."
+Dropping the attacker's NAME is right — in a pack it would misattribute — but
+the direction went with it, and the line reads most naturally as the player
+landing two blows. It sent me looking for a bug in Cleave's damage that was
+never there. It now says "You are hit 2 times for 2."
+
+Suite 41/41.

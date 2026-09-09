@@ -477,8 +477,40 @@ export function manaRegenAmount(intelligence = 0): number {
   return 2 + Math.floor(intelligence / 3);
 }
 
+/**
+ * NOT CAPPED, AND THE CAP THAT USED TO BE HERE WAS DOING REAL DAMAGE.
+ *
+ * This read `Math.min(95, ...)`, which sounds prudent and was in the wrong
+ * place: `resolveAttack` ALREADY clamps the final hit chance to 5-95, so the
+ * miss floor was never in danger. All the cap did was stop accuracy being
+ * counted before evasion was subtracted from it.
+ *
+ * Agility 23 reaches 95 on its own. Stat points are 3 a level and a spread
+ * build puts a quarter into Agility, so the cap starts biting around level 35
+ * and a level 87 character sits at Agility 62 — accuracy 174, of which 79 was
+ * thrown away. Every point after that bought nothing, and neither did any of
+ * the accuracy the game sells alongside it: two affixes (`True`, `of the
+ * Hawk`), three set bonuses, and the accuracy halves of `Precision`,
+ * `Relentless` and `Eagle Eye`. All silently inert on any character past the
+ * mid game.
+ *
+ * FOUND FROM A SCREENSHOT of a level 87 Fighter missing a Goblin repeatedly —
+ * 20% of swings, permanently, against a band 2 creature, because 95 accuracy
+ * less 15 evasion is 80 and no amount of levelling could move it.
+ *
+ * AND IT BROKE THE ONE MONSTER BUILT AROUND IT. The ghost carries 38 evasion
+ * and its own note says that is there to "answer accuracy rather than damage",
+ * so a low-Agility build should struggle where an Agility build does not. With
+ * every build pinned at 95 it asked nothing of anybody: the check only exists
+ * once accuracy can actually vary. Uncapped, a Strength build still meets it at
+ * 32% and an Agility build earns its way past — which is what the design says
+ * it is for.
+ *
+ * The clamp in `resolveAttack` is the one that matters and it stays: nothing
+ * here can ever produce a guaranteed hit.
+ */
 export function playerAccuracy(agility: number, accuracyBonus = 0): number {
-  return Math.min(95, 50 + agility * 2 + accuracyBonus);
+  return 50 + agility * 2 + accuracyBonus;
 }
 
 export function playerCritChance(agility: number): number {

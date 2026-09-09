@@ -519,5 +519,43 @@ for (const [kind, s] of Object.entries(MONSTER_STATS)) {
   }
 }
 
+// ACCURACY HAS TO KEEP PAYING, or a large amount of the game is decoration.
+//
+// `playerAccuracy` used to end in `Math.min(95, ...)`. Agility 23 reaches 95 by
+// itself, which is about level 35 on a spread build, and every point after that
+// bought nothing — nor did the two affixes, three set bonuses and three talent
+// halves the game sells as accuracy. A level 87 Fighter missed a Goblin one
+// swing in five, permanently, and no amount of levelling or gear could move it.
+//
+// The clamp that keeps a miss possible lives in `resolveAttack` (5-95) and is
+// the correct place for it. This is here so the cap does not come back to the
+// wrong one.
+{
+  const hit = (acc, ev) => Math.max(5, Math.min(95, acc - ev));
+  const ghost = MONSTER_STATS.ghost.evasion;
+  const goblin = MONSTER_STATS.goblin.evasion;
+
+  if (playerAccuracy(62) <= playerAccuracy(23)) {
+    fail("agility past 23 buys no accuracy — the cap is back and every point after it is wasted");
+  }
+  if (playerAccuracy(30, 10) <= playerAccuracy(30)) {
+    fail("accuracy from gear and talents does nothing — `True`, `of the Hawk`, Precision, Eagle Eye are inert");
+  }
+  // A late character should not be missing a starter creature every fifth swing.
+  if (hit(playerAccuracy(62), goblin) < 90) {
+    fail(`a level 87 spread build hits a Goblin only ${hit(playerAccuracy(62), goblin)}% of the time`);
+  }
+  // But the floor still holds: nothing is ever a guaranteed hit.
+  if (hit(playerAccuracy(999, 999), ghost) > 95) {
+    fail("hit chance has escaped its clamp — some build never misses");
+  }
+  // And the ghost still asks its question of a build that ignored Agility. This
+  // is the check that the cap was quietly cancelling: at 95 for everyone, its
+  // 38 evasion distinguished nobody.
+  if (hit(playerAccuracy(10), ghost) > 60) {
+    fail("a Strength build walks through the ghost's evasion — its whole identity is accuracy");
+  }
+}
+
 console.log(failures === 0 ? "\nOK — every ring is clearable at the level it is for." : `\n${failures} failure(s).`);
 process.exit(failures === 0 ? 0 : 1);

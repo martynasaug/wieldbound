@@ -51,7 +51,13 @@ export class CombatLog {
       this.openHit.total += amount;
       this.openHit.endsAt = now + HIT_GROUP_WINDOW_MS;
       this.openHit.el.style.color = color;
-      this.openHit.el.textContent = `Hit ${this.openHit.count} times for ${this.openHit.total}.`;
+      // "YOU ARE HIT", NOT "HIT". Dropping the attacker's name is right — in a
+      // pack it would misattribute — but the direction went with it, and
+      // "Hit 2 times for 2." does not say who hit whom. It reads most naturally
+      // as the player landing two blows, which is the opposite of what it
+      // means, and it misled the one person reading a screenshot of it closely
+      // enough to go looking for a bug in Cleave. Four characters fix it.
+      this.openHit.el.textContent = `You are hit ${this.openHit.count} times for ${this.openHit.total}.`;
       this.container.scrollTop = this.container.scrollHeight;
       return;
     }
