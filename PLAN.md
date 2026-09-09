@@ -21356,3 +21356,38 @@ landing two blows. It sent me looking for a bug in Cleave's damage that was
 never there. It now says "You are hit 2 times for 2."
 
 Suite 41/41.
+
+**Phase 70 M70.201 — checking that M70.200 did not quietly rebalance the
+weapons.** Uncapping accuracy is a change to a core combat stat, and Agility is
+not equally important to all eight families: `WEAPON_STAT_ADVICE` puts it first
+for dagger, bow and fist, second for sword and wand, third for axe, mace and
+staff. So the obvious worry is that the Agility weapons just got a free
+throughput gain.
+
+They did not. Following each weapon's OWN advice at level 87, against a wolf,
+all eight reach the 95% clamp — the change introduced ZERO spread. The one place
+they separate is the ghost: 86% for the Strength families against 95% for the
+Agility ones, a 10.5% edge on the single monster whose 38 evasion exists to ask
+exactly that question. Every weapon gained; none is worse off than before.
+
+    vs wolf   (ev 20)   every weapon 75% -> 95%     spread introduced 0.0%
+    vs ghost  (ev 38)   57% -> 86%/95%              spread introduced 10.5%
+
+AND THE WIDE SPREADS LOWER DOWN ARE NOT FROM THIS. At levels 20-40 the eight
+families range from 38% to 72% against an armabee, which looks alarming and is
+untouched: below 95 the old cap never applied, so those numbers are exactly what
+they always were. That is Agility being the accuracy stat, which is the design,
+not a regression to answer for.
+
+`weaponbalance.mjs` now says WHY it excludes accuracy instead of merely
+excluding it. Every weapon in that model is measured at the same `AGILITY`, so
+accuracy is a common factor that cancels out of the comparison; it stops
+cancelling only when builds differ per weapon, which is the case checked above.
+The note records how to re-check it, and what the property actually is: not that
+accuracy is equal, but that no weapon following its own advice is left unable to
+hit what it is meant to fight.
+
+Rankings unchanged: dagger 255, sword 215, wand 205, mace 204, axe 197,
+staff 189, bow 184, fist 114.
+
+Suite 41/41.

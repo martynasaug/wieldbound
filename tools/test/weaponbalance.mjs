@@ -28,6 +28,32 @@
 // The skill half is rough on purpose: every cooldown always available, nothing
 // missed, no mana limit, no travel time. That flatters casters, and it is still
 // the only way the two halves can be added together at all.
+//
+// ACCURACY IS ABSENT ON PURPOSE, and after M70.200 that needs saying rather
+// than just being true. Every weapon here is measured at the SAME `AGILITY`, so
+// every weapon has the same accuracy and the same hit chance against any given
+// target: it is a common factor across all eight and cancels out of the
+// comparison entirely. Adding it would multiply every row by the same number.
+//
+// It stops cancelling the moment builds differ per weapon, which is what
+// `WEAPON_STAT_ADVICE` tells players to do — Agility is first for dagger, bow
+// and fist, second for sword and wand, third for axe, mace and staff. So the
+// question "did uncapping accuracy hand the Agility weapons a free advantage"
+// is real, and was checked when the cap came off. Following each weapon's own
+// advice at level 87, against a wolf, ALL EIGHT reach the 95% clamp: the change
+// introduced no spread at all. The only place they separate is the ghost, at
+// 86% against 95% — a 10.5% edge to the Agility weapons on the one monster
+// whose 38 evasion exists specifically to ask that question. Everything else in
+// the game is at the ceiling for everybody.
+//
+// The wide spreads at levels 20-40 are NOT from that change: below 95 the cap
+// never applied, so those numbers are what they always were. They are Agility
+// being the accuracy stat, which is the design.
+//
+// Any future change to `playerAccuracy` should be re-checked the same way. The
+// property that matters is not "accuracy is equal" — it is that no weapon
+// following its own advice is left unable to hit the things it is meant to
+// fight.
 
 import {
   WEAPONS,
