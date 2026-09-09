@@ -21988,3 +21988,43 @@ Five seams now checked across M70.211-215: geometry, ordering, tooltip
 multisets, named facts, and quest counts. None of them reads English.
 
 Suite 44/44.
+
+**Phase 70 M70.216 — the most-read text in the game, checked for the first
+time.** M70.215 found the same false claim in a second table because the guard
+only read one of them. So: where else does player-facing text live? The answer
+that mattered is `LOADING_HINTS` — nine sentences on screen for seven seconds of
+every session, before anything else is, and the first thing a new player ever
+reads.
+
+They are nine MECHANICAL claims written in prose, in a client file, beside
+tables that live somewhere else. Every one holds today, and each was checked by
+hand before being wired up:
+
+    a full day is twenty-four minutes        DAY_LENGTH_MS = 24 * 60 * 1000
+    no class selection, sword/staff          WEAPONS.sword -> warrior, staff -> mage
+    bare-handed is an Adventurer with a tree WEAPONS.fist -> adventurer, tree has nodes
+    every weapon has its own tree            all eight have one
+    a golem's armour, bring something heavy  golem 14, the heaviest in the game
+    difficulty radiates from the centre      spawn (8000,6000) IS the world centre
+    a troll winds up before it slams         windupMs and slamRadiusPx both set
+    threat decides aggro AND experience      one `monsterThreat` table does both
+    the action bar is yours                  interface, not checkable here
+
+`tools/test/hints.mjs` guards the seven that reduce to a fact, quoting the hint
+in any failure so whoever breaks one knows which sentence just became false.
+
+THE THIRD CONTROL IS THE ONE WORTH HAVING. Changing the day length fails; making
+the dragon heavier-armoured than the golem fails; and REWORDING A HINT so the
+guard no longer matches it also fails, with "the wording moved, so this claim is
+no longer being guarded". That failure mode — a check that quietly stops
+applying — has cost this session twice already, once when a coverage measure
+reported every export untested because a shell ate a regex, and once when
+`panels.mjs` asked for a key that toggles mute. A guard that can go blind
+without saying so is worse than no guard.
+
+Read from source rather than imported, and not by choice: `LoadingScreen.ts`
+imports `../three/assets` without an extension, which Vite resolves and Node
+does not, so importing it fails on a module three hops away that has nothing to
+do with hints.
+
+Suite 45/45.
