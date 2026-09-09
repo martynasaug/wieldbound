@@ -165,6 +165,50 @@ section("3. gear is warmed in the background, not fetched mid-fight");
   );
 }
 
+section("4. the load does not grow with the game");
+{
+  // NOTHING WAS PROTECTING THE 2.6 SECONDS M70.197 BOUGHT, and the way it would
+  // be lost is not a bug anybody would notice: put an `await` back on the tail,
+  // or drop the `warmDraw` from the spawn path, and the game still works
+  // perfectly and simply takes three seconds longer to start. There is no
+  // failing frame to catch it. So it is checked at the source, where the answer
+  // is deterministic — a timing assertion here would be flaky on a busy machine
+  // and would get muted the first time it lied.
+  check(
+    "the tail is deferred by default, not awaited before the first frame",
+    /get\("deferwarm"\) !== "0"/.test(game),
+    "with the default flipped back, every player waits for the whole tail again",
+  );
+  check(
+    "and the escape hatch that makes it A/B-able from one build is still there",
+    /deferwarm/.test(game),
+  );
+  // The demand half. `warmUp` prepares a material but only a DRAW creates the
+  // program a real frame uses — that gap is why `warmWholeScene` existed, and
+  // dropping this call reintroduces a compile in the first frame that shows
+  // each monster kind.
+  check(
+    "a spawning monster is drawn once out of sight, not just compiled",
+    /warmUp\(actor\.root\);[\s\S]{0,400}?warmDraw\(actor\.root\)/.test(game),
+    "compiling without drawing leaves the real frame to build the program",
+  );
+  check(
+    "the things nothing ever spawns are warmed under the loading screen",
+    /warmHiddenChunked\(\)/.test(game),
+    "the mist, the stars and the lantern flames are shown by the hour, so no " +
+      "demand ever triggers them — they would compile at dusk, in front of the player",
+  );
+  check(
+    "and warming still restores what it mutated",
+    // Anchored on the method rather than on any `warmDraw(`, which would match
+    // a call site first, and with room to spare: the body is ~2,100 characters
+    // and a window sized exactly to today's code is a test that fails the next
+    // time someone explains something. See the note in section 2.
+    /warmDraw\(object: THREE\.Object3D\): void \{[\s\S]{0,4000}?\} finally \{/.test(world),
+    "a warm draw that throws would leave the world's scenery switched off",
+  );
+}
+
 console.log(
   failures === 0
     ? "\nOK — models arrive before they are needed and compile before they are drawn"

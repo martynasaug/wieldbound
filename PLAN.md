@@ -21233,3 +21233,31 @@ and faded occluders now warm as they are needed. Adding a hundred monster kinds
 no longer adds a hundred monsters' worth of loading screen.
 
 Suite 41/41.
+
+**Phase 70 M70.198 — a guard on the load, because nothing was holding it.**
+M70.197 took 2.6s off every load, and the way that would be lost silently is
+not a bug anybody would notice: put an `await` back on the tail, or drop the
+`warmDraw` from the spawn path, and the game still works perfectly and simply
+takes three seconds longer to start. No frame fails. No test complains.
+
+Four checks in `tools/test/warmup.mjs`, at the source rather than on a clock —
+a timing assertion would be flaky on a busy machine and would get muted the
+first time it lied:
+
+  * the tail is deferred by default, and the `?deferwarm=0` escape hatch survives
+  * a spawning monster is DRAWN once out of sight, not merely compiled — the
+    gap that made `warmWholeScene` necessary in the first place
+  * the things nothing ever spawns are warmed under the loading screen
+  * `warmDraw` still restores what it mutated in a `finally`
+
+Each was verified by breaking the thing it guards and watching it fail:
+flipping the default back to `=== "1"` fails the first, deleting the
+`warmDraw` call fails the third. A guard nobody has seen fail is a guard
+nobody knows works.
+
+The `finally` check is anchored on the method signature rather than on any
+`warmDraw(`, which would match a call site first, and given 4,000 characters
+against a body of 2,100 — sizing a window to today's code is how section 2
+started failing the moment a comment was added to the path it watches.
+
+Suite 41/41.
