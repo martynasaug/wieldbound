@@ -21788,3 +21788,47 @@ blade. That is consistent with the advice, which sends them to the anvil rather
 than the shop.
 
 Suite 43/43.
+
+**Phase 70 M70.211 — the game's own starter advice was wrong, and had been since
+the bushes moved.** M70.210 ended with the obvious next step: make the new-
+character bot FOLLOW the Herald's guidance rather than ignore it. Trying to
+build that found the guidance does not describe this world.
+
+The Herald's "What should I do first?" said: "Gather from the bushes here in the
+square and the trees outside the wall." Measured:
+
+    82 resource nodes exist.  0 of them are inside the 800px walls.
+    The nearest is at 1000px — 200 beyond the palisade.
+    The square holds 20 plant-shaped DECORATIONS: eight gardens on the
+    735px ring, plus the door planters. None gatherable.
+
+So a new player takes the single piece of guidance they are given, walks to the
+greenery in front of them, gets nothing, and has been told nothing else. The
+line also drew a distinction the world does not have — bushes "here in the
+square" against trees "outside the wall" — when both are outside.
+
+IT WAS TRUE ONCE. `ringNodes` records the bushes being moved into the square and
+then out again to 1000, deliberately: "a town is somewhere you go BETWEEN
+gathering trips; a bush growing between the anvil and the inn quietly makes the
+square another field." The advice was left behind by that decision. So was the
+comment directly above the placement, which still described the middle step and
+contradicted the one underneath it — both fixed.
+
+NOTHING COULD HAVE CAUGHT IT. The text is in `shared/town.ts`, the nodes are
+built in the server, and no test read both. `tools/test/starteradvice.mjs` now
+does, over a socket, because node placement is not shared code and cannot be
+imported. It checks the narrow, checkable claim — nobody may send a player to
+gather in town while nothing gatherable is in town — and the reverse, so it
+cannot be satisfied by deleting the advice instead of correcting it.
+
+That reverse check earned itself immediately: my first rewrite dropped the word
+"gather" altogether and the test failed with "no NPC mentions gathering at all —
+a new player is told nothing about materials". Both directions verified by
+restoring the old claim and watching the right one fail.
+
+This is also the answer to five investigations in a row ending in "the game is
+fine, the instrument was wrong". The fault was not in a well-trodden system; it
+was in the seam BETWEEN two of them, where a text file and a server table have
+to agree and nothing was reading both.
+
+Suite 44/44.

@@ -640,10 +640,12 @@ const nodes: ResourceNodeState[] = [
   // potions are crafted at the bench they surround.
   //
   // They used to sit at 330px, which is exactly where Emberhold's buildings now
-  // stand: six bushes growing through the inn's front wall. Moved INSIDE the
-  // square rather than outside the ring, which is the better answer anyway — a
-  // herb garden between the anvil and the well is a thing a town would have,
-  // and it keeps the one gatherable a beginner needs within sight of spawn.
+  // stand: six bushes growing through the inn's front wall. That was fixed by
+  // moving them INSIDE the square — and then fixed again by moving them out to
+  // 1000, for the reason spelled out below. This paragraph described the middle
+  // step for long enough to contradict the one directly under it, which is how
+  // the Herald's own advice ended up telling new players to "gather from the
+  // bushes here in the square" a build after the last bush left it.
   // Started at 45 rather than 15, and the five extra degrees per bush are the
   // North Road: at 15 the ring puts a bush at bearing 255, which is four
   // degrees off the postern and squarely in the wheel ruts. Rotating the phase

@@ -1132,9 +1132,27 @@ export const TOWN_NPCS: TownNpc[] = [
       {
         q: "What should I do first?",
         a:
+          // THE SQUARE HAS NO BUSHES IN IT, and this line used to send new
+          // players to gather from them.
+          //
+          // Measured rather than assumed: 82 resource nodes exist and ZERO of
+          // them fall inside the 800px walls, let alone the 528px paved square.
+          // The nearest bush is at 1000px. Meanwhile the square holds twenty
+          // plant-shaped DECORATIONS — eight gardens on the 735px ring plus the
+          // door planters — so a new player following the one piece of starter
+          // guidance walks to the greenery in front of them, gets nothing, and
+          // has been told nothing else.
+          //
+          // The old wording also drew a distinction the world does not have,
+          // between bushes "here in the square" and trees "outside the wall":
+          // both are outside. Corrected to match the ground rather than moving
+          // the ground to match it — whether the square SHOULD have a herb bush
+          // in it is a content decision, and this line should be true either
+          // way.
           "Take work from Cabel at the Warden's Post and from Marda at the inn — both pay in " +
-          "materials, which is what the anvil eats. Gather from the bushes here in the square " +
-          "and the trees outside the wall. Then stand at the anvil and forge something. " +
+          "materials, which is what the anvil eats. Gather the rest yourself: walk out of any " +
+          "gate and the bushes and trees start a short way beyond the wall — nothing grows " +
+          "inside it that is worth picking. Then stand at the anvil and forge something. " +
           "Salvaging a thing teaches you to make it, so break open anything you will not wear.",
       },
       {
