@@ -22028,3 +22028,53 @@ does not, so importing it fails on a module three hops away that has nothing to
 do with hints.
 
 Suite 45/45.
+
+**Phase 70 M70.217 — a starting weapon, and two things wrong with how weapons
+are held.** Three changes, and the second and third came from being told to look
+at something I had already photographed and not seen.
+
+A STARTING WEAPON. Bare-handed at level 1 is a 45% hit for ~0.68 damage a swing
+every 1152ms — twenty-six seconds to kill a slime, four slimes to reach level 2 —
+and a new character cannot buy a blade (28 ore against a 20-ore start) or forge
+one (fresh characters know no recipes and have nothing to salvage). Watched from
+outside it reads as running around doing nothing and dying, which is how it was
+described to me. New characters now start holding a BROKEN NOTCHED DIRK.
+`broken` is the floor of `RARITY_ORDER`, so it undercuts neither Oswyn's 28-ore
+blade nor the anvil; measured, it takes a slime from 18s to 12s. Rarity barely
+matters here — `worn` is 11s and `honed` 10s — because the 47% hit chance
+dominates, so the floor rarity is the right choice rather than a timid one.
+Equipped through `equipItem`, which owns the two-hands rule and the three rarity
+columns and whose own comment already anticipated "a starting kit".
+
+THEN: "look at how that character is holding that sword." The frame was one I
+had captured and read for its combat log. Two real faults, one instrument built
+to see them — `weapongrip.mjs`, which freezes the clock at noon, pulls the
+camera to 4.5 and photographs each weapon alone, because a grip cannot be judged
+at dusk in the middle of a fight.
+
+  * EVERY DAGGER WAS ISSUED AT GREATSWORD LENGTH. `fitToGrip` normalises a
+    weapon's longest axis to the donor sword's — right for orientation, and the
+    reason a shield does not come out five times the character — so all six
+    dagger bases, which use real dagger models, came out sprawled across the
+    torso. Fixed with a FAMILY length rather than six item ones: per-item
+    `art.scale` is the existing lever and the wrong shape, because every dagger
+    needs the same correction and a seventh added later would arrive
+    sword-length again. Wands are excluded: they already correct themselves per
+    item, being built from the Wizard's staff mesh at 0.5-0.58.
+  * THE OFF-HAND RENDERED INSIDE OUT. The left hand has no socket in the pack,
+    so the shield rides `FistL` mirrored with `scale(1, 1, -1)`. A negative
+    scale reverses triangle winding and three.js does not flip `frontFace` per
+    object, so the shield was drawn with its front faces culled: `verdantaegis`
+    appeared as a pale hollow see-through slab hanging off the arm. Drawing the
+    back faces instead restores it — the normal matrix already negates normals
+    for a negative determinant, so lighting was never the problem, only which
+    side was being drawn. Now solid green.
+
+Both verified by eye, before and after, at 4x.
+
+WHAT IS NOT FIXED: the weapon still lies across the body rather than sitting in
+the fist. That may be the authored `Idle_Weapon` stance — the rig's own
+"hands up, blade across" pose — rather than a fault, and telling those apart
+needs a decision about how the game should look, not another measurement.
+
+Suite 45/45.

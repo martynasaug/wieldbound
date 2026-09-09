@@ -26,6 +26,8 @@ import {
 } from "../../shared/protocol-types.ts";
 import {
   MATERIALS,
+  ITEM_BASES,
+  rollItem,
   isBasicRecipe,
   isTwoHanded,
   salvageYield,
@@ -420,6 +422,43 @@ export function loadOrCreateCharacter(name: string): CharacterRow {
     row.lastSeenAt,
     null,
   );
+
+  // SOMETHING IN YOUR HAND, because the first ten minutes without one are not
+  // the game anybody meant to ship.
+  //
+  // Measured before changing anything. Bare-handed at level 1 is 50 accuracy
+  // against a slime's 5 evasion — a 45% hit — for an average 1.5 damage times
+  // the fist's 0.6 multiplier, so about 0.68 a swing, once every 1152ms. That
+  // is TWENTY-SIX SECONDS of continuous punching to kill the weakest creature
+  // in the world, and four of them to reach level 2. A driven character that
+  // ignored the guidance gained 9 of the 20 experience it needed in six
+  // minutes; one that followed the guidance exactly — both quests, gathering,
+  // the shop — did not hold a weapon until fifteen minutes in, because the
+  // cheapest blade costs 28 ore and a new character starts with 20.
+  //
+  // Watched from outside, that reads as running around doing nothing and
+  // dying, which is how it was described to me.
+  //
+  // A BROKEN DIRK, and each half of that is deliberate. `broken` is the bottom
+  // of `RARITY_ORDER`, so this undercuts neither Oswyn's 28-ore Recruit's Blade
+  // nor anything off the anvil — it is strictly better than fists and strictly
+  // worse than the first thing you will earn. The dirk is the cheapest weapon
+  // base in the catalogue and its own flavour line already reads like a
+  // starting item: "Someone's first knife, and someone else's last."
+  //
+  // It does not weaken "there is no class selection", which is the rule the
+  // loading screen leads with: a dagger makes you a Ranger until you pick up
+  // something else, and putting one in your hand is the fastest possible
+  // demonstration that the weapon IS the class. Dropping it for a staff still
+  // makes you a Mage mid-fight.
+  //
+  // Equipped through `equipItem` rather than by writing `equipped = 1`, because
+  // that function owns the two-hands rule and the three rarity columns — see
+  // its own note about "a starting kit, a reward, a test".
+  const starter = addItem(row.id, rollItem(ITEM_BASES.dirk, "broken", () => 0.5));
+  equipItem(row.id, starter.id);
+  row.weaponRarity = starter.rarity;
+
   return row;
 }
 

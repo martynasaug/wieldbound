@@ -38,6 +38,7 @@ import {
   type GearStyle,
   type ItemRarity,
   type ItemSlot,
+  type WeaponType,
 } from "../../../shared/protocol-types";
 import { loadModel } from "./assets";
 import { donorPart, type DonorPartId } from "./wardrobe";
@@ -730,6 +731,20 @@ export async function buildHeldItem(
   return { bone: proto.bone, object };
 }
 
+/**
+ * Length relative to the donor sword, per weapon family.
+ *
+ * See the note where this is applied. `fitToGrip` deliberately gives every
+ * weapon the same longest axis; this is where a family says it is shorter than
+ * that. A missing entry means "as long as the sword", which is right for
+ * swords, axes, maces, staves and bows.
+ */
+const FAMILY_LENGTH: Partial<Record<WeaponType, number>> = {
+  // A knife is about half a sword. Measured against the character rather than
+  // reasoned about: at 1.0 the blade reached from the fist past the far hip.
+  dagger: 0.5,
+};
+
 async function makeHeldItem(
   baseId: string,
   rarity: ItemRarity,
@@ -815,6 +830,28 @@ async function makeHeldItem(
   }
   if (base.art.scale && base.art.scale !== 1) mesh.scale.multiplyScalar(base.art.scale);
 
+  // HOW LONG A FAMILY IS, because `fitToGrip` makes everything one length.
+  //
+  // That function normalises a weapon's longest axis to the donor sword's, and
+  // says so — it is the right call for ORIENTATION and it is the whole reason a
+  // shield does not come out five times the character. But it also means a
+  // dagger is issued at greatsword length: all six dagger bases use real dagger
+  // models and came out as long as a Warrior's sword, sprawled across the
+  // torso, which is what "look at how that character is holding that sword"
+  // was pointing at.
+  //
+  // A FAMILY NUMBER RATHER THAN SIX ITEM ONES. Per-item `art.scale` is the
+  // existing lever and it is the wrong shape for this: every dagger needs the
+  // same correction, so scattering it six ways means six chances to forget, and
+  // a seventh dagger added later would arrive sword-length again. Length is a
+  // property of what the weapon IS.
+  //
+  // Only families that need it appear here. Wands already correct themselves
+  // per item — they are built from the Wizard's staff mesh at 0.5-0.58 — and
+  // adding them here would apply the correction twice.
+  const familyLength = FAMILY_LENGTH[base.weaponType as WeaponType];
+  if (familyLength) mesh.scale.multiplyScalar(familyLength);
+
   mesh.name = `held_${baseId}`;
   mesh.castShadow = true;
 
@@ -827,6 +864,24 @@ async function makeHeldItem(
     holder.add(mesh);
     holder.rotation.set(Math.PI / 2, 0, Math.PI);
     holder.scale.set(1, 1, -1);
+    // AND THE MIRROR HAS TO BE PAID FOR. A negative scale reverses the winding
+    // order of every triangle under it, and three.js does not flip `frontFace`
+    // per object — so a mirrored shield is drawn with its front faces culled
+    // and its back faces showing. On screen that is not subtle: `verdantaegis`
+    // came out as a pale, hollow, see-through slab hanging off the arm, which
+    // reads as a broken mesh rather than a shield.
+    //
+    // Drawing the back faces instead restores it. The normal matrix already
+    // negates the normals for a negative determinant, so lighting is correct
+    // once the right side is being drawn; this only chooses which side that is.
+    //
+    // Set on the prototype rather than per wielder because `buildHeldItem`
+    // clones materials from here, so every copy inherits it.
+    mesh.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      if (!m) return;
+      for (const mat of Array.isArray(m) ? m : [m]) mat.side = THREE.BackSide;
+    });
     return { object: holder, bone: "FistL" };
   }
 
