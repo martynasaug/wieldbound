@@ -21426,3 +21426,49 @@ to the database without asking `bagRoomFor`. That is fine for a fixture and is
 what surfaced this, but it is not the reason the bug exists.
 
 Suite 41/41.
+
+**Phase 70 M70.203 — two things that were not bugs, and the harness that made
+them look like bugs.** Continuing the visual pass through the windows after
+M70.202. Two suspicions, both chased with a measurement, both wrong:
+
+THE LEVEL BADGE. At 1x the HUD read "²35" for a level 235 character — the
+leading digit squashed into a sliver, which looks exactly like a box too narrow
+for three digits. Measured instead of squinted at: the badge is 27px starting
+27px into a 54px portrait, `scrollWidth === clientWidth`, and even level 1200
+fits at 33px with room to spare. Cropped at 10x it reads "235" cleanly. It was a
+10px glyph at 1x and nothing else. The measurement was right and the eye was
+wrong, which is the opposite of the usual failure here and worth the same note.
+
+THE CHARACTER PANEL, apparently sliced off mid-Strength with 463 points waiting
+to be spent — which would make the attribute buttons unreachable. It is not cut
+off: it fits every viewport tried (1600x900, 1366x768, 1280x720) and has a
+working internal scroller with 102-171px of content below the fold. The capture
+was simply of a panel scrolled to the top.
+
+WHAT WAS ACTUALLY BROKEN WAS `panels.mjs`, in three ways, and it had been for as
+long as it has existed:
+
+  * `["m", "map"]` — there is no map window. `m` toggles MUTE (`Game.ts`, the
+    `key === "m"` branch), so the shot labelled "map" was whatever happened to
+    still be open, and every run left the game silenced behind it. A key list
+    written from memory rather than from the handler.
+  * It pressed Escape "so panels do not stack", and the captures have Bags
+    sitting beside the talent tree in one frame, so it never worked. Windows are
+    toggled by their own keys; closing them means pressing those.
+  * The visible-panel report matched every large div and then took the first
+    six in document order, so it printed "i -> inventory: character-panel" —
+    the log contradicting the picture printed beside it.
+
+Now one window per capture, each correctly named, and it says "did not open"
+when one does not:
+
+    c -> character: [character-panel]      i -> inventory: [inventory-panel]
+    k -> skills: [skills-panel]            l -> leaderboard: [leaderboard-panel]
+    o -> settings: [settings-panel]
+
+Three real bugs came out of this looking pass (M70.199, M70.200, M70.202) and
+two false alarms came out of the same frames. Both false alarms died to a
+number. That ratio is the argument for measuring the suspicion rather than
+fixing it.
+
+Suite 41/41.
