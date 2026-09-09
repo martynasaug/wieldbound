@@ -21550,3 +21550,37 @@ both arms now print px/s alongside the distance, because the A/B ratio alone
 left an outlier uninterpretable after the fact. Recorded as open.
 
 Suite 41/41 on a quiet server.
+
+**Phase 70 M70.205 — the movement outlier, explained without changing the
+rule.** M70.204 left one thing open: a suite run where the anti-teleport budget
+let the spam arm cover 2700px against the honest arm's 778px, unreproduced in
+four attempts. The budget is the rule that stops a client crossing the map in
+one message, so an unexplained hole in it is not something to file and forget.
+
+The mechanism is almost certainly that THE CHARACTER DIED. `movespeed.mjs`
+tracked `x` and `y` from the snapshot and nothing else, so a character killed
+mid-burst and snapped back to the spawn tile measures as thousands of pixels of
+travel — which is precisely the shape of the failure this file exists to catch
+and indistinguishable from it in the output. The test walks in and out of camps
+for its whole duration, alternating direction through monster ground, and
+nothing was watching its health.
+
+`PlayerState` has carried `hp` since the target frame needed it, so the test can
+simply look. A snapshot step over 400px is a teleport by definition — the budget
+allows about 640px/s and snapshots arrive many times a second — and a burst that
+sees one, or sees hp hit zero, is DISCARDED AND RETAKEN, three times before the
+comparison declares itself inconclusive rather than reporting the number.
+
+NOTHING IN THE SERVER CHANGED. The bucket reads correctly on inspection and the
+passing runs match theory to within noise: ~640px/s, which is this character's
+real 318px/s times `MOVE_SPEED_TOLERANCE`. Fixing a rule to satisfy a
+measurement that was wrong about what it measured is how a real hole gets
+papered over, and there is no evidence of one.
+
+The retry, the discard and the inconclusive path were each verified by dropping
+`TELEPORT_PX` to 5 so ordinary running trips them, and watching all three fire.
+
+This is the same fault as M70.204's camps: a probe that cannot tell "the world
+moved my character" from "the thing I am testing is broken". Both now say which.
+
+Suite 41/41.

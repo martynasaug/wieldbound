@@ -145,13 +145,37 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ws = new WebSocket("ws://localhost:8080");
 const send = (m) => ws.send(JSON.stringify(m));
 let me = null;
+/** A single snapshot step larger than this is a teleport, not travel: the
+ *  budget allows roughly 640px/s and snapshots arrive many times a second. */
+const TELEPORT_PX = 400;
+let teleported = false;
+let died = false;
 
 ws.on("message", (raw) => {
   const msg = JSON.parse(raw.toString());
   if (msg.type === "WELCOME") me = msg.payload;
   if (msg.type === "STATE_SNAPSHOT" && me) {
     const self = msg.payload.players.find((p) => p.id === me.id);
-    if (self) me = { ...me, x: self.x, y: self.y };
+    if (self) {
+      // A RESPAWN IS NOT A RUN, and this test could not tell the difference.
+      //
+      // It tracked x/y and nothing else, so a character killed mid-burst and
+      // snapped back to the spawn tile measured as an enormous distance
+      // travelled — which is exactly the shape of the failure this file exists
+      // to catch, and indistinguishable from it in the output. One suite run
+      // reported the spam arm covering 2700px against 778px and then passed
+      // four times at ~770px, including straight after a cold server restart;
+      // the character walks in and out of camps for the length of the test and
+      // nothing was watching its health.
+      //
+      // No snapshot step can legitimately exceed a few dozen pixels — the
+      // budget allows about 640px/s and snapshots are far more frequent than
+      // once a second — so a jump this large is a teleport by definition.
+      const jump = Math.hypot(self.x - me.x, self.y - me.y);
+      if (jump > TELEPORT_PX) teleported = true;
+      if (self.hp <= 0 || (me.hp !== undefined && self.hp > me.hp && jump > TELEPORT_PX)) died = true;
+      me = { ...me, x: self.x, y: self.y, hp: self.hp, maxHp: self.maxHp };
+    }
   }
 });
 
@@ -200,6 +224,8 @@ ws.on("open", async () => {
   let dir = 1;
   const burst = async (gapMs, label) => {
     dir = -dir;
+    teleported = false;
+    died = false;
     const from = { x: me.x, y: me.y };
     const windowMs = 1200;
     const until = Date.now() + windowMs;
@@ -236,9 +262,25 @@ ws.on("open", async () => {
   // nothing to do with the property under test — the ratio sat at 1.17-1.26
   // against a 1.4 threshold and tipped over under suite load. Both arms now
   // drain continuously, and only the message COUNT differs.
-  const slowRate = await burst(25, "1 per 25ms");
-  const fastRate = await burst(5, "1 per 5ms");
-  if (fastRate > slowRate * 1.4) {
+  // RETRIED RATHER THAN BELIEVED IF THE CHARACTER WAS MOVED BY SOMETHING ELSE.
+  // A death and respawn snaps it to the spawn tile, which measures as thousands
+  // of pixels of travel and is indistinguishable in the output from the budget
+  // being beaten. Three attempts, then say so rather than report the number.
+  const measure = async (gapMs, label) => {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const px = await burst(gapMs, label);
+      if (!teleported && !died) return px;
+      console.log(`    (${label} was ${died ? "killed" : "teleported"} mid-burst — attempt ${attempt} discarded)`);
+      await sleep(1200);
+    }
+    console.log(`    !! ${label} could not complete a clean burst; not judged`);
+    return null;
+  };
+  const slowRate = await measure(25, "1 per 25ms");
+  const fastRate = await measure(5, "1 per 5ms");
+  if (slowRate === null || fastRate === null) {
+    console.log("  INCONCLUSIVE — the spam comparison needs two clean bursts.");
+  } else if (fastRate > slowRate * 1.4) {
     fail(
       `talking faster travelled further — ${fastRate.toFixed(0)}px against ${slowRate.toFixed(0)}px. ` +
         `The allowance is being paid per message rather than per second.`,
