@@ -21584,3 +21584,39 @@ This is the same fault as M70.204's camps: a probe that cannot tell "the world
 moved my character" from "the thing I am testing is broken". Both now say which.
 
 Suite 41/41.
+
+**Phase 70 M70.206 — the NPCs, photographed for the first time; and a correction
+to M70.204.** `panels.mjs` covers the windows a key opens. Nothing covered the
+ones a PERSON opens: five NPCs in Emberhold — a guide, a vendor, two
+quest-givers and a flavour character — with dialogue, a shop, a forge and a
+quest chain behind them, and not one frame of any of it in this directory.
+
+`tools/soak/npcs.mjs` walks into talking range of each, opens the conversation,
+enumerates every option and takes each one. Forty frames. Everything works: the
+shop lists nine goods priced in materials, the quest chain shows its
+prerequisites in place ("after \"The Wing Is The Animal\""), lore answers render
+with a Back option, and no console errors anywhere.
+
+TWO THINGS THE HARNESS GOT WRONG FIRST, both worth the note. It called `talkTo`
+directly — the method the click handler invokes AFTER checking range — and so
+opened Warden Cabel's dialogue from 427px against a limit of 150: a picture of a
+conversation no player could have started, taken from too far away to see him in
+it. It now checks `NPC_TALK_RANGE_PX` itself and says OUT OF RANGE rather than
+faking the frame. And its option selector matched nothing, so the first run
+reported no dialogue options at all and captured only the opening line of each
+conversation; `.dlg-option` is the real class.
+
+CORRECTION TO M70.204. That entry says the "The enemy hits you for 1" line seen
+in a town frame "is a login transient, before the monster snapshot registers,
+and not systemic". The second half was measured — 53 incoming attacks, 0
+unnamed. The first half was a GUESS presented as a finding, and it is wrong:
+those lines were SCROLLBACK. The combat log persists across the session, the
+character had logged in out in the wilds and walked to town, and the attacks
+happened before it ever arrived. Nothing was attacking anybody in town.
+
+The label itself remains unreproduced. Two probes tried — one logging in inside
+town, one walking into monster ground and reconnecting — and both saw zero
+incoming attacks, so neither says anything about the label. It is recorded as
+unreproduced rather than explained.
+
+Suite 41/41.
