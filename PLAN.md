@@ -21620,3 +21620,48 @@ incoming attacks, so neither says anything about the label. It is recorded as
 unreproduced rather than explained.
 
 Suite 41/41.
+
+**Phase 70 M70.207 — death and level-up, looked at properly; both healthy, and
+three more instrument faults on the way there.** The remaining unphotographed
+moments were the ones `tour.mjs` names as having produced visible bugs before: a
+death animation played on the respawn tile, a level-up that hid the character
+behind a yellow slab.
+
+DEATH IS FINE. Fifteen checks pass on a fresh level 1 character — the body stays
+where it fell, arrival is 1495ms later at the right tile, half health, Weakened
+applied, no cast survives, no experience gained, movement and rendering
+afterwards. The settled frame shows the character centred under a town lantern.
+
+I read the wrong frame first and nearly filed it. `death-arrived.png` is the
+INSTANT of arrival — mid-teleport, camera not caught up — so its centre is bare
+ground, and I took that for a character that had failed to draw. The harness
+names its three shots fell/arrived/settled and the visibility checks are about
+the third; nothing was wrong except which picture I opened. The defaults also
+dropped three PNGs into the repository root, which is now `shots/death/`.
+
+LEVEL-UP IS FINE TOO, and took three wrong readings to establish.
+
+  * `liveEffects` read `effects.live` while `playLevelUpFx` builds its pillar,
+    flash and nova through `skillFx` — a different pool. Every number printed
+    was ambient hit sparks. It now reads both.
+  * With the right pool the counts still died at 480ms against a ~980ms effect,
+    which reads as a burst that never fires. Fired in isolation the effect lives
+    the full second, peaking at 442ms, so the effect was never the problem.
+  * The frames were labelled "+0ms, +160ms, ..." from when the POLL noticed the
+    level change — after a keypress and a `page.screenshot`, each costing
+    hundreds of milliseconds. `playLevelUpFx` is now wrapped from the harness to
+    stamp the real start, and the same capture reads 2 live at 137ms, 3 at
+    436ms as the burst arrives, 1 at 735ms, 0 at 1031ms. Exactly the designed
+    lifetime. The real frame gap is ~300ms, not the 160ms the labels claimed.
+
+I also checked the actor is never replaced under the effect, since
+`playLevelUpFx` cancels its own burst if `localActor` changes — it is stable.
+
+FOUR CONSECUTIVE INVESTIGATIONS HAVE NOW ENDED IN "THE GAME IS FINE AND THE
+INSTRUMENT WAS WRONG": the camp drift, the movement outlier, the town attacks,
+and these two. That is worth stating plainly rather than burying, because the
+pattern in every one is the same — a number or a picture was read as evidence
+about the game before checking what it was actually measuring, or which moment
+it belonged to.
+
+Suite 41/41.

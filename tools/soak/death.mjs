@@ -16,6 +16,7 @@
 // respawn at PLAYER_ARRIVAL with floor(maxHp / 2), Weakened applied, experience
 // not increased across the death, and the character able to move and fight after.
 
+import fs from "node:fs";
 import { open, login, probe, step } from "./driver.mjs";
 
 const NAME = process.argv[2] ?? `Faller${Math.floor(Math.random() * 100000)}`;
@@ -28,9 +29,22 @@ const ARRIVAL = {
 // something else finds them.
 const CAMP = { x: SPAWN.x + 1320, y: SPAWN.y };
 
-const SHOT_FELL = process.argv[3] ?? "death-fell.png";
-const SHOT_ARRIVED = process.argv[4] ?? "death-arrived.png";
-const SHOT_SETTLED = process.argv[5] ?? "death-settled.png";
+// THREE MOMENTS, AND THEY ARE NOT INTERCHANGEABLE: the body where it fell,
+// the instant of arrival — which is mid-teleport and is SUPPOSED to look
+// unsettled — and the settled frame, which is the one the visibility checks
+// below are about. Reading 'arrived' as though it were the final state gives a
+// picture of empty ground where the character should be, and that is exactly
+// what happened to somebody reviewing these: the centre of the frame is bare
+// because the camera has not caught up yet, by design.
+//
+// Defaulted into the shots directory rather than the working directory, which
+// is the repository root for anyone running this the obvious way — the old
+// defaults dropped three PNGs beside package.json.
+const SHOTS = "tools/soak/shots/death";
+fs.mkdirSync(SHOTS, { recursive: true });
+const SHOT_FELL = process.argv[3] ?? `${SHOTS}/death-fell.png`;
+const SHOT_ARRIVED = process.argv[4] ?? `${SHOTS}/death-arrived.png`;
+const SHOT_SETTLED = process.argv[5] ?? `${SHOTS}/death-settled.png`;
 
 let failures = 0;
 const check = (name, ok, detail = "") => {
