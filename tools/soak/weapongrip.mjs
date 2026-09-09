@@ -17,14 +17,13 @@
 //   node tools/soak/weapongrip.mjs Player3619 tools/soak/shots/grip
 import { mkdirSync } from "node:fs";
 import { open, login } from "./driver.mjs";
-import { WEAPONS } from "../../shared/protocol-types.ts";
+import { ITEM_BASES } from "../../shared/items.ts";
 
 const NAME = process.argv[2] ?? "Player3619";
 const OUT = process.argv[3] ?? "tools/soak/shots/grip";
 mkdirSync(OUT, { recursive: true });
 
-const { browser, page } = await open({ headless: false, width: 1200, height: 900 });
-await page.bringToFront();
+const { browser, page } = await open({ headless: true, width: 1200, height: 900 });
 await login(page, NAME);
 
 // Noon, so the model is lit rather than guessed at. `DayNight.freeze` takes a
@@ -37,32 +36,27 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(1200);
 
-for (const family of Object.keys(WEAPONS)) {
-  const held = await page.evaluate(async (want) => {
+const owned = await page.evaluate(() =>
+  window.__wieldbound.items
+    .filter((i) => i.slot === "weapon" || i.slot === "offhand")
+    .map((i) => ({ id: i.id, baseId: i.baseId })));
+const key = (b) => `${b?.art?.model ?? b?.art?.build ?? "?"}|${b?.art?.lay ?? "along"}`;
+const seen = new Set();
+for (const it of owned) {
+  const k = key(ITEM_BASES[it.baseId]);
+  if (seen.has(k)) continue;
+  seen.add(k);
+  const ok = await page.evaluate(async (x) => {
     const g = window.__wieldbound;
-    if (want === "fist") {
-      const on = g.items.find((i) => i.slot === "weapon" && i.equipped);
-      if (on) g.socket.sendEquipItem(on.id);
-    } else {
-      const item = g.items.find((i) => i.slot === "weapon" && i.weaponType === want && !i.equipped);
-      if (!item) return null;
-      g.socket.sendEquipItem(item.id);
-    }
-    await new Promise((r) => setTimeout(r, 1400));
-    const now = g.items.find((i) => i.slot === "weapon" && i.equipped);
-    return want === "fist" ? (now ? null : "fists") : (now?.weaponType ?? null);
-  }, family);
-
-  if (held !== (family === "fist" ? "fists" : family)) {
-    console.log(`  ${family.padEnd(7)} SKIPPED — no ${family} in the bag to hold`);
-    continue;
-  }
-  // Idle, facing the camera-ish, so the hand is visible rather than mid-swing.
-  await page.waitForTimeout(900);
-  await page.screenshot({ path: `${OUT}/grip-${family}.png` });
-  console.log(`  ${family.padEnd(7)} captured`);
+    g.socket.sendEquipItem(x.id);
+    await new Promise((r) => setTimeout(r, 1500));
+    let found = false;
+    for (const h of g.localActor?.held ?? []) h.traverse((c) => { if (c.name === `held_${x.baseId}`) found = true; });
+    return found;
+  }, it);
+  const file = k.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/w-${file}.png` });
+  console.log(`  ${ok ? "ok  " : "MISS"} ${it.baseId.padEnd(16)} ${k}`);
 }
 
-console.log(`\nshots in ${OUT}/ — look at the hands.`);
-console.log("console errors:", page.__errors.length);
-await browser.close();
