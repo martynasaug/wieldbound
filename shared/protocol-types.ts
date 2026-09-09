@@ -713,9 +713,18 @@ export function gatherUpgradeCost(level: number): number {
 // out — the numbers grew with WORLD_WIDTH rather than staying put, because a
 // band is a fraction of the map and not an absolute distance.
 //
-// The far end is bounded by the map's SHORT axis: the world is 5400 tall, so
-// anything on a ring past 2700 falls outside it at the top and bottom of the
-// circle, and a node there is a node nobody can reach.
+// The far end is bounded by the map's SHORT axis, because a ring wider than the
+// distance from spawn to the nearest edge puts part of itself outside the world
+// and a node there is a node nobody can reach.
+//
+// THE NUMBER IN THIS NOTE WAS STALE. It read "the world is 5400 tall, so
+// anything on a ring past 2700 falls outside it" — true when it was written and
+// not since: the world is 12000 tall now and spawn sits at its centre, so the
+// real limit is 6000 and the outermost ring at 2650 has 3350 of room. The bound
+// still holds and the reasoning behind it had quietly stopped describing this
+// map. `tools/test/gathering.mjs` measures it against the actual geometry
+// rather than against a remembered one, so the next resize cannot leave a
+// number here to be believed.
 export const RESOURCE_BAND_RADII = [1350, 1750, 2250, 2650] as const;
 
 /** Which of the five rings a point falls in, 1 (at the smithy) to 5. */

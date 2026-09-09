@@ -21701,3 +21701,49 @@ offers at 4:1 across wood, ore and herb. Verified by breaking it both ways — a
 renamed `ref` and a 1:1 rate — and watching the right checks fail.
 
 Suite 42/42.
+
+**Phase 70 M70.209 — the gathering loop, and a coverage measure that was itself
+wrong twice.** M70.208 picked its target by comparing `shared/*.ts` filenames
+against `tools/test/*.mjs` filenames, which is a weak proxy: it reported
+`landmarks.ts` as uncovered when `quests.mjs` imports eight of its nine exports
+and asserts the spacing rule the module's own comment promises. Coverage does
+not follow file names.
+
+The second attempt — which exported values no suite file so much as mentions —
+came back claiming ALL 194 exports of `protocol-types.ts` were unreferenced,
+including the nine in `shop.ts` that had a test written an hour earlier. The
+cause was the shell: `"\b"` inside a single-quoted `node -e` reaches JavaScript
+as a literal BACKSPACE, so `new RegExp("\b" + name + "\b")` matched nothing,
+ever. Rewritten as a plain `includes` in a file rather than a shell string, the
+answer is useful: the world modules are well covered, and the real gap is the
+GATHERING system inside `protocol-types.ts`.
+
+Wood, ore and herb are where the early game's money comes from, and what the
+shop, the forge and the reforge ladder are priced against. Four numbers, no
+test: `gatherDurationForLevel`, `gatherUpgradeCost`, `gatherYieldFor`,
+`RESOURCE_BAND_RADII`.
+
+THE CHECK WORTH HAVING IS M70.200's LESSON GENERALISED. Accuracy capped at 95,
+agility 23 reached it, and every point, affix, set bonus and talent after that
+was sold as an upgrade while buying nothing. The same shape is available here:
+gather duration floors at 500ms and `gatherDurationForLevel` reaches it at
+gather level 7 — earlier with agility — while `gatherUpgradeCost` keeps charging
+12 + 9L². So the suite now asserts that EVERY gather level buys something,
+either speed or yield. Break `gatherYieldFor` so it stops scaling and it fails
+at exactly level 7, where the floor lands.
+
+Also checked: duration never below its floor however much level and agility are
+piled on, never negative, monotonic; every band pays strictly more than the one
+inside it at every upgrade level; cost strictly increasing and outrunning the
+yield it paces (levels 6-12: cost x3.9 against yield x1.6, which is the
+quadratic doing its documented job); and every band ring fitting inside the
+world from spawn.
+
+That last one found a stale comment rather than a bug. The note by
+`RESOURCE_BAND_RADII` reasons from "the world is 5400 tall, so anything past
+2700 falls outside it" — the world is 12000 tall now, spawn is central, and the
+real margin is 6000 against an outermost ring of 2650. The bound holds; the
+reasoning had stopped describing this map. The test measures the actual
+geometry, so the next resize cannot leave a number there to be believed.
+
+Suite 43/43.
