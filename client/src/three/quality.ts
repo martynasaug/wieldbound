@@ -253,6 +253,41 @@ export const AUTO_UP_HEADROOM = 0.6;
  */
 export const AUTO_SETTLE_MS = 20000;
 
+/**
+ * The slowest interval that can still be a DISPLAY rather than a throttle.
+ *
+ * A combat screenshot came back with "Graphics set to High to hold 1Hz" in the
+ * log, and 1Hz is not a monitor anybody owns. It is Chromium throttling
+ * `requestAnimationFrame` in a window that is not in front — which the pacer
+ * faithfully measures as a one-second refresh interval, and which turns this
+ * function's budget from 16.7ms into 1000ms. A 5ms frame then has "room to
+ * spare" against a budget seventy times too large and the level steps UP.
+ *
+ * Stepping up while nobody is watching would be harmless on its own. What
+ * follows is not: on return the frame no longer fits, the level steps back
+ * DOWN, and `Game.adaptQuality` reads a step down that immediately undoes a
+ * step up as proof the level cannot be held — `lowerCeiling` then bars it for
+ * the rest of the session. Alt-tabbing could cap a machine below what it can
+ * actually run, with no way for the player to know why.
+ *
+ * 100ms is 10Hz. No display refreshes that slowly; the slowest anybody sells
+ * is about 24Hz, and this is four times slower than that, so a real monitor
+ * can never trip it. Anything beyond it is the window manager, an occluded
+ * window, or a machine coming back from sleep, and none of those are evidence
+ * about how expensive the graphics are.
+ *
+ * A THRESHOLD RATHER THAN A `visibilitychange` LISTENER, deliberately. The
+ * profiler solves its version of this by remembering whether the page was
+ * hidden, which works there because it only ever discards its own report. Here
+ * the bad input arrives from several directions — an occluded window, a
+ * throttled background window that was never "hidden", a laptop resuming — and
+ * a rule about the NUMBER covers all of them, holds no state, and can be tested
+ * in Node without a browser. The one attempt to reproduce this with real focus
+ * changes needed three tries and still could not stage an occlusion reliably;
+ * a guard that can only be verified by a flaky ritual is a guard nobody trusts.
+ */
+export const MAX_PLAUSIBLE_REFRESH_MS = 100;
+
 export interface AutoQualityState {
   level: QualityLevel;
   /**
@@ -295,6 +330,10 @@ export function autoQualityDecision(
   // Nothing has been measured yet. The pacer reports refreshMs 0 until its
   // first probe lands, and a decision from no data is a guess.
   if (measured.refreshMs <= 0 || measured.costMs <= 0) return null;
+  // Not a display, so not evidence. See `MAX_PLAUSIBLE_REFRESH_MS`: a window
+  // that is not in front has its frames throttled to about 1Hz, and deciding
+  // anything from that budget is how alt-tabbing ends up capping the graphics.
+  if (measured.refreshMs > MAX_PLAUSIBLE_REFRESH_MS) return null;
   // The settle period runs from the first frame this ever saw, not from page
   // load: `performance.now()` is already ~35 seconds old by the time the
   // loading screen lifts, so a deadline measured against it would be over

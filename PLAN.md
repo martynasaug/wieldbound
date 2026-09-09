@@ -21261,3 +21261,54 @@ against a body of 2,100 — sizing a window to today's code is how section 2
 started failing the moment a comment was added to the path it watches.
 
 Suite 41/41.
+
+**Phase 70 M70.199 — alt-tab could permanently cap the graphics; found by
+looking at a screenshot.** `combatlook.mjs` exists because every combat harness
+here COUNTS something and none of them LOOKS. `fxshot.mjs` looks, but at one
+effect in isolation, which is the right way to judge an effect and the wrong way
+to judge a fight. So: walk into the nearest pack, swing and cast, and take
+twelve frames across the exchange to be read afterwards.
+
+The first run filmed twelve frames of "Slash: nothing in reach" — the probe
+standing 130px away when every melee reach in the game is `reachOf` (~54-62px)
+plus the target's body radius. The probe was wrong, not the game, and the fix
+was one constant.
+
+The second run caught something real, in the corner of the log:
+
+    Graphics set to High to hold 1Hz. F4 to choose yourself.
+
+1Hz is not a display. It is Chromium throttling frames in a window that is not
+in front, which the pacer measures faithfully as a one-second refresh interval —
+turning `autoQualityDecision`'s budget from 16.7ms into 1000ms. A 5ms frame then
+has enormous room and the level steps UP.
+
+Stepping up unseen is harmless. What follows is not: back in front the frame no
+longer fits, the level steps DOWN, and `Game.adaptQuality` reads a step down
+immediately after a step up as proof the level cannot be held — `lowerCeiling`
+then bars it for the rest of the session. One alt-tab could cap a machine below
+what it can actually run, permanently, with nothing to tell the player why.
+
+FIXED AS A THRESHOLD, NOT A `visibilitychange` LISTENER. The profiler solves its
+version of this by remembering whether the page was hidden, which works there
+because it only ever discards its own report. Here the bad input arrives from
+several directions — an occluded window, a background window that was never
+"hidden", a laptop resuming — so `MAX_PLAUSIBLE_REFRESH_MS = 100` rejects the
+NUMBER: 10Hz, when the slowest panel anybody sells is about 24Hz. No real
+display can trip it, it holds no state, and it is arithmetic, so it is tested in
+Node.
+
+THREE INSTRUMENTS FAILED BEFORE THE FIX WAS EVEN WRITTEN, and they are the
+reason it is a threshold. `qualityfocus.mjs` tried to stage the fault with real
+focus changes: first through `driver.open`, which launches with
+`--disable-background-timer-throttling` and friends and therefore SUPPRESSES the
+subject; then with a second tab, which HIDES the page so rAF stops dead and
+feeds the pacer nothing at all; then with a second browser window, which never
+occluded the first and held a steady 60Hz. A guard that can only be verified by
+a ritual that fails three times out of three is a guard nobody trusts. The
+screenshot is the evidence that the bad input reaches the decision in practice;
+the arithmetic is the part that can be checked forever.
+
+Both new checks verified by deleting the guard and watching them fail.
+
+Suite 41/41.
