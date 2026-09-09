@@ -21832,3 +21832,41 @@ was in the seam BETWEEN two of them, where a text file and a server table have
 to agree and nothing was reading both.
 
 Suite 44/44.
+
+**Phase 70 M70.212 — two more seams, guarded before they drift.** M70.211's
+lesson was that the fault was not inside a well-trodden system but in the seam
+BETWEEN two, where a text file and a server table had to agree and nothing read
+both. So: where else does this game say something in prose that a table decides?
+
+TALENT TOOLTIPS. Every passive node carries a hand-written sentence beside a
+machine-readable bag — "+8% damage per rank." next to `{ damagePercent: 8 }` —
+and the two are edited separately. Change the bag while rebalancing, forget the
+sentence, and the tree tells the player a number the game does not use, forever,
+with nothing failing.
+
+Not theoretical: M70.184 rebalanced five of these nodes — the axe's Heft and
+Brutality, the dagger's Deadly Aim, Opportunist and Assassin — and kept both
+halves in step by REMEMBERING TO, which is not a mechanism. All 41 passive
+talents line up today; `talents.mjs` now compares the numbers in the sentence
+against the numbers in the bag as multisets, so wording is free to vary and the
+figures are not. Verified by buffing a bag without touching its text: two nodes
+named, with both numbers printed.
+
+Skill descriptions were checked the same way and carry no numbers at all, so
+there is nothing there to drift.
+
+THE RING DESCRIPTION. The Herald names what lives at each distance — "slimes and
+mushnubs within shouting distance, goblins and blobs past that, then wolves and
+orcs, then trolls and demons, and at the far edge a golem and a dragon" — which
+is a statement about `MONSTER_STATS[kind].band` written in prose in another
+file. `starteradvice.mjs` now asserts that any line ordering creatures by
+distance never goes backwards through the bands. Checked as ORDER rather than by
+parsing English, so it survives rewording. Verified by moving the dragon to band
+1 and watching it name the pair.
+
+AND THE FIRST VERSION OF THAT CHECK WAS WRONG IN THE USUAL WAY. It searched all
+NPC text at once, picked up a wolf mentioned three thousand characters away in
+an unrelated answer, and reported prose and table as disagreeing when they never
+had. Scoped to the line that makes the claim, both orderings check out.
+
+Suite 44/44.

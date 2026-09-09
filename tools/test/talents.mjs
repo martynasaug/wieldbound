@@ -58,6 +58,38 @@ for (const weapon of allWeapons) {
     if (!node.active && !node.passive) fail(`${node.id}: neither a skill nor a passive — does nothing`);
     if (node.active && node.passive) fail(`${node.id}: both a skill and a passive; pick one`);
     if (node.maxRank < 1) fail(`${node.id}: maxRank ${node.maxRank}`);
+
+    // THE TOOLTIP HAS TO SAY WHAT THE TALENT DOES, and nothing made it.
+    //
+    // Every passive node carries a hand-written sentence beside a
+    // machine-readable bag — "+8% damage per rank." next to
+    // `{ damagePercent: 8 }` — and the two are edited separately. Change the
+    // bag while rebalancing and forget the sentence, and the tree tells the
+    // player a number the game does not use, forever, with nothing failing.
+    // This is the same shape as M70.211's starter advice: two places that have
+    // to agree, and no test reading both.
+    //
+    // It is a live risk rather than a theoretical one. M70.184 rebalanced five
+    // of these nodes — the axe's Heft and Brutality, the dagger's Deadly Aim,
+    // Opportunist and Assassin — and kept both halves in step by remembering
+    // to, which is not a mechanism.
+    //
+    // Compared as MULTISETS OF NUMBERS rather than by parsing English: the
+    // wording varies ("+3 evasion and +10 movement", "Recover 4 health per rank
+    // on a killing blow") and a test that tried to read the sentence would be a
+    // worse test than one that checks the figures in it are exactly the figures
+    // being applied.
+    if (node.passive) {
+      const inText = (node.description.match(/\d+/g) ?? []).map(Number).sort((a, b) => a - b);
+      const inBag = Object.values(node.passive).map(Math.abs).sort((a, b) => a - b);
+      const same = inText.length === inBag.length && inText.every((n, i) => n === inBag[i]);
+      if (!same) {
+        fail(
+          `${node.id}: the tooltip says [${inText.join(", ")}] and the passive applies ` +
+            `[${inBag.join(", ")}] — "${node.description}" vs ${JSON.stringify(node.passive)}`,
+        );
+      }
+    }
     if (node.active && node.maxRank !== 1) {
       fail(`${node.id}: actives are one rank by design, has ${node.maxRank}`);
     }

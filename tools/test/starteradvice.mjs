@@ -24,6 +24,7 @@
 //     node tools/test/starteradvice.mjs
 import WebSocket from "ws";
 import { TOWN_CENTER, TOWN_RADIUS_PX, TOWN_NPCS } from "../../shared/town.ts";
+import { MONSTER_STATS } from "../../shared/protocol-types.ts";
 
 const problems = [];
 const fail = (m) => problems.push(m);
@@ -77,6 +78,55 @@ ws.on("open", async () => {
   // altogether: somebody has to tell a new player where materials come from.
   const mentionsGathering = /gather/.test(said);
   if (!mentionsGathering) fail("no NPC mentions gathering at all — a new player is told nothing about materials");
+
+  // --- and the other claim the town makes about the world ---------------------
+  //
+  // The Herald describes the rings by naming what lives in them: "slimes and
+  // mushnubs within shouting distance, goblins and blobs past that, then wolves
+  // and orcs, then trolls and demons, and at the far edge a golem and a dragon."
+  // That is a statement about `MONSTER_STATS[kind].band`, written in prose, in a
+  // different file from the table it describes. Rebalance a creature into
+  // another ring and the Herald starts misdirecting people.
+  //
+  // Checked as ORDER rather than by parsing the sentence: whatever creatures a
+  // distance-ordering line names, their bands must not go backwards as the line
+  // goes on. That survives rewording, and it does not need to understand
+  // English.
+  //
+  // SCOPED TO THE LINE THAT MAKES THE CLAIM, which the first version was not: it
+  // searched all NPC text at once, picked up a wolf mentioned three thousand
+  // characters away in an unrelated answer, and reported the table and the prose
+  // as disagreeing when they never had.
+  const lines = [];
+  const walk = (o) => {
+    if (typeof o === "string") lines.push(o);
+    else if (o && typeof o === "object") for (const v of Object.values(o)) walk(v);
+  };
+  walk(TOWN_NPCS);
+  const ordering = lines.filter((l) => /further you go|past that|at the far edge/i.test(l));
+  if (ordering.length === 0) fail("no NPC describes the rings any more — the geography is unexplained");
+  for (const line of ordering) {
+    const low = line.toLowerCase();
+    // Only creatures whose kind appears literally. Plurals and nicknames
+    // ("blobs", "orcs") are deliberately not decoded — a partial list still
+    // catches a reordering, and guessing at English would make this fragile in
+    // exchange for nothing.
+    const named = Object.keys(MONSTER_STATS)
+      .map((kind) => ({ kind, band: MONSTER_STATS[kind].band, at: low.indexOf(kind) }))
+      .filter((h) => h.at >= 0)
+      .sort((a, b) => a.at - b.at);
+    for (let i = 1; i < named.length; i++) {
+      if (named[i].band < named[i - 1].band) {
+        fail(
+          `an NPC lists creatures by distance but ${named[i].kind} (band ${named[i].band}) comes ` +
+            `after ${named[i - 1].kind} (band ${named[i - 1].band}): "${line.slice(0, 90)}…"`,
+        );
+      }
+    }
+    if (named.length >= 2) {
+      console.log(`  ring line checks out: ${named.map((h) => `${h.kind}(b${h.band})`).join(" -> ")}`);
+    }
+  }
 
   console.log(problems.length ? `\n${problems.length} failure(s).` : "\nOK — the advice describes the world it is given in");
   for (const p of problems) console.log(`  FAIL  ${p}`);
