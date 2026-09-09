@@ -21391,3 +21391,38 @@ Rankings unchanged: dagger 255, sword 215, wand 205, mace 204, axe 197,
 staff 189, bow 184, fist 114.
 
 Suite 41/41.
+
+**Phase 70 M70.202 — an item you own, cannot see, and cannot reach.** Combat has
+had all the attention lately, so `panels.mjs` was run to look at the windows
+instead. The bag's header read, in red:
+
+    Bags                                      31 / 30 (39 items)
+
+Thirty-one stacks in a grid that draws thirty. The loop was
+`for (let i = 0; i < INVENTORY_CAP; i++)`, so the thirty-first stack was counted
+in the header and had nowhere to be drawn — owned, invisible, unequippable,
+unsalvageable, with the panel stating the discrepancy in its own corner and no
+way to act on it.
+
+AND IT IS REACHABLE WITHOUT CHEATING, which is what turns a fixture oddity into
+a bug. `bagRoomFor` guards looting, the shop and the forge. Nothing guards
+`EQUIP_ITEM`. Putting on a two-hander pushes the off-hand back into the bag —
+the handler says so out loud, "put away — both hands are on your weapon" — and
+that is one more stack with no room check anywhere in the path. Fill the bag,
+equip a greatsword, and the shield is gone in the only sense that matters.
+
+The grid now draws `Math.max(INVENTORY_CAP, bag.length)` cells. Overflow is
+allowed to EXIST rather than being refused: refusing would mean an unequip that
+silently does nothing, and the red capacity line plus "Bag is full (31/30
+slots) — salvage something" already say what the state is and what to do about
+it. Confirmed by eye — the thirty-first item now sits on a sixth row.
+
+Guarded in `bag.mjs` as a source check, because the panel is DOM and that suite
+is Node-only; the loop bound is the whole of what matters. Verified by putting
+the bare cap back and watching it fail.
+
+The seeded character is over cap because `tools/seed.mjs` writes items straight
+to the database without asking `bagRoomFor`. That is fine for a fixture and is
+what surfaced this, but it is not the reason the bug exists.
+
+Suite 41/41.

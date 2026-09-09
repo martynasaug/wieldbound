@@ -204,7 +204,25 @@ export class InventoryPanel {
     this.capacityEl.style.color = bag.length >= INVENTORY_CAP ? "#ef5350" : "";
 
     this.grid.innerHTML = "";
-    for (let i = 0; i < INVENTORY_CAP; i++) {
+    // ENOUGH CELLS FOR WHAT IS ACTUALLY IN THE BAG, which is not always the cap.
+    //
+    // This drew exactly `INVENTORY_CAP` cells, so a thirty-first stack existed,
+    // was counted in the header — which said "31 / 30" in red — and had nowhere
+    // to be drawn. An item you own, cannot see, cannot equip and cannot salvage,
+    // with the panel quietly admitting the discrepancy in the corner.
+    //
+    // AND IT IS REACHABLE WITHOUT CHEATING. `bagRoomFor` guards looting, the
+    // shop and the forge, but nothing guards EQUIP_ITEM: putting on a
+    // two-hander pushes your off-hand back into the bag — the handler even says
+    // "put away — both hands are on your weapon" — and that is one more stack
+    // with no room check anywhere in the path. Fill the bag, equip a greatsword,
+    // and the shield is gone in the only sense that matters.
+    //
+    // Overflow is allowed to EXIST rather than being refused, because refusing
+    // would mean an unequip that silently does nothing. It just has to be
+    // visible, and the red capacity line is already there to say the bag is
+    // over and wants clearing.
+    for (let i = 0; i < Math.max(INVENTORY_CAP, bag.length); i++) {
       const stack = bag[i];
       const cell = document.createElement("div");
       cell.className = "bag-slot";

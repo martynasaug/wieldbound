@@ -10,6 +10,7 @@
 //
 //   node tools/test/bag.mjs
 
+import { readFileSync } from "node:fs";
 import { INVENTORY_CAP } from "../../shared/protocol-types.ts";
 import {
   ITEM_BASES,
@@ -167,6 +168,32 @@ check(
   bagStacks(mixed).reduce((n, s) => n + s.count, 0) === mixed.filter((i) => !i.equipped).length,
 );
 console.log(`  ${mixed.filter((i) => !i.equipped).length} items in ${bagSlotsUsed(mixed)} cells`);
+
+// --- the panel must draw every cell the bag has ------------------------------
+//
+// The file header says the symptom of the client and the server disagreeing is
+// "a drop that vanishes into a bag with visible space in it". This is the other
+// direction, and it was live: the panel drew exactly `INVENTORY_CAP` cells, so
+// a thirty-first stack was counted in the header — which said "31 / 30" in red —
+// and had nowhere to be drawn. An item owned, invisible, unequippable and
+// unsalvageable, with the panel admitting the discrepancy in the corner.
+//
+// Over-cap is REACHABLE without cheating. `bagRoomFor` guards looting, the shop
+// and the forge; nothing guards EQUIP_ITEM. Putting on a two-hander pushes the
+// off-hand back into the bag — the handler says so out loud, "put away — both
+// hands are on your weapon" — and that is one more stack with no room check in
+// the path. Fill the bag, equip a greatsword, lose the shield.
+//
+// A source check because the panel is DOM and this suite is Node-only. It is
+// the loop bound that matters and nothing else can express it.
+{
+  const panel = readFileSync(new URL("../../client/src/ui/InventoryPanel.ts", import.meta.url), "utf8");
+  check(
+    "the bag grid draws a cell for every stack, not exactly INVENTORY_CAP of them",
+    /for \(let i = 0; i < Math\.max\(INVENTORY_CAP, bag\.length\); i\+\+\)/.test(panel),
+    "a bag pushed over its cap by unequipping hides the overflow with no way to reach it",
+  );
+}
 
 // --- done -------------------------------------------------------------------
 console.log(failures === 0 ? "\nOK — the bag counts cells" : `\n${failures} FAILURES`);
