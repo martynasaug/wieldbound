@@ -22078,3 +22078,44 @@ the fist. That may be the authored `Idle_Weapon` stance — the rig's own
 needs a decision about how the game should look, not another measurement.
 
 Suite 45/45.
+
+**Phase 70 M70.219 — the ghost of the last weapon, reported from a live
+session.** "I was holding a staff, then switched to bow and now it looks like I'm
+holding both weapons at the same time — the staff is see-through but still
+visible." That is the silhouette pass, and there were two faults behind it.
+
+FIRST, THE HULLS NEVER LEFT. `ghostFor` and `rimFor` both parent their hull to
+`mesh.parent` rather than to the mesh — deliberately, so it inherits the
+armature's scale without recomputing it — and for a held weapon that parent is
+the HAND BONE. So the hull is a SIBLING of the weapon, not a child. `clearGear`
+removes the weapon with `object.removeFromParent()` and then keeps every hull
+whose parent is still non-null, which for a sibling on a bone is all of them.
+And `buildSilhouette`/`buildRim` were only ever called from `finishBody`, so a
+weapon swap rebuilt nothing: the old weapon's ghost stayed on the bone and the
+new weapon got no outline at all. `refreshOutlines` now runs when gear lands and
+when it is cleared — the second covers putting a weapon away, which attaches
+nothing and so would never have triggered a rebuild.
+
+SECOND, AND ONLY VISIBLE ONCE THE FIRST WAS FIXED: the builders made hulls OF
+HULLS. Each collected every mesh under the root, and the rim hulls are meshes
+under the root — so a silhouette was built for every outline, and then the rim
+pass outlined every new silhouette. Latent while this ran once on a bare rig at
+body build; the moment it runs on every gear change it compounds. Measured
+across four weapon swaps:
+
+    before the guard   49 -> 71 -> 93 -> 115 hulls, +22 every swap
+    after              6 -> 6 -> 6 -> 6
+
+Both builders now skip meshes wearing the actor's own silhouette or outline
+material, which also makes `refreshOutlines` idempotent.
+
+Confirmed both ways: the counts above, and a staff-then-bow capture showing the
+bow alone.
+
+AND THE REPORT CAME FROM THE PLAYER, NOT FROM HERE, for the third time today.
+`weapongrip.mjs` photographs one weapon at a time from a clean login, which is
+exactly the case where nothing has been swapped and no ghost exists. The bug
+needed a SWAP, and every capture tool here was built to avoid confounding state
+rather than to create it. `ghostswap.mjs` now does the opposite deliberately.
+
+Suite 45/45.

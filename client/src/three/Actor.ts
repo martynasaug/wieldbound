@@ -1031,6 +1031,11 @@ export class Actor {
 
     const generation = ++this.dressGeneration;
     this.clearGear();
+    // IMMEDIATELY, not only once new gear lands. Putting a weapon away attaches
+    // nothing, so the callbacks below never run and the outgoing weapon's hulls
+    // would stay on the bone for the rest of the session. Rebuilding here
+    // clears them against a bare body; whatever arrives rebuilds again.
+    this.refreshOutlines();
 
     // What is in each hand, by catalogue id. The family alone was enough while
     // there was one sword per class; there are nine now and they do not look
@@ -1053,6 +1058,9 @@ export class Actor {
         socket.add(held.object);
         this.held.push(held.object);
         this.trackMaterials(held.object);
+        // The old weapon's ghost is still on this bone until this runs, and the
+        // new weapon has none. See `refreshOutlines`.
+        this.refreshOutlines();
         // The weapon is in the hand now, so a draw here uploads its maps before
         // anyone sees it. See `ActorOptions.warmDraw`.
         this.options.warmDraw?.(this.root);
@@ -1100,6 +1108,10 @@ export class Actor {
         this.worn.push(p.object);
         this.trackMaterials(p.object);
       }
+      // Armour leaves the same stale hulls behind as a weapon does — the pieces
+      // hang off bones and their ghosts are siblings there. See
+      // `refreshOutlines`.
+      this.refreshOutlines();
       // Now that the armour is actually on the actor, draw it once off-screen so
       // its textures upload here rather than inside the first visible frame.
       // See `ActorOptions.warmDraw`.
@@ -1139,6 +1151,36 @@ export class Actor {
    * from the character it belongs to, because these rigs carry a scale of 100
    * on the armature.
    */
+  /**
+   * Rebuild the two through-walls passes after the GEAR changes, not just after
+   * the body does.
+   *
+   * `ghostFor` and `rimFor` both parent their hull to `mesh.parent` rather than
+   * to the mesh — deliberately, so the hull inherits the armature's scale
+   * without recomputing it. For a held weapon that parent is the HAND BONE, so
+   * the hull is a sibling of the weapon rather than a child of it.
+   *
+   * `clearGear` removes the weapon with `object.removeFromParent()` and then
+   * keeps every hull whose parent is still non-null — which, for a sibling on a
+   * bone, is all of them. And `buildSilhouette`/`buildRim` were only ever called
+   * from `finishBody`, so a weapon swap never rebuilt them.
+   *
+   * Both halves of that were visible at once: hold a staff, switch to a bow, and
+   * the staff is still there as a see-through ghost drawn through the world
+   * while the bow has no outline at all. Reported exactly that way — "it looks
+   * like I'm holding both weapons at the same time, the staff is see-through but
+   * still visible".
+   *
+   * Rebuilding from the instance root is the same thing `finishBody` does and
+   * both builders already clear their own list first, so this is idempotent and
+   * safe to call whenever gear lands.
+   */
+  private refreshOutlines(): void {
+    if (!this.instance) return;
+    this.buildSilhouette(this.instance.object);
+    this.buildRim(this.instance.object);
+  }
+
   private buildSilhouette(root: THREE.Object3D): void {
     if (!this.wantsSilhouette) return;
     for (const ghost of this.silhouettes) ghost.removeFromParent();
@@ -1168,10 +1210,19 @@ export class Actor {
       makeRim(this.silhouetteMaterial, "hard", 1.9, 0.34);
     }
 
+    // NEVER A HULL OF A HULL. This collected every mesh under the root, and the
+    // rim hulls are meshes under the root — so a silhouette was built for each
+    // outline, and then `buildRim` returned the favour by outlining each new
+    // silhouette. Harmless while this only ever ran once on a bare rig at body
+    // build; the moment it runs again on gear changes it compounds, and the
+    // measured growth was ELEVEN extra hulls of each kind per weapon swap:
+    // 23+26 tracked after a staff, 56+59 after three more swaps.
     const sources: THREE.Mesh[] = [];
     root.traverse((o) => {
       const mesh = o as THREE.Mesh;
-      if (mesh.isMesh) sources.push(mesh);
+      if (!mesh.isMesh) return;
+      if (mesh.material === this.silhouetteMaterial || mesh.material === this.outlineMaterial) return;
+      sources.push(mesh);
     });
 
     for (const mesh of sources) this.ghostFor(mesh);
@@ -1530,10 +1581,15 @@ export class Actor {
       this.ownedMaterials.add(this.outlineMaterial);
     }
 
+    // The same guard as `buildSilhouette`, and for the same reason: outlining
+    // the ghosts would put a rim round every through-walls copy, and the two
+    // builders would feed each other on every rebuild.
     const sources: THREE.Mesh[] = [];
     root.traverse((o) => {
       const mesh = o as THREE.Mesh;
-      if (mesh.isMesh) sources.push(mesh);
+      if (!mesh.isMesh) return;
+      if (mesh.material === this.silhouetteMaterial || mesh.material === this.outlineMaterial) return;
+      sources.push(mesh);
     });
 
     for (const mesh of sources) this.rimFor(mesh);
