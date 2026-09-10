@@ -34,7 +34,15 @@ if (!character) {
   process.exit(1);
 }
 
-const bases = Object.values(ITEM_BASES).filter((b) => b.slot === "weapon" || b.slot === "offhand");
+// EVERY SLOT, NOT JUST THE HANDS.
+//
+// This granted weapons and off-hands only, which was right for the grip survey
+// it was written for and wrong for anything else. `gearchurn.mjs` cycles all
+// seven slots looking for things that accumulate, and against a hands-only
+// armoury it reported "nothing accumulated across 40 full gear changes" while
+// `worn` sat at 0 the whole time — forty rounds of exercising one slot and
+// calling it a clean bill of health.
+const bases = Object.values(ITEM_BASES).filter((b) => b.slot !== undefined);
 const ids = bases.map((b) => b.id);
 
 const cleared = db
