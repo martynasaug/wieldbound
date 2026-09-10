@@ -32,6 +32,13 @@
 import { chromium } from "playwright";
 import { TOWN_PROPS, TOWN_BUILDINGS, propPosition } from "../../shared/town.ts";
 import { riverPath, roadRiverCrossings, BRIDGE_HALF_SPAN_PX } from "../../shared/river.ts";
+import { BASE_MOVE_SPEED_PX_PER_SEC } from "../../shared/protocol-types.ts";
+
+/** Walking pace, taken from the game rather than guessed, so the leg clamp in
+ *  `approach` stays correct if the game ever changes it. Gear and agility can
+ *  only raise a character's real speed, which makes the clamp more
+ *  conservative rather than less. */
+const MOVE_PX_PER_SEC = BASE_MOVE_SPEED_PX_PER_SEC;
 
 // OVERRIDABLE, because the dev server and a production build are not the same
 // program to measure. `checkShaderErrors` is on under `vite dev` and off in a
@@ -508,8 +515,35 @@ export async function approach(page, target, ms = 600, sign = 1) {
         : target;
   const aim = steerToward(p, gated);
   const dirs = keysToward(p, aim);
-  const r = await step(page, dirs, ms);
-  if (r.moved < 25) {
+  // NEVER STEP FURTHER THAN HALF THE REMAINING DISTANCE.
+  //
+  // A fixed leg overshoots once the target is closer than the leg is long, and
+  // because movement is EIGHT-WAY the return trip cannot retrace the same line
+  // — so the character orbits instead of arriving. Logged against a bush, the
+  // last legs of an approach read 40, 60, 38, 56, 35, 53, 34, 50px: converging
+  // to about 35 and bouncing straight back out past 50, forever.
+  //
+  // That is not a near-miss. `INTERACTION_RANGE_PX` is 40, so every sample on
+  // the way out is refused, and a harness that samples on the wrong beat
+  // reports "Too far away to gather that" while standing beside the thing. Two
+  // probes and part of a guided-opening run were spent on that before it was
+  // measured: it looked like trees and bushes being ungatherable while rocks
+  // worked, which is a very convincing shape for a game bug.
+  //
+  // Halving keeps the approach geometric — it always closes, never overshoots,
+  // and the floor stops the last few pixels taking a hundred legs.
+  const remaining = Math.hypot(target.x - p.x, target.y - p.y);
+  const legMs = Math.max(45, Math.min(ms, (remaining / MOVE_PX_PER_SEC) * 1000 * 0.35));
+  const r = await step(page, dirs, legMs);
+  // STUCK IS RELATIVE TO HOW FAR THIS LEG WAS EVER GOING TO GO.
+  //
+  // The flat 25px threshold below assumed a leg of several hundred milliseconds.
+  // Once the clamp above shortens the last legs of an approach to 45ms — about
+  // ten pixels — every one of them looks wedged, and the sidestep-then-unstick
+  // escalation fires on a character that is arriving perfectly well. Logged: it
+  // closed to 29px and was then thrown to 228px by its own rescue.
+  const expected = (legMs / 1000) * MOVE_PX_PER_SEC;
+  if (r.moved < Math.min(25, expected * 0.4)) {
     const perp =
       dirs.includes("w") || dirs.includes("s")
         ? [sign > 0 ? "d" : "a"]

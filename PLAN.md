@@ -22769,3 +22769,43 @@ may be the intended pressure of a level-1 opening or may be too thin. Flagged
 rather than tuned — it is a design call and the numbers are now measurable.
 
 Suite 46/46.
+
+**Phase 70 M70.234 — the driver could not arrive, and it looked like a game
+bug.** Chasing why bushes and trees would not gather while rocks always did.
+
+The symptom was convincing: `Too far away to gather that` with the character
+apparently standing at the node, reproducibly for two of the three kinds. It was
+the approach.
+
+A leg of fixed duration OVERSHOOTS once the target is closer than the leg is
+long, and because movement is eight-way the return cannot retrace the same line
+— so the character orbits instead of arriving. Logged against a bush, the last
+legs read 40, 60, 38, 56, 35, 53, 34, 50px: closing to about 35 and bouncing
+straight back past 50, forever. `INTERACTION_RANGE_PX` is 40, so a sample taken
+on the way out is refused, and the refusal is real. Legs are now clamped to a
+fraction of the remaining distance, which keeps the approach geometric.
+
+That exposed a second fault immediately: `approach` treats a leg that moved less
+than 25px as WEDGED and escalates to a sidestep and then `unstick`, which walks
+1600ms in up to eight directions. With short final legs — 45ms is about ten
+pixels — every one of them looked stuck, and a character that had closed to 29px
+was thrown 228px away by its own rescue. The threshold is now relative to how
+far the leg was ever going to travel.
+
+AND A GAME CHANGE WAS NEARLY MADE ON A MISREAD SCALE. The conclusion drawn from
+"56px and 69px, refused" was that gathering range is too tight for a player
+standing beside a node — a plausible feel bug, and it was about to become a
+wider `GATHER_RANGE_PX`. `PX_PER_UNIT` is 40, not the 90 that reasoning assumed:
+`INTERACTION_RANGE_PX` is a FULL WORLD UNIT and the player's body radius is
+0.35 of one, so standing beside a node is comfortably inside it. The range is
+fine; the bot could not stand still. Checking the constant before changing the
+game is the only reason a harness bug did not become a balance change.
+
+Also finished the thing that started this: all three spent-node states are now
+looked at rather than only measured. Tree is a stump, rock is a boulder worked
+down to a low slab, bush keeps its leaves and loses the flowers that ARE its
+herbs. The bush took four attempts to photograph — not because the art is wrong
+but because the phase ran after the rock, starting 500px out beside a slime
+camp; run first, from spawn, it works immediately.
+
+Suite 46/46.
