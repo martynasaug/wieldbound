@@ -5535,6 +5535,9 @@ export class Game {
     for (const n of this.nodes.values()) consider(n);
     for (const d of this.world.decor.children) consider(d);
     for (const b of this.town.buildings) consider(b);
+    // The statue, which is in neither list and stands in the middle of the
+    // square. See Town.ornaments.
+    for (const o of this.town.ornaments) consider(o);
   }
 
   /**
@@ -5597,6 +5600,15 @@ export class Game {
    * cutting materials helps the first visit most, and the returning player is
    * already paying half of what this comment used to claim.
    */
+  /**
+   * Builds one object's see-through programs, for something that arrives after
+   * `warmFadedOccluders` has already run.
+   *
+   * The same flip-compile-restore that function does, over a single root. It
+   * exists because the statue loads asynchronously and the warm pass cannot
+   * wait for it without holding up the load for a model nobody is looking at
+   * yet.
+   */
   private async warmFadedOccluders(): Promise<void> {
     const mats = new Set<THREE.Material>();
     const collect = (o: THREE.Object3D) => {
@@ -5611,6 +5623,10 @@ export class Game {
     for (const d of this.world.decor.children) collect(d);
     for (const b of this.town.buildings) collect(b);
     for (const n of this.nodes.values()) collect(n);
+    // And the ornaments, or the first time the statue fades it compiles its
+    // see-through variant inside a frame — the failure class M70.144 checked
+    // the wider fade against.
+    for (const o of this.town.ornaments) collect(o);
     if (mats.size === 0) return;
 
     const was: [THREE.Material, boolean, boolean][] = [];

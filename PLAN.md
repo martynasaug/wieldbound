@@ -23187,3 +23187,49 @@ TWO MEASUREMENT FAULTS, BOTH CAUGHT BY A CHECK RATHER THAN BY LUCK:
     worthless until the thing being timed is switched on.
 
 Suite 48/48.
+
+**Phase 70 M70.243 — the statue hid you, and it was the palisade's bug again.**
+Hunting for an instance of the one-ray/five-ray asymmetry M70.241 recorded, a
+probe stood the character behind town props and photographed it. The frame that
+came back showed something else entirely: **the character behind the STATUE in
+the middle of the square, hidden from the chest down, with nothing faded and the
+camera not pulled in.**
+
+Same structural gap as the wall, in the most-walked place in the game.
+`raiseStatue` does `this.group.add(inst.object)` — so the statue is in neither
+`buildings` nor `decor`, and those are the two lists
+`refreshOccluderCandidates` builds from. It could not fade and could not push
+the camera. The comment above its material even says "nothing to fade", which
+was true only because nothing had ever offered it the chance.
+
+Unlike the wall it is safe to fade: one compact object with a bounding sphere to
+match, and `raiseStatue` gives it a cloned material of its own, so making it
+translucent drags nothing else with it. `Town.ornaments` now holds it and
+`refreshOccluderCandidates` reads that list. Verified mechanically —
+`statueIsCandidate: true` — because the fade itself is already proven for
+anything in the list (M70.141), and the geometry needed to photograph it is
+hard to hit on purpose: three sweeps put the character 0.92u to 12u off the
+sight line and one lucky accident produced the original frame.
+
+**A RESIDUAL, MEASURED AND LEFT: the first fade compiles one program.** The
+statue loads asynchronously, so `warmFadedOccluders` has usually finished before
+it exists, and its see-through variant is not built. Against a control this is
+unambiguous — flipping a building's materials and drawing compiles **0**
+programs, twice over, while the statue compiles **1**. One program is about
+195ms (M70.134), once per session, and only for a player who stands behind it.
+
+THE WARM WAS BUILT, DID NOT WORK, AND WAS REMOVED RATHER THAN LEFT IN. Three
+shapes were tried: warming on arrival via a callback (useless — `raiseStatue`
+runs during `town.build`, before the lanterns are in, and a program's cache key
+carries the LIGHT COUNT, which is M70.115's lesson exactly; proved by warming by
+hand afterwards and watching it compile two more); a batch after
+`warmWholeScene` using `warmUp(root)`; and the same batch compiling the whole
+scene the way `warmFadedOccluders` does. All three still left the fade compiling
+one program, and I cannot currently explain why the scene-wide version fails
+when the identical shape works for buildings. Machinery that does not do its job
+is worse than none, so the hook, the flag and the helper are gone and the
+residual is written down instead.
+
+Also recorded: the one-ray/five-ray asymmetry STILL has no instance. The frame
+that sent me looking turned out to be this bug, which is twice now that a
+"legs eaten" capture has had a different cause. Suite 48/48.

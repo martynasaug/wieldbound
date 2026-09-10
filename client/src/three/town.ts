@@ -2983,6 +2983,22 @@ export class Town {
   /** Invisible boxes standing where the palisade stands, so the camera has a
    *  wall to avoid. Never added to the scene — see `wallColliderRing`. */
   readonly wallColliders = wallColliderRing();
+  /**
+   * Things standing in the town that should go translucent when they get
+   * between you and the camera.
+   *
+   * The statue is the whole reason this exists. It goes into `group` like the
+   * palisade did, so it was in neither `buildings` nor `decor` — which are the
+   * two lists `refreshOccluderCandidates` builds from — and a player standing
+   * behind it in the middle of the busiest square in the game was hidden from
+   * the chest down with nothing fading and no camera pull. Same structural gap
+   * as M70.241 found in the wall, in the most-walked place there is.
+   *
+   * Unlike the wall this is safe to fade: it is one compact object with a
+   * bounding sphere to match, and `raiseStatue` gives it a cloned material of
+   * its own, so making it translucent drags nothing else with it.
+   */
+  readonly ornaments: THREE.Object3D[] = [];
   private readonly lanterns: Lantern[] = [];
   /** Lifts the whole square after dark. See `update`. */
   private readonly townFill = new THREE.HemisphereLight(0xffd8a0, 0x3a2c1e, 0);
@@ -3107,6 +3123,8 @@ export class Town {
     // through it is looked at rather than looked past.
     inst.object.rotation.y = Math.PI / 2;
     this.group.add(inst.object);
+    // Fadeable, so standing behind it does not hide you. See `ornaments`.
+    this.ornaments.push(inst.object);
   }
 
   /**
