@@ -23081,3 +23081,66 @@ The tour stop that showed it was walking the road rather than standing in a
 camp, which is exactly where that band is likeliest.
 
 No game code changed.
+
+**Phase 70 M70.241 — the town wall eats your legs, and the obvious fix costs
+seventy-one per cent of a frame.** The gate stop on `tour.mjs` shows the
+character cut off at the waist by the palisade, with the wall drawn solid over
+the bottom half of them.
+
+**WHY NOTHING CAN HELP IT.** The palisade's boxes go into the SHARED town
+`Builder` and are merged with everything else, so it exists as geometry and as
+nothing anyone can name. Camera colliders are `town.buildings`, which is
+`TOWN_BUILDINGS` — the houses — and occluder candidates are nodes, decor and
+the same buildings. The wall is in neither list: it cannot push the camera out
+and it cannot fade. Standing against it, nothing in the system is even aware
+there is a wall there.
+
+Part of that is deliberate. `finish()`'s note says `ownMaterials` is "what a
+building wants and the palisade does not: only something that can be faded
+independently needs materials of its own" — and since M70.141 the fade takes the
+WHOLE occluder, so a fadeable ring would turn the entire town translucent. So
+fading was never the answer. Making it a camera collider was.
+
+**IT WAS TRIED AND MEASURED AND IT IS FAR TOO EXPENSIVE.** The palisade got its
+own `Builder` and group, keeping shared materials, and went into
+`setCameraColliders`. `tools/soak/camraycost.mjs` hooks `World.clearDistance` —
+five rays a frame — and walks the perimeter:
+
+    buildings only   6 colliders   0.309ms avg   2.40ms worst    4.4% of a 144Hz frame
+    with the wall    7 colliders   4.928ms avg  11.30ms worst   71.0% of a 144Hz frame
+
+Sixteen times the cost, and a worst case that blows a frame on its own. The
+reason is the shape: the group's eleven children are per-material merges that
+each span the whole ring, so every one has a town-sized bounding sphere and
+every ray inside the walls falls past the cheap sphere test into per-triangle
+work. Reverted, both files.
+
+**A MEASUREMENT TRAP THAT NEARLY PUBLISHED A WRONG NUMBER.** The first "after"
+run reported 0.157ms — a THIRD of baseline, which would have read as adding a
+collider making things faster. `cameraColliders` still said 6. Vite was serving
+a stale `Game.ts` while happily serving the new `town.ts`, so `palisadeGroup`
+existed with eleven children and nothing used it. Killing every vite/tsx process
+and clearing `node_modules/.vite` fixed it. **The collider count is the check
+that caught it**, and any measurement here should assert the thing it is
+measuring is actually switched on before believing the timing.
+
+WHAT WOULD WORK, for whoever picks this up: build the palisade in ARC SEGMENTS
+rather than as whole-ring merges. Twelve segments each spanning thirty degrees
+have small bounding spheres, so a ray near one stretch of wall rejects the other
+eleven on the sphere test and never touches their triangles. That is a change to
+how `palisade()` merges, and it has to keep the gate gaps — the wall already
+shares a gap predicate with the collision code so the timber and the barrier
+open in the same places.
+
+Also recorded, unfixed and now with no observed instance: `fadeOccluders` casts
+ONE ray at chest height while `clearDistance` casts FIVE spread from above the
+head to the ankles, with a comment explaining that one ray misses a wall across
+the legs. The asymmetry is real. The gate frame is NOT an example of it — that
+was the palisade being absent from both lists — and I have no example, so it
+stays written down rather than acted on.
+
+Suite 48/48. Also in this entry: a partial three-lap soak, cut short at 52 of 63
+camps with no summary, but conclusive on the question it was run for — heap flat
+at 92.9MB for fifteen minutes, programs 75 -> 103 settled early in lap two, and
+geometry 271 -> 341 converging hard: **lap 1 +58, lap 2 +11, lap 3 +0**. No leak
+from the helm or toast work.
