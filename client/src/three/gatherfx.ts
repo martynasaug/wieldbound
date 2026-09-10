@@ -48,17 +48,25 @@ import type { SkillFx } from "./skillfx";
 /** How the three kinds differ on screen. Chopping a tree, breaking a rock and
  *  stripping a bush are three acts, and the debris is the cheapest place to say
  *  so. Colours are the material coming off, not the node's own tint. */
-const KIND_LOOK: Record<ResourceNodeKind, { debris: number; arc: number; count: number; speed: number }> = {
+// `recoil` is the peak lean in radians. A tree is tall and light enough to sway
+// visibly; a boulder must barely move or it reads as unmoored; a bush is soft
+// and rustles more than either.
+const KIND_LOOK: Record<
+  ResourceNodeKind,
+  { debris: number; arc: number; count: number; speed: number; recoil: number }
+> = {
   // Pale splintered wood, thrown hard — an axe bites and the chip leaves fast.
-  tree: { debris: 0xb98a4e, arc: 0xd8a55f, count: 8, speed: 3.0 },
+  tree: { debris: 0xb98a4e, arc: 0xd8a55f, count: 8, speed: 3.0, recoil: 0.055 },
   // Stone dust and grit: more pieces, slower, and duller than the wood.
-  rock: { debris: 0x9d9a92, arc: 0xb8b2a4, count: 10, speed: 2.4 },
+  rock: { debris: 0x9d9a92, arc: 0xb8b2a4, count: 10, speed: 2.4, recoil: 0.018 },
   // Leaves. Few, slow, and they drift rather than fly, because picking is not
   // an impact — the beat here is a hand closing, not a tool landing.
-  bush: { debris: 0x74ad4c, arc: 0x8fc45f, count: 5, speed: 1.5 },
+  bush: { debris: 0x74ad4c, arc: 0x8fc45f, count: 5, speed: 1.5, recoil: 0.075 },
 };
 
 const SEGMENTS = 72;
+/** How long one flinch takes to play out and settle. */
+const RECOIL_MS = 340;
 /** Where the arc sits relative to the node's footprint. Wide enough to read as
  *  belonging to the node rather than to the player standing at it. */
 const ARC_RADIUS = 1.15;
@@ -193,6 +201,17 @@ export class GatherFx {
     durationMs: number;
     /** Beats already played, so each fires exactly once. */
     beatsDone: number;
+    /**
+     * The node's own object, so it can flinch when it is struck.
+     *
+     * Only the host group is touched, and only its rotation and scale. Its
+     * POSITION is written every snapshot by `syncNodes` and animating that
+     * would be a tug of war; the variant turn each node is given for variety
+     * lives on the child mesh inside, so the group's own rotation is free.
+     */
+    obj: THREE.Object3D | null;
+    /** When the last blow landed, for the recoil. */
+    struckAt: number;
   } | null = null;
 
   /** How many times the character strikes across one gather. Three reads as
@@ -264,11 +283,17 @@ export class GatherFx {
     playerZ: number,
     readyInMs: number,
     intervalMs: number,
+    obj: THREE.Object3D | null = null,
   ): void {
     const arc = this.arcFor(kind);
     const restart =
       !this.current || this.current.kind !== kind || this.current.x !== nodeX || this.current.z !== nodeZ;
     if (restart) {
+      // The PREVIOUS node has to be put back before this one takes over, or
+      // walking from one tree straight to the next leaves the first leaning for
+      // the rest of the session. `end` covers the ordinary case; this covers
+      // the one where a gather is replaced rather than finished.
+      this.restore();
       this.hideAll();
       arc.place(nodeX, nodeZ);
     }
@@ -286,6 +311,9 @@ export class GatherFx {
       // start over. Keyed off the remaining time rather than assumed: a message
       // that arrives late must not replay beats already struck.
       beatsDone: restart ? 0 : this.beatsAt(readyInMs, intervalMs),
+      obj,
+      // Far enough back that no recoil is in flight on the first frame.
+      struckAt: -1e9,
     };
   }
 
@@ -297,8 +325,22 @@ export class GatherFx {
 
   /** The server says this player is not gathering. */
   end(): void {
+    // PUT THE NODE BACK. A gather can end on any frame, including one where the
+    // tree is mid-lean, and a node left tilted five degrees stays tilted for
+    // the rest of the session — the group is only written by `syncNodes`, which
+    // sets position and nothing else. Nobody would ever connect a subtly
+    // crooked tree back to gathering.
+    this.restore();
     this.current = null;
     this.hideAll();
+  }
+
+  private restore(): void {
+    const obj = this.current?.obj;
+    if (!obj) return;
+    obj.rotation.x = 0;
+    obj.rotation.z = 0;
+    obj.scale.set(1, 1, 1);
   }
 
   private hideAll(): void {
@@ -332,7 +374,34 @@ export class GatherFx {
       const look = KIND_LOOK[cur.kind];
       this.fx.debris(cur.x, cur.y + 0.7, cur.z, look.debris, cur.awayX, cur.awayZ, look.count, look.speed);
       this.onBeat(cur.kind, cur.beatsDone);
+      cur.struckAt = now;
       cur.beatsDone++;
+    }
+
+    // THE NODE FLINCHES. Debris coming off a tree that does not move reads as
+    // an effect played NEAR a tree; the thing that makes a blow land is the
+    // struck object acknowledging it.
+    //
+    // A damped spring rather than a fade back to zero: a tree leans away, comes
+    // back past upright, and settles. A one-way decay is a lean followed by a
+    // slow creep, which looks like the tree is on a hinge.
+    if (cur.obj) {
+      const t = (now - cur.struckAt) / RECOIL_MS;
+      if (t >= 0 && t < 1) {
+        const look = KIND_LOOK[cur.kind];
+        const swing = Math.sin(t * Math.PI * 2.2) * Math.pow(1 - t, 2.4) * look.recoil;
+        const len = Math.hypot(cur.awayX, cur.awayZ) || 1;
+        // Tilt about the axis perpendicular to the blow, so it leans directly
+        // away from whoever struck it rather than in some fixed direction.
+        cur.obj.rotation.x = swing * (cur.awayZ / len);
+        cur.obj.rotation.z = -swing * (cur.awayX / len);
+        // And a slight squash, which is what sells a rock: a boulder cannot
+        // lean much without looking like it is about to roll away.
+        const squash = 1 - Math.abs(swing) * 0.35;
+        cur.obj.scale.set(1 + (1 - squash) * 0.5, squash, 1 + (1 - squash) * 0.5);
+      } else if (t >= 1 && t < 1.2) {
+        this.restore();
+      }
     }
   }
 

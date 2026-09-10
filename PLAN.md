@@ -22452,3 +22452,47 @@ sends one message per gather and the client interpolates — streaming a clock
 30Hz per gathering player would be waste) and demanded a null after walking away
 (the null already arrived when the node was spent). Both replaced with what the
 design actually guarantees. Suite 46/46.
+
+**Phase 70 M70.228 — the node flinches, and the three materials stop sounding
+alike.** Continuing M70.227. Debris coming off a tree that does not itself move
+reads as an effect played NEAR a tree; what makes a blow land is the struck
+thing acknowledging it.
+
+So a node now recoils on each beat: a damped spring, leaning directly away from
+whoever struck it, with a slight squash. A one-way decay was the obvious
+alternative and is wrong — it is a lean followed by a slow creep, which looks
+like the tree is on a hinge. Peak lean is per kind, because a boulder that sways
+like a sapling reads as unmoored: tree 0.055 rad, bush 0.075, rock 0.018.
+
+ONLY THE HOST GROUP'S ROTATION AND SCALE ARE TOUCHED. Its position is written
+every snapshot by `syncNodes`, so animating that would be a tug of war, and the
+variant turn each node gets for variety lives on the child mesh inside — which
+leaves the group's own rotation free.
+
+AND IT IS PUT BACK, on both paths. A gather can end on any frame, including one
+where the tree is mid-lean, and nothing else ever writes that rotation — so a
+node left tilted stays tilted for the session, and nobody would ever connect a
+subtly crooked tree back to gathering. `end` covers finishing; the restart
+branch of `begin` covers walking from one node straight to the next, which was
+missed in the first draft and would have left a trail of leaning trees behind
+anyone who gathered along a ring.
+
+Measured rather than watched: peak tilt 0.027 rad across 40 samples with 7 of
+them mid-recoil, and the node's resting state read back as exactly
+`{rx:0, rz:0, sx:1, sy:1}`. The sampled peak is below the configured 0.055
+because 120ms sampling cannot catch the top of a 340ms spring — worth saying,
+since a number lower than the constant that produced it invites the wrong
+conclusion.
+
+THE SOUND. There is one `gather.wav`, and chopping, mining and picking were all
+making the identical noise. Three new samples would be the thorough answer;
+`playSfx` now takes a playback rate instead, which is most of the benefit for no
+new assets — wood 0.82, stone 1.18, leaves 1.35. A narrow spread deliberately:
+this should read as one tool meeting three materials, not as three instruments.
+
+Verified by hooking `createBufferSource` and reading `playbackRate` off every
+cue that actually started: standing in a rock produced exactly three cues, all
+at 1.18. Tree and bush were not reached in that run — the walker could not get
+back to one — so what is verified is the wiring and the rock, not all three.
+
+Suite 46/46.

@@ -84,6 +84,20 @@ import {
 } from "../../../shared/protocol-types";
 import { SkillFx, fxFor } from "./skillfx";
 import { GatherFx } from "./gatherfx";
+
+/**
+ * Pitch for the beat cue, per material.
+ *
+ * Wood is the reference. Stone rings higher and harder; leaves are higher
+ * still and read as lighter because the beat there is a hand rather than a
+ * tool. A narrow spread on purpose — this should sound like one tool meeting
+ * three materials, not like three instruments.
+ */
+const GATHER_BEAT_PITCH: Record<ResourceNodeKind, number> = {
+  tree: 0.82,
+  rock: 1.18,
+  bush: 1.35,
+};
 import { Minimap } from "../ui/Minimap";
 import { GameSocket } from "../net/socket";
 import { CharacterPanel } from "../ui/CharacterPanel";
@@ -841,9 +855,11 @@ export class Game {
       // `attack` are both already in the clip library and neither was reachable
       // from gathering — see `ActorAnim`.
       this.localActor?.play(kind === "bush" ? "pickup" : "attack");
-      // Quieter than the completion cue, and pitched under it, so three beats
-      // and a payoff read as one action rather than as four identical events.
-      playSfx("gather", 0.28);
+      // Quieter than the completion cue, and pitched per material, so three
+      // beats and a payoff read as one action on a particular thing rather
+      // than as four identical events. There is one `gather.wav`; see the note
+      // on `playSfx`'s `rate`.
+      playSfx("gather", 0.28, GATHER_BEAT_PITCH[kind]);
     });
 
     this.characterPanel = new CharacterPanel(
@@ -1264,6 +1280,7 @@ export class Game {
           this.localActor?.position.z ?? obj.position.z,
           p.readyInMs,
           p.intervalMs,
+          obj,
         );
       },
       onWeaponProgress: (p) => this.onWeaponProgress(p),

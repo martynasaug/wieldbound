@@ -79,7 +79,17 @@ function ensure(name: SfxName): AudioBuffer | null {
   return null;
 }
 
-export function playSfx(name: SfxName, volumeScale = 1): void {
+/**
+ * @param rate Playback rate, which is pitch. Defaults to 1.
+ *
+ * There is ONE `gather.wav`, and chopping a tree, breaking a rock and
+ * stripping a bush are three different acts that were all making the identical
+ * noise. Three new samples would be the thorough answer; pitching the one that
+ * exists is most of the benefit for none of the assets, and a buffer source
+ * already has the control. Deliberately a small range — this is meant to read
+ * as the same tool meeting three materials, not as three instruments.
+ */
+export function playSfx(name: SfxName, volumeScale = 1, rate = 1): void {
   if (isMuted()) return;
   const now = performance.now();
   if (now - (lastPlayedAt.get(name) ?? -Infinity) < MIN_GAP_MS) return;
@@ -92,6 +102,7 @@ export function playSfx(name: SfxName, volumeScale = 1): void {
 
   const src = ctx.createBufferSource();
   src.buffer = buf;
+  if (rate !== 1) src.playbackRate.value = Math.max(0.25, Math.min(4, rate));
   const gain = ctx.createGain();
   gain.gain.value = Math.max(0, Math.min(1, (VOLUME[name] ?? 0.4) * volumeScale));
   src.connect(gain);
