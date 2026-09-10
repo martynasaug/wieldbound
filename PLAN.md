@@ -22295,3 +22295,46 @@ equipping a quiver puts the bow away, and the capture showed a character
 carrying neither. Recorded rather than dressed up as a conclusion.
 
 Suite unaffected — this milestone changes one soak harness and no game code.
+
+**Phase 70 M70.225 — thirteen monsters, and none of them floats.** Same
+question as the weapon survey, asked of the creatures: does each kind's model
+actually sit on the ground, or is one of them hovering a hand's breadth up
+where nobody looks because the eye is on the health bar.
+
+GOING TO FIND THEM DOES NOT WORK. Kinds live in rings by distance from town, so
+a random walk meets band one and nothing else — four minutes gave 5 of 13.
+Biasing the walk outward across the boundaries took nine minutes to add ONE
+more. The far kinds are simply a long way off and a bot has to walk every pixel.
+
+But every kind is already built at login: `Game.start` loads all thirteen as
+actors so their shaders compile under the loading screen and parks them below
+the world (`monsterShaderKeepAlive`). Reading the seat off those is 13 of 13
+from one login, in seconds.
+
+THE COPY HAD TO BE SHOWN TO HOLD THE PROPERTY. Reading a convenient stand-in is
+worth nothing until it agrees with the real thing, so both methods were run on
+the six kinds the walker did meet. wolf -0.001/-0.001, mushnub +0.000/+0.000,
+goblin +0.015/+0.015 — identical to the thousandth. The two that differ are the
+two that should: the walked orcbrute was mid-stride and `Actor` lifts per
+animation state (Walk carries its own 38mm) while a keep-alive rig only idles,
+and the armabee is a flyer, whose altitude lives on the actor's position and is
+not a property of the model at all.
+
+RESULT: NOTHING WRONG. All thirteen idle seats fall in a 0.028 band on a
+1.8-unit character — eight at exactly 0.000, orcbrute highest at +0.027 — and
+none sits below its own origin. The player reads -0.015, inside the same band.
+The per-state lift added in M55.x is doing its job across every rig, not just
+the one it was tuned on.
+
+Reported as a negative result rather than turned into a fix looking for a
+problem. Two smaller things the run did surface and fix, both in the tool: the
+kind-to-model table is now parsed out of `Game.ts` rather than copied (it is
+module-private there, and a copy rots silently into a false "not checked"), and
+rigs are named by exact match then normalised prefix, because five of thirteen
+carry a node name that differs from their filename — `Dog.gltf` holds
+"Dog_Blob", `Dragon_Evolved.gltf` holds "Dragon" — which made the first run
+announce "8 of 13 kinds measured" when all thirteen had in fact been measured
+and only eight had been named. Ambiguity is refused rather than guessed, since
+`Orc.gltf` and `Orc_Skull.gltf` would both answer to a loose prefix.
+
+Suite unaffected — this milestone adds one soak harness and no game code.
