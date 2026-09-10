@@ -4685,7 +4685,9 @@ setInterval(() => {
     if (now - (lastCombatAt.get(playerId) ?? -Infinity) < COMBAT_LOCKOUT_MS) continue;
     if (now - (lastRegenAt.get(playerId) ?? now) < HP_REGEN_INTERVAL_MS) continue;
 
-    const newHp = addHp(playerId, regenAmountForVitality(attrs?.vitality ?? 0), maxHp);
+    // `maxHp` is passed so the tick can scale with the pool it is refilling —
+    // see `regenAmountForVitality`, and the table of what the flat rate cost.
+    const newHp = addHp(playerId, regenAmountForVitality(attrs?.vitality ?? 0, maxHp), maxHp);
     hpBalances.set(playerId, newHp);
     lastRegenAt.set(playerId, now);
 

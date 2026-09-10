@@ -22809,3 +22809,48 @@ but because the phase ran after the rock, starting 500px out beside a slime
 camp; run first, from spawn, it works immediately.
 
 Suite 46/46.
+
+**Phase 70 M70.235 — healing stopped getting worse the longer you play.** The
+health figure flagged in M70.233 — level 2 on 28/80, level 3 on 3/90 — was
+worth chasing, and chasing it properly meant first making the bot play the way
+the game expects rather than tuning anything.
+
+WHAT THE GAME'S ANSWER TO LOW HEALTH IS. Regen is out-of-combat only, and
+deliberately: "regenerating mid-fight meant retreating to recover was never
+necessary, and left Mend without a job". So a hurt character drinks or breaks
+off. The bot did neither, which is why its health was a statement about a bot.
+It now retreats past the leash, drinks, and counts deaths, potions and retreats.
+
+WITH IT PLAYING PROPERLY: 0 deaths, but **fourteen retreats and six kills across
+twelve minutes of fighting**. A new character owns exactly one potion — thirty
+health, two and a half minutes of regen — for the whole opening, and potions are
+crafted at the workbench, so running dry means walking back to town. The rest is
+standing in a field waiting.
+
+AND THE RATE WAS THE WRONG SHAPE, not just a low number. It was flat — one point
+every five seconds, twelve a minute, whatever the pool — while `maxHpForLevel`
+grows ten a level forever. Recovery from empty, measured off the real tables:
+5.8 minutes at level 1, 8.3 at level 2, 11.7 at level 5, **25.0 at level 20**.
+Nothing throws, no test failed, and the only symptom is a game that gets more
+tedious the better you do at it.
+
+So the tick now scales with the pool it refills: `HP_REGEN_FRACTION` of max, with
+the old vitality value as a FLOOR. Recovery is 2.3 to 3.0 minutes at every level
+from 1 to 80 instead of climbing without limit. Disengaging still costs real
+time — three minutes is a long while to stand in a field — and nothing is slower
+than it was, so no existing character is nerfed. Vitality still raises the rate
+directly at low levels and raises the pool the fraction is taken from at all of
+them.
+
+Verified live rather than only on paper: a level-1 character at 45/70 climbed to
+57 in thirty seconds out of combat — 24 hp/min against the old 12.
+
+`regen.mjs` guards the SHAPE rather than the constant: recovery must not climb
+with level, must still cost more than a moment, must never be slower than the
+flat rate it replaced, and vitality must still buy something. Retune the fraction
+freely; make healing scale worse than the pool again and it says so.
+
+Suite 47/47. One note on the run before it: `throwers` failed once at 258px
+against a 185px reach and passes standalone at 148 and 176. That is the hazard
+`camps.mjs` documents at length — another character dragging a monster — not a
+regression, and it passed on the clean re-run.

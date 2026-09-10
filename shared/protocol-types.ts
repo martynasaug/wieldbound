@@ -3212,11 +3212,46 @@ export function maxHpForLevel(level: number, vitality = 0, maxHpBonus = 0): numb
   return 50 + (level - 1) * 10 + vitality * VITALITY_HP_STEP + maxHpBonus;
 }
 
-// A second thing Vitality buys, on top of max HP: how much passive regen
-// ticks for while below max (see HP_REGEN_INTERVAL_MS in the server tick
-// loop, which stays a flat cadence — only the *amount* per tick scales).
-export function regenAmountForVitality(vitality: number): number {
-  return Math.min(5, 1 + Math.floor(vitality / 8));
+/**
+ * How much health an out-of-combat tick restores.
+ *
+ * A FLAT AMOUNT AGAINST A GROWING POOL MEANS HEALING GETS WORSE FOREVER.
+ *
+ * This used to be `min(5, 1 + floor(vitality / 8))` and nothing else: one point
+ * every five seconds for a starting character, twelve a minute, whatever the
+ * pool. Health per level is `50 + (level - 1) * 10`, so the time to recover
+ * from empty grows linearly and without limit — measured off the real tables:
+ *
+ *     level  1   70 hp    5.8 minutes
+ *     level  2  100 hp    8.3 minutes
+ *     level  5  140 hp   11.7 minutes
+ *     level 20  300 hp   25.0 minutes
+ *
+ * Regen is deliberately out-of-combat only — "regenerating mid-fight meant
+ * retreating to recover was never necessary, and left Mend without a job" — and
+ * that is a good rule. It is the rule that makes the flat rate expensive: a
+ * character below a third of its health has to break off, and then WAIT, and
+ * the waiting is the whole of the early game's downtime. A guided run measured
+ * FOURTEEN retreats and six kills across twelve minutes of fighting, with one
+ * potion — thirty health, two and a half minutes of regen — to its name for the
+ * entire opening. That is the "running around doing nothing" shape.
+ *
+ * So the tick scales with the pool it is refilling. Recovery from empty is now
+ * about three minutes at every level instead of climbing, which keeps
+ * disengaging a real cost — three minutes is a long time to stand in a field —
+ * without making it worse the longer someone plays.
+ *
+ * VITALITY IS STILL THE LEVER and still worth points: it is a floor under the
+ * percentage, so investing raises the rate directly at low levels, and it
+ * raises the pool the percentage is taken from at every level. Nothing gets
+ * SLOWER than it was — the old value is the floor — so this cannot nerf a build
+ * that was relying on it.
+ */
+export const HP_REGEN_FRACTION = 0.03;
+
+export function regenAmountForVitality(vitality: number, maxHp = 0): number {
+  const fromVitality = Math.min(5, 1 + Math.floor(vitality / 8));
+  return Math.max(fromVitality, Math.round(maxHp * HP_REGEN_FRACTION));
 }
 
 // Daily login bonus: a flat resource grant, claimable once per real-world

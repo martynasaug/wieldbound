@@ -409,6 +409,77 @@ const endAt = t0 + MINUTES * 60000;
 let i = 0;
 let lastLevel = s.level;
 let swings = 0;
+// SURVIVING THE WAY THE GAME EXPECTS, because otherwise the health figure this
+// run reports is a statement about a bot and not about the early game.
+//
+// Earlier runs reached level 2 on 28/80 and level 3 on 3/90, and that was
+// flagged as possibly too punishing. It measures nothing: this bot fought
+// continuously, never drank, and never broke off. The game's own answer to low
+// health is one of two things, and it does neither.
+//
+//   * A POTION. A new character has one from the daily bonus and Cabel's work
+//     pays two more.
+//   * DISENGAGING. Regen is out-of-combat only and deliberately so — "left Mend
+//     without a job" is the note in the server tick — at 1 HP per five seconds
+//     for a starting character, which is 12 a minute against a 70 HP pool.
+//
+// So it drinks when it can and retreats when it cannot, and counts both. What
+// the run can then say is whether a new player following the advice DIES, which
+// is the actual question.
+let deaths = 0;
+let potionsDrunk = 0;
+let retreats = 0;
+let lastHp = (await state()).hp;
+const survive = async (s) => {
+  if (s.hp > s.maxHp * 0.35) return false;
+  // ASK, THEN CHECK WHETHER IT WORKED, rather than looking for a count.
+  //
+  // The Game keeps no potion field — `POTIONS_UPDATE` goes straight into the
+  // inventory panel — so a probe that reads `g.potions` finds undefined and
+  // concludes there is nothing to drink. That is exactly what the first run of
+  // this did: "0 potion(s) drunk" with potions in the bag, which turns the
+  // retreat count into a measurement of a character that refused to heal.
+  //
+  // The server ignores a drink it cannot honour, so asking blind costs nothing
+  // and the health afterwards is the only answer that cannot be misread.
+  const before = s.hp;
+  await page.evaluate(() => window.__wieldbound.socket.sendUseConsumable("potion"));
+  await page.waitForTimeout(700);
+  if ((await state()).hp > before + 5) {
+    potionsDrunk++;
+    return true;
+  }
+  // Nothing to drink: walk away from whatever is hitting us and wait for the
+  // out-of-combat clock plus regen. Capped, because standing still healing for
+  // the rest of the run measures nothing either.
+  retreats++;
+  const until = Date.now() + 45000;
+  while (Date.now() < until) {
+    const now = await state();
+    if (now.hp > now.maxHp * 0.7) break;
+    if (now.hp <= 0) break;
+    const away = await page.evaluate(() => {
+      const g = window.__wieldbound;
+      let best = null;
+      for (const v of g.monsters.values()) {
+        const st = v.state;
+        if (!st || st.status !== "alive") continue;
+        const d = Math.hypot(st.x - g.playerX, st.y - g.playerY);
+        if (!best || d < best.d) best = { x: st.x, y: st.y, d };
+      }
+      if (!best) return null;
+      // A point directly away from it, well past the leash.
+      const dx = g.playerX - best.x;
+      const dy = g.playerY - best.y;
+      const len = Math.hypot(dx, dy) || 1;
+      return { x: g.playerX + (dx / len) * 700, y: g.playerY + (dy / len) * 700, d: 0 };
+    });
+    if (away) await approach(page, away, 500);
+    else await page.waitForTimeout(1000);
+  }
+  return true;
+};
+
 while (Date.now() < endAt) {
   const near = await page.evaluate(() => {
     const g = window.__wieldbound;
@@ -433,6 +504,15 @@ while (Date.now() < endAt) {
   //
   // If the client knows where something alive is, walk to it. That is what a
   // player does, and it is the only way this phase measures combat at all.
+  // Health first, before deciding to fight. A character at a tenth of its pool
+  // walking into another slime is not playing the game as designed.
+  const health = await state();
+  // A DEATH shows up as the pool jumping back up on its own — respawning is the
+  // only thing that refills it, since regen is a point every five seconds.
+  if (health.hp > lastHp + 15) deaths++;
+  lastHp = health.hp;
+  if (await survive(health)) continue;
+
   if (near) {
     if (near.d > 55) await approach(page, near, 450);
     else if (keys.length) {
@@ -475,6 +555,9 @@ const fightMin = (Date.now() - fightFrom) / 60000;
 console.log(
   `  ${swings} attack presses, ${kills} monsters died within reach, ` +
     `over ${fightMin.toFixed(1)}min of fighting`,
+);
+console.log(
+  `  survival: ${deaths} death(s), ${potionsDrunk} potion(s) drunk, ${retreats} retreat(s) to heal`,
 );
 if (fightMin < 2) {
   console.log(
