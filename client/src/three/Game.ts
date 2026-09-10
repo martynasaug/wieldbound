@@ -84,6 +84,7 @@ import {
 } from "../../../shared/protocol-types";
 import { SkillFx, fxFor } from "./skillfx";
 import { GatherFx } from "./gatherfx";
+import { CursorHint, publishCursorDebug } from "./cursors";
 
 /**
  * Pitch for the beat cue, per material.
@@ -843,6 +844,8 @@ export class Game {
   private hoverId: string | null = null;
   /** The resource node under the cursor, if any. See `pickNodeAt`. */
   private hoverNodeId: string | null = null;
+  /** Names the verb under the pointer. See cursors.ts. */
+  private readonly cursorHint: CursorHint;
   /** Last movement input direction, so a dash with no keys held still has a way to go. */
   private moveInputX = 0;
   private moveInputY = 0;
@@ -1000,6 +1003,8 @@ export class Game {
     const lightPool = new LightPool(this.world.scene);
     this.projectiles = new Projectiles(this.world.scene, lightPool);
     this.skillFx = new SkillFx(this.world.scene, lightPool);
+    this.cursorHint = new CursorHint(this.world.renderer.domElement);
+    publishCursorDebug();
     // The ground and the debris are the effect module's; the body and the noise
     // are the game's, because only this class owns the local actor and the
     // hotbar's idea of what a swing is.
@@ -4505,6 +4510,41 @@ export class Game {
    * several units wide, and stands in a field of other trees — a radius that
    * forgiving would light up a neighbour you are not pointing at.
    */
+  /**
+   * Names what the pointer is over, in the same order `onPointerDown` resolves
+   * a click.
+   *
+   * That ordering is the whole contract: a cursor that promises a fight and
+   * delivers a conversation is worse than no cursor, so this must agree with
+   * the click handler about precedence rather than having an opinion of its
+   * own. Monsters first, then people, then nodes — the same list, in the same
+   * sequence.
+   */
+  private updateCursor(): void {
+    if (this.pointerX < 0) {
+      this.cursorHint.set("default");
+      return;
+    }
+    if (this.hoverId) {
+      this.cursorHint.set("attack");
+      return;
+    }
+    // Townspeople are picked here rather than cached, because unlike monsters
+    // and nodes nothing else this frame has already asked where they are.
+    for (const npc of this.npcs.values()) {
+      if (!npc.actor.loaded) continue;
+      if (this.raycaster.intersectObject(npc.actor.root, true).length > 0) {
+        this.cursorHint.set("talk");
+        return;
+      }
+    }
+    const node = this.hoverNodeId ? this.nodeStates.get(this.hoverNodeId) : null;
+    // A spent node keeps its badge. It is still a tree, the click still has an
+    // answer, and dropping to a plain arrow the moment it is harvested would
+    // read as the tree having stopped being a tree.
+    this.cursorHint.set(node ? node.kind : "default");
+  }
+
   private pickNodeAt(clientX: number, clientY: number): string | null {
     this.raycaster.setFromCamera(
       new THREE.Vector2(
@@ -5048,6 +5088,7 @@ export class Game {
       this.pointerX >= 0 && !this.hoverId
         ? this.pickNodeAt(this.pointerX, this.pointerY)
         : null;
+    this.updateCursor();
     this.updateIndicators();
     this.profiler.end("targeting");
 

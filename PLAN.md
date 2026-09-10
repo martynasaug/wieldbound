@@ -22622,3 +22622,54 @@ now waits for the SERVER's position. It also has to click again after walking
 away, since walking away ends the order by design.
 
 Suite 46/46.
+
+**Phase 70 M70.231 — the pointer says what it is over.** The ground ring added
+in M70.230 answers "what would a click take", and it answers it on the GROUND —
+you read it by looking away from where you are pointing. The cursor is where the
+eye already is, and it is the one piece of interface that can name the verb
+before you commit to the click. A tree and a slime are both "something under the
+pointer" until something distinguishes them.
+
+Five cursors: a sword for anything attackable, an axe for a tree, a pick for a
+rock, a sprig for a bush, and a speech bubble for anyone you can talk to.
+
+AN ARROW WITH A BADGE, NOT A TOOL-SHAPED CURSOR. Replacing the pointer with an
+axe reads well in a screenshot and badly in the hand: the hotspot stops being
+visible, so aiming at a small bush behind a fence becomes guesswork. Keeping the
+arrow and hanging a glyph off it keeps the point precise and still names the
+verb — what desktop software has done for copy, link and no-drop for decades.
+The hotspot stays at the arrow's own tip, (3, 2), which is the kind of mistake
+that is invisible in a picture and maddening in play.
+
+Drawn as SVG data URIs: a few hundred bytes, no build step, no fetch, and they
+cannot arrive late. `updateCursor` resolves in the same order `onPointerDown`
+does — monsters, then people, then nodes — because a cursor that promises a
+fight and delivers a conversation is worse than no cursor. A spent node keeps
+its badge: it is still a tree, the click still has an answer, and dropping to a
+plain arrow would read as the tree having stopped being one.
+
+THE ART NEEDED THREE PASSES AND EVERY CHECK PASSED THROUGHOUT. "A valid SVG is
+assigned, it parses, the hotspot is right" was true of the first draft, in which
+the axe read as a SHOVEL (a rounded blob on a stick — what an axe head becomes
+when drawn symmetrically; what makes it an axe is the flare), the pick read as a
+SICKLE (one curved arc over a haft is a scythe), and the sword read as a
+diagonal scratch with a red dot. Redrawn: the axe got a flared bit, the pick
+became a slanted bar crossing its haft, and the sword got mass, a crossguard
+overhanging on both sides, and a pommel.
+
+A SCREENSHOT OF THE GAME CANNOT CONTAIN THE POINTER, which is why that took
+three passes to notice at all. `cursorlook.mjs` answers the two questions
+separately: it hovers a tree, a rock and a bush in a live world and reads
+`style.cursor` back off the canvas with the SVG re-parsed — proving the right
+cursor is CHOSEN — and then re-draws the URIs the game itself produced, large,
+on grass and on a night sky, so the art can be looked at. `publishCursorDebug`
+exposes the table for that, alongside the existing `__wieldboundClips` and
+`__wieldboundAudio` handles.
+
+What is NOT directly verified: the attack cursor hovering a real monster. The
+bot could not reliably land the pointer on one — a creature is a moving target
+picked by screen distance, and it walks between projecting a point and reading
+the result — so what is proven there is the artwork and the one-line mapping,
+not an observed hover. Said plainly rather than left implied.
+
+Suite 46/46.
