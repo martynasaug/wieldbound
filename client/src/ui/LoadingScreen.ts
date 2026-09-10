@@ -186,6 +186,10 @@ export const LOADING_HINTS = [
   "A golem's armour subtracts from every hit, so a fast weapon does nothing to it. Bring something heavy.",
   "Your action bar is yours. Drag skills where you want them, rebind any key, and the layout is remembered per weapon.",
   "A full day passes in twenty-four minutes. Night is only light and colour — for now.",
+  // Added when gathering stopped happening by itself (M70.230). Walking up to a
+  // tree used to harvest it, so there was nothing to teach; now there is, and
+  // this is the only text every player reads before they ever meet a tree.
+  "Click a tree, rock or bush to work it. Standing beside one does nothing — and stepping away, or letting something reach you, ends the job.",
 ];
 
 export function randomHint(): string {

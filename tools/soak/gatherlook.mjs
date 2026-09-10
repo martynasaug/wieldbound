@@ -54,6 +54,9 @@ for (const [kind, label] of [["tree", "wood"], ["rock", "ore"], ["bush", "herb"]
   }
   const arrived = await nearest(kind);
   console.log(`  standing ${arrived ? arrived.d.toFixed(0) : "?"}px away`);
+  // Ask for it. Since M70.230 proximity gathers nothing, so a run that only
+  // walks photographs a character standing beside a node doing nothing.
+  if (arrived) await page.evaluate((id) => window.__wieldbound.socket.sendGather(id), arrived.id);
 
   const before = await gatherState();
   let sawGather = false;

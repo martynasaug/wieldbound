@@ -1149,10 +1149,18 @@ export const TOWN_NPCS: TownNpc[] = [
           // the ground to match it — whether the square SHOULD have a herb bush
           // in it is a content decision, and this line should be true either
           // way.
+          // AND IT HAS TO SAY YOU CLICK. Until M70.230 walking up to a tree
+          // harvested it, so "gather" needed no explanation; now a node is
+          // worked only when you ask, and a line that says WHERE without saying
+          // HOW sends a new player to stand hopefully beside a bush. That is
+          // the same fault this paragraph was already rewritten for once —
+          // guidance describing a world that has moved on — and it would have
+          // been introduced by the change that made the guidance out of date.
           "Take work from Cabel at the Warden's Post and from Marda at the inn — both pay in " +
           "materials, which is what the anvil eats. Gather the rest yourself: walk out of any " +
           "gate and the bushes and trees start a short way beyond the wall — nothing grows " +
-          "inside it that is worth picking. Then stand at the anvil and forge something. " +
+          "inside it that is worth picking. Click one to work it; standing beside it does " +
+          "nothing. Then stand at the anvil and forge something. " +
           "Salvaging a thing teaches you to make it, so break open anything you will not wear.",
       },
       {

@@ -38,6 +38,10 @@ import {
 } from "../../shared/protocol-types.ts";
 
 const source = readFileSync(new URL("../../client/src/ui/LoadingScreen.ts", import.meta.url), "utf8");
+/** Read as text for the same reason the hints are: what is being guarded here
+ *  is that a MESSAGE TYPE exists, and a type is erased at runtime, so there is
+ *  nothing to import and compare against. */
+const protocolSource = readFileSync(new URL("../../shared/protocol-types.ts", import.meta.url), "utf8");
 const block = source.slice(
   source.indexOf("export const LOADING_HINTS = ["),
   source.indexOf("];", source.indexOf("export const LOADING_HINTS = [")),
@@ -62,6 +66,15 @@ const hintSaying = (...words) =>
   LOADING_HINTS.find((h) => words.every((w) => h.toLowerCase().includes(w.toLowerCase()))) ?? null;
 
 const claims = [
+  {
+    // "Click a tree, rock or bush to work it." The claim is that gathering
+    // takes an ASKING — which is true only while the protocol carries a way to
+    // ask. Delete `GatherMessage` or go back to harvesting whatever is
+    // underfoot and this hint becomes the most-read lie in the game.
+    words: ["click a tree"],
+    holds: () => /interface GatherMessage/.test(protocolSource) && /type: "GATHER"/.test(protocolSource),
+    detail: () => "no GatherMessage in shared/protocol-types.ts — gathering takes no order",
+  },
   {
     words: ["twenty-four minutes"],
     holds: () => DAY_LENGTH_MS === 24 * 60 * 1000,

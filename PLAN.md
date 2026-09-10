@@ -22714,3 +22714,58 @@ per cent of a frame budget, and no single update within two orders of magnitude
 of costing a frame.
 
 Suite unchanged at 46/46 — this milestone touches no game code.
+
+**Phase 70 M70.233 — the opening measured properly, and the guidance taught the
+new rule.** M70.230 made gathering something the player asks for, and left three
+harnesses still walking up to nodes and waiting. `guidedopening.mjs` and
+`gatherlook.mjs` now place an order. Without that the guided opening would have
+reported "gave up" on every phase forever, which reads as the ground having
+stopped paying.
+
+AND THE CHANGE CREATED A TEACHING GAP. The Herald said WHERE to gather and not
+HOW, which was complete while walking up to a tree harvested it and is not
+complete now. That is the same fault this project has fixed twice — guidance
+describing a world that has moved on — arriving this time from the change that
+moved the world. The Herald now says "Click one to work it; standing beside it
+does nothing", and a tenth loading hint says the same, guarded in `hints.mjs`
+against `GatherMessage` still existing so it cannot quietly become the
+most-read lie in the game.
+
+FOUR MORE INSTRUMENT FAULTS, each of which made the early game look broken:
+
+  * the hotbar is PER WEAPON, and the fight phase read its keys once — right
+    after the shop step swapped a dagger for a sword. It came back empty, so the
+    bot pressed nothing for six and a half minutes and reported "0 attack
+    presses, 0 monsters died". It now waits for a layout and falls back to "1".
+  * the fight phase wandered on a heading and only engaged within 400px. After
+    the gather phases the character is out at the herb ring with the band-1
+    camps behind it, so "wander outward" walks AWAY from everything. It now
+    walks to the nearest monster the client knows about, at any distance.
+  * the gather caps totalled ten minutes of a fourteen-minute budget, starving
+    the phase that was supposed to measure combat. Trimmed to 2.5/2/2.
+  * and the run was piped through `tail -24`, which threw away the arrival line
+    and the first phase — the half of the output that says where it started.
+
+A HYPOTHESIS KILLED BY MEASUREMENT, worth recording because it was plausible
+and wrong. "Wood and herb fail while ore succeeds" looked like monsters
+cancelling gathers: band-1 camps sit at 1320px and the inner tree ring at 1150.
+The geometry says otherwise — aggro is 260px, and the nearest spawn to a bush is
+384px and to an inner tree 441px, with NONE inside aggro, while the inner ROCK
+ring has two of six inside it. The dangerous ring is the one that worked. The
+instrumented run then settled it: across every phase of every run,
+`interrupted 0x by something in reach, 0x by moving off, 0x refused as out of
+range`. Nothing was ever cancelled or refused; the phases were simply capped.
+
+WHAT THE OPENING ACTUALLY LOOKS LIKE, with all of that fixed: both quests taken
+and progressing, all three materials gathered with no interruption, and — once
+the bot hunts rather than wanders — **level 1 to 3 in fourteen minutes, 23
+monsters killed, and Cabel's four-slime quest satisfied (`watch-slimes at 4`)**.
+An earlier run bought the Recruit's Blade at +10.2min and finished holding a
+sword. The guidance is followable.
+
+ONE THING FOR A PERSON TO JUDGE: the character reached level 2 at 28/80 health
+and level 3 at 3/90. It survives on luck at the end of a continuous fight, which
+may be the intended pressure of a level-1 opening or may be too thin. Flagged
+rather than tuned — it is a design call and the numbers are now measurable.
+
+Suite 46/46.

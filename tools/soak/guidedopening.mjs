@@ -57,6 +57,43 @@ const state = () =>
     };
   });
 
+// WHY A GATHER PHASE FAILED, not merely that it did.
+//
+// "wood 20 -> 20 (gave up)" has at least three completely different causes and
+// prints the same for all of them: the character never reached a tree, the
+// server refused the order as out of range, or every gather was cancelled by
+// something walking into reach. The third is a statement about the EARLY GAME —
+// band-1 camps sit at 1320px and the inner tree ring at 1150 — and the other
+// two are statements about the walk. Counting the endings tells them apart.
+await page.evaluate(() => {
+  const g = window.__wieldbound;
+  window.__ends = { busy: 0, left: 0, refused: 0 };
+  const proto = Object.getPrototypeOf(g);
+  const orig = proto.noteGatherInterrupted;
+  if (typeof orig === "function") {
+    proto.noteGatherInterrupted = function patched(reason) {
+      window.__ends[reason] = (window.__ends[reason] ?? 0) + 1;
+      return orig.call(this, reason);
+    };
+  }
+  // A refusal arrives as an INFO line rather than as a gather ending, since the
+  // server never accepted the order in the first place.
+  const push = g.combatLog.push.bind(g.combatLog);
+  g.combatLog.push = (text, colour) => {
+    if (typeof text === "string" && /too far away to gather/i.test(text)) window.__ends.refused++;
+    return push(text, colour);
+  };
+});
+const endsNow = () => page.evaluate(() => ({ ...window.__ends }));
+let endsMark = await endsNow();
+const endsSince = async () => {
+  const now = await endsNow();
+  const d = (k) => (now[k] ?? 0) - (endsMark[k] ?? 0);
+  const line = `interrupted ${d("busy")}x by something in reach, ${d("left")}x by moving off, ${d("refused")}x refused as out of range`;
+  endsMark = now;
+  return line;
+};
+
 const start = await state();
 console.log(`${NAME} arrives in ${(loadMs / 1000).toFixed(1)}s — level ${start.level}, ${start.items} items, ` +
   `wood ${start.wood} ore ${start.ore} herb ${start.herb}\n`);
@@ -162,7 +199,7 @@ const nearestNode = (kinds) => () =>
       if (n.status !== "available") continue;
       if (want.length && !want.includes(n.kind)) continue;
       const d = Math.hypot(n.x - g.playerX, n.y - g.playerY);
-      if (!best || d < best.d) best = { x: n.x, y: n.y, d, kind: n.kind };
+      if (!best || d < best.d) best = { x: n.x, y: n.y, d, kind: n.kind, id: n.id };
     }
     return best;
   }, kinds);
@@ -194,6 +231,15 @@ const gatherUntil = async (label, kinds, want, getter, capMs) => {
       }
     }
     if (!node) return false;
+    // AND ASK FOR IT.
+    //
+    // Standing next to a node harvested it until M70.230, which made gathering
+    // something the player chooses — so a phase that only walks now measures a
+    // character standing beside a tree for four minutes and reports "gave up",
+    // which would read as the ground having stopped paying. The order is placed
+    // on arrival and re-placed each time round the loop, because it ends when
+    // the node is spent and again if anything walks into reach.
+    await page.evaluate((id) => window.__wieldbound.socket.sendGather(id), node.id);
     // STAND UNTIL IT IS SPENT, rather than for a fixed four seconds.
     //
     // The first version waited 4000ms and walked on. A gather takes 3000ms at
@@ -230,14 +276,16 @@ const gatherUntil = async (label, kinds, want, getter, capMs) => {
 };
 
 const woodTarget = start.wood + 30;
-const gotWood = await gatherUntil("wood", ["tree"], woodTarget, (s) => s.wood, 4 * 60000);
+const gotWood = await gatherUntil("wood", ["tree"], woodTarget, (s) => s.wood, 2.5 * 60000);
 let s = await state();
 console.log(`${mark()}  gathering wood: ${start.wood} -> ${s.wood} ${gotWood ? "(target met)" : "(gave up)"}`);
+console.log(`      ${await endsSince()}`);
 
 const oreTarget = 30;
-const gotOre = await gatherUntil("ore", ["rock"], oreTarget, (s2) => s2.ore, 3 * 60000);
+const gotOre = await gatherUntil("ore", ["rock"], oreTarget, (s2) => s2.ore, 2 * 60000);
 s = await state();
 console.log(`${mark()}  gathering ore:  ${start.ore} -> ${s.ore} ${gotOre ? "(target met)" : "(gave up)"}`);
+console.log(`      ${await endsSince()}`);
 
 // HERB, BECAUSE ONE OF THE TWO QUESTS IS PAID IN IT AND THIS BOT NEVER PICKED
 // ANY. Marda's work wants 30 ore and 25 herb; a new character arrives with 20
@@ -248,9 +296,10 @@ console.log(`${mark()}  gathering ore:  ${start.ore} -> ${s.ore} ${gotOre ? "(ta
 // asked. A missing phase is a harsher lie than a wrong number, because there is
 // nothing in the output to disbelieve.
 const herbTarget = 25;
-const gotHerb = await gatherUntil("herb", ["bush"], herbTarget, (s2) => s2.herb, 3 * 60000);
+const gotHerb = await gatherUntil("herb", ["bush"], herbTarget, (s2) => s2.herb, 2 * 60000);
 s = await state();
 console.log(`${mark()}  gathering herb: ${start.herb} -> ${s.herb} ${gotHerb ? "(target met)" : "(gave up)"}`);
+console.log(`      ${await endsSince()}`);
 
 // --- 3. buy the blade the shop sells for exactly this moment -----------------
 const oswyn = TOWN_NPCS.find((n) => n.role === "vendor");
@@ -301,7 +350,27 @@ await page.evaluate(() => {
     }
   }, 250);
 });
-const keys = await page.evaluate(() => window.__wieldbound.hotbar?.layout?.keys ?? []);
+// THE HOTBAR IS PER WEAPON, AND THIS RUNS RIGHT AFTER BUYING ONE.
+//
+// Read once, immediately after the shop step swapped a dagger for a sword, this
+// came back EMPTY — the layout for the new weapon had not been installed yet —
+// and the fight phase then pressed nothing for six and a half minutes and
+// reported "0 attack presses, 0 monsters died". Which is true, and is a
+// statement about the probe: a bot that never pressed attack has measured
+// nothing about combat, and the summary looked exactly like a character that
+// could not kill anything.
+//
+// So it waits for a layout, and falls back to the default binding rather than
+// silently doing nothing.
+let keys = [];
+for (let i = 0; i < 20 && keys.length === 0; i++) {
+  keys = await page.evaluate(() => window.__wieldbound.hotbar?.layout?.keys ?? []);
+  if (keys.length === 0) await page.waitForTimeout(300);
+}
+if (keys.length === 0) {
+  console.log(`${mark()}  !! the hotbar reported no keys — falling back to "1"`);
+  keys = ["1"];
+}
 // HUNTING, NOT CIRCLING. `driver.mjs` writes down the trap this fell into:
 // "walking a fixed N/E/S/W rotation in equal legs is a CLOSED LOOP — it comes
 // back to where it started and never leaves town, which looks like exploring
@@ -352,7 +421,19 @@ while (Date.now() < endAt) {
     }
     return best;
   });
-  if (near && near.d < 400) {
+  // HUNT, RATHER THAN WANDER AND HOPE.
+  //
+  // The threshold was 400px: anything further away and the bot went back to
+  // walking a heading. But the client knows about monsters far beyond that, and
+  // after the gathering phases the character is out at the herb ring with the
+  // band-1 camps behind it — so "wander outward and see what turns up" walks
+  // AWAY from everything. Two consecutive runs reported "0 attack presses, 0
+  // monsters died" over three and seven minutes, which reads as a character
+  // that cannot kill anything and is really a character that never met one.
+  //
+  // If the client knows where something alive is, walk to it. That is what a
+  // player does, and it is the only way this phase measures combat at all.
+  if (near) {
     if (near.d > 55) await approach(page, near, 450);
     else if (keys.length) {
       swings++;
