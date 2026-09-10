@@ -4371,6 +4371,29 @@ export interface GatherStateMessage {
   };
 }
 
+/**
+ * "Work this node" — and its absence, "stop".
+ *
+ * GATHERING USED TO BE A CONSEQUENCE OF STANDING SOMEWHERE. There was no intent
+ * anywhere in it: the server looked for an available node within
+ * `INTERACTION_RANGE_PX` of every player, every tick, and harvested it. Walking
+ * past a bush on the way somewhere started a gather; so did fighting next to
+ * one. The player never decided anything, which is why it read as something
+ * happening TO them rather than something they were doing — and it is the one
+ * interaction in the game that worked that way. A monster needs a click. An NPC
+ * needs a click. The workbench needs a click.
+ *
+ * So a node needs a click, and this is it. The order persists while the player
+ * stands in range, so a node that respawns under someone who chose to work it
+ * is worked again without a second click — the decision was "I am harvesting
+ * this", not "harvest once".
+ */
+export interface GatherMessage {
+  type: "GATHER";
+  /** `null` stops gathering — clicking elsewhere, or walking off. */
+  payload: { nodeId: string | null };
+}
+
 export interface UpgradeGatherSpeedMessage {
   type: "UPGRADE_GATHER_SPEED";
 }
@@ -4552,6 +4575,7 @@ export interface MonsterAttackMessage {
 export type ClientToServerMessage =
   | HelloMessage
   | MoveMessage
+  | GatherMessage
   | UpgradeGatherSpeedMessage
   | UpgradeBattlePowerMessage
   | EquipItemMessage

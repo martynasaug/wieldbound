@@ -45,6 +45,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let me = null;
 let nodes = [];
 let gatherLevel = 0;
+let serverAt = null;
 let agility = 0;
 /** Every GATHER_STATE seen, in order. The whole point is the sequence. */
 const states = [];
@@ -59,7 +60,17 @@ ws.on("message", (raw) => {
     agility = msg.payload.agility ?? 0;
   }
   if (msg.type === "GATHER_STATE") states.push({ ...msg.payload, at: Date.now() });
-  if (msg.type === "STATE_SNAPSHOT" && msg.payload.nodes?.length) nodes = msg.payload.nodes;
+  if (msg.type === "STATE_SNAPSHOT") {
+    if (msg.payload.nodes?.length) nodes = msg.payload.nodes;
+    // WHERE THE SERVER THINKS THIS CHARACTER IS, which is not where the walk
+    // loop below thinks it is. Movement is speed-clamped, and a test stepping
+    // 40px every 45ms is asking for ~890px/s against a 220px/s walk — so the
+    // character trails hundreds of pixels behind the loop's own reckoning.
+    // Clicking a node on the strength of the loop's number asks the server to
+    // gather something it can see is far away, and it correctly refuses.
+    const mine = (msg.payload.players ?? []).find((p) => me && p.id === me.id);
+    if (mine) serverAt = { x: mine.x, y: mine.y };
+  }
 });
 
 ws.on("open", async () => {
@@ -91,7 +102,31 @@ ws.on("open", async () => {
     send({ type: "MOVE", payload: { x, y } });
     await sleep(45);
   }
-  console.log(`standing at ${target.id}, ${Math.hypot(target.x - x, target.y - y).toFixed(0)}px away`);
+  // Let the character catch up with the loop before doing anything that
+  // depends on where it is. See the note in the snapshot handler.
+  const arrive = async () => {
+    for (let i = 0; i < 120; i++) {
+      send({ type: "MOVE", payload: { x, y } });
+      await sleep(100);
+      if (serverAt && Math.hypot(target.x - serverAt.x, target.y - serverAt.y) <= INTERACTION_RANGE_PX * 0.6) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (!(await arrive())) {
+    console.log("FAIL — the character never got within reach of the node");
+    process.exit(1);
+  }
+
+  // AND CLICK IT. Since M70.230 proximity alone gathers nothing — a node is
+  // something you choose to work, like everything else you interact with — so a
+  // test that only walks there is measuring a character standing next to a tree.
+  send({ type: "GATHER", payload: { nodeId: target.id } });
+  console.log(
+    `standing at ${target.id}, ` +
+      `${Math.hypot(target.x - serverAt.x, target.y - serverAt.y).toFixed(0)}px away, and clicked it`,
+  );
 
   // Hold still through more than one full gather.
   const expected = gatherDurationForLevel(gatherLevel, agility);
@@ -193,6 +228,15 @@ ws.on("open", async () => {
     send({ type: "MOVE", payload: { x, y } });
     await sleep(45);
   }
+  // AND CLICK IT AGAIN. Walking out of reach ends the order, by design — a
+  // standing order that resumed when you wandered back would be a gather
+  // starting on its own, which is the thing M70.230 removed. So coming back
+  // needs a fresh click, and a test that only walks back measures nothing.
+  if (!(await arrive())) {
+    console.log("FAIL — could not get back within reach for the interrupt case");
+    process.exit(1);
+  }
+  send({ type: "GATHER", payload: { nodeId: target.id } });
   states.length = 0;
   // Well under one full gather, so there is progress to lose.
   for (let i = 0; i < 9; i++) { send({ type: "MOVE", payload: { x, y } }); await sleep(120); }

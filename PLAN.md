@@ -22551,3 +22551,74 @@ camps of the same kind are thousands of pixels apart, so 400 cannot merge two
 real ones. Stable across three consecutive runs at 21 camps.
 
 Suite 46/46.
+
+**Phase 70 M70.230 — gathering is a thing you do, and a spent node looks
+spent.** Two changes asked for directly: walking up to a node should not start
+gathering on its own, a node should show it is gatherable when hovered, and a
+harvested node should stay visibly harvested until it regrows.
+
+GATHERING HAD NO INTENT IN IT ANYWHERE. The server looked for an available node
+within `INTERACTION_RANGE_PX` of every player, every tick, and harvested it.
+Walking past a bush on the way somewhere started a gather; so did fighting next
+to one. It was the only interaction in the game that worked that way — a
+monster needs a click, an NPC needs a click, the workbench needs a click — and
+that is exactly why it read as something happening TO the player.
+
+So `GATHER` carries a node id, `gatherOrders` holds it the way `attackOrders`
+holds a target, and nothing else starts a gather. The order SURVIVES the node
+being spent, so a node you chose to work is worked again when it comes back
+without a second click: the decision expressed was "I am harvesting this", not
+"harvest once". It does not survive walking out of reach or something coming
+into reach — a standing order that resumed on its own would be the removed
+behaviour returning one indirection later. Range is checked at the message as
+well as in the tick, so asking for something across the map is refused rather
+than left pending.
+
+Hovering a node lights the same ground ring a monster gets. Deliberately the
+same mark and not a new one: the ring already means "this is what a click would
+take", and a tree you can chop is exactly that. A node only counts as hovered
+when nothing else is, since a creature standing in front of a tree is what the
+click will take.
+
+A SPENT NODE IS NOW SPENT RATHER THAN FAINT. It used to fade to 35% opacity,
+which says "unavailable" in interface language and nothing in the world's. The
+kit ships no stump, and does not need to: these models are built in parts, so
+the crown (`Leaves_NormalTree`) is hidden and the trunk sunk until only its
+thick base stands proud. The bush loses its `Flowers` — which ARE the herbs —
+and stays, because you picked it rather than felled it. A rock has one material
+and cannot be taken apart, so it is worked down to a low outcrop the same way.
+
+THREE THINGS WENT WRONG HERE AND ALL THREE PASSED A CHECK FIRST.
+
+The first stump hid the leaves and squashed the model to 0.22 in Y. That
+satisfies every number worth asserting — crown hidden, bark visible, height down
+to a fifth — and looks like a crushed dead shrub, because `Bark_NormalTree` is
+not the trunk: it is the trunk AND every branch. The check was satisfiable by
+something visibly wrong, and only the screenshot said so.
+
+The second sank the tree 7.5 units and put it entirely underground, leaving bare
+grass. The assertion still passed, because "sunk" was what it asserted.
+
+The cause of that was the third and worst: `applyNodeDepletion` wrote
+`child.scale.set(1, 1, 1)`, throwing away the scale `instantiate` gives each
+node to fit its height. Measured, a tree's bark spans 4.0 units as built and 8.2
+at scale 1 — so the sink arithmetic was measuring a model twice the size of the
+one on screen. And the RESTORE path did the same thing, which means every node
+that had ever been harvested would have come back at DOUBLE SIZE and stayed
+there for the session: a bug that outlives the state it was introduced for, in a
+place nobody would connect to gathering. Scale and the seat lift are both now
+kept as `baseScale`/`baseY` and applied relatively.
+
+Verified: an available tree measures bark 4.0 units; harvested, its crown is
+hidden and the bark tops out 0.42 above the ground it stands on, which is the
+stump in the screenshot. Standing next to a node for 4.2 seconds — longer than a
+full gather — moves nothing, which is the whole change.
+
+The harness had to be corrected twice for the same reason in the same run: it
+walked with 40px steps every 45ms, roughly 890px/s against a 220px/s walk, so
+the character trailed hundreds of pixels behind the loop's own reckoning and the
+server correctly refused a click on a node it could see was 380px away. The test
+now waits for the SERVER's position. It also has to click again after walking
+away, since walking away ends the order by design.
+
+Suite 46/46.

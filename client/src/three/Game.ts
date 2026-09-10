@@ -504,6 +504,150 @@ const NODE_PLATE_ICON: Record<ResourceNodeState["kind"], string> = {
 };
 
 /** Model options per harvestable kind, picked by a hash of the node's id. */
+/**
+ * What a spent node looks like: the part you took, gone.
+ *
+ * A harvested node used to just fade to 35% opacity, which says "this is
+ * unavailable" in interface language and says nothing in the world's. A tree
+ * you have just chopped down should not be a whole tree, faintly.
+ *
+ * The kit ships no stump, no rubble and no picked bush, and it does not need
+ * to, because these models are built in parts: `CommonTree_*` carries
+ * `Bark_NormalTree` and `Leaves_NormalTree` as two primitives, and
+ * `Bush_Common_Flowers` carries `Leaves_NormalTree` and `Flowers`. Hiding the
+ * harvested half and cutting down what remains gives the real thing —
+ * a bark-textured stump, and a bush stripped back to its leaves — rather than
+ * an approximation of it.
+ *
+ * A rock has one material and cannot be taken apart, so it is broken DOWN:
+ * scaled to a fraction of itself, which reads as the boulder having been
+ * worked rather than as a smaller boulder, because the player watched it
+ * happen.
+ *
+ * `hide` matches the START of a material name, since the same leaf material
+ * appears on both a tree (where it is the crown, and goes) and a bush (where
+ * it is the plant itself, and stays).
+ */
+const NODE_DEPLETED: Record<
+  ResourceNodeState["kind"],
+  { hide: string[]; scale: [number, number, number]; leaveAbove?: number }
+> = {
+  // A STUMP IS A CUT, NOT A SQUASH, and the first attempt at this got it wrong
+  // in a way the numbers could not see.
+  //
+  // Hiding `Leaves` and scaling the model to 0.22 in Y satisfies every check
+  // worth writing — crown hidden, bark visible, height down to a fifth — and
+  // looks like a crushed dead shrub, because `Bark_NormalTree` is not the
+  // trunk. It is the trunk AND every branch. Take the foliage off and what is
+  // left is a bare branch skeleton; squash that and you get a squat tangle of
+  // twigs at ground level.
+  //
+  // So the tree is SUNK instead, far enough that only the thick base stands
+  // proud. The branches are still there and are underground, where they cannot
+  // be seen, and what remains above the grass is the widest lowest part of the
+  // trunk — which is what a stump is. No new asset, no clipping plane, and the
+  // silhouette is right because it is genuinely the bottom of the tree.
+  tree: { hide: ["Leaves"], scale: [1, 1, 1], leaveAbove: 0.42 },
+  // The same trick reads as worked stone: a boulder taken down to a low
+  // outcrop, rather than a smaller boulder sitting where a big one was.
+  rock: { hide: [], scale: [1, 1, 1], leaveAbove: 0.34 },
+  // Stripped rather than felled: the flowers ARE the herbs, so they are exactly
+  // what goes. The plant stays where it is and is left slightly cropped — no
+  // sinking, because you picked it and did not cut it down.
+  bush: { hide: ["Flowers"], scale: [0.94, 0.8, 0.94] },
+};
+
+/**
+ * Puts a node into or out of its spent state.
+ *
+ * Applied to the host group's CHILDREN rather than to the group itself. The
+ * group's scale and rotation belong to `GatherFx`, which uses them for the
+ * recoil and resets them to identity when a gather ends — so a depleted state
+ * written there would be wiped by the next flinch.
+ */
+function applyNodeDepletion(
+  host: THREE.Object3D,
+  kind: ResourceNodeState["kind"],
+  depleted: boolean,
+): void {
+  const spec = NODE_DEPLETED[kind];
+  for (const child of host.children) {
+    // RELATIVE TO THE SCALE THE MODEL WAS BUILT AT, never absolute.
+    //
+    // `instantiate` scales each node to a height drawn from `NODE_HEIGHTS`, so
+    // a tree's child sits at something like 0.487 — writing `scale.set(1,1,1)`
+    // throws that away and snaps the model to its raw size. Measured: a tree's
+    // bark spans 4.0 units built and 8.2 units at scale 1.
+    //
+    // That was doing two things at once. It made the sink arithmetic measure a
+    // model twice the size of the one on screen, so the stump was buried four
+    // units too deep and the node simply vanished. And the RESTORE path did the
+    // same thing, which means every node that had ever been harvested would
+    // have come back at double size and stayed there — a bug that outlives the
+    // depleted state it was introduced for, and one nobody would connect to
+    // gathering.
+    const base = (child.userData.baseScale ??= child.scale.clone()) as THREE.Vector3;
+    if (depleted) {
+      child.scale.set(base.x * spec.scale[0], base.y * spec.scale[1], base.z * spec.scale[2]);
+    } else {
+      child.scale.copy(base);
+    }
+    child.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const harvested = mats.some((m) => spec.hide.some((h) => (m?.name ?? "").startsWith(h)));
+      if (harvested) mesh.visible = !depleted;
+    });
+
+    // How far to drop it so `leaveAbove` of it still shows. Measured off the
+    // model rather than taken from `NODE_HEIGHTS`, because the visible height
+    // is not the built height once the crown has been hidden — and because each
+    // node is built at its own height within the kind's range, so one constant
+    // would leave some stumps buried and others waist-high.
+    if (spec.leaveAbove === undefined) continue;
+    // Same rule as the scale: the model is seated by `instantiate` with a small
+    // lift so it stands ON the ground rather than in it (measured at 0.118 for
+    // a tree), and writing 0 here would quietly drop every node by that much.
+    const baseY = (child.userData.baseY ??= child.position.y) as number;
+    child.position.y = baseY;
+    if (!depleted) continue;
+    // VISIBLE GEOMETRY ONLY. `Box3.setFromObject` traverses hidden children too,
+    // so it would measure the crown that was just switched off and sink the
+    // whole tree out of sight.
+    child.updateWorldMatrix(true, true);
+    let top = -Infinity;
+    let bottom = Infinity;
+    child.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.visible || !mesh.geometry) return;
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      const bb = mesh.geometry.boundingBox;
+      if (!bb) return;
+      for (const cx of [bb.min.x, bb.max.x]) {
+        for (const cy of [bb.min.y, bb.max.y]) {
+          for (const cz of [bb.min.z, bb.max.z]) {
+            const e = mesh.matrixWorld.elements;
+            const wy = e[1] * cx + e[5] * cy + e[9] * cz + e[13];
+            if (wy > top) top = wy;
+            if (wy < bottom) bottom = wy;
+          }
+        }
+      }
+    });
+    if (!Number.isFinite(top) || !Number.isFinite(bottom)) continue;
+    // THE MODEL'S OWN HEIGHT, not its height above the host's origin.
+    //
+    // Subtracting `host.position.y` looked equivalent and is not: the first
+    // version did that and sank a tree 7.5 units, which put the whole thing
+    // underground and left bare grass where a stump should be. The check still
+    // passed — crown hidden, bark present, sunk — because "sunk" was exactly
+    // what it asserted. Measuring the visible geometry against ITSELF needs no
+    // assumption about where the ground is or what the host's origin means.
+    child.position.y = baseY + Math.min(0, spec.leaveAbove - (top - bottom));
+  }
+}
+
 const NODE_MODELS: Record<ResourceNodeState["kind"], string[]> = {
   // THE PINES CAME OUT, and that is the rule that makes forests possible.
   //
@@ -528,6 +672,10 @@ const NODE_MODELS: Record<ResourceNodeState["kind"], string[]> = {
 };
 
 /** Longest the first load may hold the screen, however much is still in flight. */
+/** How wide the hover ring is drawn around a node. A little larger than the
+ *  gather arc, so the two do not sit on top of each other while gathering. */
+const NODE_HOVER_RADIUS = 1.45;
+
 const LOAD_CEILING_MS = 25000;
 
 /** World-unit height range per kind, so a rock cannot come out tree-sized. */
@@ -693,6 +841,8 @@ export class Game {
   private pointerX = -1;
   private pointerY = -1;
   private hoverId: string | null = null;
+  /** The resource node under the cursor, if any. See `pickNodeAt`. */
+  private hoverNodeId: string | null = null;
   /** Last movement input direction, so a dash with no keys held still has a way to go. */
   private moveInputX = 0;
   private moveInputY = 0;
@@ -729,6 +879,9 @@ export class Game {
   private readonly monsterSpawnQueue: string[] = [];
   private readonly pendingMonsterSpawns = new Map<string, MonsterState>();
   private readonly nodes = new Map<string, THREE.Object3D>();
+  /** Whether each node is spent, kept because `buildNode` resolves after
+   *  `syncNodes` has already decided it. */
+  private readonly nodeDepleted = new Map<string, boolean>();
   private readonly nodeStates = new Map<string, ResourceNodeState>();
   private readonly stations = new Map<string, THREE.Object3D>();
   private readonly stationStates = new Map<string, CraftingStationState>();
@@ -2254,17 +2407,14 @@ export class Game {
         void this.buildNode(s, placeholder);
       }
       obj.position.set(...onGround(toWorldX(s.x), toWorldZ(s.y)));
-      // Depleted nodes dim rather than vanish, so the player can see where
-      // they will come back — the same reasoning as the 2D tint. Stored as a
-      // base rather than applied directly, because the occlusion fade below
-      // multiplies against it and the two would otherwise fight each frame.
+      // ONLY ON CHANGE. This runs for every node in every snapshot, and the
+      // work behind it is a traverse plus a bounding box per mesh — cheap once,
+      // pointless thirty times a second for ninety nodes that have not altered.
       const depleted = s.status !== "available";
-      obj.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        for (const m of mats) m.userData.baseOpacity = depleted ? 0.35 : 1;
-      });
+      if (this.nodeDepleted.get(s.id) !== depleted) {
+        this.nodeDepleted.set(s.id, depleted);
+        applyNodeDepletion(obj, s.kind, depleted);
+      }
     }
   }
 
@@ -2284,6 +2434,12 @@ export class Game {
     // stamped three times.
     inst.object.rotation.y = (variant % 360) * (Math.PI / 180);
     host.add(inst.object);
+    // RE-APPLY THE SPENT STATE, because this resolves after `syncNodes` has
+    // already decided it. A node harvested while its model was still loading —
+    // or one already spent when a player logs in near it — would otherwise
+    // arrive as a whole tree and stay one until the next snapshot happened to
+    // change its status, which for a node nobody touches is never.
+    if (this.nodeDepleted.get(state.id)) applyNodeDepletion(host, state.kind, true);
   }
 
   /**
@@ -3759,6 +3915,7 @@ export class Game {
       this.pointerX = -1;
       this.pointerY = -1;
       this.hoverId = null;
+      this.hoverNodeId = null;
     });
   }
 
@@ -3881,6 +4038,24 @@ export class Game {
         return;
       }
     }
+    // RESOURCE NODES. A tree is a thing you decide to chop, so it takes a click
+    // like everything else you interact with — see `GatherMessage`.
+    for (const [id, obj] of this.nodes) {
+      if (this.raycaster.intersectObject(obj, true).length === 0) continue;
+      const s = this.nodeStates.get(id);
+      if (!s) return;
+      const dist = Math.hypot(this.playerX - s.x, this.playerY - s.y);
+      if (dist > INTERACTION_RANGE_PX) {
+        this.hud.toast(`Too far from the ${NODE_LABELS[s.kind].toLowerCase()}.`, "#c98d5e");
+      } else if (s.status !== "available") {
+        // Clicking a stump is a reasonable thing to do and deserves an answer
+        // rather than silence — it is regrowing, not broken.
+        this.hud.toast(`${NODE_LABELS[s.kind]} is spent — give it a moment.`, "#c98d5e");
+      } else {
+        this.socket.sendGather(id);
+      }
+      return;
+    }
     for (const [id, obj] of this.stations) {
       const hits = this.raycaster.intersectObject(obj, true);
       if (hits.length > 0) {
@@ -3902,6 +4077,11 @@ export class Game {
         return;
       }
     }
+    // Clicking bare ground stops gathering as well as clearing the target. Both
+    // are "never mind", and leaving a gather running after the player has
+    // explicitly clicked away from it is the auto-gather behaviour coming back
+    // in through the one gesture that means the opposite.
+    if (this.gatherNodeId) this.socket.sendGather(null);
     this.setTarget(null);
   }
 
@@ -4316,6 +4496,36 @@ export class Game {
    * the nearest silhouette within a few dozen pixels is taken instead, which is
    * what makes small monsters clickable at all.
    */
+  /**
+   * The resource node under the cursor, if any.
+   *
+   * A real raycast against the model rather than the screen-distance test
+   * `pickMonsterAt` uses. That test exists because a creature is a moving
+   * target and a generous pick radius is a kindness; a tree is stationary,
+   * several units wide, and stands in a field of other trees — a radius that
+   * forgiving would light up a neighbour you are not pointing at.
+   */
+  private pickNodeAt(clientX: number, clientY: number): string | null {
+    this.raycaster.setFromCamera(
+      new THREE.Vector2(
+        (clientX / window.innerWidth) * 2 - 1,
+        -(clientY / window.innerHeight) * 2 + 1,
+      ),
+      this.world.camera,
+    );
+    let best: string | null = null;
+    let bestDist = Infinity;
+    for (const [id, obj] of this.nodes) {
+      const hits = this.raycaster.intersectObject(obj, true);
+      if (hits.length === 0) continue;
+      if (hits[0].distance < bestDist) {
+        bestDist = hits[0].distance;
+        best = id;
+      }
+    }
+    return best;
+  }
+
   private pickMonsterAt(clientX: number, clientY: number): string | null {
     const candidates: { id: string; vis: MonsterVisual; screenDist: number }[] = [];
     for (const [id, vis] of this.aliveMonsters()) {
@@ -4830,6 +5040,14 @@ export class Game {
     this.updateTargeting();
     this.hoverId =
       this.pointerX >= 0 ? this.pickMonsterAt(this.pointerX, this.pointerY) : null;
+    // A node only counts as hovered when nothing else is: a creature standing
+    // in front of a tree is what the click will take, and lighting up the tree
+    // behind it would promise otherwise. Raycast skipped entirely when a
+    // monster is already under the cursor, which is also the cheaper path.
+    this.hoverNodeId =
+      this.pointerX >= 0 && !this.hoverId
+        ? this.pickNodeAt(this.pointerX, this.pointerY)
+        : null;
     this.updateIndicators();
     this.profiler.end("targeting");
 
@@ -5182,6 +5400,16 @@ export class Game {
         hovered.actor.position.z,
         Math.max(0.7, spec.height * 0.5),
       );
+    } else if (this.hoverNodeId) {
+      // A NODE UNDER THE CURSOR GETS THE SAME RING A MONSTER DOES.
+      //
+      // Deliberately the same mark rather than a new one: the ring already
+      // means "this is what a click would take", and a tree you can chop is
+      // exactly that. A second, node-only highlight would be a second thing to
+      // learn for a fact the player already knows.
+      const obj = this.nodes.get(this.hoverNodeId);
+      if (obj) this.indicators.showHover(obj.position.x, obj.position.z, NODE_HOVER_RADIUS);
+      else this.indicators.hideHover();
     } else {
       this.indicators.hideHover();
     }

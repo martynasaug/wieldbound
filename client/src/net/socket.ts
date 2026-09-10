@@ -273,6 +273,11 @@ export class GameSocket {
     this.send({ type: "SET_TARGET", payload: { targetId } });
   }
 
+  /** Work this node, or `null` to stop. See `GatherMessage`. */
+  sendGather(nodeId: string | null): void {
+    this.send({ type: "GATHER", payload: { nodeId } });
+  }
+
   sendUseSkill(skillId: SkillId): void {
     this.send({ type: "USE_SKILL", payload: { skillId } });
   }

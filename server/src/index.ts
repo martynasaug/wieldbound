@@ -1542,6 +1542,7 @@ function clearCombatClocks(playerId: string): void {
   nextGatherAt.delete(playerId);
   lastGatherKey.delete(playerId);
   gatherJustPaid.delete(playerId);
+  gatherOrders.delete(playerId);
 }
 
 function sendSkillResult(
@@ -2191,6 +2192,16 @@ const lastGatherKey = new Map<string, string>();
  *  gather FINISHED rather than that it was interrupted. See the `!node`
  *  branch of the gather tick. */
 const gatherJustPaid = new Set<string>();
+
+/**
+ * What each player has chosen to harvest.
+ *
+ * The gather equivalent of `attackOrders`, and it exists for the same reason:
+ * an action the player asked for has to outlive the single tick they asked for
+ * it in. Cleared when they walk out of reach, when something comes into reach,
+ * and when they click elsewhere.
+ */
+const gatherOrders = new Map<string, string>();
 
 function sendAttackState(playerId: string, reason?: string): void {
   const socket = sockets.get(playerId);
@@ -3177,6 +3188,32 @@ wss.on("connection", (socket) => {
       if (socket2) sendInfo(socket2, `${WEAPONS[weapon].name} talents refunded.`, "#9ad4ff");
       sendWeaponProgress(id);
       refreshDerivedStats(id);
+      return;
+    }
+
+    if (msg.type === "GATHER" && id) {
+      const wanted = msg.payload?.nodeId ?? null;
+      if (!wanted) {
+        gatherOrders.delete(id);
+        nextGatherAt.delete(id);
+        sendGatherState(id, null, undefined, Date.now());
+        return;
+      }
+      const node = nodes.find((n) => n.id === wanted);
+      const player = players.get(id);
+      if (!node || !player) return;
+      // RANGE IS CHECKED HERE, not only in the tick. A client that asks to
+      // gather something across the map should be told no rather than have the
+      // order sit until they happen to walk into it — which would be a gather
+      // starting on its own, one indirection further away.
+      if (Math.hypot(player.x - node.x, player.y - node.y) > INTERACTION_RANGE_PX) {
+        sendInfo(socket, "Too far away to gather that.", "#c98d5e");
+        return;
+      }
+      gatherOrders.set(id, wanted);
+      // Cleared so the first tick in reach starts a fresh clock rather than
+      // inheriting one from a node worked a moment ago.
+      nextGatherAt.delete(id);
       return;
     }
 
@@ -4301,6 +4338,10 @@ setInterval(() => {
       // tree, and the ring fills to full and pays nothing.
       const wasGathering = nextGatherAt.has(playerId);
       nextGatherAt.delete(playerId);
+      // The order goes too. Resuming a gather the moment a fight ends would be
+      // a gather nobody asked for at that moment, which is the whole thing
+      // being removed — and the node is still right there to click again.
+      gatherOrders.delete(playerId);
       sendGatherState(playerId, null, undefined, now, wasGathering ? "busy" : undefined);
       const interval = swingIntervalFor(playerId, playerAttrs.agility);
       const readyAt = nextAttackAt.get(playerId);
@@ -4325,15 +4366,36 @@ setInterval(() => {
       sendAttackState(playerId);
     }
 
-    // Otherwise gather from whatever node is underfoot.
+    // THE NODE THE PLAYER ASKED FOR, and only that one.
+    //
+    // This used to take whatever available node was nearest and within range,
+    // which meant gathering had no intent in it at all: walking past a bush
+    // harvested it, and so did standing next to one for any other reason. Now a
+    // click sets `gatherOrders` and nothing else starts a gather.
+    //
+    // The order SURVIVES the node being spent. A node the player chose to work
+    // respawns under them eight seconds later and is worked again without a
+    // second click, because the decision they expressed was "I am harvesting
+    // this", not "harvest once". `status` is checked per tick rather than the
+    // order being cleared, which is what makes that fall out for free.
+    const orderedId = gatherOrders.get(playerId);
+    const ordered = orderedId ? nodes.find((n) => n.id === orderedId) : undefined;
     let node: ResourceNodeState | null = null;
-    let nodeDist = Infinity;
-    for (const candidate of nodes) {
-      if (candidate.status !== "available") continue;
-      const d = Math.hypot(player.x - candidate.x, player.y - candidate.y);
-      if (d < nodeDist && d <= INTERACTION_RANGE_PX) {
-        node = candidate;
-        nodeDist = d;
+    if (ordered) {
+      const d = Math.hypot(player.x - ordered.x, player.y - ordered.y);
+      if (d > INTERACTION_RANGE_PX) {
+        // Out of reach ends the order outright rather than leaving it pending.
+        // A standing order that resumes when you happen to wander back is a
+        // gather starting on its own again, which is the thing being removed.
+        gatherOrders.delete(playerId);
+      } else if (ordered.status === "available") {
+        node = ordered;
+      } else {
+        // Spent, and waiting to come back. Still the player's node: hold the
+        // order, but there is nothing to gather this tick.
+        nextGatherAt.delete(playerId);
+        sendGatherState(playerId, null, undefined, now, gatherJustPaid.delete(playerId) ? "done" : undefined);
+        continue;
       }
     }
     if (!node) {
@@ -4352,6 +4414,7 @@ setInterval(() => {
       const wasGathering = nextGatherAt.has(playerId);
       const paid = gatherJustPaid.delete(playerId);
       nextGatherAt.delete(playerId);
+      gatherOrders.delete(playerId);
       sendGatherState(
         playerId,
         null,
