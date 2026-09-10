@@ -22854,3 +22854,59 @@ Suite 47/47. One note on the run before it: `throwers` failed once at 258px
 against a 185px reach and passes standalone at 148 and 176. That is the hazard
 `camps.mjs` documents at length — another character dragging a monster — not a
 regression, and it passed on the clean re-run.
+
+**Phase 70 M70.236 — five of the twelve helms in the game were the wrong helm.**
+Fresh eyes on ninety commits, and the first thing the tour frames showed was the
+player standing next to Elsbet Vane with a featureless block where a head should
+be — wider than their own shoulders, no face, no hair, while she has all three
+at the same scale.
+
+**THE FIRST EXPLANATION WAS WRONG AND THE MEASUREMENT SAID SO.** Boxing the head
+slot gave `gear_helm_full` spanning y 0.90 to 1.61 on a character whose body
+tops out at 1.45 — starting at the shoulders and clearing the skull by 0.16 —
+which reads as a helm authored far too large. It is not. `HEAD_TOP` carries an
+explicit note that head gear is oversized on purpose, because a dome that stops
+short "lets the skull erupt through the top". That is a deliberate art call and
+not mine to overturn. The equipped piece was a Dread Helm, which IS a great
+helm, and was correct all along.
+
+**THE REAL BUG WAS ONE LINE FURTHER DOWN.** `GEAR_STYLES` declares five head
+styles — `cap`, `hood`, `full`, `horned`, `circlet` — and `helmParts` branched
+on two. `horned` and `circlet` fell through to the closed great helm at the
+bottom of the function, so a **Gilded Crown, a Silver Circlet, a Galecrown, a
+Horned Helm and a Bone Helm** all put a face-hiding bucket on the character.
+Five of twelve, wearing somebody else's hat.
+
+Nothing could have caught it. It does not throw, the slot fills, the mesh tints
+by rarity, the outline traces it and the paperdoll shows the right name. It is
+only wrong to LOOK at — and it survived weeks of screenshots because the seeded
+character wears the one helm for which the fallthrough happened to be right.
+
+Both styles are built now. `circlet` is a brow band with a raised point and two
+temple points, leaving the face and hair visible — the only head piece that
+shows who is wearing it — measured at 0.18 tall against the great helm's 0.71.
+`horned` is the cap's crown plus a stepped horn sweeping out and up each side,
+0.80 wide against a head of 0.46. Both photographed.
+
+**THE SAME MISTAKE, SMALLER, IN THE BOOTS.** `bootsParts` hardcoded
+`role: "leather"`, so Plated Greaves, Silvered Greaves and Bronze-shod Boots —
+the heaviest boots in the game — were drawn in leather and took the leather base
+colour before rarity got near them. A four-entry table now names every style
+including the one that takes the default, because a ternary ending in
+`: "leather"` is indistinguishable from having forgotten `low`.
+
+**AND A TEST SO IT CANNOT HAPPEN AGAIN**, driven by the CATALOGUE rather than a
+hand-written list: every style any item actually uses must be named by its
+slot's builder. Add an item with a new style and it fails until something draws
+it. A builder may decline style altogether and says so in its signature —
+`capeParts(_style, ...)` draws one drape for every back item on purpose — so the
+test reads the underscore rather than keeping an exemption list that would rot.
+Confirmed sharp by deleting the `circlet` branch and watching it name the three
+items that break. It slices each builder to the next top-level function rather
+than a fixed character count, which is the trap `outline.mjs` fell into.
+
+Also: `tour.mjs` defaulted its output to `"."` and had just scattered nine PNGs
+beside `package.json`, with `tools/soak/shots/` not ignored — one `git add -A`
+from committing them. Both fixed.
+
+Suite 48/48.

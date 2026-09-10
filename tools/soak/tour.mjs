@@ -31,7 +31,10 @@ import { roadRiverCrossings } from "../../shared/river.ts";
 import { placeNameAt } from "../../shared/places.ts";
 
 const NAME = process.argv[2] ?? "Player3619";
-const OUT = process.argv[3] ?? ".";
+// NOT the repo root. Running this without a third argument dropped nine PNGs
+// beside package.json, one `git add -A` away from being committed, and
+// tools/soak/shots was not ignored either.
+const OUT = process.argv[3] ?? "tools/soak/shots/tour";
 /** Freeze the world clock, so a lighting change can be seen at the hour it
  *  matters instead of whenever the tour happens to run. 0 is midnight, 0.5
  *  noon; `null` leaves the clock running. */

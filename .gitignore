@@ -22,3 +22,8 @@ tools/art/.icon-cache/
 
 # tsc -b writes these beside the config; they are a build cache.
 *.tsbuildinfo
+
+# Harness screenshots. They are output, not source: every soak run rewrites
+# them, they are large, and a run started from the repo root used to scatter
+# them beside package.json.
+tools/soak/shots/

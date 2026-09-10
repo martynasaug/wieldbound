@@ -338,6 +338,50 @@ function helmParts(style: GearStyle, _rarity: ItemRarity): Part[] {
     ]) }];
   }
 
+  if (style === "circlet") {
+    // A BAND, NOT A BUCKET. `GEAR_STYLES` declares five head styles and this
+    // file implemented two, so `circlet` and `horned` both fell through to the
+    // closed great helm below — five of the twelve helms in the catalogue
+    // rendering as something else entirely. A Gilded Crown, a Silver Circlet
+    // and a Galecrown all arrived as a face-hiding bucket with a visor slit,
+    // which is why the seeded character has been photographed in one for weeks.
+    //
+    // The point of a circlet is that it leaves the head alone: worn on the brow
+    // above the eyes, with the face and hair still visible. It is the only head
+    // piece that shows who is wearing it.
+    const brow = mid + 20;
+    const front = HEAD_FRONT_Z - 4;
+    return [{ bone: "Head", role: "metal", geometry: merge([
+      shell(HEAD_HALF_WIDTH + 4, HEAD_HALF_WIDTH + 4, 9, [0, brow, -6], 1.2),
+      // A tall point over the brow and two shorter ones at the temples, which
+      // is what separates a crown from a headband at this size.
+      box([9, 21, 5], [0, brow + 13, front]),
+      box([6, 13, 5], [-21, brow + 9, front - 7]),
+      box([6, 13, 5], [21, brow + 9, front - 7]),
+    ]) }];
+  }
+
+  if (style === "horned") {
+    // The cap's own crown, so a Horned Helm is a helmet with horns rather than
+    // a separate hat, and then a horn on each side sweeping out and up. Built
+    // from stepped boxes because the primitives here are all axis-aligned —
+    // `shell` has no rotation — and a faceted horn suits the rig anyway.
+    const brow = mid + 6;
+    const horn = (side: -1 | 1): THREE.BufferGeometry[] => [
+      box([16, 15, 16], [side * 41, brow + 6, -4]),
+      box([13, 15, 13], [side * 51, brow + 19, -4]),
+      box([10, 14, 10], [side * 58, brow + 32, -4]),
+      box([7, 13, 7], [side * 61, brow + 44, -4]),
+      box([4, 10, 4], [side * 62, brow + 54, -4]),
+    ];
+    return [{ bone: "Head", role: "metal", geometry: merge([
+      dome(HEAD_HALF_WIDTH + 7, [0, brow, -6], [1, 1.3, 1.2]),
+      shell(HEAD_HALF_WIDTH + 9, HEAD_HALF_WIDTH + 9, 10, [0, brow + 2, -6], 1.2),
+      ...horn(-1),
+      ...horn(1),
+    ]) }];
+  }
+
   // "full" — a closed great helm. The one style that hides the face, so it
   // needs a slit or the character reads as headless.
   return [
@@ -462,12 +506,35 @@ function armorParts(style: GearStyle, _rarity: ItemRarity): Part[] {
 }
 
 function bootsParts(style: GearStyle, _rarity: ItemRarity): Part[] {
+  // WHAT THE BOOT IS MADE OF, which was "leather" for all four styles.
+  //
+  // The shape here is deliberately one boot with a `tall` cuff variant — a
+  // greave and a sandal really are the same silhouette at this scale, and that
+  // is a fair economy. The MATERIAL is not: Plated Greaves, Silvered Greaves
+  // and Bronze-shod Boots were all drawn in leather, so the heaviest boots in
+  // the game read as the lightest and took the leather base colour before the
+  // rarity tint went anywhere near them.
+  //
+  // Same family of mistake as the helm styles in this file — a `GEAR_STYLES`
+  // entry the builder never names — and `tools/test/gearstyles.mjs` now fails
+  // when one appears.
+  // All four named, including the one that takes the default. A ternary ending
+  // in `: "leather"` is indistinguishable from having forgotten `low`, which is
+  // the whole mistake this file just made twice — so the table says it out loud
+  // and `gearstyles.mjs` can tell "handled" from "fell through".
+  const BOOT_ROLE: Partial<Record<GearStyle, MaterialRole>> = {
+    low: "leather",
+    tall: "leather",
+    plated: "metal",
+    wrapped: "cloth",
+  };
+  const role: MaterialRole = BOOT_ROLE[style] ?? "leather";
   const parts: Part[] = [];
   for (const side of [1, -1] as const) {
     const x = side * FOOT_X;
     parts.push({
       bone: side > 0 ? "FootL" : "FootR",
-      role: "leather",
+      role,
       geometry: merge([
         box([21, 19, 46], [x, FOOT_Y + 2, FOOT_Z]),
         // Toe cap, so a boot is not simply a bigger foot.
@@ -476,7 +543,7 @@ function bootsParts(style: GearStyle, _rarity: ItemRarity): Part[] {
     });
     parts.push({
       bone: side > 0 ? "LowerLegL" : "LowerLegR",
-      role: "leather",
+      role,
       geometry: style === "tall"
         // The cuff rides the shin bone, so it bends at the knee with the leg.
         ? merge([
