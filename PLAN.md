@@ -22229,3 +22229,38 @@ therefore hulls: geometry flat at 303 across 24 switches, programs bounded at
 149, no console errors. No regression from the hull work.
 
 Suite 45/45.
+
+**Phase 70 M70.223 — the off-hand was mirrored, and the mirror had started
+costing more than it bought.** Looking at the shields in the clean captures —
+the first time they could be looked at, since the contact sheet before M70.219
+was buried under stale hulls — a heater shield read as a pale panel with the
+character's tunic showing through it.
+
+MEASURED RATHER THAN SQUINTED AT. The shield's own materials were fine:
+`side=BackSide`, opaque, opacity 1. Under the same holder sat two more meshes —
+the outline hulls — one of them TRANSPARENT AT 0.47, and the holder carried
+`scale [1, 1, -1]`.
+
+That is the mirror, and it explains both halves. The off-hand rides `FistL` with
+the right hand's grip reflected across the body's plane, because the pack gives
+no left socket. A negative scale reverses the winding of every triangle beneath
+it and three.js does not flip `frontFace` per object, so everything under that
+group draws inside out. M70.217 patched the shield's own materials to `BackSide`
+to compensate — correct at the time, and no longer sufficient the moment M70.219
+made the outline passes rebuild on gear changes, because HULLS USE THE ACTOR'S
+SHARED MATERIALS and cannot be flipped for one object without flipping the whole
+figure.
+
+So the mirror is gone, replaced by a rotation, and the `BackSide` patch went
+with it — it was compensating for a reversal that no longer happens, and leaving
+it would have drawn the shield's inside face.
+
+BOTH POSES WERE PHOTOGRAPHED BEFORE CHOOSING, at noon, close, and they are kept:
+`shots/grip/offhand-current.png` against `offhand-rotZ.png`. The mirror pastes
+the shield face-on across the whole torso and hides the body; the rotation puts
+it on the forearm at the character's side with the figure still readable. That
+is a judgement about how the game should look rather than a measurement, and it
+is flagged as such — the correctness half is the winding, and it stands either
+way.
+
+Suite 45/45.

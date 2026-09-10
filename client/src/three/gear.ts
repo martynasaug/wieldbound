@@ -893,28 +893,30 @@ async function makeHeldItem(
     // socket, so the off-hand rides `FistL` with the right hand's grip mirrored
     // across the body's plane and turned to face outward — a shield held edge-on
     // is a stick. Re-derive this if the character pack is ever replaced.
+    // TURNED, NOT MIRRORED, and the mirror was costing more than it bought.
+    //
+    // This was `rotation(PI/2, 0, PI)` with `scale(1, 1, -1)`: the right hand's
+    // grip reflected across the body's plane. A negative scale reverses the
+    // winding order of every triangle under it and three.js does not flip
+    // `frontFace` per object, so everything below this group drew inside out.
+    // The shield's own materials were patched to `BackSide` to compensate —
+    // which worked, and then stopped being enough the moment M70.219 made the
+    // outline passes rebuild on gear changes, because the HULLS are built with
+    // the actor's SHARED silhouette and outline materials and cannot be flipped
+    // for one object without flipping them for the whole figure. The result was
+    // a shield washed out under a transparent panel at 0.47 opacity.
+    //
+    // A rotation has no such cost. Compared side by side at noon: the mirror
+    // pastes the shield face-on across the whole torso and hides the body,
+    // while this puts it on the forearm at the character's side with the figure
+    // still readable. Both were photographed before choosing — see
+    // `shots/grip/offhand-current.png` against `offhand-rotZ.png`.
     const holder = new THREE.Group();
     holder.add(mesh);
-    holder.rotation.set(Math.PI / 2, 0, Math.PI);
-    holder.scale.set(1, 1, -1);
-    // AND THE MIRROR HAS TO BE PAID FOR. A negative scale reverses the winding
-    // order of every triangle under it, and three.js does not flip `frontFace`
-    // per object — so a mirrored shield is drawn with its front faces culled
-    // and its back faces showing. On screen that is not subtle: `verdantaegis`
-    // came out as a pale, hollow, see-through slab hanging off the arm, which
-    // reads as a broken mesh rather than a shield.
-    //
-    // Drawing the back faces instead restores it. The normal matrix already
-    // negates the normals for a negative determinant, so lighting is correct
-    // once the right side is being drawn; this only chooses which side that is.
-    //
-    // Set on the prototype rather than per wielder because `buildHeldItem`
-    // clones materials from here, so every copy inherits it.
-    mesh.traverse((o) => {
-      const m = (o as THREE.Mesh).material;
-      if (!m) return;
-      for (const mat of Array.isArray(m) ? m : [m]) mat.side = THREE.BackSide;
-    });
+    holder.rotation.set(Math.PI / 2, 0, 0);
+    // The `BackSide` patch that used to sit here went with the mirror. It was
+    // compensating for reversed winding, and there is no longer any to
+    // compensate for; leaving it would draw the shield's inside face instead.
     return { object: holder, bone: "FistL" };
   }
 
