@@ -22958,3 +22958,55 @@ and the honest discriminator is probably whether the CHARACTER survived the
 window — which the test does not currently record.
 
 Suite 47/48 in a batch, 48/48 with `fighting.mjs` re-run alone.
+
+**Phase 70 M70.238 — the `fighting.mjs` flake was a 45-pixel lie about its own
+reach.** It failed in a batch and passed standalone, twice each, and M70.237
+recorded that its discriminator was unknown. It is known now, and it was never
+environmental.
+
+**THE TEST TOLD THE SERVER'S SIDE OF IT ONCE SOMEBODY ASKED.** `sendAttackState`
+carries a reason — "nothing in reach", "still recovering" — and this test had
+never read it, so every investigation into a silent window had been guesswork
+against numbers the client derived for itself. Reading it gave `the server said:
+nothing in reach` while the test was simultaneously reporting the same monster
+in contact for 85 ticks of 85. Two instruments, flat contradiction, and the one
+that had never spoken was right.
+
+**THE CAUSE.** Reach came from `attackRangeFor("bow")`, which is 300 for every
+bow. The server uses `reachOf(equippedWeapon)`, which multiplies by the item's
+own `mods.range`. `Fighter` carries a shortbow (0.85), a recurve (1.0) and a
+Ruinstring (1.15), and the test equips whichever `items.find` returns first — so
+with the shortbow the real reach is **255px against an assumed 300**. It then
+stood at ~290-310px, believed itself in contact, and failed with "the swing
+itself is not happening" while the server declined every tick. Right on the
+boundary, which is exactly why a batch tipped it: thinned camps put the nearest
+target further out. `reachOf(bow)` now, and the line says which bow and both
+numbers.
+
+**THREE INSTRUMENT FIXES ON THE WAY, AND ONE REVERTED FOR THE SECOND TIME.**
+  * The approach accepted a target at `contact + 30` — thirty pixels outside
+    reach — and the standing window counted those ticks as in-contact. Both use
+    the real contact distance now, and the approach closes to `contact - 20` so
+    drift cannot leave it.
+  * The verdict said "the swing itself is not happening" on `standing === 0`,
+    which is damage to the chosen SUBJECT. `attackTargetFor` swings at the
+    nearest thing in reach, not at whatever the test picked, so a window can
+    resolve five swings into the rest of the camp and leave the subject on zero.
+    Observed exactly that: "0 damage dealt over 5 resolved swing(s)". It counts
+    RESOLVED SWINGS now — the server sends a `BATTLE_RESULT` for a miss as well
+    as a hit, which is what separates "no swing happened" from "a swing missed".
+  * Death is tracked, because a corpse does not swing and a dead character stops
+    appearing in the snapshot — so `me` freezes where it fell, `nearest` keeps
+    measuring from that stale point, and the window cheerfully reports something
+    in reach for the full 85 ticks.
+
+The reverted one: M70.237 made "nothing landed AND nothing left alive" report
+INCONCLUSIVE, reasoning that a broken swing would leave the monsters standing.
+Disabling `resolvePlayerAttack` at both call sites showed it reporting
+INCONCLUSIVE, so the test could no longer fail for the one thing it exists to
+catch. Two later runs of the same experiment left 4 monsters alive and 0 alive
+respectively — `aliveInReach` was never a signal at all.
+
+Every version of the verdict since has been re-checked the same way: disable
+both call sites, confirm `0 resolved swing(s)` and a FAIL. Two full batches and
+a counted run afterwards: **48/48**, `fighting.mjs` green in all three.

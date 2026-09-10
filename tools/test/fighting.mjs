@@ -64,6 +64,7 @@ import {
   reachToBody,
   BASE_MOVE_SPEED_PX_PER_SEC,
 } from "../../shared/protocol-types.ts";
+import { reachOf } from "../../shared/items.ts";
 
 /**
  * The least damage a standing window must land before the retreat comparison
@@ -80,6 +81,17 @@ let me = null;
 let items = [];
 let monsters = [];
 let dealt = 0;
+/** Swings that RESOLVED, hit or miss. The server sends a BATTLE_RESULT for
+ *  both — `playerHit: playerAttack.hit` — so this separates "the swing is not
+ *  happening" from "the swing happened and missed", which damage alone cannot.
+ *  The verdict below has twice mistaken the second for the first. */
+let swings = 0;
+/** Set if the character dropped to zero health, or vanished from the snapshot
+ *  (which is what dying looks like from out here) during a measured window. */
+let died = false;
+let vanished = false;
+/** Reasons the server gave for not swinging, and how often. */
+const reasons = new Map();
 /** Damage dealt, keyed by the monster that took it. See the handler below. */
 const dealtTo = new Map();
 const problems = [];
@@ -96,11 +108,28 @@ ws.on("message", (raw) => {
     monsters = msg.payload.monsters ?? monsters;
     if (me) {
       const self = msg.payload.players.find((p) => p.id === me.id);
-      if (self) me = { ...me, x: self.x, y: self.y };
+      if (self) me = { ...me, x: self.x, y: self.y, hp: self.hp };
+      // DID WE SURVIVE THE WINDOW? A corpse does not swing, and a character
+      // that has just died stops appearing here — so `me` freezes at the last
+      // place it stood, `nearest` keeps measuring from that stale point, and
+      // the window happily reports something in contact reach for 85 ticks of
+      // 85 while the player is face down in town. That is indistinguishable
+      // from a broken swing by every other number this test collects, and it
+      // is the shape the in-batch failures kept taking.
+      if (self && self.hp <= 0) died = true;
+      if (!self) vanished = true;
     }
   }
   // Every landed player swing, which is the only honest measure of "did it
   // attack" — the attack STATE says an order stands, not that a blow fell.
+  // WHY THE SERVER IS NOT SWINGING, in its own words. `sendAttackState`
+  // carries a reason — "nothing in reach", "still recovering" — and this test
+  // has never read it, so every investigation into a silent window has been
+  // guesswork against numbers the client derived. Keep the distinct ones.
+  if (msg.type === "ATTACK_STATE" && msg.payload.reason) {
+    reasons.set(msg.payload.reason, (reasons.get(msg.payload.reason) ?? 0) + 1);
+  }
+  if (msg.type === "BATTLE_RESULT") swings++;
   if (msg.type === "BATTLE_RESULT" && msg.payload.playerHit) {
     dealt += msg.payload.playerDamage;
     // AND PER MONSTER, because the rule is per target. "You do not swing at
@@ -220,9 +249,21 @@ ws.on("open", async () => {
     process.exit(0);
   }
   /** The player's own reach, which is what decides whether anything is close
-   *  enough to be swung at. Read from the same shared function the server
-   *  resolves attacks with, rather than the melee contact this used to assume. */
-  const PLAYER_REACH = attackRangeFor("bow");
+   *  enough to be swung at.
+   *
+   *  OFF THE EQUIPPED ITEM, NOT OFF THE FAMILY — and that distinction is the
+   *  whole flake. `attackRangeFor("bow")` is 300 for every bow; the server uses
+   *  `reachOf(equippedWeapon)`, which multiplies by the item's own `mods.range`.
+   *  A shortbow is 0.85, so its real reach is 255. This test equips whichever
+   *  bow `items.find` returns first, and `Fighter` carries a shortbow (0.85), a
+   *  recurve (1.0) and a Ruinstring (1.15) — so the reach it assumed was right
+   *  for some runs and 45px too generous for others.
+   *
+   *  It then stood at ~300px, believed itself in contact for 85 ticks of 85,
+   *  and failed with "the swing itself is not happening" while the server was
+   *  saying `nothing in reach` on the wire the whole time. Right on the
+   *  boundary, which is why it failed in batches and passed alone. */
+  const PLAYER_REACH = reachOf(bow);
 
   /** Kinds that outlive an opening shot, so one subject can serve both windows.
    *  Dragons are excluded deliberately: 340hp is ideal for surviving, and a
@@ -232,7 +273,7 @@ ws.on("open", async () => {
     .filter(([kind, st]) => (st.maxHp ?? 0) >= 90 && kind !== "dragon" && st.keepAwayPx === undefined)
     .map(([kind]) => kind);
 
-  console.log(`  using a bow: reach ${PLAYER_REACH}px (a sword reaches ${attackRangeFor("sword")}px)`);
+  console.log(`  using ${bow.baseId}: reach ${PLAYER_REACH}px (the bow family is ${attackRangeFor("bow")}px; a sword reaches ${attackRangeFor("sword")}px)`);
 
   // Find something close and walk into reach of it.
   // CLOSE IN ON SOMETHING STILL ALIVE, RE-AIMING AS IT MOVES OR DIES.
@@ -275,7 +316,20 @@ ws.on("open", async () => {
     // 14 + 58 = 72px. Hard-coding 45 made this wait the full 75s and fail on
     // every run that did not happen to pick something small.
     const contact = reachToBody(PLAYER_REACH, MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
-    if (d < contact + 30) { target = live; break; }
+    // INSIDE reach, not thirty pixels outside it.
+    //
+    // This accepted a target at `contact + 30`, and the standing window below
+    // then counted those same ticks as "in contact reach". The server does not:
+    // at 361px from an orcbrute whose contact distance is 334 it correctly
+    // refuses to swing, and the verdict read that as "the swing itself is not
+    // happening" — 0 damage over 0 RESOLVED SWINGS, with the test insisting
+    // something was in reach for 85 ticks of 85.
+    //
+    // It bites hardest in a batch, because forty-seven tests ahead of this one
+    // thin the near camps out and the nearest living thing is then further
+    // away, landing in that thirty-pixel band of make-believe more often. Close
+    // to comfortably inside instead, so tick-to-tick drift cannot leave it.
+    if (d < contact - 20) { target = live; break; }
     send({ type: "MOVE", payload: { x: live.x, y: live.y } });
     await sleep(110);
   }
@@ -328,18 +382,25 @@ ws.on("open", async () => {
     const live = nearest(null);
     if (live) {
       const contact = reachToBody(PLAYER_REACH, MONSTER_STATS[live.kind]?.bodyRadiusPx ?? 16);
-      if (Math.hypot(live.x - me.x, live.y - me.y) < contact + 30) standReachTicks++;
+      // No slack here either: this number is the evidence the verdict uses to
+      // say a swing SHOULD have landed, so it has to mean what the server means.
+      if (Math.hypot(live.x - me.x, live.y - me.y) < contact) standReachTicks++;
     }
     await sleep(110);
   }
   // Only what the SUBJECT took, so both windows measure the same monster.
   const standing = dealtTo.get(target.id) ?? 0;
+  const standSwings = swings;
+  const standDied = died || vanished;
+  const standReasons = [...reasons.entries()].map(([r, n]) => `${r} x${n}`).join(", ") || "none given";
   const aliveInReach = monsters.filter(
     (m) => m.status === "alive" && Math.hypot(m.x - me.x, m.y - me.y) < 120,
   ).length;
   console.log(
-    `  standing still: ${standing} damage dealt (in contact reach for ${standReachTicks}/${standTicks} ticks, ` +
+    `  standing still: ${standing} damage dealt over ${standSwings} resolved swing(s) (in contact reach for ${standReachTicks}/${standTicks} ticks, ` +
       `${aliveInReach} alive within 120px at the end)`,
+  );
+  console.log(`    the server said: ${standReasons}`,
   );
 
   // --- Running away ----------------------------------------------------------
@@ -584,7 +645,7 @@ ws.on("open", async () => {
         // thing", and those call for opposite fixes. Three attempts were spent
         // on the wrong one of those.
         retreatGaps.push({ px: Math.round(gap), kind: live.kind, hp: me?.hp ?? -1 });
-        if (gap < contact + 30) inReachTicks++;
+        if (gap < contact) inReachTicks++;
       }
       await sleep(110);
     }
@@ -623,13 +684,39 @@ ws.on("open", async () => {
   // So this reports what it actually observed rather than claiming a pass it
   // has not earned. A run where nothing was ever in reach proves nothing about
   // the rule, and now says so.
-  if (standing === 0 && standReachTicks >= 10) {
+  if (standing === 0 && standSwings === 0 && standDied) {
+    // The character did not survive the window, so of course nothing swung.
+    // Reported rather than failed: a corpse proves nothing about the rule, and
+    // this is what the in-batch runs kept doing — forty-seven tests ahead of
+    // this one leave the near camps thinned and whatever is left is often the
+    // thing that kills a stationary archer.
+    console.log(
+      `  (the character died during the standing window — no swing resolved because there was nobody ` +
+        `left to swing. INCONCLUSIVE, not a pass)`,
+    );
+  } else if (standing === 0 && standReachTicks >= 10 && standSwings === 0) {
     // Something was in contact reach for over a second of ticks with an attack
-    // order standing, and nothing landed. That IS the swing failing, and it is
-    // the only arrangement in which this can be said.
+    // order standing, and NOT ONE SWING RESOLVED. That IS the swing failing,
+    // and it is the only arrangement in which this can be said.
+    //
+    // The test used to say it on `standing === 0` alone, which is damage to the
+    // chosen SUBJECT — and that is a different claim. `attackTargetFor` swings
+    // at the nearest thing in reach, not at whatever this test picked, so a
+    // window can resolve five swings into the rest of the camp and still leave
+    // the subject on zero. Observed exactly that: "0 damage dealt over 5
+    // resolved swing(s)", reported as the swing not happening while the server
+    // was swinging five times.
     fail(
-      `nothing landed while standing still, in contact reach for ${standReachTicks}/${standTicks} ticks ` +
-        `— the swing itself is not happening`,
+      `no swing resolved at all while standing still, in contact reach for ` +
+        `${standReachTicks}/${standTicks} ticks — the swing itself is not happening`,
+    );
+  } else if (standing === 0 && standSwings > 0) {
+    // Swings happened; none of them landed on the subject. Nothing is broken —
+    // the baseline is simply unusable for the comparison below, which needs
+    // damage to the ONE monster both windows measure.
+    console.log(
+      `  (nothing landed on the subject, but ${standSwings} swing(s) resolved, so the swing works and this ` +
+        `baseline is just unusable. INCONCLUSIVE, not a pass)`,
     );
   } else if (standing === 0) {
     // Nothing landed, but nothing was reliably within arm's length either. The
