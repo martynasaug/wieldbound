@@ -23,13 +23,24 @@
 //   node tools/soak/guidedopening.mjs Guided7 12
 import { open, login, approach, step } from "./driver.mjs";
 import { TOWN_NPCS, NPC_TALK_RANGE_PX } from "../../shared/town.ts";
-import { INTERACTION_RANGE_PX } from "../../shared/protocol-types.ts";
+import { INTERACTION_RANGE_PX, xpToNextLevel, PLAYER_SPAWN } from "../../shared/protocol-types.ts";
 
 const NAME = process.argv[2] ?? `Guided${Math.floor(Math.random() * 100000)}`;
 const MINUTES = Number(process.argv[3] ?? 12);
 
-const { browser, page } = await open({ headless: false, width: 1600, height: 900 });
-await page.bringToFront();
+// HEADLESS, AND NOT AS A PREFERENCE.
+//
+// This is a long-run progression bot, which is precisely the case `driver.mjs`
+// says must be headless: a headed Chromium that loses focus throttles rAF to
+// about 1Hz, so a bot left running for ten minutes while the machine is used
+// for anything else spends most of those minutes moving at one frame a second
+// and reports the result as if it had played normally. Nothing here is a load
+// measurement, so SwiftShader costs nothing that matters.
+//
+// It also stops a window appearing over whatever the person at the keyboard is
+// doing. Twice a harness window was mistaken for the game misbehaving, which is
+// a real cost to a tool whose whole job is to tell truth from artefact.
+const { browser, page } = await open({ headless: true, width: 1600, height: 900 });
 const loadMs = await login(page, NAME);
 const t0 = Date.now();
 const mark = () => `+${((Date.now() - t0) / 60000).toFixed(1)}min`;
@@ -78,6 +89,9 @@ for (const npc of TOWN_NPCS.filter((n) => n.role === "quest")) {
   }
   await page.evaluate((id) => window.__wieldbound.talkTo(id), npc.id);
   await page.waitForTimeout(600);
+  const before = await page.evaluate(() =>
+    [...(window.__wieldbound.questTracker?.activeQuests ?? [])].map((q) => q.id),
+  );
   // The quest row is the first option and carries its reward on the right; the
   // rest of the list is conversation. Clicking by position would break the
   // moment a topic is added, so it is found by having a reward attached.
@@ -85,15 +99,51 @@ for (const npc of TOWN_NPCS.filter((n) => n.role === "quest")) {
     const rows = [...document.querySelectorAll(".dlg-option:not(.disabled)")];
     const quest = rows.find((r) => /xp/i.test(r.textContent ?? ""));
     if (!quest) return null;
-    const label = quest.textContent.trim().slice(0, 60);
+    // Title and reward are separate elements laid out left and right, so
+    // `textContent` runs them together — the first run printed "Thin Them
+    // Out40 xp · 25 wood", which reads like a broken quest name in the GAME
+    // rather than two spans with no space between them in the PROBE.
+    const parts = [...quest.children].map((c) => c.textContent.trim()).filter(Boolean);
+    const label = (parts.length ? parts.join("  —  ") : quest.textContent.trim()).slice(0, 70);
     quest.click();
     return label;
   });
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(700);
+
+  // CLICKING THE QUEST ROW DOES NOT TAKE THE QUEST. It shows you the brief and
+  // offers a second row, "I'll do it." — read it, then commit — and that second
+  // click is the accept. This file clicked the first row, pressed Escape, and
+  // printed "took work from Warden Cabel". It had taken nothing. Every run this
+  // harness has ever produced was of a character carrying no quests at all,
+  // which makes it a measurement of the OPPOSITE of what it claims: the file
+  // exists to play the opening as the Herald describes it, and step one of that
+  // description never happened.
+  const confirmed = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".dlg-option:not(.disabled)")];
+    const yes = rows.find((r) => /i'?ll do it|accept|agreed/i.test(r.textContent ?? ""));
+    if (!yes) return false;
+    yes.click();
+    return true;
+  });
+  await page.waitForTimeout(900);
   await page.keyboard.press("Escape");
-  if (took) {
-    accepted.push(took);
+
+  // AND THE TRACKER IS WHAT DECIDES WHETHER IT WORKED, not the fact that a
+  // click was dispatched. A click that lands on nothing throws nothing, which
+  // is exactly how the original fault stayed invisible through two runs and a
+  // written-up report.
+  const after = await page.evaluate(() =>
+    [...(window.__wieldbound.questTracker?.activeQuests ?? [])].map((q) => q.id),
+  );
+  const gained = after.filter((id) => !before.includes(id));
+  if (gained.length) {
+    accepted.push(`${took} [${gained.join(",")}]`);
     console.log(`${mark()}  took work from ${npc.name}: ${took}`);
+  } else if (took) {
+    console.log(
+      `${mark()}  !! clicked "${took}" at ${npc.name} but the quest log did not change` +
+        (confirmed ? " even after confirming" : " — no confirm row was found"),
+    );
   } else {
     console.log(`${mark()}  ${npc.name} offered nothing with a reward on it`);
   }
@@ -122,7 +172,27 @@ const gatherUntil = async (label, kinds, want, getter, capMs) => {
   while (Date.now() < until) {
     const cur = await state();
     if (getter(cur) >= want) return true;
-    const node = await goTo(nearestNode(kinds), INTERACTION_RANGE_PX * 0.7, 40);
+    // NOTHING AVAILABLE IS NOT THE SAME AS NOTHING LEFT.
+    //
+    // This returned false the moment `nearestNode` came back empty, and the
+    // first run of this phase duly reported "gathering wood: 20 -> 32 (gave
+    // up)" after forty-eight seconds — which reads like a world that runs out
+    // of trees. It is not. `GATHER_RESPAWN_MS` is 8000, so a bot that has just
+    // stripped the cluster it is standing in sees every nearby node in the
+    // "spent" state for the next eight seconds, and there is no state of the
+    // world in which that means "give up and go home". A player waits.
+    //
+    // So an empty look now waits and looks again, and only the phase cap ends
+    // the phase. What "gave up" means afterwards is "the cap expired", which is
+    // a statement about rate, and that is the thing this phase is for.
+    let node = null;
+    for (let wait = 0; wait < 6 && !node; wait++) {
+      node = await goTo(nearestNode(kinds), INTERACTION_RANGE_PX * 0.7, 40);
+      if (!node) {
+        if (Date.now() >= until) return false;
+        await page.waitForTimeout(2500);
+      }
+    }
     if (!node) return false;
     // STAND UNTIL IT IS SPENT, rather than for a fixed four seconds.
     //
@@ -169,6 +239,19 @@ const gotOre = await gatherUntil("ore", ["rock"], oreTarget, (s2) => s2.ore, 3 *
 s = await state();
 console.log(`${mark()}  gathering ore:  ${start.ore} -> ${s.ore} ${gotOre ? "(target met)" : "(gave up)"}`);
 
+// HERB, BECAUSE ONE OF THE TWO QUESTS IS PAID IN IT AND THIS BOT NEVER PICKED
+// ANY. Marda's work wants 30 ore and 25 herb; a new character arrives with 20
+// and 15. The first run gathered wood and ore, ended on herb 15 — exactly what
+// it started with — and reported the opening as if it had followed the advice
+// through. It had not: the phase for the material the quest actually asks for
+// did not exist, so "did the guidance lead to a finished quest" was never being
+// asked. A missing phase is a harsher lie than a wrong number, because there is
+// nothing in the output to disbelieve.
+const herbTarget = 25;
+const gotHerb = await gatherUntil("herb", ["bush"], herbTarget, (s2) => s2.herb, 3 * 60000);
+s = await state();
+console.log(`${mark()}  gathering herb: ${start.herb} -> ${s.herb} ${gotHerb ? "(target met)" : "(gave up)"}`);
+
 // --- 3. buy the blade the shop sells for exactly this moment -----------------
 const oswyn = TOWN_NPCS.find((n) => n.role === "vendor");
 const at = await goTo(npcPos(oswyn.id), NPC_TALK_RANGE_PX * 0.6);
@@ -198,8 +281,61 @@ s = await state();
 console.log(`${mark()}  holding: ${s.weapon}`);
 
 // --- 4. now fight, armed, and see what the opening actually costs ------------
+//
+// COUNT WHAT DIES, IN THE PAGE, ON THE PAGE'S OWN CLOCK. Counting kills from
+// out here means polling `monsters` between keypresses and hoping a corpse is
+// still in the map when the poll lands; a monster that spawns, dies and is
+// swept between two polls is invisible. A tick installed in the page watches
+// every id it has seen alive and notices the ones that stop being alive.
+await page.evaluate(() => {
+  const g = window.__wieldbound;
+  const alive = new Set();
+  window.__kills = 0;
+  setInterval(() => {
+    for (const [id, v] of g.monsters) {
+      const st = v.state;
+      if (!st) continue;
+      const near = Math.hypot(st.x - g.playerX, st.y - g.playerY) < 300;
+      if (st.status === "alive" && near) alive.add(id);
+      else if (st.status !== "alive" && alive.delete(id)) window.__kills++;
+    }
+  }, 250);
+});
 const keys = await page.evaluate(() => window.__wieldbound.hotbar?.layout?.keys ?? []);
-const dirs = [["w"], ["w", "d"], ["d"], ["s", "d"], ["s"], ["s", "a"], ["a"], ["w", "a"]];
+// HUNTING, NOT CIRCLING. `driver.mjs` writes down the trap this fell into:
+// "walking a fixed N/E/S/W rotation in equal legs is a CLOSED LOOP — it comes
+// back to where it started and never leaves town, which looks like exploring
+// right up until you plot it." That is precisely what this phase did, and the
+// consequence was not a small one: the fight phase ran for seven minutes and
+// produced sixteen real swings, because the character spent almost all of it
+// walking a circle inside the walls where nothing spawns. The output said
+// "129 swings" — those are KEYPRESSES at five a second against a 1595ms swing
+// cooldown — and "level 1 -> 1", and both readings are about the walker.
+//
+// So the heading persists and turns by an angle that does not divide the
+// circle, and while the character is still near the spawn it is pushed
+// outward, because the monsters are outside and the town is not a hunting
+// ground. Turning only when a leg is blocked or fruitless keeps it travelling
+// in a straight line, which is the only thing that covers distance.
+const KEYS_FOR = (angle) => {
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const keys = [];
+  if (dy < -0.38) keys.push("w");
+  if (dy > 0.38) keys.push("s");
+  if (dx > 0.38) keys.push("d");
+  if (dx < -0.38) keys.push("a");
+  return keys.length ? keys : ["w"];
+};
+let heading = Math.random() * Math.PI * 2;
+// THE FIGHT PHASE CAN BE STARVED BY THE PHASES IN FRONT OF IT, and until this
+// was recorded there was nothing in the output to say so. The gather caps are
+// four minutes, three and three; with the quests and the shop that is nearly
+// eleven of a twelve-minute budget, so `endAt` can already be in the past by
+// the time the character draws its weapon. The summary would still print
+// "level 1 -> 1" — a report about a fight that never got the chance to happen,
+// indistinguishable from a fight that happened and went badly.
+const fightFrom = Date.now();
 const endAt = t0 + MINUTES * 60000;
 let i = 0;
 let lastLevel = s.level;
@@ -224,7 +360,16 @@ while (Date.now() < endAt) {
       await page.waitForTimeout(200);
     }
   } else {
-    await step(page, dirs[i++ % dirs.length], 700);
+    // Push outward while still in sight of the spawn, otherwise hold the
+    // heading. 2.3 radians is the turn: it is not a divisor of 2*pi, so a
+    // string of turns never closes back on itself.
+    const here = await state();
+    const out = Math.atan2(here.y - PLAYER_SPAWN.y, here.x - PLAYER_SPAWN.x);
+    const fromSpawn = Math.hypot(here.x - PLAYER_SPAWN.x, here.y - PLAYER_SPAWN.y);
+    if (fromSpawn < 900) heading = out + (Math.random() - 0.5) * 0.8;
+    const leg = await step(page, KEYS_FOR(heading), 700);
+    if (leg.moved < 20) heading += 2.3;
+    if (++i % 8 === 0) heading += 2.3;
   }
   const now = await state();
   if (now.level !== lastLevel) {
@@ -233,11 +378,43 @@ while (Date.now() < endAt) {
   }
 }
 
+const kills = await page.evaluate(() => window.__kills ?? 0);
 const end = await state();
 console.log(`\nafter ${MINUTES} minutes of following the advice:`);
-console.log(`  level ${start.level} -> ${end.level}, holding ${end.weapon}, ${swings} swings`);
+// XP, NOT JUST LEVEL. The first run of this said "level 1 -> 1" and stopped
+// there, which cannot be read: a character four experience short of level two
+// and a character that killed nothing at all print the same line, and those are
+// completely different reports about the opening. Level 2 costs 20 — four
+// slimes — so the interesting number is always the one underneath the level.
+console.log(
+  `  level ${start.level} -> ${end.level} (${end.xp} xp into it, ${xpToNextLevel(end.level)} needed), ` +
+    `holding ${end.weapon}`,
+);
+const fightMin = (Date.now() - fightFrom) / 60000;
+console.log(
+  `  ${swings} attack presses, ${kills} monsters died within reach, ` +
+    `over ${fightMin.toFixed(1)}min of fighting`,
+);
+if (fightMin < 2) {
+  console.log(
+    "  !! the gathering phases used almost the whole budget, so the level and kill " +
+      "figures above say nothing about combat. Give it more minutes.",
+  );
+}
 console.log(`  materials: wood ${end.wood}, ore ${end.ore}, herb ${end.herb}`);
 console.log(`  quests taken: ${accepted.length ? accepted.join(" | ") : "none"}`);
+// AND WHERE THOSE QUESTS ACTUALLY GOT TO, which is the question the whole file
+// exists to answer and which it was not printing. "Took two quests" and
+// "finished neither of them" are different reports about the opening.
+const quests = await page.evaluate(() => {
+  const t = window.__wieldbound.questTracker;
+  return {
+    active: [...(t?.activeQuests ?? [])].map((q) => ({ id: q.id, count: q.count })),
+    done: [...(t?.completedQuests ?? [])],
+  };
+});
+for (const q of quests.active) console.log(`    still running: ${q.id} at ${JSON.stringify(q.count)}`);
+console.log(`    completed: ${quests.done.length ? quests.done.join(", ") : "none"}`);
 console.log("console errors:", page.__errors.length);
 for (const e of page.__errors.slice(0, 4)) console.log("  ", e);
 await browser.close();

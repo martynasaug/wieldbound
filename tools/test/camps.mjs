@@ -19,7 +19,21 @@
 //     npm run dev:server
 //     node tools/test/camps.mjs
 import WebSocket from "ws";
-import { AGGRO_RANGE_PX, MONSTER_STATS, MONSTER_WANDER_RADIUS_PX, PLAYER_SPAWN } from "../../shared/protocol-types.ts";
+import {
+  AGGRO_RANGE_PX,
+  MONSTER_STATS,
+  MONSTER_WANDER_RADIUS_PX,
+  PLAYER_SPAWN,
+  RESOURCE_BAND_RADII,
+} from "../../shared/protocol-types.ts";
+
+/** Which difficulty ring a point falls in. The same boundaries the server uses.
+ *  Duplicated as three lines rather than imported because `bandAt` is not
+ *  exported; the table it reads IS, which is the part that could drift. */
+const bandAt = (d) => {
+  for (let i = 0; i < RESOURCE_BAND_RADII.length; i++) if (d < RESOURCE_BAND_RADII[i]) return i + 1;
+  return 5;
+};
 
 const NAME = process.argv[2] ?? `Watcher${Math.floor(Math.random() * 90000)}`;
 const WATCH_MS = 22000;
@@ -177,6 +191,39 @@ ws.on("open", async () => {
     if (away > 8) fail(`the ${a.kind} wandered ${away.toFixed(0)}px — a boss stands sentinel`);
   }
   console.log(`  ${bosses.length} boss(es) in view, all holding station`);
+
+  // AND EVERY CAMP IS ON GROUND NO EASIER THAN ITS KIND.
+  //
+  // Difficulty in this world is laid out as distance, and each kind declares
+  // the ring it belongs to as `MONSTER_STATS[kind].band`. Nothing checked that
+  // the two agreed, and the comments in `server/src/index.ts` that were the
+  // only record of it had gone stale in four places — band 4's heading claimed
+  // a radius INSIDE band 3's. Nothing broke, because `bandAt` reads the radii
+  // table and never those headings, so the drift was invisible to the game and
+  // visible only to a reader, who would be misled.
+  //
+  // NOT EQUALITY. Placing a kind one ring FURTHER OUT than it declares is how
+  // the rings are softened at their edges — band 3's ground carries a spikyblob
+  // and an armabee camp from band 2, and band 4's carries a cactoro and an
+  // orcbrute from band 3. What must never happen is the other direction: a
+  // band-4 creature standing on band-1 ground is a level-1 player meeting a
+  // demon on the way to their first quest. So the assertion is one-sided.
+  //
+  // Read off live positions rather than off a copy of the layout table, so it
+  // is the world being checked and not a second transcription of it.
+  const misplaced = [];
+  for (const id of seen) {
+    const a = first.get(id);
+    const declared = MONSTER_STATS[a.kind]?.band;
+    if (!declared) continue;
+    const ground = bandAt(Math.hypot(a.x - PLAYER_SPAWN.x, a.y - PLAYER_SPAWN.y));
+    if (ground < declared) misplaced.push(`${a.kind} (band ${declared}) on band-${ground} ground`);
+  }
+  if (misplaced.length) {
+    fail(`camps on ground easier than their kind: ${[...new Set(misplaced)].join(", ")}`);
+  } else {
+    console.log(`  all  undisturbed creatures stand on ground no easier than their declared band`);
+  }
 
   for (const p of problems) console.error(`  FAIL  ${p}`);
   console.log(problems.length === 0 ? "\nOK — a camp is a place with animals in it." : `\n${problems.length} failure(s).`);

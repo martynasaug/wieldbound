@@ -17,40 +17,58 @@
 // only encode what I already expected to find.
 //
 // WHAT IT MEASURES IS THE NAIVE OPENING, AND THAT IS A LIMITATION TO STATE
-// RATHER THAN A FINDING TO REPORT. This bot walks out and punches things, which
-// is the one thing the game tells you not to do. Bare-handed at level 1:
-// accuracy 50 against a slime's 5 evasion is a 45% hit, average damage 1.5
-// times the fist's 0.6 multiplier is ~0.68 a swing, and a swing takes 1152ms —
-// so a 15hp slime is about 26 SECONDS of continuous punching, and level 2 is
-// four of them. A six-minute run gained 9 of the 20 experience needed, which
-// matches that arithmetic exactly.
+// RATHER THAN A FINDING TO REPORT. This bot walks out and fights, ignoring
+// every instruction the game gives it — no quests, no gathering, no anvil.
 //
-// That reads like a brutal opening and it is not one, because it is not the
-// opening. The Herald's own "What should I do first?" says: take work from
-// Cabel and Marda, which pays in materials, gather from the bushes in the
-// square and the trees outside the wall, then stand at the anvil and forge
-// something. And "bare-handed you are an adventurer" — fists are deliberately
-// the worst thing in the game to hold. A character that follows the advice has
-// a weapon within minutes; this one never had one, and never gathered, because
-// the bot does not know how.
+// THE BARE-HANDED NUMBERS THIS PARAGRAPH USED TO QUOTE ARE HISTORY NOW, and
+// leaving them here unlabelled would have been the same fault this harness
+// exists to catch. They were: accuracy 50 against a slime's 5 evasion is a 45%
+// hit, 1.5 average damage times the fist's 0.6 multiplier is ~0.68 a swing at
+// 1152ms — about 26 SECONDS of punching per slime, and a six-minute run gained
+// 9 of the 20 experience needed for level 2.
+//
+// No new character can reproduce that, because M70.21x gives every one of them
+// a Notched Dirk on creation. Armed, the same fight is 47% for ~3 a swing at
+// 1595ms: 10.6 swings, about 17 seconds, and level 2 is four slimes rather than
+// a quarter of an hour. The run prints what it is actually holding for exactly
+// this reason — a header describing a weapon the character no longer has is
+// how a measurement quietly becomes a story about a previous build.
+//
+// A second quote went stale in here the same way: this paragraph used to
+// summarise the Herald as "gather from the bushes in the square". That advice
+// was corrected in the game in M70.215 — the bushes ring the town at 1000px and
+// nothing gatherable stands inside the walls — but the quote of it survived
+// here, one file away from the fix.
 //
 // So the honest reading of a run: it says what happens if a new player ignores
-// every piece of guidance the game gives them. Making it follow the guidance —
-// accept the two quests, gather, forge — is the version that would measure the
-// intended opening, and it is the obvious next piece of work here.
+// every piece of guidance the game gives them, while holding the weapon the
+// game now hands them. `guidedopening.mjs` is the other half — the same opening
+// played as the Herald describes it.
 //
 //   node tools/soak/firstminutes.mjs Newcomer7 tools/soak/shots/first 8
 import { mkdirSync } from "node:fs";
 import { open, login, step, approach, nearestMonster } from "./driver.mjs";
 import { SHOP_STOCK } from "../../shared/shop.ts";
+import { PLAYER_SPAWN } from "../../shared/protocol-types.ts";
 
 const NAME = process.argv[2] ?? `New${Math.floor(Math.random() * 100000)}`;
 const OUT = process.argv[3] ?? "tools/soak/shots/first";
 const MINUTES = Number(process.argv[4] ?? 8);
 mkdirSync(OUT, { recursive: true });
 
-const { browser, page } = await open({ headless: false, width: 1600, height: 900 });
-await page.bringToFront();
+// HEADLESS, AND NOT AS A PREFERENCE.
+//
+// This is a long-run progression bot, which is precisely the case `driver.mjs`
+// says must be headless: a headed Chromium that loses focus throttles rAF to
+// about 1Hz, so a bot left running for ten minutes while the machine is used
+// for anything else spends most of those minutes moving at one frame a second
+// and reports the result as if it had played normally. Nothing here is a load
+// measurement, so SwiftShader costs nothing that matters.
+//
+// It also stops a window appearing over whatever the person at the keyboard is
+// doing. Twice a harness window was mistaken for the game misbehaving, which is
+// a real cost to a tool whose whole job is to tell truth from artefact.
+const { browser, page } = await open({ headless: true, width: 1600, height: 900 });
 const loadMs = await login(page, NAME);
 
 const look = () =>
@@ -61,15 +79,39 @@ const look = () =>
       wood: g.wallet?.wood ?? 0, ore: g.wallet?.ore ?? 0, herb: g.wallet?.herb ?? 0,
       items: g.items?.length ?? 0,
       gatherLevel: g.gatherLevel ?? 0,
+      // WHAT IT IS HOLDING. Not decoration: the header above quotes fist
+      // arithmetic that no new character can reproduce since every one of them
+      // is handed a Notched Dirk, and the only defence against that paragraph
+      // going stale a second time is the run stating the weapon out loud.
+      weapon: g.items?.find?.((i) => i.slot === "weapon" && i.equipped)?.weaponType ?? "fists",
       x: g.playerX, y: g.playerY,
     };
   });
 
 const start = await look();
-console.log(`${NAME} enters the world in ${(loadMs / 1000).toFixed(1)}s at level ${start.level}, ${start.hp}/${start.maxHp} hp, ${start.items} items\n`);
+console.log(
+  `${NAME} enters the world in ${(loadMs / 1000).toFixed(1)}s at level ${start.level}, ` +
+    `${start.hp}/${start.maxHp} hp, ${start.items} items, holding ${start.weapon}\n`,
+);
 
 const keys = await page.evaluate(() => window.__wieldbound.hotbar?.layout?.keys ?? []);
-const dirs = [["w"], ["w", "d"], ["d"], ["s", "d"], ["s"], ["s", "a"], ["a"], ["w", "a"]];
+// THE SAME CLOSED LOOP `guidedopening.mjs` HAD, and it distorts this run in the
+// same direction: eight headings walked in equal legs returns to where it
+// started, so a bot meant to be "walking out and fighting" circles inside the
+// walls where nothing spawns. `driver.mjs` writes the trap down; both files
+// fell into it anyway. A persistent heading, turned by an angle that does not
+// divide the circle, and pushed outward while near spawn.
+const KEYS_FOR = (angle) => {
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const keys = [];
+  if (dy < -0.38) keys.push("w");
+  if (dy > 0.38) keys.push("s");
+  if (dx > 0.38) keys.push("d");
+  if (dx < -0.38) keys.push("a");
+  return keys.length ? keys : ["w"];
+};
+let heading = Math.random() * Math.PI * 2;
 const t0 = Date.now();
 const endAt = t0 + MINUTES * 60000;
 let deaths = 0;
@@ -95,7 +137,14 @@ while (Date.now() < endAt) {
       await page.waitForTimeout(220);
     }
   } else {
-    await step(page, dirs[i++ % dirs.length], 700);
+    const here = await look();
+    const fromSpawn = Math.hypot(here.x - PLAYER_SPAWN.x, here.y - PLAYER_SPAWN.y);
+    if (fromSpawn < 900) {
+      heading = Math.atan2(here.y - PLAYER_SPAWN.y, here.x - PLAYER_SPAWN.x) + (Math.random() - 0.5) * 0.8;
+    }
+    const leg = await step(page, KEYS_FOR(heading), 700);
+    if (leg.moved < 20) heading += 2.3;
+    if (++i % 8 === 0) heading += 2.3;
   }
 
   const s = await look();
@@ -114,7 +163,10 @@ while (Date.now() < endAt) {
 
 const end = await look();
 console.log(`\nafter ${MINUTES} minutes:`);
-console.log(`  level ${start.level} -> ${end.level},  ${end.hp}/${end.maxHp} hp,  ${end.items} items,  gather level ${end.gatherLevel}`);
+console.log(
+  `  level ${start.level} -> ${end.level},  ${end.hp}/${end.maxHp} hp,  ${end.items} items,  ` +
+    `gather level ${end.gatherLevel},  holding ${end.weapon}`,
+);
 console.log(`  materials: wood ${end.wood}, ore ${end.ore}, herb ${end.herb}`);
 console.log(`  roughly ${deaths} death(s)`);
 console.log(`  it saw a monster ${sightings} times, got within ${closest === Infinity ? "never" : closest.toFixed(0) + "px"}, and swung ${swings} times; xp ${start.xp} -> ${end.xp}`);

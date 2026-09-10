@@ -22338,3 +22338,117 @@ and only eight had been named. Ambiguity is refused rather than guessed, since
 `Orc.gltf` and `Orc_Skull.gltf` would both answer to a loose prefix.
 
 Suite unaffected — this milestone adds one soak harness and no game code.
+
+**Phase 70 M70.226 — the guided opening was measuring a character who took no
+quests.** Re-ran `guidedopening.mjs` to check the starting weapon and the
+rewritten Herald advice end to end. It reported taking work from both givers,
+gathering, and reaching level 1 with 15 xp. Then a probe of `questTracker` came
+back `active: []`, `done: []`.
+
+CLICKING THE QUEST ROW DOES NOT TAKE THE QUEST. It shows the brief and offers a
+second row, "I'll do it." — read it, then commit — and that second click is the
+accept. The harness clicked the first row, pressed Escape, and printed "took
+work from Warden Cabel". Every run this file has ever produced was of a
+character carrying no quests at all, which makes it a measurement of the exact
+opposite of what it claims. It now clicks the confirm row AND checks the tracker
+changed, because a click that lands on nothing throws nothing.
+
+Three more faults in the same file, all of the same family — the tool reporting
+something it had not established:
+
+  * it gave up gathering the instant every nearby node was mid-respawn.
+    `GATHER_RESPAWN_MS` is 8000, so a bot that just stripped the cluster it is
+    standing in sees everything spent for eight seconds. The output read "wood
+    20 -> 32 (gave up)", which looks like a world running out of trees.
+  * it never gathered herb at all, while one of the two quests it "took" is paid
+    in 25 of it. A missing phase is a harsher lie than a wrong number, because
+    there is nothing in the output to disbelieve.
+  * its fight phase walked eight headings in equal legs — the closed loop
+    `driver.mjs` writes down as a trap — so it circled inside the walls where
+    nothing spawns. Seven minutes produced sixteen real swings, reported as "129
+    swings" (those are keypresses at five a second against a 1595ms cooldown).
+
+And the summary printed level while hiding xp, so "level 1 -> 1" could not be
+read: four experience short of level two and killed-nothing print the same line.
+It now prints xp against the threshold, kills counted by an in-page tick, how
+long the fight phase actually got — the gather caps total ten of a twelve-minute
+budget, so it can be starved to nothing — and where each quest ended up.
+
+`firstminutes.mjs` had the same closed loop and a stale premise: it opens by
+quoting fist arithmetic (45%, ~0.68 a swing, 26 seconds per slime) that no new
+character can reproduce since M70.21x hands them all a Notched Dirk, and it
+still quoted the Herald as saying "gather from the bushes in the square" — an
+advice line corrected in the game in M70.215, whose quote outlived the fix one
+file away. Both labelled, and the run now prints the weapon it is holding so the
+paragraph cannot rot silently a second time.
+
+Two things checked and found sound, recorded so they are not re-investigated:
+the game gathers wood correctly (standing at a tree pays +2 in 9s), and Cabel's
+"four slimes, east gate" is true — `slime-a` sits at angle 0, radius 1320, and a
+diamond pack is exactly four.
+
+**Phase 70 M70.226b — every band radius in the camp layout was wrong.** The
+headings in `server/src/index.ts` read 980, 1600, 1900-2000, 1700-1750 and 2050
+against real radii of 1320, 1600, 1900-2000, 2350-2450 and 2750 — band 4's
+heading claimed a ring INSIDE band 3's. The band assignments were all correct,
+which is why it survived: `bandAt` reads `RESOURCE_BAND_RADII` and never these
+headings, so the game was never consulting them and only a reader was.
+
+`camps.mjs` now asserts it off live positions. One-sided, not equality: placing
+a kind one ring further out is how the rings are softened at their edges — band
+3's ground carries spikyblob and armabee camps from band 2 — and what must never
+happen is the reverse, a band-4 creature on band-1 ground in front of a level-1
+player. Scoped to creatures that never crossed the aggro line, because a chase
+drags a monster toward spawn and into easier ground, which would read as exactly
+the fault it hunts.
+
+**Phase 70 M70.227 — gathering is something that happens, not something that
+happened.** Asked for directly: custom gathering animations and effects.
+
+Gathering is the loop the game opens with and the whole of it was a number going
+up. You walked to a tree, stood there, and about three seconds later "+2 wood"
+appeared. Nothing in between — the character did not move, the tree did not
+react — and no way to tell a gather in progress from standing next to a tree
+doing nothing, which are different states and one of them pays. Worse, the three
+seconds are silently discarded in two cases (step out of range; something walks
+into reach and the tick becomes a swing) and with no feedback a player cannot
+learn that either happened. They see a number not arrive.
+
+THE CLIENT COULD NOT FIX THIS ALONE, which is why this is a protocol change and
+not a shader. Gathering was decided entirely by where you were standing —
+`nextGatherAt` is a clock on the server and nothing else — so the client's first
+and only news of it was the wallet. It can see it is near a node; it cannot see
+whether the server agrees, when the clock started, or that the clock was thrown
+away. A progress ring drawn from a guess keeps filling through all three. So
+`GATHER_STATE` now says it, for the same reason `ATTACK_STATE` exists, and is
+sent from every branch of the tick that changes the answer including the two
+that end a gather without paying.
+
+What a player now sees: a PROGRESS ARC on the ground around the node, coloured
+per kind and conformed to the terrain; three BEATS across the gather where the
+character swings (`attack` for tree and rock, `pickup` for a bush — both clips
+were in the library and neither was reachable from gathering) and debris comes
+off the node; and a heavier burst on the payoff. Debris is a new `SkillFx`
+shape: ballistic, aimed away from the player rather than radial, because a
+symmetric puff reads as an explosion and a gather is a thing being hit from one
+side.
+
+The arc is built once and animated with `setDrawRange`. `GroundRing` rebuilds
+128 vertices when it moves and throttles that to 30Hz because terrain sampling
+measured 6.3% of a combat frame; a progress arc changes every frame by
+definition, so rebuilding on change would be that cost every frame for as long
+as anyone gathers. It does not have to: a node does not move, so the vertices
+are correct for the whole gather and only the index range changes.
+
+Measured rather than eyeballed, twice over. The big orange ring in the first
+screenshot was NOT the new arc — it is a pre-existing indicator — and the arc
+was confirmed by reading its centre (1.3 units from the player, on the node),
+radius (1.16) and draw range out of the scene. Debris was confirmed by counting
+live chip meshes: 8 per burst, three bursts through the gather plus the payoff.
+
+`gatherstate.mjs` guards the wire, and its first two assertions were wrong about
+correct code: it demanded `readyInMs` decrease between messages (the server
+sends one message per gather and the client interpolates — streaming a clock
+30Hz per gathering player would be waste) and demanded a null after walking away
+(the null already arrived when the node was spent). Both replaced with what the
+design actually guarantees. Suite 46/46.

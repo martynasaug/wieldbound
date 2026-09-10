@@ -69,6 +69,7 @@ import {
   PLAYER_BODY_RADIUS_PX,
   ATTACK_ORDER_LAPSE_MS,
   type AttackStateMessage,
+  type GatherStateMessage,
   resolveBodyCollision,
   separationFor,
   GLOBAL_COOLDOWN_MS,
@@ -749,27 +750,38 @@ function aliveMonsterBodies(): { x: number; y: number; radiusPx: number }[] {
 }
 
 const monsters: MonsterState[] = [
-  // Band 1 (~980px) — clearable at level 1. Deliberately no camp closer than
+  // Band 1 (1320px) — clearable at level 1. Deliberately no camp closer than
   // this, so spawn and the workbench stay safe ground.
   //
   // Pushed out from 620 when Emberhold was built, and again when the square was
   // widened. A pack reaches 70px in from its own centre, so the number that has
-  // to clear the 800px palisade is 980 - 70 = 910, not 980. "Nothing spawns
+  // to clear the 800px palisade is 1320 - 70 = 1250, not 1320. "Nothing spawns
   // inside the walls" is a rule the Herald says out loud, and a rule stated in
   // dialogue has to be true in the layout — which is why the town test asserts
   // it against the pack's near edge rather than its centre.
+  //
+  // EVERY RADIUS IN THESE HEADINGS WAS WRONG. They read 980, 1600, 1900-2000,
+  // 1700-1750 and 2050 against real radii of 1320, 1600, 1900-2000, 2350-2450
+  // and 2750 — band 4's heading claimed a ring INSIDE band 3's. The band
+  // assignments themselves were all correct, which is exactly why nobody
+  // noticed: `bandAt` reads `RESOURCE_BAND_RADII`, so the game was never
+  // consulting these numbers and only a person was. In a file that explains
+  // itself as thoroughly as this one, a comment that contradicts the line under
+  // it is worse than no comment, because it is the version that gets believed.
+  // The rule going in with them: these are the radii, and `bandAt` is what
+  // decides the band.
   ...ringPack("slime-a", "slime", 1320, 0),
   ...ringPack("mushnub-a", "mushnub", 1320, 90),
   ...ringPack("slime-b", "slime", 1320, 180),
   ...ringPack("mushnub-b", "mushnub", 1320, 270),
 
-  // Band 2 (~1600px)
+  // Band 2 (1600px)
   ...ringPack("goblin-a", "goblin", 1600, 45),
   ...ringPack("spikyblob-a", "spikyblob", 1600, 135),
   ...ringPack("goblin-b", "goblin", 1600, 225),
   ...ringPack("armabee-a", "armabee", 1600, 315),
 
-  // Band 3 (~1900-2000px)
+  // Band 3 (1900-2000px)
   ...ringPack("wolf-a", "wolf", 1900, 20),
   ...ringPack("cactoro-a", "cactoro", 1900, 100),
   ...ringPack("orcbrute-a", "orcbrute", 1900, 200),
@@ -777,7 +789,7 @@ const monsters: MonsterState[] = [
   ...ringPack("spikyblob-b", "spikyblob", 2000, 160),
   ...ringPack("armabee-b", "armabee", 2000, 340),
 
-  // Band 4 (~1700-1750px). Troll and demon come in threes — three things
+  // Band 4 (2350-2450px). Troll and demon come in threes — three things
   // hitting this hard at once is already the whole fight.
   ...ringPack("ghost-a", "ghost", 2350, 70),
   ...ringPack("troll-a", "troll", 2350, 190, TRIANGLE_OFFSETS),
@@ -785,7 +797,7 @@ const monsters: MonsterState[] = [
   ...ringPack("cactoro-b", "cactoro", 2450, 130),
   ...ringPack("orcbrute-b", "orcbrute", 2450, 250),
 
-  // Band 5 (~2050px) — the far corners. Angles are kept off vertical because
+  // Band 5 (2750px) — the far corners. Angles are kept off vertical because
   // the world is wider than it is tall and a pack at 90 degrees would spawn
   // outside the south edge.
   ...ringPack("golem-a", "golem", 2750, 140, TRIANGLE_OFFSETS),
@@ -1528,6 +1540,7 @@ function clearCombatClocks(playerId: string): void {
   weaponXpCache.delete(playerId);
   talentCache.delete(playerId);
   nextGatherAt.delete(playerId);
+  lastGatherKey.delete(playerId);
 }
 
 function sendSkillResult(
@@ -2128,6 +2141,46 @@ function swingIntervalFor(playerId: string, agility: number): number {
 
 /** Tells one client where its swing clock stands. Cheap enough to send on
  *  every change, which is roughly once a swing. */
+/**
+ * Tells one player what they are gathering and how far through it they are.
+ *
+ * Called on every branch of the gather tick that changes the answer, including
+ * the two that END a gather without finishing it — stepping out of range, and
+ * something walking into reach so the tick becomes a swing. Both of those
+ * delete `nextGatherAt` and both were completely silent, which is exactly the
+ * case a client-side guess gets wrong: the ring would keep filling.
+ *
+ * Sent only when the answer changes. The tick runs many times a second and this
+ * is otherwise the same three fields over and over.
+ */
+function sendGatherState(
+  playerId: string,
+  node: ResourceNodeState | null,
+  readyAt: number | undefined,
+  now: number,
+): void {
+  const key = node ? `${node.id}:${readyAt ?? 0}` : "none";
+  if (lastGatherKey.get(playerId) === key) return;
+  lastGatherKey.set(playerId, key);
+  const socket = sockets.get(playerId);
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  const attrs = attributes.get(playerId) ?? EMPTY_ATTRS;
+  const msg: GatherStateMessage = {
+    type: "GATHER_STATE",
+    payload: {
+      nodeId: node?.id ?? null,
+      kind: node?.kind ?? null,
+      readyInMs: readyAt === undefined ? 0 : Math.max(0, readyAt - now),
+      intervalMs: gatherDurationForLevel(gatherLevels.get(playerId) ?? 0, attrs.agility),
+    },
+  };
+  socket.send(JSON.stringify(msg));
+}
+
+/** The last gather state each player was told, so the tick can stay quiet while
+ *  nothing changes. Cleared with the rest of a player's state on disconnect. */
+const lastGatherKey = new Map<string, string>();
+
 function sendAttackState(playerId: string, reason?: string): void {
   const socket = sockets.get(playerId);
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
@@ -4230,7 +4283,13 @@ setInterval(() => {
 
     if (order && target) {
       order.lastInReachAt = now;
+      // A gather in progress is abandoned the moment something is in reach —
+      // this branch is `else` to gathering, and it deletes the clock. That was
+      // silent, and it is the case a client-side progress ring gets most
+      // obviously wrong: a monster wanders in, the player keeps standing at the
+      // tree, and the ring fills to full and pays nothing.
       nextGatherAt.delete(playerId);
+      sendGatherState(playerId, null, undefined, now);
       const interval = swingIntervalFor(playerId, playerAttrs.agility);
       const readyAt = nextAttackAt.get(playerId);
       // First tick in reach only starts the clock — closing to melee has a
@@ -4267,6 +4326,7 @@ setInterval(() => {
     }
     if (!node) {
       nextGatherAt.delete(playerId);
+      sendGatherState(playerId, null, undefined, now);
       continue;
     }
 
@@ -4274,8 +4334,10 @@ setInterval(() => {
     const gatherReadyAt = nextGatherAt.get(playerId);
     if (gatherReadyAt === undefined) {
       nextGatherAt.set(playerId, now + gatherInterval);
+      sendGatherState(playerId, node, now + gatherInterval, now);
       continue;
     }
+    sendGatherState(playerId, node, gatherReadyAt, now);
     if (now < gatherReadyAt) continue;
     nextGatherAt.set(playerId, now + gatherInterval);
 

@@ -77,11 +77,13 @@ import {
   type MonsterState,
   type PlayerState,
   type ResourceNodeState,
+  type ResourceNodeKind,
   type CraftingStationState,
   type DroppedItemState,
   type SkillId,
 } from "../../../shared/protocol-types";
 import { SkillFx, fxFor } from "./skillfx";
+import { GatherFx } from "./gatherfx";
 import { Minimap } from "../ui/Minimap";
 import { GameSocket } from "../net/socket";
 import { CharacterPanel } from "../ui/CharacterPanel";
@@ -737,6 +739,12 @@ export class Game {
   private readonly indicators: Indicators;
   private readonly projectiles: Projectiles;
   private readonly skillFx: SkillFx;
+  private readonly gatherFx: GatherFx;
+  /** What the server last said this player is gathering. Null when not. */
+  private gatherNodeId: string | null = null;
+  /** Where that node stood. Kept after the gather ends because finishing one
+   *  DEPLETES it — see `burstAtGatheredNode`. */
+  private lastGatherNode: { x: number; y: number; z: number } | null = null;
   private readonly minimap: Minimap;
   private readonly shakeScratch = new THREE.Vector3();
   private running = false;
@@ -825,6 +833,18 @@ export class Game {
     const lightPool = new LightPool(this.world.scene);
     this.projectiles = new Projectiles(this.world.scene, lightPool);
     this.skillFx = new SkillFx(this.world.scene, lightPool);
+    // The ground and the debris are the effect module's; the body and the noise
+    // are the game's, because only this class owns the local actor and the
+    // hotbar's idea of what a swing is.
+    this.gatherFx = new GatherFx(this.world.scene, this.skillFx, (kind) => {
+      // Picking is a crouch, chopping and mining are swings. `pickup` and
+      // `attack` are both already in the clip library and neither was reachable
+      // from gathering — see `ActorAnim`.
+      this.localActor?.play(kind === "bush" ? "pickup" : "attack");
+      // Quieter than the completion cue, and pitched under it, so three beats
+      // and a payoff read as one action rather than as four identical events.
+      playSfx("gather", 0.28);
+    });
 
     this.characterPanel = new CharacterPanel(
       (stat) => this.socket.sendAllocateStat(stat),
@@ -906,6 +926,7 @@ export class Game {
             kind: "loot", text: `+${gained} wood`, color: "#c9a26a", headY: 3.2, weight: 0.15,
           });
           playSfx("gather", 0.6);
+          this.burstAtGatheredNode("tree");
         }
         this.wallet.wood = p.wood;
         this.gatherLevel = p.gatherLevel;
@@ -1045,9 +1066,10 @@ export class Game {
         this.herbSeen = true;
         if (gained > 0 && this.localActor) {
           this.floaters.spawn(this.localActor.position, {
-            kind: "loot", text: `+${gained} herb`, color: "#8fd15a", headY: 3.2, weight: 0.15,
+            kind: "loot", text: `+ herb`, color: "#8fd15a", headY: 3.2, weight: 0.15,
           });
           playSfx("gather", 0.6);
+          this.burstAtGatheredNode("bush");
         }
         this.wallet.herb = p.herb;
         this.syncMaterials();
@@ -1057,9 +1079,10 @@ export class Game {
         this.oreSeen = true;
         if (gained > 0 && this.localActor) {
           this.floaters.spawn(this.localActor.position, {
-            kind: "loot", text: `+${gained} ore`, color: "#9fa8b3", headY: 3.2, weight: 0.15,
+            kind: "loot", text: `+ ore`, color: "#9fa8b3", headY: 3.2, weight: 0.15,
           });
           playSfx("gather", 0.6);
+          this.burstAtGatheredNode("rock");
         }
         // Ore's own message resends wood alongside it (a rock-gathering tick
         // touches the same wallet snapshot the tree path does), so this is
@@ -1220,6 +1243,29 @@ export class Game {
       },
       onSkillResult: (p) => this.onSkillResult(p),
       onAttackState: (p) => this.onAttackState(p),
+      // GATHERING, AS SOMETHING THAT IS HAPPENING RATHER THAN SOMETHING THAT
+      // HAPPENED. The client had no notion of a gather in progress at all: the
+      // first it knew was the wallet arriving three seconds later. See
+      // `GatherStateMessage` for why this cannot be inferred locally.
+      onGatherState: (p) => {
+        this.gatherNodeId = p.nodeId;
+        const obj = p.nodeId ? this.nodes.get(p.nodeId) : null;
+        if (!p.nodeId || !p.kind || !obj) {
+          this.gatherFx.end();
+          return;
+        }
+        this.lastGatherNode = { x: obj.position.x, y: obj.position.y, z: obj.position.z };
+        this.gatherFx.begin(
+          p.kind,
+          obj.position.x,
+          obj.position.y,
+          obj.position.z,
+          this.localActor?.position.x ?? obj.position.x,
+          this.localActor?.position.z ?? obj.position.z,
+          p.readyInMs,
+          p.intervalMs,
+        );
+      },
       onWeaponProgress: (p) => this.onWeaponProgress(p),
       onManaUpdate: (p) => {
         this.mana = p.mana;
@@ -1619,6 +1665,7 @@ export class Game {
     // Here the world is built, the lights are all in, and the monster rigs are
     // standing in the scene, so what is compiled is what will be used.
     this.skillFx.prewarm(this.world);
+    this.gatherFx.prewarm(this.world);
     this.projectiles.prewarm(this.world);
     this.effects.prewarm(this.world);
     this.drops.prewarm(this.world);
@@ -4357,6 +4404,26 @@ export class Game {
    * The swing clock and whether an attack order stands. Both come from the
    * server, which owns the timer; the client only draws it.
    */
+  /**
+   * The flourish when a gather actually pays.
+   *
+   * Fired off the WALLET, not off the gather clock, because the wallet is the
+   * only message that means "you were paid" — the clock reaching zero does not,
+   * since the server can and does abandon a gather that has run its full time.
+   *
+   * THE NODE IS ALREADY GONE BY THE TIME THIS RUNS. Completing a gather is what
+   * depletes the node, so `gatherNodeId` has usually been cleared to null by a
+   * `GATHER_STATE` that arrived first, and looking the node up by that id finds
+   * nothing. So the last known node position is kept and used, and if there is
+   * no plausible one the burst is simply skipped — a spray of wood chips at the
+   * world origin is worse than no spray at all.
+   */
+  private burstAtGatheredNode(kind: ResourceNodeKind): void {
+    const obj = this.lastGatherNode;
+    if (!obj) return;
+    this.gatherFx.celebrate(kind, obj.x, obj.y, obj.z);
+  }
+
   private onAttackState(p: {
     attacking: boolean;
     readyInMs: number;
@@ -4666,6 +4733,7 @@ export class Game {
     this.updateWeaponAura();
     this.projectiles.update();
     this.skillFx.update();
+    this.gatherFx.update();
     this.drops.update(performance.now());
     this.profiler.end("fx");
     // After the actors have moved and before the frame is drawn, so a number

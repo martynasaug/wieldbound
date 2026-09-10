@@ -46,6 +46,8 @@ export interface GameSocketHandlers {
   onCastState: (payload: Extract<ServerToClientMessage, { type: "CAST_STATE" }>["payload"]) => void;
   onStatusTick: (payload: Extract<ServerToClientMessage, { type: "STATUS_TICK" }>["payload"]) => void;
   onAttackState: (payload: Extract<ServerToClientMessage, { type: "ATTACK_STATE" }>["payload"]) => void;
+  /** What the player is gathering right now, and how far through it. */
+  onGatherState: (payload: Extract<ServerToClientMessage, { type: "GATHER_STATE" }>["payload"]) => void;
   onWeaponProgress: (payload: Extract<ServerToClientMessage, { type: "WEAPON_PROGRESS" }>["payload"]) => void;
   /** Every quest taken and every quest finished. Whole set, like the recipes. */
   onQuestState: (payload: Extract<ServerToClientMessage, { type: "QUEST_STATE" }>["payload"]) => void;
@@ -150,6 +152,8 @@ export class GameSocket {
       this.handlers.onStatusTick(msg.payload);
     } else if (msg.type === "ATTACK_STATE") {
       this.handlers.onAttackState(msg.payload);
+    } else if (msg.type === "GATHER_STATE") {
+      this.handlers.onGatherState(msg.payload);
     } else if (msg.type === "WEAPON_PROGRESS") {
       this.handlers.onWeaponProgress(msg.payload);
     } else if (msg.type === "QUEST_STATE") {

@@ -155,6 +155,19 @@ interface Live {
   /** Vertical travel, for falling streaks. */
   fallFrom?: number;
   fallTo?: number;
+  /**
+   * Velocity in world units per second, integrated under `gravity`.
+   *
+   * The existing motion here is `fallFrom`/`fallTo` — a straight vertical
+   * interpolation, which is a curtain of rain and is not a chip of wood coming
+   * off an axe. Debris needs to leave in the direction it was struck, arc, and
+   * land, and that is an initial velocity and an acceleration rather than two
+   * endpoints. Kept optional so every existing shape is untouched.
+   */
+  vel?: { x: number; y: number; z: number };
+  gravity?: number;
+  /** Where the particle started, since `vel` integrates from it. */
+  origin?: { x: number; y: number; z: number };
   spin: number;
   /**
    * The opacity this shape is meant to peak at.
@@ -210,6 +223,9 @@ export class SkillFx {
   private readonly ring = new THREE.RingGeometry(0.86, 1, 48);
   private readonly disc = new THREE.CircleGeometry(1, 40);
   private readonly streak = new THREE.PlaneGeometry(0.07, 1.7);
+  /** A chip of whatever just got hit. Small, and not square, so a spray of them
+   *  reads as splinters rather than as confetti. */
+  private readonly chip = new THREE.PlaneGeometry(0.085, 0.13);
   private readonly wedge: THREE.BufferGeometry;
 
   constructor(
@@ -290,7 +306,10 @@ export class SkillFx {
    * exactly this reason.
    */
   private static readonly ADDITIVE_POOL_SIZE = 48;
-  private static readonly NORMAL_POOL_SIZE = 16;
+  // Raised from 16 with `debris`, which takes seven materials in one call and
+  // can be asked for another burst while the first is still in the air. The
+  // pool is shared with `ground`, whose discs linger for most of a second.
+  private static readonly NORMAL_POOL_SIZE = 40;
   private static readonly MARK_POOL_SIZE = 16;
   private readonly additivePool: THREE.MeshBasicMaterial[] = [];
   private readonly normalPool: THREE.MeshBasicMaterial[] = [];
@@ -339,6 +358,17 @@ export class SkillFx {
    *  faded it to. */
   private acquireAdditive(color: number): THREE.MeshBasicMaterial | null {
     const mat = this.freeAdditive.pop();
+    if (!mat) return null;
+    mat.color.set(color);
+    mat.opacity = 1;
+    return mat;
+  }
+
+  /** The same, from the non-additive pool. `ground` inlined this pop for one
+   *  material; `debris` takes seven at a time, and a burst that half-appears
+   *  because the pool ran dry mid-loop is worse than one that does not fire. */
+  private acquireNormal(color: number): THREE.MeshBasicMaterial | null {
+    const mat = this.freeNormal.pop();
     if (!mat) return null;
     mat.color.set(color);
     mat.opacity = 1;
@@ -514,6 +544,56 @@ export class SkillFx {
   }
 
   /**
+   * A burst of debris thrown out of a point — chips off a tree, splinters of
+   * stone, torn leaves.
+   *
+   * Aimed rather than radial: `awayX`/`awayZ` is the direction the strike came
+   * FROM, and the spray is biased along it. A symmetric puff reads as an
+   * explosion, and a gather is a thing being hit from one side.
+   *
+   * Uses the normal pool, not the additive one. Wood chips are not luminous,
+   * and additive blending on a bright day washes them out to white — the same
+   * saturation problem `peakOpacity` exists to solve for the spell shapes.
+   */
+  debris(
+    x: number, y: number, z: number,
+    color: number,
+    awayX: number, awayZ: number,
+    count = 7,
+    speed = 2.6,
+  ): void {
+    const now = performance.now();
+    const len = Math.hypot(awayX, awayZ) || 1;
+    const ax = awayX / len;
+    const az = awayZ / len;
+    for (let i = 0; i < count; i++) {
+      const mat = this.acquireNormal(color);
+      if (!mat) continue;
+      const mesh = new THREE.Mesh(this.chip, mat);
+      mesh.position.set(x, y, z);
+      mesh.renderOrder = 3;
+      // Spread around the away-direction rather than around the circle.
+      const spread = (Math.random() - 0.5) * 1.5;
+      const dx = ax * Math.cos(spread) - az * Math.sin(spread);
+      const dz = ax * Math.sin(spread) + az * Math.cos(spread);
+      const s = speed * (0.55 + Math.random() * 0.8);
+      this.scene.add(mesh);
+      this.live.push({
+        object: mesh,
+        material: mat,
+        startedAt: now + i * 12,
+        durationMs: 520 + Math.random() * 260,
+        fromRadius: 1, toRadius: 1, spin: 0,
+        peakOpacity: 0.95,
+        pool: "normal",
+        origin: { x, y, z },
+        vel: { x: dx * s, y: 1.8 + Math.random() * 2.2, z: dz * s },
+        gravity: 11,
+      });
+    }
+  }
+
+  /**
    * A brief point light. Cheap, and it is what makes a firebolt read as hot
    * rather than as an orange picture — especially now that the world has a
    * night to cast it in.
@@ -554,6 +634,22 @@ export class SkillFx {
       if (fx.fallFrom !== undefined && fx.fallTo !== undefined) {
         fx.object.position.y = fx.fallFrom + (fx.fallTo - fx.fallFrom) * k;
         fx.object.scale.set(1, 1, 1);
+      }
+      // Ballistic debris. Integrated from the origin against absolute age
+      // rather than stepped per frame, so a dropped frame moves a chip to where
+      // it should be instead of leaving it behind — the same reason the rest of
+      // this loop is written against `k` and not against a delta.
+      if (fx.vel && fx.origin) {
+        const t = age / 1000;
+        const g = fx.gravity ?? 9.8;
+        fx.object.position.set(
+          fx.origin.x + fx.vel.x * t,
+          Math.max(0.03, fx.origin.y + fx.vel.y * t - 0.5 * g * t * t),
+          fx.origin.z + fx.vel.z * t,
+        );
+        fx.object.scale.set(1, 1, 1);
+        fx.object.rotation.x += 0.22;
+        fx.object.rotation.y += 0.17;
       }
       if (fx.spin) fx.object.rotation.z += fx.spin * 0.016;
       // Hold at the shape's own peak, then fade. Fading from the first frame

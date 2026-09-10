@@ -4320,6 +4320,41 @@ export interface AttackStateMessage {
   };
 }
 
+/**
+ * That the player is gathering, what from, and how far through the swing.
+ *
+ * Gathering was the one action in the game with no state on the wire at all.
+ * It is decided entirely by where you are standing — `nextGatherAt` is a clock
+ * on the server and nothing else — so the client's first and only news of it
+ * was the wallet going up three seconds later. Everything a player could see
+ * of gathering therefore happened after it was over: a floater and a sound,
+ * with three seconds of nothing in front of them.
+ *
+ * That is not a presentation gap that can be closed on the client. The client
+ * can see that it is standing near a node, but not whether the server agrees,
+ * not when the clock started, and not that the clock was silently discarded —
+ * which it is, every time the player steps out of range or something walks
+ * into reach and turns the tick into a swing instead. A progress ring drawn
+ * from a guess would keep filling through all three of those.
+ *
+ * So the server says it, for the same reason `ATTACK_STATE` exists: re-deriving
+ * a state machine on the client is how a bar ends up disagreeing with the thing
+ * it is a bar for.
+ */
+export interface GatherStateMessage {
+  type: "GATHER_STATE";
+  payload: {
+    /** The node being worked, or null when the player is not gathering. */
+    nodeId: string | null;
+    kind: ResourceNodeKind | null;
+    /** Milliseconds until this gather completes. */
+    readyInMs: number;
+    /** What a full gather costs at this player's speed, so the client can draw
+     *  a fraction without knowing the formula. */
+    intervalMs: number;
+  };
+}
+
 export interface UpgradeGatherSpeedMessage {
   type: "UPGRADE_GATHER_SPEED";
 }
@@ -4598,6 +4633,7 @@ export type ServerToClientMessage =
   | StatsUpdateMessage
   | BattleResultMessage
   | AttackStateMessage
+  | GatherStateMessage
   | WeaponProgressMessage
   | MonsterAttackMessage
   | PotionsUpdateMessage
