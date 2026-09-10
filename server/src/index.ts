@@ -1541,6 +1541,7 @@ function clearCombatClocks(playerId: string): void {
   talentCache.delete(playerId);
   nextGatherAt.delete(playerId);
   lastGatherKey.delete(playerId);
+  gatherJustPaid.delete(playerId);
 }
 
 function sendSkillResult(
@@ -2158,8 +2159,12 @@ function sendGatherState(
   node: ResourceNodeState | null,
   readyAt: number | undefined,
   now: number,
+  ended?: "done" | "left" | "busy",
 ): void {
-  const key = node ? `${node.id}:${readyAt ?? 0}` : "none";
+  // The reason is part of the key. Without it a "left" arriving after a "done"
+  // is deduplicated away as "the same null", and the player who walked off
+  // mid-gather is told nothing — which is the exact case this field exists for.
+  const key = node ? `${node.id}:${readyAt ?? 0}` : `none:${ended ?? ""}`;
   if (lastGatherKey.get(playerId) === key) return;
   lastGatherKey.set(playerId, key);
   const socket = sockets.get(playerId);
@@ -2172,6 +2177,7 @@ function sendGatherState(
       kind: node?.kind ?? null,
       readyInMs: readyAt === undefined ? 0 : Math.max(0, readyAt - now),
       intervalMs: gatherDurationForLevel(gatherLevels.get(playerId) ?? 0, attrs.agility),
+      ...(ended ? { ended } : {}),
     },
   };
   socket.send(JSON.stringify(msg));
@@ -2180,6 +2186,11 @@ function sendGatherState(
 /** The last gather state each player was told, so the tick can stay quiet while
  *  nothing changes. Cleared with the rest of a player's state on disconnect. */
 const lastGatherKey = new Map<string, string>();
+
+/** Players who were paid on this tick, so the null that follows can say the
+ *  gather FINISHED rather than that it was interrupted. See the `!node`
+ *  branch of the gather tick. */
+const gatherJustPaid = new Set<string>();
 
 function sendAttackState(playerId: string, reason?: string): void {
   const socket = sockets.get(playerId);
@@ -4288,8 +4299,9 @@ setInterval(() => {
       // silent, and it is the case a client-side progress ring gets most
       // obviously wrong: a monster wanders in, the player keeps standing at the
       // tree, and the ring fills to full and pays nothing.
+      const wasGathering = nextGatherAt.has(playerId);
       nextGatherAt.delete(playerId);
-      sendGatherState(playerId, null, undefined, now);
+      sendGatherState(playerId, null, undefined, now, wasGathering ? "busy" : undefined);
       const interval = swingIntervalFor(playerId, playerAttrs.agility);
       const readyAt = nextAttackAt.get(playerId);
       // First tick in reach only starts the clock — closing to melee has a
@@ -4325,8 +4337,28 @@ setInterval(() => {
       }
     }
     if (!node) {
+      // WHICH ENDING THIS IS, and the server is the only one that can tell.
+      //
+      // Completing a gather DEPLETES the node, so the very next tick finds
+      // nothing in range and arrives here — byte for byte the same state as a
+      // player who walked away mid-gather. `gatherJustPaid` is set at the
+      // moment of payment and consumed here, which separates them exactly
+      // rather than by guessing from timing.
+      //
+      // "left" is only claimed when a clock was actually running. Standing in
+      // an empty field is not an interrupted gather, and telling a player their
+      // gather was interrupted when they never started one is worse than
+      // silence.
+      const wasGathering = nextGatherAt.has(playerId);
+      const paid = gatherJustPaid.delete(playerId);
       nextGatherAt.delete(playerId);
-      sendGatherState(playerId, null, undefined, now);
+      sendGatherState(
+        playerId,
+        null,
+        undefined,
+        now,
+        paid ? "done" : wasGathering ? "left" : undefined,
+      );
       continue;
     }
 
@@ -4344,6 +4376,10 @@ setInterval(() => {
     {
       node.status = "depleted";
       nodeRespawnAt.set(node.id, now + GATHER_RESPAWN_MS);
+      // Consumed by the `!node` branch on the next tick, which is where the
+      // ending is reported. Set here because this is the only place in the
+      // whole loop that constitutes being paid.
+      gatherJustPaid.add(playerId);
 
       // How much depends on where the node stands. One gather used to be worth
       // exactly one wherever it happened, which made the ground the one part of

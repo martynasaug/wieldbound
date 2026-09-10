@@ -1267,7 +1267,15 @@ export class Game {
         this.gatherNodeId = p.nodeId;
         const obj = p.nodeId ? this.nodes.get(p.nodeId) : null;
         if (!p.nodeId || !p.kind || !obj) {
-          this.gatherFx.end();
+          // A gather that PAID and a gather that was cut off both end with the
+          // node gone, and they are opposite events for the player. Only the
+          // server can tell them apart — see `GatherStateMessage.ended`.
+          if (p.ended === "left" || p.ended === "busy") {
+            this.gatherFx.interrupt();
+            this.noteGatherInterrupted(p.ended);
+          } else {
+            this.gatherFx.end();
+          }
           return;
         }
         this.lastGatherNode = { x: obj.position.x, y: obj.position.y, z: obj.position.z };
@@ -4435,6 +4443,35 @@ export class Game {
    * no plausible one the burst is simply skipped — a spray of wood chips at the
    * world origin is worse than no spray at all.
    */
+  /**
+   * Says, in words, why a gather just stopped paying.
+   *
+   * The red arc says progress was lost; it cannot say what to do differently.
+   * That is what the line is for, and it is the rule a player otherwise has to
+   * infer from a reward that did not arrive: you have to stand still, and you
+   * cannot gather with something on you.
+   *
+   * RATE LIMITED, HARD. Walking along a line of bushes clips the edge of each
+   * one, and a message per clip is a wall of text that teaches nothing. Once
+   * every twenty seconds is enough to be learned and rare enough to stay
+   * meaningful — and the two reasons are limited separately, since they are
+   * different lessons and one should not silence the other.
+   */
+  private noteGatherInterrupted(reason: "left" | "busy"): void {
+    const now = performance.now();
+    if (now - (this.gatherNoteAt.get(reason) ?? -Infinity) < 20000) return;
+    this.gatherNoteAt.set(reason, now);
+    this.combatLog.push(
+      reason === "busy"
+        ? "You break off gathering — you cannot work with something on you."
+        : "You stopped gathering by moving away.",
+      "#c4926a",
+    );
+  }
+
+  /** Last time each interruption reason was explained. See above. */
+  private readonly gatherNoteAt = new Map<string, number>();
+
   private burstAtGatheredNode(kind: ResourceNodeKind): void {
     const obj = this.lastGatherNode;
     if (!obj) return;

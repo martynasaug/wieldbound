@@ -166,6 +166,50 @@ ws.on("open", async () => {
     }
   }
 
+  // AND A GATHER THAT WAS CUT OFF SAYS SO.
+  //
+  // "Paid" and "interrupted" both end with the node gone and are opposite
+  // events for the player — one of them cost them three seconds for nothing.
+  // The client cannot tell them apart, so if `ended` ever stops being set
+  // correctly the red arc and the explanation silently become a lie about a
+  // gather that actually succeeded, or stay silent about one that failed.
+  //
+  // Standing out of range while the node respawns is load-bearing. With the
+  // character in range when it comes back, the server starts a gather at once
+  // and the walk-away lands in the middle of one that began seconds earlier —
+  // which is what the first version of this measured, and it reported "done".
+  const awayX = x + 400;
+  for (let i = 0; i < 14; i++) { send({ type: "MOVE", payload: { x: awayX, y } }); await sleep(60); }
+  await sleep(9000);
+  x = awayX;
+  for (let i = 0; i < 30; i++) {
+    const dx = target.x - x;
+    const dy = target.y - y;
+    const d = Math.hypot(dx, dy);
+    if (d <= INTERACTION_RANGE_PX * 0.5) break;
+    const s = Math.min(40, d);
+    x += (dx / d) * s;
+    y += (dy / d) * s;
+    send({ type: "MOVE", payload: { x, y } });
+    await sleep(45);
+  }
+  states.length = 0;
+  // Well under one full gather, so there is progress to lose.
+  for (let i = 0; i < 9; i++) { send({ type: "MOVE", payload: { x, y } }); await sleep(120); }
+  for (let i = 0; i < 14; i++) { x += 30; send({ type: "MOVE", payload: { x, y } }); await sleep(60); }
+  await sleep(700);
+  const endings = states.map((s) => s.ended).filter(Boolean);
+  if (!endings.includes("left")) {
+    fail(
+      `walking off mid-gather reported ${JSON.stringify(endings)} rather than "left" — ` +
+        "the player is told nothing, or told they finished",
+    );
+  } else if (endings.includes("done")) {
+    fail('walking off mid-gather also reported "done" — an interrupted gather claiming it paid');
+  } else {
+    console.log('  walking off mid-gather is reported as "left"');
+  }
+
   for (const p of problems) console.error(`  FAIL  ${p}`);
   console.log(problems.length === 0 ? "\nOK — gathering is on the wire." : `\n${problems.length} failure(s).`);
   ws.close();

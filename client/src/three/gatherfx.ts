@@ -67,6 +67,10 @@ const KIND_LOOK: Record<
 const SEGMENTS = 72;
 /** How long one flinch takes to play out and settle. */
 const RECOIL_MS = 340;
+/** An interrupted gather goes this colour and fades, so losing progress does
+ *  not look the same as finishing. */
+const INTERRUPT_COLOR = 0xc4543f;
+const INTERRUPT_FADE_MS = 420;
 /** Where the arc sits relative to the node's footprint. Wide enough to read as
  *  belonging to the node rather than to the player standing at it. */
 const ARC_RADIUS = 1.15;
@@ -189,6 +193,8 @@ class ProgressArc {
  */
 export class GatherFx {
   private readonly arcs = new Map<ResourceNodeKind, ProgressArc>();
+  /** An arc playing out its interrupted fade, which outlives `current`. */
+  private fading: { arc: ProgressArc; startedAt: number; progress: number } | null = null;
   private current: {
     kind: ResourceNodeKind;
     x: number;
@@ -323,6 +329,32 @@ export class GatherFx {
     return Math.max(0, Math.min(GatherFx.BEATS, Math.floor(done * GatherFx.BEATS)));
   }
 
+  /**
+   * A gather ended without paying — walked out of range, or something came
+   * into reach and the tick became a swing.
+   *
+   * The arc does not simply vanish, because vanishing is what SUCCESS looks
+   * like and the whole point is that these are different. It stops where it
+   * got to, goes red, and fades — so the player sees the progress they had and
+   * sees it lost, which is the sentence that teaches the rule.
+   */
+  interrupt(): void {
+    const cur = this.current;
+    if (!cur) { this.end(); return; }
+    const arc = this.arcFor(cur.kind);
+    this.fading = {
+      arc,
+      startedAt: performance.now(),
+      // Held where it stopped: an arc that keeps filling as it fades says the
+      // gather completed, and an arc that empties says it rewound. Neither
+      // happened — it was cut off here.
+      progress: Math.max(0, Math.min(1, 1 - (cur.endsAt - performance.now()) / cur.durationMs)),
+    };
+    arc.material.color.set(INTERRUPT_COLOR);
+    this.restore();
+    this.current = null;
+  }
+
   /** The server says this player is not gathering. */
   end(): void {
     // PUT THE NODE BACK. A gather can end on any frame, including one where the
@@ -333,6 +365,31 @@ export class GatherFx {
     this.restore();
     this.current = null;
     this.hideAll();
+  }
+
+  /** Runs the red fade of an interrupted arc, and puts its colour back when
+   *  done — the arcs are reused, so a red one left red would tint the next
+   *  perfectly good gather. */
+  private updateFade(): void {
+    const f = this.fading;
+    if (!f) return;
+    const k = (performance.now() - f.startedAt) / INTERRUPT_FADE_MS;
+    if (k >= 1) {
+      f.arc.mesh.visible = false;
+      f.arc.setProgress(0);
+      f.arc.material.opacity = 0.85;
+      f.arc.material.color.set(this.baseColorOf(f.arc));
+      this.fading = null;
+      return;
+    }
+    f.arc.mesh.visible = true;
+    f.arc.setProgress(f.progress);
+    f.arc.material.opacity = 0.85 * (1 - k);
+  }
+
+  private baseColorOf(arc: ProgressArc): number {
+    for (const [kind, a] of this.arcs) if (a === arc) return KIND_LOOK[kind].arc;
+    return 0xffffff;
   }
 
   private restore(): void {
@@ -359,6 +416,7 @@ export class GatherFx {
   }
 
   update(): void {
+    this.updateFade();
     const cur = this.current;
     if (!cur) return;
     const now = performance.now();

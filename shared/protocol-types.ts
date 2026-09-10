@@ -4352,6 +4352,22 @@ export interface GatherStateMessage {
     /** What a full gather costs at this player's speed, so the client can draw
      *  a fraction without knowing the formula. */
     intervalMs: number;
+    /**
+     * Why a gather ended, when one did. Absent while gathering.
+     *
+     * THE CLIENT CANNOT WORK THIS OUT. Every ending looks identical from
+     * there — `nodeId` goes null — and the three are completely different
+     * events: "done" is the node being spent by a gather that paid, "left" is
+     * walking out of the forty-pixel interaction radius, and "busy" is
+     * something coming into reach, which turns the tick into a swing and
+     * discards the gather clock entirely.
+     *
+     * Two of those cost the player the seconds they had already put in, and
+     * with no way to tell them apart the player just sees a reward not arrive.
+     * That is the single most confusing thing about gathering and it is not
+     * fixable anywhere but here.
+     */
+    ended?: "done" | "left" | "busy";
   };
 }
 

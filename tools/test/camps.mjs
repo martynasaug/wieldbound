@@ -211,18 +211,44 @@ ws.on("open", async () => {
   //
   // Read off live positions rather than off a copy of the layout table, so it
   // is the world being checked and not a second transcription of it.
-  const misplaced = [];
-  for (const id of seen) {
+  // BANDED BY CAMP, NOT BY CREATURE, and the difference is not academic.
+  //
+  // The per-creature form of this failed against a correct world: "ghost (band
+  // 4) on band-3 ground". The ghost camp is centred at 2350 and the band-3/4
+  // boundary is 2250, so with a pack reaching 70px in from its own centre and a
+  // 90px wander leash, an individual ghost legitimately stands on band-3 ground
+  // while its camp does not. Several camps sit within one leash of a boundary.
+  // The check was measuring wander — which the leash check above already covers
+  // — and calling it placement.
+  //
+  // A camp is the unit that was placed, so a camp is the unit to judge, and
+  // averaging its members cancels the wander that broke the per-creature form.
+  // Single-link clustering at 200px: pack members sit 70-140px from each other
+  // and the nearest two camps are more than 700px apart, so the threshold is
+  // nowhere near either edge.
+  const clusters = [];
+  for (const id of undisturbed) {
     const a = first.get(id);
-    const declared = MONSTER_STATS[a.kind]?.band;
-    if (!declared) continue;
-    const ground = bandAt(Math.hypot(a.x - PLAYER_SPAWN.x, a.y - PLAYER_SPAWN.y));
-    if (ground < declared) misplaced.push(`${a.kind} (band ${declared}) on band-${ground} ground`);
+    if (!MONSTER_STATS[a.kind]?.band) continue;
+    const near = clusters.find(
+      (c) => c.kind === a.kind && Math.hypot(c.x / c.n - a.x, c.y / c.n - a.y) < 400,
+    );
+    if (near) { near.x += a.x; near.y += a.y; near.n++; }
+    else clusters.push({ kind: a.kind, x: a.x, y: a.y, n: 1 });
+  }
+  const misplaced = [];
+  for (const c of clusters) {
+    const declared = MONSTER_STATS[c.kind].band;
+    const d = Math.hypot(c.x / c.n - PLAYER_SPAWN.x, c.y / c.n - PLAYER_SPAWN.y);
+    const ground = bandAt(d);
+    if (ground < declared) {
+      misplaced.push(`${c.kind} (band ${declared}) camped at ${d.toFixed(0)}px, band-${ground} ground`);
+    }
   }
   if (misplaced.length) {
-    fail(`camps on ground easier than their kind: ${[...new Set(misplaced)].join(", ")}`);
+    fail(`camps on ground easier than their kind: ${misplaced.join(", ")}`);
   } else {
-    console.log(`  all  undisturbed creatures stand on ground no easier than their declared band`);
+    console.log(`  all ${clusters.length} camps sit on ground no easier than their declared band`);
   }
 
   for (const p of problems) console.error(`  FAIL  ${p}`);

@@ -22496,3 +22496,58 @@ at 1.18. Tree and bush were not reached in that run — the walker could not get
 back to one — so what is verified is the wiring and the rock, not all three.
 
 Suite 46/46.
+
+**Phase 70 M70.229 — a gather that is cut off says so.** The last piece of the
+problem M70.227 opened with. Gathering is abandoned in two cases — you step
+outside the forty-pixel radius, or something comes into reach and the tick
+becomes a swing — and both cost the player the seconds they had already put in.
+Both were silent, and a player could only ever infer them from a reward that did
+not arrive.
+
+THE CLIENT CANNOT WORK OUT WHICH ENDING IT IS. All three look identical from
+there: `nodeId` goes null. Completing a gather DEPLETES the node, so the tick
+after a payment finds nothing in range and reports exactly what a player walking
+away reports. So `GATHER_STATE` now carries `ended: "done" | "left" | "busy"`,
+separated on the server by a `gatherJustPaid` flag set at the one line in the
+loop that constitutes being paid — exact, rather than guessed from timing.
+
+Two details that would each have silently broken it. The reason is part of the
+dedup key, or a "left" arriving after a "done" is collapsed as "the same null"
+and the player who walked off is told nothing — the exact case the field exists
+for. And "left" is only claimed when a clock was actually running: standing in
+an empty field is not an interrupted gather, and telling someone their gather
+was interrupted when they never started one is worse than silence.
+
+What it looks like: the arc stops where it got to, turns red and fades. It does
+not simply vanish, because vanishing is what SUCCESS looks like and the entire
+point is that these are different. Held at the progress reached rather than
+continuing to fill (which would claim it finished) or emptying (which would
+claim it rewound) — neither happened; it was cut off there. Plus a line in the
+log naming the rule, rate limited to once per twenty seconds PER REASON, since
+walking along a line of bushes clips the edge of each one and a message per clip
+teaches nothing.
+
+Verified on the wire and on screen. Standing still gives `gathering, done, null`;
+walking off mid-gather gives `gathering, left, null`. The arc was read out of the
+scene mid-interrupt: colour `#c4543f`, opacity 0.82 and falling, draw range
+frozen at 264 of 432. Getting there took three attempts, and the first two were
+the instrument: the fade is 420ms and a player leaves the radius within about
+180ms of moving, so a sample taken after a 700ms walk returns lands after the
+whole thing is over. Both attempts read as "the interrupt never fires".
+
+AND THE BAND ASSERTION ADDED IN M70.226b WAS WRONG, caught by the suite: "ghost
+(band 4) on band-3 ground". The ghost camp is centred at 2350 and the band-3/4
+boundary is 2250, so with a pack reaching 70px in from its centre and a 90px
+wander leash, an individual ghost legitimately stands on band-3 ground while its
+camp does not. It was measuring wander — which the leash check already covers —
+and calling it placement. A camp is the unit that was placed, so camps are now
+clustered and their centroids judged, which cancels the wander.
+
+The clustering threshold is 400px and was 200 first: at 200 a camp split in two,
+27 clusters against 21 real packs, and a half-camp centroid is pulled far enough
+off centre to land on the wrong side of a nearby boundary — an intermittent
+failure on the ghost camp specifically, which is the worst kind to ship. Two
+camps of the same kind are thousands of pixels apart, so 400 cannot merge two
+real ones. Stable across three consecutive runs at 21 camps.
+
+Suite 46/46.
