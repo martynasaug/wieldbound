@@ -71,67 +71,60 @@ const hoverObject = async (worldOf, agrees) => {
   return false;
 };
 
-// A monster. Walk toward one first — band 1 is 1320px out, off screen at spawn.
-const monsterAt = () => page.evaluate(() => {
-  const g = window.__wieldbound;
-  let best = null;
-  for (const v of g.monsters.values()) {
-    const s = v.state;
-    if (!s || s.status !== "alive") continue;
-    const d = Math.hypot(s.x - g.playerX, s.y - g.playerY);
-    if (!best || d < best.d) best = { x: s.x, y: s.y, d, kind: s.kind };
-  }
-  return best;
-});
-// WALK OUT UNTIL THERE IS ONE TO HOVER. A fresh character stands in town and
-// the client builds monster models only as a camp comes near, so `g.monsters`
-// is empty at spawn — the loop below would find nothing and exit immediately
-// without taking a step, which reads as "could not hover a monster".
-for (let i = 0; i < 60; i++) {
-  const known = await page.evaluate(() => window.__wieldbound.monsters.size);
-  if (known > 0) break;
-  await step(page, ["d"], 700);
-}
-for (let i = 0; i < 50; i++) {
-  const m = await monsterAt();
-  if (!m || m.d < 190) break;
-  await approach(page, m, m.d > 400 ? 400 : 150);
-}
-const mon = await monsterAt();
-if (mon) {
-  const world = await page.evaluate(() => {
+// A MONSTER, WHICH TAKES MORE CARE THAN IT LOOKS.
+//
+// Three separate things defeated earlier attempts at this, none of them the
+// feature under test:
+//
+//   * the client builds monsters well beyond the view, so `monsters.size > 0`
+//     says nothing about whether a pointer can reach one;
+//   * the first ones to appear are at the screen edge, UNDER the dock rail and
+//     the panels, which are real DOM above the canvas — a pointermove there
+//     never reaches the canvas at all, and `pointerX` stays -1;
+//   * and a creature is picked by screen distance, so the pointer has to land
+//     near its projected centre rather than merely somewhere on it.
+//
+// So: walk until something is in the CENTRAL region, clear of the interface,
+// then try each on-screen monster by its own projected centre.
+for (let i = 0; i < 80; i++) {
+  const visible = await page.evaluate(() => {
     const g = window.__wieldbound;
-    let best = null;
     for (const v of g.monsters.values()) {
-      if (!v.state || v.state.status !== "alive") continue;
+      if (v.dead || v.state?.status !== "alive" || !v.actor?.loaded) continue;
       const p = v.actor.position;
-      const d = Math.hypot(v.state.x - g.playerX, v.state.y - g.playerY);
-      if (!best || d < best.d) best = { x: p.x, y: p.y, z: p.z };
+      const s = g.world.project(p.x, p.y + 0.4, p.z);
+      if (s && s.x > 240 && s.y > 170 && s.x < 1000 && s.y < 600) return true;
     }
-    return best;
+    return false;
   });
-  // A GRID, not a single projected point. A monster is a moving target picked
-  // by screen distance, and by the time a projected point has been computed,
-  // moved to, and read back, the creature has walked. Sweeping a small area
-  // around where it was is what actually lands on one.
-  let ok = false;
-  const base = world && (await page.evaluate((w) => {
-    const s = window.__wieldbound.world.project(w.x, w.y + 0.9, w.z);
-    return s ? { x: Math.round(s.x), y: Math.round(s.y) } : null;
-  }, world));
-  if (base) {
-    outer: for (const dy of [0, -30, 30, -60, 60]) {
-      for (const dx of [0, -30, 30, -60, 60]) {
-        const px = base.x + dx, py = base.y + dy;
-        if (px < 6 || py < 6 || px > 1274 || py > 794) continue;
-        await page.mouse.move(px, py);
-        await page.waitForTimeout(130);
-        if (await page.evaluate(() => window.__wieldbound.hoverId)) { ok = true; break outer; }
-      }
-    }
+  if (visible) break;
+  await step(page, ["d"], 600);
+}
+const targets = await page.evaluate(() => {
+  const g = window.__wieldbound;
+  const out = [];
+  for (const [id, v] of g.monsters) {
+    if (v.dead || v.state?.status !== "alive" || !v.actor?.loaded) continue;
+    const p = v.actor.position;
+    const s = g.world.project(p.x, p.y + 0.4, p.z);
+    if (!s) continue;
+    if (s.x < 240 || s.y < 170 || s.x > 1000 || s.y > 600) continue;
+    out.push({ id, kind: v.kind, x: Math.round(s.x), y: Math.round(s.y) });
   }
-  if (ok) { const r = await cursorNow(); seen.attack = r.url; report(`a ${mon.kind}`, r); }
-  else console.log("  could not get the pointer onto a monster");
+  return out;
+});
+let hovered = null;
+for (const t of targets) {
+  await page.mouse.move(t.x, t.y);
+  await page.waitForTimeout(200);
+  if (await page.evaluate(() => window.__wieldbound.hoverId)) { hovered = t; break; }
+}
+if (hovered) {
+  const r = await cursorNow();
+  seen.attack = r.url;
+  report(`a ${hovered.kind}`, r);
+} else {
+  console.log(`  could not get the pointer onto a monster (${targets.length} on screen)`);
 }
 
 // Each node kind.

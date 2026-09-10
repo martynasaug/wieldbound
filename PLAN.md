@@ -22673,3 +22673,44 @@ the result — so what is proven there is the artwork and the one-line mapping,
 not an observed hover. Said plainly rather than left implied.
 
 Suite 46/46.
+
+**Phase 70 M70.232 — closing the two things M70.230/231 left open.** No game
+code changed here; both are measurements that were owed.
+
+THE ATTACK CURSOR IS NOW VERIFIED ON A REAL MONSTER. M70.231 shipped with that
+stated as unverified, which was honest and was not good enough. Three things
+were defeating it, none of them the feature:
+
+  * the client builds monsters well beyond the view, so `monsters.size > 0` says
+    nothing about whether a pointer can reach one — the walk loop was exiting
+    without taking a step;
+  * the first monsters to come into view are at the screen EDGE, under the dock
+    rail and the panels. Those are real DOM above the canvas, so a pointermove
+    there never reaches it and `pointerX` stays -1. The probe was moving the
+    mouse onto the interface and concluding that hover was broken;
+  * and a creature is picked by screen distance from its projected centre, so
+    the pointer has to land near that centre rather than merely on the body.
+
+Walking until something is in the central region, clear of the interface, and
+then trying each on-screen monster by its own projected centre: `hoverId` set,
+`a slime — svg ok, hotspot 3,2, 4 paths`, which is the sword badge. All five
+cursors are now read back off the live canvas or drawn from the game's own
+table.
+
+AND THE GATHERING EFFECTS COST NOTHING MEASURABLE. `gathercost.mjs` hooks
+`GatherFx.update` rather than watching frames, for `outlinecost.mjs`'s reason: a
+backgrounded Chromium throttles rAF to 1Hz and voids any frame measurement.
+
+Its first run reported 0.0011ms average and would have been published as
+"gathering is free" — except it also reported `0 gather(s) started`, because
+M70.230 had just made proximity gather nothing and the harness only walked. The
+guard that prints "the figures below are of an idle GatherFx and mean nothing"
+is the only reason that did not become a finding. It now places an order, and
+re-places it when the node is spent.
+
+The real figure, over 75s with 7 gathers: 4496 updates at 60/s, 0.0030ms
+average, 0.30ms worst, 0.181ms per second of play. About two hundredths of one
+per cent of a frame budget, and no single update within two orders of magnitude
+of costing a frame.
+
+Suite unchanged at 46/46 — this milestone touches no game code.

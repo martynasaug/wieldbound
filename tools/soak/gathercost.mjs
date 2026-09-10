@@ -59,6 +59,13 @@ for (let i = 0; i < 80; i++) {
   if (!at || at.d <= INTERACTION_RANGE_PX * 0.5) break;
   await approach(page, at, 400);
 }
+// ASK FOR IT. Since M70.230 standing next to a node gathers nothing, so a
+// version of this that only walks measures an idle GatherFx and reports it as
+// "gathering is free" — which is exactly what the first run of this file did,
+// and the guard at the bottom is what caught it.
+const parkedNode = await nearest();
+if (parkedNode) await page.evaluate((id) => window.__wieldbound.socket.sendGather(id), parkedNode.id);
+await page.waitForTimeout(600);
 const parked = await page.evaluate(() => ({ id: window.__wieldbound.gatherNodeId }));
 await page.evaluate(() => { window.__gc = { calls: 0, ms: 0, worst: 0 }; });
 
@@ -70,6 +77,14 @@ while (Date.now() < until) {
   const now = await page.evaluate(() => window.__wieldbound.gatherNodeId);
   if (now && now !== lastNode) gathers++;
   lastNode = now;
+  // The order ends when the node is spent and again if anything interrupts, so
+  // it has to be re-placed to keep gathering for the length of the run.
+  if (!now) {
+    const again = await nearest();
+    if (again && again.d <= INTERACTION_RANGE_PX) {
+      await page.evaluate((id) => window.__wieldbound.socket.sendGather(id), again.id);
+    }
+  }
 }
 
 const r = await page.evaluate(() => ({ ...window.__gc, wood: window.__wieldbound.wallet?.wood }));
