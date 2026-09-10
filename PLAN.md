@@ -22192,3 +22192,40 @@ trend, because a decelerating climb and a slow leak look identical over a short
 window.
 
 Suite 45/45.
+
+**Phase 70 M70.222 — checking the previous fix did not cost anything, and
+finding the frame instrument unusable while the machine is in use.** M70.219
+made both through-walls passes rebuild whenever GEAR lands rather than only when
+the body is built. That call rebuilds every hull the actor owns, and it now sits
+on a path that could be hot, so it deserved measuring rather than assuming.
+
+FIRST ATTEMPT WAS VOID, AND SAID SO. `campframes.mjs` came back with every row
+marked THROTTLED — 205 frames in a band around 1000ms, p50 1016ms in all three
+buckets. A headed Chromium that never gets focus throttles rAF to about 1Hz, and
+the harness correctly refused to interpret the run. Bringing the window to the
+front would have fixed the measurement by taking the screen off whoever is using
+the machine, which is not a trade worth making for a number.
+
+SO THE WORK WAS COUNTED INSTEAD OF THE FRAMES. `outlinecost.mjs` hooks
+`refreshOutlines` on the Actor prototype and totals its calls and time while the
+character travels and monsters spawn around it. No focus needed, and it isolates
+the change rather than the session around it.
+
+    45s of travelling, 13 monsters known      refreshOutlines called 0 times
+    one deliberate gear change                3 calls, 0.07ms average, 0.1ms worst
+
+Zero on the travelling path because MONSTERS NEVER DRESS — `syncMonsters` builds
+an Actor and loads it, and only a player changing gear reaches this. So the new
+work is confined to an event that happens seconds apart at worst, at a tenth of
+a millisecond.
+
+AND THE ZERO WAS CHECKED BEFORE IT WAS BELIEVED, because a dead hook returns
+exactly the same number. One equip takes the counter 0 -> 3, printed on every
+run above the totals. That line exists because "nothing happened" and "nothing
+was watching" have been indistinguishable four times in this session.
+
+Also re-ran `qualityswitch.mjs`, since switching quality rebuilds bodies and
+therefore hulls: geometry flat at 303 across 24 switches, programs bounded at
+149, no console errors. No regression from the hull work.
+
+Suite 45/45.
