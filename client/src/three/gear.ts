@@ -732,6 +732,17 @@ export async function buildHeldItem(
 }
 
 /**
+ * Rig-harvested meshes that need turning end for end, and the axis to turn on.
+ *
+ * See the note where this is applied. Only meshes taken off a body OTHER than
+ * the grip donor can need it, and only when that body's socket disagrees with
+ * the Warrior's.
+ */
+const RIG_FLIP: Record<string, [number, number, number]> = {
+  "rig:Wizard/Wizard_Staff": [1, 0, 0],
+};
+
+/**
  * Length relative to the donor sword, per weapon family.
  *
  * See the note where this is applied. `fitToGrip` deliberately gives every
@@ -786,6 +797,28 @@ async function makeHeldItem(
     mesh.position.copy(donor.position);
     mesh.quaternion.copy(donor.quaternion);
     mesh.scale.copy(donor.scale);
+    // A HARVESTED MESH KEEPS A TRANSFORM AUTHORED FOR ITS OWN RIG, AND WE HANG
+    // IT ON SOMEBODY ELSE'S BONE.
+    //
+    // `donorGrip` takes the socket from `Warrior_Sword`, so every right-hand
+    // weapon is parented to the WARRIOR's weapon bone. That is exactly right for
+    // the Warrior's own sword, whose local transform was authored against it,
+    // and it is an assumption for anything harvested off another body: the
+    // Wizard's staff and the Ranger's bow carry transforms that mean something
+    // relative to THEIR sockets.
+    //
+    // The Wizard's staff does not survive the move. Measured across all 29
+    // models, every weapon in the game points its far end up and away — an `up`
+    // component around +0.5 — and this one alone reads -0.84: it hangs downward
+    // with the ORB at the fist and the plain butt pointing out at the floor.
+    // Held by the head, business end at its owner, which is what "the blade was
+    // facing the player" describes.
+    //
+    // Flipped end for end here rather than by re-fitting it like a
+    // `weapons/...` model, because `fitToGrip` would also renormalise its length
+    // and this mesh is otherwise correct — it is one axis, not a bad import.
+    const flip = RIG_FLIP[base.art.model];
+    if (flip) mesh.rotateOnAxis(new THREE.Vector3(flip[0], flip[1], flip[2]), Math.PI);
   } else if (base.art.model) {
     const proto = await loadModel(base.art.model);
     const donor = findMesh(proto, "") ?? firstMesh(proto);

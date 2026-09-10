@@ -22119,3 +22119,42 @@ needed a SWAP, and every capture tool here was built to avoid confounding state
 rather than to create it. `ghostswap.mjs` now does the opposite deliberately.
 
 Suite 45/45.
+
+**Phase 70 M70.220 — the staff was held by its head.** The orientation question,
+finally answered, and the answer was one model rather than the system.
+
+TWO POSES, MEASURED. Idle: no weapon's far end points at its owner. Swing:
+eighteen of twenty-three do at some point — and that is NOT a fault. Every melee
+weapon shares one attack clip and they all bottom out together between -0.78 and
+-0.87, the donor `rig:Warrior/Warrior_Sword` among them at -0.81. That is the
+wind-up. Bows never go backwards because a bow is not swung. A metric that
+cannot tell a wind-up from a bad socket says nothing on its own; what it CAN say
+is whether any weapon is an outlier against its peers, and in the swing none is.
+
+IN IDLE, ONE IS. Every weapon in the game carries its far end up and away, `up`
+around +0.5. `rig:Wizard/Wizard_Staff` read -0.84: hanging downward with the ORB
+AT THE FIST and the plain butt pointing at the floor. Held by the head, business
+end at its owner — which is what "the blade was facing the player" describes.
+
+THE CAUSE IS STRUCTURAL AND WORTH KNOWING. `donorGrip` takes the socket from
+`Warrior_Sword`, so every right-hand weapon parents to the WARRIOR's weapon
+bone. A `rig:` model keeps its own local transform rather than being re-fitted —
+correct for the Warrior's own sword, whose transform was authored against that
+bone, and an assumption for anything harvested off another body. The Wizard's
+staff and the Ranger's bow carry transforms that mean something relative to
+THEIR sockets. The bow survives the move; the staff does not.
+
+Flipped end for end through `RIG_FLIP` rather than re-fitted like a `weapons/`
+model, because `fitToGrip` would also renormalise its length and this mesh is
+otherwise fine — it is one axis, not a bad import. It now measures +0.55 up,
+in line with everything else, and the head no longer sits in the fist. Three
+bases use that model directly and the four wands are built from it, so this is
+seven items.
+
+AND THE CONTACT SHEET IT WAS FOUND IN WAS UNUSABLE UNTIL M70.219 LANDED. The
+first capture of all 29 models was taken while hulls still accumulated across
+swaps, so the staff frame was buried under a white mess of stale silhouettes.
+Re-captured after that fix, it is legible. A survey tool that swaps state is
+only as good as the state it leaves behind.
+
+Suite 45/45.
