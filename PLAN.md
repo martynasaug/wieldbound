@@ -23144,3 +23144,46 @@ camps with no summary, but conclusive on the question it was run for — heap fl
 at 92.9MB for fifteen minutes, programs 75 -> 103 settled early in lap two, and
 geometry 271 -> 341 converging hard: **lap 1 +58, lap 2 +11, lap 3 +0**. No leak
 from the helm or toast work.
+
+**Phase 70 M70.242 — the town wall pushes the camera now, for six hundredths of
+a millisecond.** M70.241 established the problem and rejected the obvious fix:
+the palisade is not an object, so it can neither push the camera out nor fade,
+and giving the real geometry to `setCameraColliders` cost 4.93ms a frame — 71%
+of a 144Hz budget — because its merges span the whole ring and every ray inside
+the walls falls through to per-triangle work.
+
+**A COLLIDER DOES NOT HAVE TO BE THE THING YOU CAN SEE.** `wallColliderRing()`
+builds seventy-two short boxes standing where the palisade stands, skipping the
+gateways with the same `bearingInGateway` predicate the timber and the wall
+collision already share. Seventy-two small bounding spheres instead of eleven
+town-sized ones, so a ray near one stretch rejects the rest on the cheap test.
+
+And it is NEVER ADDED TO THE SCENE. `clearDistance` raycasts the array it is
+handed, so a collider needs a world matrix and nothing else — no material, no
+draw call, nothing to render. Verified rather than assumed: the ring is not
+reachable from `scene.getObjectById`.
+
+    baseline, 6 colliders          0.309ms avg   2.40ms worst    4.4% of a frame
+    real palisade, 7 colliders     4.928ms      11.30ms         71.0%   REJECTED
+    collider ring, 7 colliders     0.370ms       1.70ms          5.3%
+
+Six hundredths of a millisecond, and the worst case improved. Swept twelve
+bearings on the inside face: the wall catches the camera on four of them —
+240, 270, 300, 330 — which is exactly the arc where a fixed camera direction
+puts the wall between lens and player, and nowhere else. The capture at 300
+shows the camera pulled to 3.2 and standing INSIDE the palisade with the whole
+character visible, against a gate frame that cut them off at the waist.
+
+TWO MEASUREMENT FAULTS, BOTH CAUGHT BY A CHECK RATHER THAN BY LUCK:
+
+  * The first walk stood at radius 835 against a wall at 800 — OUTSIDE it — and
+    reported `blocked false` as though the collider did nothing. Nothing can be
+    between the camera and a player who is already beyond it. It sweeps the
+    inside face now.
+  * Before that, M70.241's first "after" run read a THIRD of baseline, which
+    would have published "adding a collider made it faster". Vite was serving a
+    stale `Game.ts` alongside a fresh `town.ts`. Every run here now prints
+    `cameraColliders` and the harness asserts the count, because a timing is
+    worthless until the thing being timed is switched on.
+
+Suite 48/48.

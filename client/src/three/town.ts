@@ -2466,6 +2466,54 @@ function islandTexture(): THREE.Texture {
 }
 
 /** The palisade: posts around the boundary, opening at each gate. */
+/**
+ * An invisible ring of boxes standing where the palisade stands, for the camera
+ * to bump into.
+ *
+ * THE WALL COULD NOT PUSH THE CAMERA OUT, and that is why a character standing
+ * against it was cut off at the waist by their own town (M70.241). Camera
+ * colliders are `town.buildings` — the houses — and the palisade is not an
+ * object at all: its posts go into the shared `Builder` and merge with
+ * everything else.
+ *
+ * THE OBVIOUS FIX WAS MEASURED AND REJECTED. Giving the real palisade a group
+ * and handing that to `setCameraColliders` cost 4.93ms a frame against a
+ * baseline of 0.309 — seventy-one per cent of a 144Hz budget — because its
+ * merges span the whole ring, so every one has a town-sized bounding sphere and
+ * every ray inside the walls falls through to per-triangle work.
+ *
+ * Seventy-two short boxes have seventy-two SMALL spheres instead, so a ray near
+ * one stretch of wall rejects the rest on the cheap test. And this group is
+ * never added to the scene: `clearDistance` raycasts the array it is given
+ * directly, so a collider needs a world matrix and nothing else. No draw calls,
+ * no material, nothing to render — it exists only to be hit.
+ */
+function wallColliderRing(): THREE.Group {
+  const group = new THREE.Group();
+  const radius = TOWN_RADIUS_PX / PX_PER_UNIT;
+  const cx = toWorldX(TOWN_CENTER.x);
+  const cz = toWorldZ(TOWN_CENTER.y);
+  const step = 5; // degrees per box
+  // Tall enough to cover the posts and their tips, which reach about 2.6.
+  const geo = new THREE.BoxGeometry(2 * radius * Math.sin((step / 2) * (Math.PI / 180)) * 1.06, 2.7, 0.4);
+  for (let deg = 0; deg < 360; deg += step) {
+    // The same gap predicate the timber and the wall collision both use, so the
+    // camera stops being pushed at exactly the places you can walk through.
+    if (bearingInGateway(deg) || bearingInGateway(deg + step)) continue;
+    const a = ((deg + step / 2) * Math.PI) / 180;
+    const m = new THREE.Mesh(geo);
+    m.position.set(cx + Math.cos(a) * radius, 1.35, cz + Math.sin(a) * radius);
+    // Long axis along the tangent. Rotating local +X by -(a + 90 degrees) puts
+    // it there; check it at a = 0, where the tangent is +z.
+    m.rotation.y = -(a + Math.PI / 2);
+    group.add(m);
+  }
+  // Once, because none of it ever moves — and a collider that has never had its
+  // world matrix computed is a collider a ray passes straight through.
+  group.updateMatrixWorld(true);
+  return group;
+}
+
 function palisade(b: Builder, group: THREE.Group, lanterns: Lantern[]): void {
   const radius = TOWN_RADIUS_PX / PX_PER_UNIT;
   const cx = toWorldX(TOWN_CENTER.x);
@@ -2932,6 +2980,9 @@ export class Town {
    * passes behind the player's shoulder.
    */
   readonly buildings: THREE.Group[] = [];
+  /** Invisible boxes standing where the palisade stands, so the camera has a
+   *  wall to avoid. Never added to the scene — see `wallColliderRing`. */
+  readonly wallColliders = wallColliderRing();
   private readonly lanterns: Lantern[] = [];
   /** Lifts the whole square after dark. See `update`. */
   private readonly townFill = new THREE.HemisphereLight(0xffd8a0, 0x3a2c1e, 0);

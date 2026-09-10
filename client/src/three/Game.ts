@@ -1629,7 +1629,10 @@ export class Game {
     this.town.build(this.world.scene);
     // The one thing in the world the camera may not sit behind. See
     // World.clearDistance — walls move the camera, trees are faded instead.
-    this.world.setCameraColliders(this.town.buildings);
+    // The houses AND the town wall. The wall is a ring of invisible boxes that
+    // is never rendered (Town.wallColliders); the real palisade is far too
+    // expensive to raycast, which M70.241 measured at 71% of a frame.
+    this.world.setCameraColliders([...this.town.buildings, this.town.wallColliders]);
 
     // The waystones, for the same reason and at the same moment: they are boxes
     // in the town's own palette, they cost a millisecond, and one of them is
