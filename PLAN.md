@@ -22910,3 +22910,51 @@ beside `package.json`, with `tools/soak/shots/` not ignored — one `git add -A`
 from committing them. Both fixed.
 
 Suite 48/48.
+
+**Phase 70 M70.237 — eighty-eight toasts, three screen-heights tall, over the
+player's own health bar.** The frontier stop on `tour.mjs` is buried down its
+whole left edge under stacked notifications — "Shockwave: cooling down", "Crush:
+nothing in reach", "Concuss: cooling down" — drawn straight across the unit
+frame and the character panel.
+
+`Hud.toast` already coalesces repeats, and its comment says it was written for
+exactly this after the same frames showed seven identical lines. It merges only
+the MOST RECENT toast, and a hotbar is not a repeat, it is a CYCLE: press 1-7
+with everything on cooldown and you get A, B, C, D, A, B, C, D, so no two in a
+row are ever equal and nothing coalesces at all.
+
+Measured rather than eyeballed — `tools/soak/toastflood.mjs` presses seven keys
+in rotation and counts the host:
+
+    336 presses     88 toasts on screen, column top at y = -2293
+    the unit frame  y 14..133
+
+It settles at 88 only because that is where the spawn rate meets the expiry
+clock. Nothing bounds it.
+
+Two changes, and the second is not redundant with the first. Toasts now coalesce
+against ANY live toast rather than the newest — if the earlier one is still ON
+SCREEN it is not news, it is the same sentence twice, and when it has expired it
+is no longer live so a fresh one is created and the original intent still holds.
+And the host is capped, because coalescing collapses a repeat and can never
+collapse a cycle. After: **5 toasts, top at y = 451**, stable across 336
+presses, clear of the frame, each carrying a count.
+
+**A FIX TO `fighting.mjs` WRITTEN, TESTED AND REVERTED.** It fails in the batch
+and passes standalone, twice each. In the batch it reports `standing still: 0
+damage dealt (in contact reach for 70/85 ticks, 0 alive within 120px at the
+end)` — nothing landed while something was in reach, which is its genuine
+failure branch. Since a broken swing would leave the monsters standing, I made
+"nothing landed AND nothing left alive" report INCONCLUSIVE instead.
+
+Then I disabled `resolvePlayerAttack` at both call sites to check the test could
+still fail, and it reported INCONCLUSIVE. The reasoning was wrong: a character
+that cannot swing gets killed, and dying empties the 120px radius just as
+thoroughly as somebody else clearing it. The change made the test unfalsifiable
+for the one thing it exists to catch, so it is gone. Recorded because the
+in-batch failure is real and unexplained: forty-eight tests, many of which log a
+character in and fight, leave the camps in a state this one cannot measure in,
+and the honest discriminator is probably whether the CHARACTER survived the
+window — which the test does not currently record.
+
+Suite 47/48 in a batch, 48/48 with `fighting.mjs` re-run alone.

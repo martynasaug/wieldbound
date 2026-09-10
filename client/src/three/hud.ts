@@ -496,6 +496,11 @@ interface PlateState {
   ghostAt: number;
 }
 
+/** The most toasts that may share the screen. Five is about the tallest
+ *  column that still clears the unit frame at 800px, and the sixth message is
+ *  worth less than the health bar it would cover. */
+const MAX_TOASTS = 5;
+
 /** How long a toast stays on screen. */
 const TOAST_LIFE_MS = 4200;
 
@@ -774,29 +779,67 @@ export class Hud {
    * correctly produce three toasts, because the second A is news again by then.
    */
   toast(text: string, color = "#f3e3c4"): void {
-    const last = this.lastToast;
-    if (last && last.text === text && last.el.isConnected) {
-      last.n++;
-      last.el.textContent = `${text} (x${last.n})`;
+    const live = this.liveToasts.get(text);
+    if (live && live.el.isConnected) {
+      live.n++;
+      live.el.textContent = `${text} (x${live.n})`;
       // Refresh the life of the existing toast rather than leaving it to expire
       // on the first one's clock: the message is still true, and a counter that
       // vanishes mid-climb reads as a glitch.
-      window.clearTimeout(last.timer);
-      last.timer = window.setTimeout(() => last.el.remove(), TOAST_LIFE_MS);
+      window.clearTimeout(live.timer);
+      live.timer = window.setTimeout(() => this.dropToast(text), TOAST_LIFE_MS);
       return;
     }
     const el = document.createElement("div");
     el.className = "toast";
     el.style.color = color;
     el.textContent = text;
+    el.dataset.toast = text;
     this.toastHost.appendChild(el);
-    const timer = window.setTimeout(() => el.remove(), TOAST_LIFE_MS);
-    this.lastToast = { text, el, n: 1, timer };
+    const timer = window.setTimeout(() => this.dropToast(text), TOAST_LIFE_MS);
+    this.liveToasts.set(text, { el, n: 1, timer });
+
+    // THE BACKSTOP, and it is not redundant with the coalescing above.
+    //
+    // Coalescing collapses a repeat. It cannot collapse a CYCLE, and a hotbar
+    // is a cycle: pressing 1-7 in turn with everything on cooldown produces A,
+    // B, C, D, A, B, C, D, so no two in a row are ever equal. Measured before
+    // this cap, mashing seven keys reached EIGHTY-EIGHT toasts with the column
+    // extending to y=-2293 — nearly three screen heights of them, drawn over
+    // the player's own health bar on the way past. It settled at 88 only
+    // because that is where the spawn rate met the expiry clock, not because
+    // anything stopped it.
+    //
+    // So the host is bounded. The oldest goes, because the newest message is
+    // the one that answers what the player just pressed.
+    while (this.toastHost.children.length > MAX_TOASTS) {
+      const oldest = this.toastHost.firstElementChild as HTMLElement | null;
+      if (!oldest) break;
+      this.dropToast(oldest.dataset.toast ?? "");
+      oldest.remove();
+    }
   }
 
-  /** The newest toast, so an identical one can bump its counter instead of
-   *  adding a second copy. */
-  private lastToast: { text: string; el: HTMLDivElement; n: number; timer: number } | null = null;
+  /** Removes a toast and forgets it, so the next identical message starts a
+   *  fresh one rather than bumping a counter on a node that has gone. */
+  private dropToast(text: string): void {
+    const live = this.liveToasts.get(text);
+    if (!live) return;
+    window.clearTimeout(live.timer);
+    live.el.remove();
+    this.liveToasts.delete(text);
+  }
+
+  /** Every toast currently on screen, keyed by its text, so an identical
+   *  message bumps a counter instead of adding a copy.
+   *
+   *  KEYED RATHER THAN "the most recent one", which is what this was. The old
+   *  version reasoned that an interleaved A, B, A should produce three toasts
+   *  because "the second A is news again by then" — but if the first A is still
+   *  ON SCREEN it is not news, it is the same sentence twice. When A has
+   *  expired it is no longer in here, so a fresh one is created and the
+   *  original intent still holds. */
+  private readonly liveToasts = new Map<string, { el: HTMLDivElement; n: number; timer: number }>();
 
   // --- nameplates: call begin, then plate() per visible actor, then end ---
 
