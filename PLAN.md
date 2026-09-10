@@ -23010,3 +23010,40 @@ respectively — `aliveInReach` was never a signal at all.
 Every version of the verdict since has been re-checked the same way: disable
 both call sites, confirm `0 resolved swing(s)` and a FAIL. Two full batches and
 a counted run afterwards: **48/48**, `fighting.mjs` green in all three.
+
+**Phase 70 M70.239 — the interrupted gather looks the way M70.229 says it
+does.** No game code changed; this is a measurement that was owed. The wire half
+has been covered since M70.229 — `gatherstate.mjs` proves that walking off
+mid-gather reports interrupted rather than done — and the LOOK of it never was.
+An arc drawn red and an arc that keeps filling in red are identical on every
+counter this repo has.
+
+`tools/soak/gatherbreak.mjs` walks into range, asks for a gather, lets it get
+part-way, takes one step out of range and photographs the moment. **A red arc,
+stopped about two thirds round and open where it had not filled**, with "You
+stopped gathering by moving away." in the log. The rule names itself and the
+ground shows it. Confirmed rather than assumed.
+
+FOUR THINGS THE HARNESS GOT WRONG FIRST, all of them mine and all of them the
+same shape — believing a number over a picture:
+
+  * `approach` in one long leg stopped 176px from a node with a 40px range, so
+    the gather never started and the run reported a feature that was working.
+    `gatherclick.mjs` already documents the fix — long legs, then short ones —
+    and I wrote a second harness without reading it.
+  * `g.gatheringNodeId` and `g.gathering` are both undefined; the field is
+    `gatherNodeId`. The same trap as `g.nodes` and `g.stations`, now three for
+    three.
+  * Walking off for 700ms ended 285px away with the node off the bottom of the
+    frame, so the picture of the interrupted arc did not contain the arc. Range
+    is 40px; a 260ms step clears it and keeps the node on screen.
+  * Even then a single crop 180ms after the step showed NOTHING — no arc, red or
+    otherwise — which cannot tell "turns red and holds" from "vanishes
+    instantly". A burst of six crops at 90ms found it immediately.
+
+**AND A NUMBER WORTH HAVING: the red arc is visible for roughly 200-350ms.**
+Present at the moment of the break, gone by the fourth crop. That is a design
+call rather than a defect — the log line carries the same information and does
+not fade — but it is short enough that a player looking at their character
+rather than at the node may never see it, and nothing recorded how long it
+lasts. Left alone, written down.
