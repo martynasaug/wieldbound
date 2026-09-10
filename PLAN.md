@@ -22158,3 +22158,37 @@ Re-captured after that fix, it is legible. A survey tool that swaps state is
 only as good as the state it leaves behind.
 
 Suite 45/45.
+
+**Phase 70 M70.221 — a churn test for the transitions the capture tools avoid.**
+Three bugs this week lived in a TRANSITION rather than in a state: the previous
+weapon's silhouette staying on the bone after a swap (M70.219), the outline
+passes building hulls of each other on every rebuild (same), and a dagger
+normalised to sword length (M70.217). Every capture tool in this directory logs
+in clean and photographs one thing, which is precisely the case where none of
+those exist. All three were reported by the person watching, not found here.
+
+`gearchurn.mjs` does the opposite on purpose: cycle all seven slots repeatedly
+and then ask what the actor is still carrying. It counts held objects, worn
+pieces, silhouette and outline hulls, gear meshes, and the actor's own cloned
+materials — each one a thing that has actually leaked or could. The baseline is
+taken after the FIRST full change rather than at login, because the first dress
+legitimately adds things and comparing against an empty actor would report every
+run as a leak.
+
+ITS FIRST RUN WAS A FALSE ALL-CLEAR, and the number that gave it away was in its
+own output. "Nothing accumulated across 40 full gear changes" — with `worn` at 0
+on every single line, because `seed-armoury.mjs` had been written for the grip
+survey and granted hands only. Forty rounds of exercising one slot, reported as
+a clean bill of health for seven. The fixture now grants every slot, 120 bases,
+and the run means something: held, worn, hulls, gearMeshes and materials all
+flat across 120 full changes.
+
+GEOMETRY WAS THE ONE THING THAT CLIMBED, and it stops. 300 -> 346 across the run
+and then flat from round 100 to 120, with programs flat at 97 from round 10.
+That is a bounded cache filling rather than a leak — the same question M70.42
+chased when a geometry count climbing 1.6/min turned out to be `heldGeoCache`
+keyed on rarity and hand. Measured to a plateau rather than eyeballed as a
+trend, because a decelerating climb and a slow leak look identical over a short
+window.
+
+Suite 45/45.
