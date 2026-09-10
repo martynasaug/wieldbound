@@ -23047,3 +23047,37 @@ call rather than a defect — the log line carries the same information and does
 not fade — but it is short enough that a player looking at their character
 rather than at the node may never see it, and nothing recorded how long it
 lasts. Left alone, written down.
+
+**Phase 70 M70.240 — "The enemy hits you for 1" is real, rare, and not worth a
+protocol field.** A tour frame on the North Road reads `The enemy misses you.`
+and `The enemy hits you for 1.` while every other frame in the set names the
+creature — "The Armabee misses you", "The Spiky Blob hits you for 1".
+
+The cause is plain in the client: a blow is labelled `MONSTER_LABELS[vis.kind]`
+where `vis` is the client's own copy of the attacker, and `MONSTER_ATTACK`
+carries `monsterId` with no kind. Anything the client has not loaded therefore
+arrives anonymous. The obvious fix is a `kind` on the payload — the server
+always knows it — and that is a change to `shared/`, the server and the client
+for a string.
+
+SO IT WAS MEASURED FIRST. `tools/soak/unnamedhits.mjs` counts on the wire rather
+than in the log text, since the log is the thing under judgement: for every
+`MONSTER_ATTACK`, is `monsters.get(payload.monsterId)` there or not.
+
+    225 blows over four minutes, 0 of them (0.0%) unnamed
+    named attackers: armabee 95, slime 38, wolf 27, demon 24, goblin 13,
+                     spikyblob 11, mushnub 7, dragon 7, orcbrute 3
+
+Nine kinds, continuous fighting, and the fallback never fired once. It is not
+worth three files and a protocol field, and it is recorded here so the next
+person who sees that frame does not spend the afternoon I nearly did.
+
+WHAT WOULD REPRODUCE IT, for whoever wants to: the harness above stays close to
+what it fights, and `this.monsters` is filled from the snapshot rather than from
+what the renderer draws — so distance culling does not empty it. The gap is a
+monster that can hit you from OUTSIDE the set the snapshot sends, which is the
+band a `keepAwayPx` thrower fights from, or something striking as it leaves.
+The tour stop that showed it was walking the road rather than standing in a
+camp, which is exactly where that band is likeliest.
+
+No game code changed.
