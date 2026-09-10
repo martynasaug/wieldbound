@@ -22264,3 +22264,34 @@ is flagged as such — the correctness half is the winding, and it stands either
 way.
 
 Suite 45/45.
+
+**Phase 70 M70.224 — the survey stops crying wolf about off-hands.** With the
+staff flipped (M70.220) and the off-hand turned rather than mirrored (M70.223),
+the facing survey came back with one flag left: `quiver|along` at -0.88,
+"BACKWARDS — points at the player".
+
+It is not a fault. A quiver is worn with its far end — the arrows — pointing
+backwards, which is the whole idea. "Far end away from the owner" is the right
+question for something with a point on it and the wrong question for anything in
+the left hand: a shield's far edge is the rim of a disc and can sit anywhere on
+the clock without being wrong.
+
+So off-hands are now reported with their numbers and no verdict. A tool that
+reports a correct thing as broken gets muted, and this one is worth keeping —
+it found the real fault.
+
+WHAT IT CAN STILL SAY ABOUT THEM is whether they agree with EACH OTHER, which is
+exactly how the staff was caught: every weapon carried its far end up at about
++0.5 and the Wizard's staff alone read -0.84. The six off-hands now sit within a
+vertical spread of 0.32, and a spread above 0.9 is called out. Agreement among
+peers needs no opinion about what a shield should look like, which is the only
+kind of claim this tool can honestly make.
+
+Final state of the survey: 0 of 23 weapons point back at the player, off-hands
+in agreement.
+
+Also tried to settle the quiver by eye and could not: a bow is two-handed, so
+equipping a quiver puts the bow away, and the capture showed a character
+carrying neither. Recorded rather than dressed up as a conclusion.
+
+Suite unaffected — this milestone changes one soak harness and no game code.

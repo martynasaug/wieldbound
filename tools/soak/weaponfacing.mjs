@@ -167,7 +167,22 @@ for (const item of toCheck) {
 }
 await browser.close();
 
+// AN OFF-HAND IS NOT A BLADE, and judging it as one cries wolf.
+//
+// "Far end away from the owner" is the right question for something with a
+// point on it. It is the wrong question for everything held in the left hand:
+// a shield's far edge is the rim of a disc and can sit anywhere on the clock
+// without being wrong, and a QUIVER is worn with its far end — the arrows —
+// pointing BACKWARDS on purpose. This tool duly reported `quiver|along` at
+// -0.88 as "BACKWARDS — points at the player", which is both true and not a
+// fault.
+//
+// So off-hands are reported with their numbers and no verdict. What the tool
+// can still say about them is whether they agree with EACH OTHER, which is how
+// the one real fault in this survey was found: every weapon carried its far end
+// up at about +0.5 and the Wizard's staff alone read -0.84.
 const verdict = (r) => {
+  if (r.slot === "offhand") return "(off-hand — no blade expectation)";
   if (r.forward < -0.25) return "BACKWARDS — points at the player";
   if (r.forward > 0.25) return "forward";
   return "across the body";
@@ -180,5 +195,20 @@ for (const r of rows) {
       `${r.side.toFixed(2).padStart(5)}  ${r.up.toFixed(2).padStart(5)}  ${verdict(r)}`,
   );
 }
-const bad = rows.filter((r) => r.forward < -0.25);
-console.log(`\n${bad.length} of ${rows.length} point back at the player.`);
+const weapons = rows.filter((r) => r.slot !== "offhand");
+const offhands = rows.filter((r) => r.slot === "offhand");
+const bad = weapons.filter((r) => r.forward < -0.25);
+console.log(
+  `\n${bad.length} of ${weapons.length} weapons point back at the player ` +
+    `(${offhands.length} off-hands are not judged on that — see the note by \`verdict\`).`,
+);
+// What CAN be said about the off-hands: whether they agree with each other.
+// A single one disagreeing is the shape the Wizard staff had.
+if (offhands.length > 1) {
+  const ups = offhands.map((r) => r.up);
+  const spread = Math.max(...ups) - Math.min(...ups);
+  console.log(
+    `off-hand vertical spread ${spread.toFixed(2)}` +
+      (spread > 0.9 ? "   <-- one of them disagrees with the rest" : "   (they agree with each other)"),
+  );
+}
