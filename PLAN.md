@@ -24343,3 +24343,34 @@ darkest skin, invisible, approved by a check that was measuring the wrong space.
 
 It recolours the robe along with the wearer, which is a consequence of one mesh
 with one texture and not a decision. Suite 56/56.
+
+**Phase 70 M70.271 — the crest was a board, and the scalp it stood on was a
+guess.** Handed over as an open thread: "the crest hairstyle renders as a flat
+slab." `tools/soak/crest.mjs` photographs one character who draws it (Crest4 —
+the harness checks the derivation rather than trusting the name) from the front,
+side, back and above, with the camera held on the head every frame.
+
+The before shots found two faults, not one. The ridge was two stacked boxes, 70
+long and flat-sided — a slab from every angle except dead overhead. And the
+"shaved sides" shell under it sat at eye level in the hair colour, so from the
+side and back the character wore a black blindfold. It is now eleven flattened
+cones along the scalp, tallest just behind the crown, a short fringe blade at
+the brow, swept back at the nape; the shell is gone.
+
+THE FIRST CUT WAS HALF BURIED, and the reason is worth more than the fix. It
+stood the blades on the ellipse the `crop` dome implies, and the overhead shot
+showed a single dot where the front half of the ridge should have been. Every
+hair and helm in `gear.ts` is authored against HEAD_TOP/HEAD_FRONT_Z-style
+constants fitted by eye to helms that are deliberately oversized — nothing had
+ever measured the head itself. `tools/soak/headfit.mjs` does: it skins every
+Head-weighted body vertex and carries it into the hair mesh's own geometry
+space, so the numbers come out in exactly the units `hairGeometry` writes. The
+Monk's skull is a flat-topped block — top at 288-290 from z -22 to 36, a
+shoulder at (44, 273), a back near vertical at z -36 — and a squarish
+superellipse traces it within a few units. Blades are spaced along it by arc
+length, because that curve's angle parameter bunches points at the corners and
+leaves a gap over the crown.
+
+The same instrument answers any future "the helm floats" or "the hair clips"
+report with numbers instead of another photograph. The old boxes were buried at
+the front too; nobody could have seen it from the game camera.

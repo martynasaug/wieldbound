@@ -1654,11 +1654,77 @@ function hairGeometry(style: HairStyle): THREE.BufferGeometry | null {
   if (style === "crest") {
     // Shaved sides and a ridge running front to back. The single most legible
     // hairstyle from directly overhead, which is where this camera is.
-    return merge([
-      shell(HEAD_HALF_WIDTH + 1, HEAD_HALF_WIDTH + 2, 12, [0, brow - 12, -4], 1.1),
-      box([11, 26, 70], [0, HEAD_TOP - 6, -6]),
-      box([15, 14, 54], [0, HEAD_TOP - 16, -6]),
-    ]);
+    //
+    // A ROW OF BLADES THAT FOLLOWS THE SKULL, NOT A BOARD STOOD ON IT. This was
+    // two stacked boxes, 70 long and flat-sided, and from anywhere but dead
+    // overhead it was a slab: it cleared the scalp at both ends, and nothing
+    // about a rectangle says hair. It also wore a "shaved sides" shell at eye
+    // level, which in the hair colour read as a blindfold from the side and
+    // back. Now eleven flattened cones stand on the scalp, rooted into it,
+    // tallest just behind the crown and swept back — so the outline is a ridge
+    // of spikes from every angle, and the sides are simply bare.
+    //
+    // THE SCALP IS MEASURED, NOT ASSUMED. The first cut stood the blades on the
+    // ellipse the `crop` dome implies and photographed the front half buried in
+    // the forehead: `tools/soak/headfit.mjs` skins the Head-weighted vertices
+    // into this space and found a flat-topped block — top at 288-290 from z -22
+    // to 36, a shoulder at (z 44, y 273), a back near vertical at z -36. A
+    // squarish superellipse (exponent 4) centred at (y 250, z 4) with both
+    // radii 40 traces that within a few units; blades are spaced along it by
+    // arc length, because its angle parameter bunches points at the corners
+    // and leaves a gap over the crown, and stood on its true normal.
+    const blades: THREE.BufferGeometry[] = [];
+    const cy = 250;
+    const cz = 4;
+    const radius = 40;
+    const n = 4;
+    const soft = (s: number) => Math.sign(s) * Math.abs(s) ** (2 / n);
+    const at = (theta: number): [number, number] => [
+      cz + radius * soft(Math.sin(theta)),
+      cy + radius * soft(Math.cos(theta)),
+    ];
+    // Brow to nape: +50 degrees is the fringe line over the forehead, -95 the
+    // back of the skull just above where the neck narrows.
+    const from = (50 * Math.PI) / 180;
+    const to = (-95 * Math.PI) / 180;
+    const samples: { theta: number; length: number }[] = [];
+    let length = 0;
+    let prev = at(from);
+    for (let i = 0; i <= 240; i++) {
+      const theta = from + ((to - from) * i) / 240;
+      const p = at(theta);
+      length += Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+      samples.push({ theta, length });
+      prev = p;
+    }
+    const count = 11;
+    const sweep = 0.25;
+    let cursor = 0;
+    for (let i = 0; i < count; i++) {
+      const t = i / (count - 1);
+      const want = t * length;
+      while (cursor < samples.length - 1 && samples[cursor].length < want) cursor++;
+      const [z, y] = at(samples[cursor].theta);
+      // Outward normal from the implicit form's gradient, so a blade on the flat
+      // top stands straight up and one on the back corner leans out of it.
+      const u = (z - cz) / radius;
+      const v = (y - cy) / radius;
+      const gz = Math.sign(u) * Math.abs(u) ** (n - 1);
+      const gy = Math.sign(v) * Math.abs(v) ** (n - 1);
+      const angle = Math.atan2(gz, gy) - sweep;
+      // Peaks a little behind the crown and falls away to a short fringe at the
+      // brow and a stub at the nape.
+      const bell = Math.exp(-(((t - 0.42) / 0.3) ** 2));
+      const height = 11 + 21 * bell;
+      const root = 5;
+      const cone = new THREE.ConeGeometry(7.5, height, 5);
+      cone.scale(0.55, 1, 1);
+      cone.rotateX(angle);
+      const lift = height / 2 - root;
+      cone.translate(0, y + Math.cos(angle) * lift, z + Math.sin(angle) * lift);
+      blades.push(cone);
+    }
+    return merge(blades);
   }
 
   if (style === "bun") {
