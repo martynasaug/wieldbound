@@ -76,7 +76,7 @@ export async function open({ headless = true, width = 1600, height = 900 } = {})
 }
 
 /** Logs in as `name` and waits for the world to actually be running. */
-export async function login(page, name, { timeout = 180000, query = "" } = {}) {
+export async function login(page, name, { timeout = 180000, query = "", creator = false } = {}) {
   const t0 = Date.now();
   // A QUERY STRING SURVIVES THE LOGIN, which matters for anything the client
   // reads off the URL at startup — `?body=new` picks the player model, and it
@@ -85,6 +85,11 @@ export async function login(page, name, { timeout = 180000, query = "" } = {}) {
   await page.goto(query ? `${CLIENT_URL}?${query}` : CLIENT_URL, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("#name-input", { timeout: 30000 });
   await page.fill("#name-input", name);
+  // THE CHARACTER CREATOR OPENS FOR ANY CHARACTER THAT HAS NOT CHOSEN A LOOK,
+  // which is every character a harness has ever made. It takes the camera and
+  // the input, so every measurement in the suite would be taken through it.
+  // Skipped unless a run asks for it — `tools/test/creator.mjs` does.
+  if (!creator) await page.evaluate(() => { window.__wieldboundSkipCreator = true; });
   await page.click("#play-button");
   // WAIT FOR THE LOADING SCREEN TO GO, and nothing weaker.
   //

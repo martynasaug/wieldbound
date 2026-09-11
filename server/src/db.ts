@@ -153,6 +153,10 @@ for (const migration of [
   // step with each other.
   "ALTER TABLE characters ADD COLUMN ingot INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE characters ADD COLUMN weave INTEGER NOT NULL DEFAULT 0",
+  // What the character looks like, as chosen in the creator: a JSON record of
+  // ids from `shared/look.ts`. NULL until chosen, which is what makes the
+  // client open the creator on login.
+  "ALTER TABLE characters ADD COLUMN look TEXT",
 ]) {
   try {
     db.exec(migration);
@@ -307,11 +311,19 @@ export interface CharacterRow {
   potions: number;
   herb: number;
   tonics: number;
+  /** JSON from the creator, or null if the player has not chosen yet. */
+  look: string | null;
 }
 
 const selectByName = db.prepare(
-  "SELECT id, name, x, y, wood, ore, gatherLevel, battlePowerLevel, xp, level, weaponRarity, armorRarity, bootsRarity, hp, strength, agility, vitality, statPoints, intelligence, mana, lastSeenAt, potions, herb, tonics FROM characters WHERE name = ?",
+  "SELECT id, name, x, y, wood, ore, gatherLevel, battlePowerLevel, xp, level, weaponRarity, armorRarity, bootsRarity, hp, strength, agility, vitality, statPoints, intelligence, mana, lastSeenAt, potions, herb, tonics, look FROM characters WHERE name = ?",
 );
+const setLookStmt = db.prepare("UPDATE characters SET look = ? WHERE id = ?");
+
+/** Store a look already checked by `sanitizeLook`. */
+export function setCharacterLook(id: string, lookJson: string): void {
+  setLookStmt.run(lookJson, id);
+}
 const insertCharacter = db.prepare(
   "INSERT INTO characters (id, name, x, y, wood, ore, gatherLevel, battlePowerLevel, xp, level, weaponRarity, armorRarity, bootsRarity, hp, strength, agility, vitality, statPoints, intelligence, mana, lastSeenAt, offlineGatherResource) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 );
@@ -398,6 +410,7 @@ export function loadOrCreateCharacter(name: string): CharacterRow {
     potions: 0,
     herb: 0,
     tonics: 0,
+    look: null,
   };
   insertCharacter.run(
     row.id,

@@ -87,6 +87,9 @@ import {
 import { SkillFx, fxFor } from "./skillfx";
 import { GatherFx, GATHER_STROKE_MS } from "./gatherfx";
 import { lookFor } from "./look";
+import { toneById, toneCss } from "./skin";
+import { CharacterCreator } from "../ui/CharacterCreator";
+import { defaultLookFor, type CharacterLook } from "../../../shared/look";
 import { CursorHint, publishCursorDebug } from "./cursors";
 
 /**
@@ -2083,10 +2086,46 @@ export class Game {
 
   // ------------------------------------------------------------------ socket
 
+  /** The character creator, while it is open. */
+  private creator: CharacterCreator | null = null;
+  /** The look the server holds for this character. */
+  private chosenLook: CharacterLook | null = null;
+
+  /**
+   * Open the character creator on the local character.
+   *
+   * Opened by WELCOME for a character that has never chosen, and public so a
+   * console session or a test can open it again. Changes go straight onto the
+   * local actor as they are made; nothing is sent until the player accepts.
+   */
+  openCreator(): void {
+    if (this.creator) return;
+    const start = this.chosenLook ?? defaultLookFor(this.name);
+    this.keys.clear();
+    this.creator = new CharacterCreator(start, {
+      skinSwatch: (id) => toneCss(toneById(id)),
+      onChange: (look) => this.localActor?.setLook(look),
+      onDone: (look) => {
+        this.creator = null;
+        this.chosenLook = look;
+        this.localActor?.setLook(look);
+        this.socket.send({ type: "SET_LOOK", payload: { look } });
+      },
+    });
+  }
+
   private onWelcome(p: Parameters<
     ConstructorParameters<typeof GameSocket>[2]["onWelcome"]
   >[0]): void {
     this.playerId = p.id;
+    // WHO THIS CHARACTER IS, and whether its owner has ever said. A character
+    // that has not been through the creator is sent into it — the first login,
+    // and every character made before the creator existed. Harnesses set the
+    // skip flag, or every measurement in the suite would be taken through it.
+    this.chosenLook = p.look;
+    this.localActor?.setLook(p.look);
+    const skipCreator = (window as unknown as { __wieldboundSkipCreator?: boolean }).__wieldboundSkipCreator;
+    if (!p.lookChosen && !skipCreator) this.openCreator();
     this.playerX = p.x;
     this.playerY = p.y;
     this.level = p.level;
@@ -2203,6 +2242,7 @@ export class Game {
       // renders itself from, so there is one drawing path rather than a
       // self-case and an others-case that can drift apart.
       actor.setAppearance(s.appearance);
+      if (s.look) actor.setLook(s.look);
       this.playerAppearances.set(s.id, s.appearance);
       const x = toWorldX(s.x);
       const z = toWorldZ(s.y);
@@ -3949,6 +3989,8 @@ export class Game {
     window.addEventListener("keydown", (e) => {
       const typing = (e.target as HTMLElement)?.tagName === "INPUT";
       if (typing) return;
+      // The creator is a screen of its own: no walking off mid-choice.
+      if (this.creator) return;
       // A pending rebind is capturing the keyboard; anything pressed belongs
       // to it, not to movement or a panel toggle.
       if (this.hotbar.isRebinding) return;
@@ -4033,6 +4075,8 @@ export class Game {
       "wheel",
       (e) => {
         e.preventDefault();
+        // The creator has its own zoom; the game's would be waiting for them after.
+        if (this.creator) return;
         // deltaY is reported in wildly different units per device and per
         // browser (pixels, lines, pages), so only its SIGN is trustworthy.
         this.world.zoomBy(Math.sign(e.deltaY));
@@ -4128,6 +4172,8 @@ export class Game {
   }
 
   private onPointerDown(e: PointerEvent): void {
+    // A drag in the creator turns the camera; it must not also walk or target.
+    if (this.creator) return;
     const ndc = new THREE.Vector2(
       (e.clientX / window.innerWidth) * 2 - 1,
       -(e.clientY / window.innerHeight) * 2 + 1,
@@ -5176,10 +5222,16 @@ export class Game {
     if (this.localActor) {
       this.world.follow(this.localActor.position.x, this.localActor.position.z, dt);
 
-      // Shake is applied after the camera is placed, so it reads as a knock to
-      // the view rather than fighting the follow easing.
-      const shake = this.effects.shakeOffset(this.shakeScratch);
-      this.world.camera.position.add(shake);
+      if (this.creator) {
+        // The creator owns the camera while it is open. The follow above still
+        // ran, so the sun and its shadow keep tracking the player.
+        this.creator.frameCamera(this.world.camera, this.localActor, dt);
+      } else {
+        // Shake is applied after the camera is placed, so it reads as a knock to
+        // the view rather than fighting the follow easing.
+        const shake = this.effects.shakeOffset(this.shakeScratch);
+        this.world.camera.position.add(shake);
+      }
     }
 
     // The hotbar's curtains are driven per frame, not per message. Calling this

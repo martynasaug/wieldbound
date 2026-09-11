@@ -24430,3 +24430,57 @@ mesh sharing the source geometry, so the hulls lose the beads too. The filtered
 geometry is cached per source and never disposed, the same terms `SkeletonUtils`
 already shares the original on. If the model ever changes and no island
 matches, the mesh is left exactly as it shipped.
+
+**Phase 70 M70.274 — the character creator, and the faces that did not ship.**
+Asked for: "make our player character highly customizable. A player gets to
+customize their character on the first login. Lets make a bunch of different
+face features, hair, colors and so on."
+
+WHAT SHIPPED. A look is stored now instead of hashed: `shared/look.ts` is a
+table of ids, a `look` column holds the player's choice (NULL until chosen),
+WELCOME carries it with `lookChosen`, every snapshot carries it on every
+player, and `SET_LOOK` is checked field by field against the server's own
+table — all or nothing, unknown fields dropped. The creator is a panel and a
+camera over the REAL local actor, standing where they arrived under the real
+sun, so what you pick is what walks out. It opens for any character that has
+not chosen; world keys, clicks and zoom are blocked while it is open. The
+driver skips it unless a run asks, or the whole suite would be measured
+through it. Skin tone and build, applied live: `Actor.setLook` rescales the
+build as a ratio and re-tints only the body's own materials, and `applySkin`
+remembers each material's original map so a second tone is not computed from
+the first tone's pixels.
+
+WHAT DID NOT. The first version offered fourteen fields — nine hairstyles,
+eyes, brows, noses, ears, six beards, moustaches, face paint, accessories —
+built from boxes, spheres and cones stuck onto the Monk's head, on anchors
+measured from its own brow and moustache islands. I photographed every choice
+on contact sheets, fixed what the pictures showed (a camera aimed at the back
+of every head, brows lost in the painted eye band, googly eyes, a porthole
+eyepatch), and called the result good. Reviewed by the user: "Everything looks
+pretty bad ... We need good looking faces not this. real haircuts not the
+freaking bald top with some hair on the side" — and then, "LOOK YOURSELF at the
+features you make and judge whether they are acceptable or not."
+
+Judged honestly they were not. A flat block with rectangles for brows and beads
+for eyes is a placeholder, not a face; five of the nine hairstyles photographed
+from the front as bald, because shells authored for a round skull leave the top
+of this boxy one bare; the full beards were black bibs. THE CHECKS I WAS RUNNING
+ASKED "IS THE PART THERE AND IN THE RIGHT PLACE", NEVER "WOULD A PLAYER ACCEPT
+THIS", and every picture passed the first question. All of it was removed in
+this milestone; players wear the Monk's own face (beads still off, M70.273). A
+face or hair option comes back when there is modelled art for it.
+
+THE SKIN TONES FAILED THE SAME REVIEW. Side by side in the creator, porcelain
+and fair were grey khaki — a statue, not a person — because the texture is a
+low-saturation brown and they multiplied its saturation by 0.55. The first
+correction raised it to 1.7 and made them terracotta, both the same sunburn,
+neither lighter than olive. What reads as pale skin is the texture's own
+saturation at a much higher lightness with a little pink: porcelain 0.72, fair
+0.64, light 0.56. Ebony was a black silhouette at full figure and is lifted
+from 0.21 to 0.24. All eight now read as skin and step visibly by lightness.
+`tools/soak/tones.mjs` writes the two sheets that showed each of those.
+
+`tools/test/creator.mjs` checks the table, 1000 defaults and rolls, that no
+existing character's skin changed, and that a new character is asked, keeps
+its choice and is not asked again. Still true and still unsolved: the robe
+takes the skin tone, because body and robe are one mesh with one texture.

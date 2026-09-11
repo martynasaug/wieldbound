@@ -231,6 +231,8 @@ import {
   advanceQuest,
   completeQuest,
 } from "./db.ts";
+import { setCharacterLook } from "./db.ts";
+import { defaultLookFor, parseStoredLook, sanitizeLook } from "../../shared/look.ts";
 import {
   NPC_TETHER_PX,
   PLAYER_ARRIVAL,
@@ -2897,6 +2899,11 @@ wss.on("connection", (socket) => {
       const name = msg.payload.name.trim().slice(0, 16) || "Adventurer";
       const character = loadOrCreateCharacter(name);
       id = character.id;
+      // A stored look that no longer parses — a style since retired — counts as
+      // never chosen, so the player is sent back through the creator rather
+      // than silently given a look they did not pick.
+      const storedLook = parseStoredLook(character.look);
+      const look = storedLook ?? defaultLookFor(character.name);
 
       // No offline progress: nothing accrues while logged out, because
       // nothing happens without a player standing somewhere to make it happen.
@@ -2928,6 +2935,7 @@ wss.on("connection", (socket) => {
         x: character.x,
         y: character.y,
         appearance: appearanceOf(id),
+        look,
       });
       sockets.set(id, socket);
       lastSavedAt.set(id, Date.now());
@@ -3002,6 +3010,8 @@ wss.on("connection", (socket) => {
           intelligence: character.intelligence,
           statPoints: character.statPoints,
           appearance: appearanceOf(id),
+          look,
+          lookChosen: storedLook !== null,
           mana: startMana,
           maxMana: startMaxMana,
           weaponRarity: character.weaponRarity,
@@ -3147,6 +3157,18 @@ wss.on("connection", (socket) => {
         savePosition(id, p.x, p.y);
         lastSavedAt.set(id, now);
       }
+      return;
+    }
+
+    if (msg.type === "SET_LOOK" && id) {
+      // Checked field by field against the server's own tables; anything that
+      // fails is dropped whole. Everyone else sees it on the next snapshot,
+      // which carries `look` on every player.
+      const look = sanitizeLook(msg.payload?.look);
+      const live = players.get(id);
+      if (!look || !live) return;
+      live.look = look;
+      setCharacterLook(id, JSON.stringify(look));
       return;
     }
 

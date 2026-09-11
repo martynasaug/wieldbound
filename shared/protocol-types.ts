@@ -4219,12 +4219,20 @@ export function appearanceFromItems(items: ItemInstance[]): Appearance {
   };
 }
 
+import type { CharacterLook } from "./look.ts";
+
 export interface PlayerState {
   id: string;
   name: string;
   x: number;
   y: number;
   appearance: Appearance;
+  /**
+   * Who this character is, as its owner chose in the creator — or the default
+   * for its name until they have. Kit is `appearance`; this is the person
+   * wearing it, and it changes on its own clock.
+   */
+  look: CharacterLook;
   /**
    * Broadcast so a party-mate's own health is legible from outside their own
    * screen — the target frame used to show an ally's name and nothing else,
@@ -4668,6 +4676,10 @@ export interface WelcomeMessage {
     intelligence: number;
     statPoints: number;
     appearance: Appearance;
+    /** The character's look: the stored one, or the name's default. */
+    look: CharacterLook;
+    /** False until the player has been through the creator, which is what opens it. */
+    lookChosen: boolean;
     mana: number;
     maxMana: number;
     weaponRarity: ItemRarity | null;
@@ -4829,7 +4841,18 @@ export type ClientToServerMessage =
   | ExchangeMaterialMessage
   | AcceptQuestMessage
   | TurnInQuestMessage
-  | SetHotbarMessage;
+  | SetHotbarMessage
+  | SetLookMessage;
+
+/**
+ * The creator's answer. Every field is an id the server checks against
+ * `shared/look.ts` itself (`sanitizeLook`), so a hand-written message can pick
+ * any look a player could and nothing a player could not.
+ */
+export interface SetLookMessage {
+  type: "SET_LOOK";
+  payload: { look: CharacterLook };
+}
 
 // --- Emberhold ---------------------------------------------------------------
 // Declared here rather than beside the town's data, because this file is the

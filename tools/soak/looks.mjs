@@ -38,14 +38,11 @@ for (const name of NAMES.slice(0, COUNT)) {
     g.world.setCameraDistance(3.0);
     g.world.dayNight.freeze(0.5);
     const a = g.localActor;
-    const worn = [];
-    a?.root.traverse((o) => { if (o.name?.startsWith("look_")) worn.push(o.name.slice(5)); });
     // WHAT THE CHARACTER ACTUALLY IS, in the terms the look is described in.
     // The first version reported `instance.scale.x`, which is the model's fit
     // scale multiplied by the build — 0.006 for every character, a number that
     // says nothing about any of them.
     const look = window.__wieldboundLook?.(g.name ?? "");
-    const hex = (c) => (c ? "#" + c.getHexString() : "?");
 
     // THE TEXTURE THE BODY IS ACTUALLY WEARING, averaged — not the tone that
     // was requested. Reporting the request is how the previous version of this
@@ -75,9 +72,7 @@ for (const name of NAMES.slice(0, COUNT)) {
     });
 
     return {
-      worn,
-      hair: look?.hair, beard: look?.beard,
-      skin: look?.skin?.id ?? "?", painted, hairColor: hex(look?.hairColor),
+      skin: look?.skin?.id ?? "?", painted,
       build: look ? +look.build.toFixed(2) : null,
     };
   });
@@ -86,8 +81,7 @@ for (const name of NAMES.slice(0, COUNT)) {
   // can be looked at side by side without the interface between them.
   await page.screenshot({ path: `${OUT}/${name}.png`, clip: { x: 330, y: 180, width: 340, height: 430 } });
   console.log(
-    `${name.padEnd(8)} ${String(look.hair).padEnd(8)} ${String(look.beard).padEnd(8)}` +
-      ` skin ${String(look.skin).padEnd(10)} painted ${look.painted}  hair ${look.hairColor}  build ${look.build}`,
+    `${name.padEnd(8)} skin ${String(look.skin).padEnd(10)} painted ${look.painted}  build ${look.build}`,
   );
 }
 console.log(`\nshots in ${OUT}/`);

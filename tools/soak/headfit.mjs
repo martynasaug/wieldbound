@@ -29,15 +29,13 @@ const fit = await page.evaluate(() => {
   let hair = null;
   root.traverse((o) => {
     if (o.isSkinnedMesh && String(o.material?.name ?? "").includes("Monk")) body = o;
-    if (o.name === "look_hair") hair = o;
   });
   if (!body) return { error: "no Monk body mesh" };
-  if (!hair) {
-    // Not every name draws hair; the attachment is what defines the space.
-    const names = [];
-    root.traverse((o) => { if (o.name?.startsWith("look_")) names.push(o.name); });
-    return { error: `no look_hair (have: ${names.join(", ") || "none"})` };
-  }
+  // The Head holder is the space every head attachment is authored in — a helm
+  // hangs off exactly this node. Asked for rather than searched for, because
+  // the actor only builds a holder when something first needs one.
+  hair = g.localActor.holderFor("Head");
+  if (!hair) return { error: "no Head holder" };
   hair.updateMatrixWorld(true);
   const bones = body.skeleton.bones;
   const headIndex = bones.findIndex((b) => b.name === "Head");

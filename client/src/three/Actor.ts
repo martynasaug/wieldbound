@@ -28,9 +28,10 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, removeBakedBeads, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, buildHairAndBeard } from "./gear";
+import { BUILTIN_WEAPON_MESHES, removeBakedBeads, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
-import { lookFor } from "./look";
+import { lookFor, resolveLook, type ResolvedLook } from "./look";
+import type { CharacterLook } from "../../../shared/look";
 import { applySkin } from "./skin";
 import { pickClip, loadClipLibrary } from "./clips";
 import type { WeaponType } from "../../../shared/protocol-types";
@@ -699,6 +700,16 @@ export class Actor {
 
   private facing = 0;
   private targetFacing = 0;
+
+  /**
+   * Which way the body faces, as an angle whose forward is (sin, cos) — the
+   * convention `faceToward` writes. Not `root.rotation.y`: the turn is applied
+   * to an inner pivot with the model's own offset, and the root never turns,
+   * so a camera aimed by the root's rotation photographed the back of the head.
+   */
+  get heading(): number {
+    return this.facing;
+  }
   /** 0..1, stable per actor. Drives everything in this file that must differ
    *  between two copies of the same model. */
   private readonly variance: number;
@@ -744,8 +755,6 @@ export class Actor {
    * a single armour mesh being re-authored.
    */
   private readonly gearScale = new THREE.Vector3(1, 1, 1);
-  /** Hair and beard — see `applyLook`. Owned by the body, not by the wardrobe. */
-  private lookParts: THREE.Object3D[] = [];
   /** Each bone's world matrix in the rest pose, captured while the rig is
    *  still unanimated. Holders are built lazily — the first time a style
    *  needs a given bone — and by then the skeleton is mid-stride, so reading
@@ -773,6 +782,13 @@ export class Actor {
   // white/gold flash when something lands a hit, and a persistent blue while
   // chilled. Flash wins while it runs, then the chill (or nothing) resumes.
   private litMaterials: { mat: THREE.MeshStandardMaterial; base: number }[] = [];
+  /** The look the server holds, once it has said; the name's default until then. */
+  private look: CharacterLook | null = null;
+  private lookKey = "";
+  /** The build scale currently multiplied into the model root, so a new one replaces it rather than stacking. */
+  private appliedBuild = 1;
+  /** The body's own materials, the only ones a skin tone may touch — hair and gear are tracked in `litMaterials` too. */
+  private bodyMaterials: THREE.MeshStandardMaterial[] = [];
   private flashUntil = 0;
   private flashColor = 0xffffff;
   private chilled = false;
@@ -1039,6 +1055,8 @@ export class Actor {
       this.restBoneMatrices.set(name, bone.matrixWorld.clone());
     }
 
+    // A fresh rig carries no build yet, whatever the previous one had.
+    this.appliedBuild = 1;
     this.tintBody();
     this.applyLook();
     this.measureLifts(model);
@@ -1406,47 +1424,43 @@ export class Actor {
    * person, and everything that arrives later is their kit.
    */
   /**
-   * Hair, a beard, and a build — the parts of a person that change the OUTLINE.
+   * The look chosen in the creator, from WELCOME or a snapshot.
    *
-   * Attached beside the tint rather than inside `setAppearance`, because a
-   * look is not kit: it does not change when a helm is equipped, it survives
-   * every dress, and rebuilding it on each inventory update would be work done
-   * over and over for a result that never differs.
+   * Reapplied only when it actually differs, because snapshots carry it on
+   * every tick. Before the body has loaded it is only
+   * stored — `buildBody` applies whatever is here when the rig arrives.
+   */
+  setLook(look: CharacterLook): void {
+    const key = JSON.stringify(look);
+    if (key === this.lookKey) return;
+    this.lookKey = key;
+    this.look = look;
+    if (!this.identity || !this.instance) return;
+    this.applyTone();
+    this.applyLook();
+  }
+
+  get currentLook(): CharacterLook | null {
+    return this.look;
+  }
+
+  private resolvedLook(): ResolvedLook {
+    return this.look ? resolveLook(this.look) : lookFor(this.identity ?? "");
+  }
+
+  /**
+   * The build, as a scale on the model root.
    *
-   * Players only. A shopkeeper with a randomly assigned beard is a shopkeeper
-   * whose face changes meaning, and monsters have no head bone worth the name —
-   * `identity` is set for player characters and nothing else, which is the
-   * same gate the tint uses.
+   * Applied here rather than baked into the rig because it is per character, and
+   * because the root is the one place a scale does not have to be undone for
+   * gear: the wardrobe rides the bones, so it comes along. As a RATIO against the
+   * build already applied, because a look can change after the body is built.
    */
   private applyLook(): void {
     if (!this.identity || !this.instance) return;
-    // The previous body's, if this is a swap. They hang off bones that are
-    // about to stop existing.
-    for (const part of this.lookParts) part.removeFromParent();
-    this.lookParts = [];
-    const look = lookFor(this.identity);
-    for (const piece of buildHairAndBeard(look.hair, look.beard, look.hairColor)) {
-      const holder = this.holderFor(piece.bone);
-      if (!holder) continue;
-      holder.add(piece.object);
-      // TRACKED SEPARATELY FROM GEAR, and that is the whole of a bug worth
-      // recording. Pushing hair onto `worn` looked right — it is worn, and it
-      // would then be cleaned up on a body swap — but `clearGear` empties
-      // `worn` on EVERY dress, and dressing happens on every inventory update.
-      // So the hair was built, attached, and removed by the first items
-      // message to arrive, and six characters photographed bald with nothing
-      // in the log to say a thing had been taken off them.
-      //
-      // A look is not kit. It changes when the BODY changes and at no other
-      // time, which is exactly the lifetime of this list.
-      this.lookParts.push(piece.object);
-      this.trackMaterials(piece.object);
-    }
-    // Build is a scale on the model root. Applied here rather than baked into
-    // the rig because it is per character, and because the root is the one
-    // place a scale does not have to be undone for gear: the wardrobe rides
-    // the bones, so it comes along.
-    this.instance.object.scale.multiplyScalar(look.build);
+    const { build } = this.resolvedLook();
+    this.instance.object.scale.multiplyScalar(build / this.appliedBuild);
+    this.appliedBuild = build;
   }
 
   private tintBody(): void {
@@ -1466,9 +1480,16 @@ export class Actor {
     //
     // `skin.ts` transforms the texture's pixels instead, which can go lighter
     // and can shift hue, and caches one variant per tone.
-    const tone = lookFor(this.identity).skin;
+    // Remembered, because at this moment `litMaterials` is exactly the body —
+    // gear and hair are added after — and a later tone change must not reach
+    // the hair, which lives in the same list by then.
+    this.bodyMaterials = this.litMaterials.map((e) => e.mat);
+    this.applyTone();
+  }
 
-    for (const { mat } of this.litMaterials) applySkin(mat, tone);
+  private applyTone(): void {
+    const tone = this.resolvedLook().skin;
+    for (const mat of this.bodyMaterials) applySkin(mat, tone);
   }
 
   /**

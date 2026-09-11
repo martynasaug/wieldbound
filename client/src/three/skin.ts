@@ -76,28 +76,85 @@ const BASE_MEAN = 0.36;
  * mid tones are yellow-olive, deep tones are red-brown — because a palette that
  * only changes brightness looks like one person under eight lighting rigs.
  *
- * THE RANGE STOPS SHORT OF BOTH ENDS, 0.21 to 0.62 rather than 0.05 to 0.95.
+ * THE RANGE STOPS SHORT OF BOTH ENDS, 0.24 to 0.72 rather than 0.05 to 0.95.
  * Three times the lightness from end to end is already an unmistakable
  * difference between two characters standing together, and the last stop in
  * either direction buys nothing but a silhouette or a ghost: detail dies at
  * both ends, and detail is what makes a character look like a person rather
  * than a shape.
  */
+// THE PALE END WAS GREY, and seen side by side in the creator it looked like a
+// statue rather than a person. The body texture is a low-saturation brown (HSL
+// saturation about 0.3), and porcelain multiplied that by 0.55: a lightness of
+// 0.62 with almost no colour in it is khaki-grey, whatever the hue. Pale skin is
+// peach — about as saturated as the brown it started from, much lighter, and a
+// little towards pink.
+//
+// AND THEN IT WAS ORANGE. The first correction multiplied saturation by 1.7,
+// which in HSL at a lightness of 0.6 is terracotta: porcelain and fair came out
+// as the same sunburn and neither read lighter than olive. The saturation that
+// reads as pale skin is close to the texture's own (~0.33); what makes it pale
+// is the LIGHTNESS, so that is where the range lives now.
 export const SKIN_TONES: SkinTone[] = [
-  { id: "porcelain", hueShift: +0.014, saturation: 0.55, target: 0.62, contrast: 0.95 },
-  { id: "fair", hueShift: +0.008, saturation: 0.70, target: 0.56, contrast: 1.0 },
-  { id: "light", hueShift: +0.002, saturation: 0.85, target: 0.50, contrast: 1.0 },
+  { id: "porcelain", hueShift: -0.03, saturation: 1.1, target: 0.72, contrast: 0.9 },
+  { id: "fair", hueShift: -0.025, saturation: 1.1, target: 0.64, contrast: 0.95 },
+  { id: "light", hueShift: -0.015, saturation: 1.05, target: 0.56, contrast: 1.0 },
   { id: "olive", hueShift: -0.020, saturation: 0.95, target: 0.44, contrast: 1.0 },
   { id: "tan", hueShift: -0.008, saturation: 1.05, target: 0.39, contrast: 1.0 },
   { id: "bronze", hueShift: -0.016, saturation: 1.12, target: 0.33, contrast: 0.92 },
   { id: "umber", hueShift: -0.010, saturation: 1.08, target: 0.27, contrast: 0.82 },
-  { id: "ebony", hueShift: -0.004, saturation: 0.98, target: 0.21, contrast: 0.72 },
+  // Lifted from 0.21: at full figure the body read as a black silhouette.
+  { id: "ebony", hueShift: -0.004, saturation: 1.0, target: 0.24, contrast: 0.74 },
 ];
 
 /** Roughly how light this tone comes out, for keeping hair off the skin. */
 export function toneLightness(tone: SkinTone): number {
   return tone.target;
 }
+
+/** A tone by its wire id (`shared/look.ts`). Unknown ids get a middle tone rather than a throw. */
+export function toneById(id: string): SkinTone {
+  return SKIN_TONES.find((t) => t.id === id) ?? SKIN_TONES[3];
+}
+
+/**
+ * One flat colour standing in for a whole recoloured texture: the body's
+ * dominant painted brown (#6b543a, see `BASE_MEAN`) run through the same
+ * transform `recolour` applies to every pixel.
+ *
+ * For the pieces of a face that are geometry rather than texture — a nose, a
+ * pair of ears — and for the creator's swatches, so the swatch you click is
+ * the colour the body turns.
+ */
+export function toneSwatchRgb(tone: SkinTone): [number, number, number] {
+  const [h, s, l] = rgbToHsl(0x6b / 255, 0x54 / 255, 0x3a / 255);
+  return hslToRgb(
+    (h + tone.hueShift + 1) % 1,
+    clamp01(s * tone.saturation),
+    clamp01(tone.target + (l - BASE_MEAN) * tone.contrast),
+  );
+}
+
+export function toneSwatch(tone: SkinTone): THREE.Color {
+  const [r, g, b] = toneSwatchRgb(tone);
+  return new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace);
+}
+
+export function toneCss(tone: SkinTone): string {
+  const [r, g, b] = toneSwatchRgb(tone);
+  return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+}
+
+/**
+ * The texture each material was built with, before any tone touched it.
+ *
+ * A look can change while the game runs now, and `applySkin` replaces
+ * `mat.map` with its recoloured canvas — so without remembering the original,
+ * the second tone would be computed from the FIRST tone's pixels, and every
+ * change after it would compound. A WeakMap rather than `userData`, because
+ * material clones copy `userData` through JSON and a texture does not survive it.
+ */
+const originalMaps = new WeakMap<THREE.Material, THREE.Texture>();
 
 const cache = new Map<string, THREE.Texture>();
 
@@ -210,7 +267,8 @@ function recolour(base: THREE.Texture, tone: SkinTone): THREE.Texture | null {
  * stops would poll for the life of the session.
  */
 export function applySkin(mat: THREE.MeshStandardMaterial, tone: SkinTone): void {
-  const base = mat.map;
+  if (mat.map && !originalMaps.has(mat)) originalMaps.set(mat, mat.map);
+  const base = originalMaps.get(mat) ?? mat.map;
   if (!base) {
     // No texture to recolour — a flat-coloured material, which some bodies do
     // have. A multiply is all that is available, and it is enough: a flat
@@ -225,9 +283,8 @@ export function applySkin(mat: THREE.MeshStandardMaterial, tone: SkinTone): void
     // The material may have been swapped or the actor torn down while this was
     // waiting. Re-reading `mat.map` rather than closing over the old one keeps
     // it from resurrecting a texture the actor has moved on from.
-    const current = mat.map;
-    if (!current) return;
-    const out = recolour(current, tone);
+    if (!mat.map) return;
+    const out = recolour(originalMaps.get(mat) ?? mat.map, tone);
     if (out) {
       mat.map = out;
       // The colour stays white under a map: the recolour lives in the pixels
