@@ -210,8 +210,27 @@ for (const q of QUESTS) {
   if (o.kind === "kill") {
     if (!MONSTER_STATS[o.monster]) {
       fail(`"${q.name}" names the monster "${o.monster}", which does not exist`);
-    } else if (MONSTER_STATS[o.monster].band > 3) {
-      fail(`"${q.name}" sends a beginner at a band-${MONSTER_STATS[o.monster].band} monster`);
+    } else {
+      // BAND AGAINST THE LEVEL IT UNLOCKS AT, not a flat cap.
+      //
+      // This refused any kill quest naming a band-4 or band-5 creature at all,
+      // which was right while every kill quest in the game was an early one and
+      // wrong the moment three boss hunts arrived at levels 16, 20 and 24. The
+      // fault it is actually guarding against is "a beginner sent at something
+      // that will kill them" — and a beginner is defined by the LEVEL the quest
+      // opens at, not by the band in isolation.
+      //
+      // The ladder below is the world's own: band 1 is at the wall and band 5
+      // is the far corners, so each ring needs roughly four more levels than
+      // the last before the game should be pointing anybody at it.
+      const band = MONSTER_STATS[o.monster].band;
+      const minLevelForBand = [0, 1, 2, 4, 12, 16][band] ?? 0;
+      if (q.requiresLevel < minLevelForBand) {
+        fail(
+          `"${q.name}" sends a level-${q.requiresLevel} character at a band-${band} monster ` +
+            `(band ${band} wants level ${minLevelForBand}+)`,
+        );
+      }
     }
   }
   if (o.kind === "gather" && !["wood", "ore", "herb"].includes(o.resource)) {

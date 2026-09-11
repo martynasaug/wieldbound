@@ -189,6 +189,11 @@ export const LOADING_HINTS = [
   // Added when gathering stopped happening by itself (M70.230). Walking up to a
   // tree used to harvest it, so there was nothing to teach; now there is, and
   // this is the only text every player reads before they ever meet a tree.
+  // Added with the relics (M70.248-249). Salvage teaching the thing you broke
+  // is the rule the whole recipe economy runs on; three trophies are the one
+  // exception, and an exception nobody is told about is a mechanic that does
+  // not exist.
+  "Three creatures carry a trophy worth more broken than worn. Salvaging one teaches a recipe that has no other way of being learned.",
   "Click a tree, rock or bush to work it. Standing beside one does nothing — and stepping away, or letting something reach you, ends the job.",
 ];
 

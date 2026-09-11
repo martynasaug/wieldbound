@@ -226,6 +226,77 @@ export const QUESTS: QuestDef[] = [
     reward: { xp: 1600, materials: { wood: 300, ore: 300, herb: 150, ingot: 4 } },
   },
 
+  // --- Warden Cabel: the three worth going for --------------------------------
+  //
+  // THE END OF THE CHAIN, AND THE ONLY THING IN THE GAME THAT POINTS AT A BOSS.
+  //
+  // Three creatures have a `guaranteedDrop` and a `signature`, and since M70.248
+  // that signature is the key to a relic — the one place in the item economy
+  // where salvaging a thing teaches something OTHER than itself. Nothing said
+  // so. A player who found the Bulwark would keep it, quite reasonably, because
+  // everything they have ever been told about salvage is that it teaches you to
+  // make the thing you broke.
+  //
+  // Tobin explains the rule at the anvil; these say where to go. Each names its
+  // creature, where it stands, and what it carries, because "go and kill a
+  // troll" in a world laid out as rings is only an instruction if it comes with
+  // a bearing.
+  //
+  // NO ESSENCE IN THE REWARDS, deliberately and by precedent: the Ashen Stone's
+  // note above is the rule, and it applies harder here. These pay in the
+  // materials a relic ALSO wants, so the quest funds the fire without minting
+  // the one currency that is supposed to come off a kill — which the kill
+  // itself pays anyway.
+  {
+    id: "watch-troll",
+    giver: "cabel",
+    name: "The One In The Snow",
+    brief:
+      "There is a troll out past the fourth ring, south-south-west, and it does not wander — " +
+      "it is exactly where it has always been. It carries a shield somebody left behind a long " +
+      "time ago. If you kill it, that shield is yours. Do not thank me for it; ask Tobin what " +
+      "it is actually worth, because it is not worth carrying.",
+    done:
+      "Then that is the first of the three. Take the shield to the anvil before you get " +
+      "attached to it.",
+    objective: { kind: "kill", monster: "troll", count: 1 },
+    requiresLevel: 16,
+    after: "watch-ashenstone",
+    reward: { xp: 2000, materials: { wood: 260, ore: 340, herb: 160, ingot: 6 } },
+  },
+  {
+    id: "watch-golem",
+    giver: "cabel",
+    name: "The Thing That Does Not Sleep",
+    brief:
+      "Fifth ring, south-east. Stone, and about as fast, and there is fourteen of armour on it " +
+      "— a quick blade will do nothing at all to that and I would rather tell you now than read " +
+      "it in a report. Bring something heavy. It keeps a sledge that nobody has ever managed to " +
+      "lift out of there.",
+    done:
+      "Second of the three. You are one of maybe four people I have ever said that to.",
+    objective: { kind: "kill", monster: "golem", count: 1 },
+    requiresLevel: 20,
+    after: "watch-troll",
+    reward: { xp: 3200, materials: { wood: 320, ore: 420, herb: 200, ingot: 8, weave: 4 } },
+  },
+  {
+    id: "watch-dragon",
+    giver: "cabel",
+    name: "The Last Thing On The Map",
+    brief:
+      "North-west, out where the Ashen Stone is — you have already stood there, so you know how " +
+      "far it is. Three hundred and forty of it, and it is wearing its own plate. I am not " +
+      "ordering you. Nobody on this watch outranks that decision.",
+    done:
+      "Three. There is nothing further out than that, and nothing left in my book to send you " +
+      "at. Whatever you make out of what it was wearing, I would like to see it.",
+    objective: { kind: "kill", monster: "dragon", count: 1 },
+    requiresLevel: 24,
+    after: "watch-golem",
+    reward: { xp: 5000, materials: { wood: 420, ore: 520, herb: 260, ingot: 12, weave: 8 } },
+  },
+
   // --- Marda Quill: the inn needs things -------------------------------------
   // Gathering and crafting, so the two givers do not send you to the same
   // place. Hers are the quests that teach the anvil.

@@ -1370,6 +1370,25 @@ export const TOWN_NPCS: TownNpc[] = [
           "it, and now you can forge Frostbrands. Everything in the first ring you know already.",
       },
       {
+        // THE RELIC LOOP WAS INVISIBLE, which in this game means it did not
+        // exist. M70.248 made three boss trophies teach a recipe OTHER than
+        // themselves, and nothing anywhere said so: a player who found the
+        // Bulwark would keep it, because everything they had been told about
+        // salvage is that it teaches you to make the thing you broke. The one
+        // exception to the rule has to be spoken out loud by somebody, and the
+        // apprentice at the anvil is who explains the anvil.
+        q: "Is anything not worth salvaging?",
+        a:
+          "Other way round. There are three things in this world it is worth going a very long " +
+          "way to break.\n\n" +
+          "The troll carries a shield, the golem a sledge, the dragon its own plate. Salvage one " +
+          "of those and it does NOT teach you to make another — it teaches you something that " +
+          "has no other way of being learned. Master calls them relics. I have seen one. The " +
+          "fire for it costs essence, which you cannot dig up, so you pay for it in the same " +
+          "coin you got the trophy in.\n\n" +
+          "Keep the shield if you like it. It is a good shield. It is worth more broken.",
+      },
+      {
         q: "Is reforging safe?",
         a:
           "It re-rolls what the dice gave you, so no. But it leaves etched runes standing, so " +

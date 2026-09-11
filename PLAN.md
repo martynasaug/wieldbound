@@ -23504,3 +23504,54 @@ and `items.mjs` already checks every model against disk. That file was worth
 every line of it.
 
 Suite 49/49.
+
+**Phase 70 M70.249 — the relic loop said out loud.** M70.248 built a late-game
+loop and left it invisible, which in this game means it does not exist. Three
+boss trophies teach a recipe OTHER than themselves — the single exception to the
+rule the whole item economy runs on — and nothing anywhere mentioned it. A
+player finding the Bulwark would keep it, entirely reasonably, because
+everything they have been told about salvage is that it teaches you to make the
+thing you broke.
+
+THREE PLACES NOW SAY IT, each doing a different job:
+
+  * TOBIN, at the anvil, explains the rule. He already owns this subject — he
+    lists the bench's five verbs and teaches that salvage is how recipes arrive
+    — so the exception belongs in his mouth and nowhere else. "Keep the shield
+    if you like it. It is a good shield. It is worth more broken."
+  * CABEL POINTS AT THE CREATURES. Three new quests close his chain, one per
+    boss, at levels 16, 20 and 24 behind the Ashen Stone. Each names its
+    creature, its ring and its bearing, because "go and kill a troll" in a world
+    laid out as rings is only an instruction if it comes with a direction. The
+    golem's brief warns about its fourteen armour outright — that is the one
+    creature a fast weapon simply cannot hurt, and reading it in a report
+    afterwards is worse than being told.
+  * A LOADING HINT carries it to players who talk to nobody.
+
+NO ESSENCE IN THE REWARDS, by precedent rather than by taste: the Ashen Stone's
+own note records that essence comes off kills by design and that the biggest
+reward in the game paying some is the back door that would end that. It applies
+harder to a boss hunt, which pays essence through the kill anyway. These pay in
+ingot and wardweave — what a relic also wants — so the quest funds the fire
+without minting the currency.
+
+AND A TEST RULE THAT HAD OUTLIVED ITS REASONING. `quests.mjs` refused any kill
+objective naming a band-4 or band-5 creature at all: "sends a beginner at a
+band-N monster". That was right while every kill quest in the game was an early
+one, and wrong the moment a boss hunt existed — the fault it guards against is a
+BEGINNER sent at something that will kill them, and a beginner is defined by the
+level the quest opens at, not by the band in isolation. It now checks the band
+against `requiresLevel` on the world's own ladder, so a level-24 dragon hunt
+passes and a level-2 one still fails.
+
+Suite 49/49.
+
+ONE THING DELIBERATELY NOT DONE: no new art was fetched, though it was offered.
+`ASSET_CREDITS.txt` records why the weapons pack was chosen over better-looking
+ones — it has NO TEXTURES, every mesh being flat material colour in a small
+shared vocabulary, which is exactly what lets a palette repaint a mesh and a
+quality tint it. That is how 23 models became a 120-item catalogue. A textured
+relic model from another pack would be the one item in the game that cannot be
+repainted, and it would look like an import. The relics reuse existing meshes in
+palettes nothing else uses, which is the pipeline working rather than a
+shortcut around it.
