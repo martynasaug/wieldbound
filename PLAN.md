@@ -23330,3 +23330,70 @@ anvil does not — fails today, and a test written to pass around that would be
 the fault dressed as coverage.
 
 Suite 48/48, unchanged; this milestone touches no game code.
+
+**Phase 70 M70.246 — Oswyn now sells the one thing the anvil cannot.** Acting on
+the finding recorded in M70.245, with the design decision taken rather than
+deferred.
+
+WHAT WAS WRONG. His six gear lines were band 1, which needs no recipe, forges
+for 4 wood and 8 ore, and arrives at the same fixed "honed" quality either way —
+so every line was a strictly worse copy of the anvil at 2.3x to 3.5x the price.
+The note above `SHOP_STOCK` said the intent outright: "buying is the expensive
+way to get something, so a player who has worked out the anvil never comes back
+here". That is a coherent design for a crutch you outgrow, and it had no moment
+to be useful in: a new character arrives able to forge, and the Herald points
+them at the anvil in the same breath that mentions the shop.
+
+WHAT HE SELLS NOW. Band 2, one tier up, in the same six slots — Falchion,
+Recurve Bow, Oaken Stave, Scale Mail, Traveller's Boots, Round Shield. Band 2
+needs a RECIPE, and a recipe is learned by SALVAGING one, which closes a loop
+the game already owned and never used. Cabel's advice has always been "salvage a
+thing to learn to make it"; until now there was nothing worth salvaging.
+
+    forge it        -> refused, no recipe
+    buy one         -> dear
+    salvage it      -> the recipe is learned
+    forge it again  -> 14 wood and 32 ore, forever
+
+Prices sit at about 1.6x the forge cost so learning pays for itself on the
+second one, and the currency mix varies per line — the bow and shield are
+wood-heavy, the stave wants herb, the mail wants ore — so which material a
+player has decides what they can afford first. That is the only thing that makes
+three gathering resources a choice rather than three chores.
+
+THE CONSUMABLES HAD THE SAME FAULT AND A DIFFERENT FIX. The bench makes a potion
+for 2 wood and 8 herb, so a shop charging wood and herb for one was the same
+dead trade. His are now priced in wood and ORE and contain no herb at all — that
+absence is the product. Out in the field with a bag of ore and no leaves his
+counter is the answer, and at home it never is.
+
+VERIFIED AS A LOOP, NOT AS A TABLE. `tools/soak/shoploop.mjs` drives all four
+steps against the live server, because every failure here is silent — a shop
+selling something already forgeable is dead stock again, and a salvage that
+teaches nothing leaves the price a pure loss:
+
+    1. forging it unknown: refused — "Falchion: salvage one to learn it."
+    2. buying it: bought
+    3. salvaging it: the recipe is learned
+    4. forging it known: forged for 14 wood + 32 ore
+
+Its first run reported "NOT REFUSED" when it had simply never got within range
+to ask, which is the same diagnostic sloppiness this suite keeps catching; it
+now separates "asked and was refused" from "never asked" from "it forged", and
+says INCONCLUSIVE for the middle one. A second run then failed to buy and said
+why — "Not enough — Falchion costs 26 wood, 54 ore" — which was the probe
+writing to `g.wallet` and expecting the SERVER to believe it.
+
+`tools/test/shop.mjs` section 2 inverted: it asserted band 1 for two years and
+was describing dead content. It now asserts band 2, asserts each line is NOT
+`isBasicRecipe` — the load-bearing clause, since a line that became forgeable
+without a recipe would be dead stock again and nothing else would notice — and
+asserts every line still costs more than forging it, or learning the recipe is
+pointless and salvage loses the job this gave it. A new section holds the
+consumables to the herb-free rule from both ends: his price must contain no
+herb, and the bench's must.
+
+Oswyn also has a new topic, "Why would I buy what I can forge?", because a shop
+whose whole premise is invisible is a shop people walk past.
+
+Suite 48/48.

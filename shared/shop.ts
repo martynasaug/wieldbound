@@ -133,76 +133,109 @@ export interface ShopEntry {
 }
 
 /**
- * The markup.
+ * WHAT OSWYN IS FOR: THE THINGS YOU CANNOT MAKE YET.
  *
- * A band-1 weapon forges for about 4 wood and 9 ore. Oswyn wants roughly three
- * times that, which is a real cost at level 1 — twelve gathers or so — without
- * being a wall. The point is that buying is the expensive way to get something,
- * so a player who has worked out the anvil never comes back here.
+ * This list used to be band-1 gear, and the note here said the point was that
+ * "buying is the expensive way to get something, so a player who has worked out
+ * the anvil never comes back here". That is a coherent design — a crutch you
+ * outgrow — and it had no moment to be useful in, because there was nothing to
+ * outgrow. Band 1 needs no recipe (`isBasicRecipe`), a new character arrives
+ * with enough wood and ore to forge on their first visit, and the Herald points
+ * them at the anvil in the same sentence that mentions the shop. Measured in
+ * M70.245: every line was 2.3x to 3.5x the forge cost for the SAME base at the
+ * SAME fixed quality — `FORGE_OUTPUT_RARITY` and `SHOP_OUTPUT_RARITY` are both
+ * "honed" — and priced through his own 4:1 exchange, forging won all eighteen
+ * comparisons of six items against three currencies. There was no mix of
+ * materials in which buying was correct.
+ *
+ * So the stock is now BAND 2, which is the one thing the anvil genuinely cannot
+ * do for you: band 2 and up needs a recipe, and a recipe is learned by
+ * SALVAGING one. That closes a loop the game already had and never used —
+ * Cabel's own advice is "salvage a thing to learn to make it" — and turns the
+ * shop into the entry fee for a tier rather than a worse copy of the anvil:
+ *
+ *     buy one (dear)  ->  wear it  ->  later break it open to learn it
+ *                                  ->  forge the rest cheaply
+ *
+ * Which makes the price a real decision instead of a tax, and gives salvage a
+ * job at exactly the level a player first has something worth salvaging.
+ *
+ * THE MARKUP. Band-2 gear forges for 14 wood and 32 ore once known. These sit at
+ * roughly 1.6x that, so learning the recipe pays for itself on the second one,
+ * and the mix varies per line: the bow and the shield are wood-heavy, the stave
+ * wants herb, the mail wants ore. Which material you have decides what you can
+ * afford first, which is the only thing that makes three gathering resources a
+ * choice rather than three chores.
+ *
+ * THE CONSUMABLES ARE PRICED IN ORE ON PURPOSE. The workbench makes a potion
+ * for 2 wood and 8 herb, so a shop selling one for wood and herb was the same
+ * dead trade the gear was. Oswyn's do not cost herb at all — that is the thing
+ * you are buying. Out in the field with no herb and a bag of ore, his counter
+ * is the answer, and at home it never is.
  */
 export const SHOP_STOCK: ShopEntry[] = [
   {
     id: "potion",
     kind: "consumable",
     ref: "potion" satisfies ConsumableId,
-    cost: { wood: 4, herb: 14 },
-    pitch: "Bitter, but it closes a wound.",
+    cost: { wood: 8, ore: 26 },
+    pitch: "Bitter, but it closes a wound. No herb in the price — that is what you are buying.",
   },
   {
     id: "draught",
     kind: "consumable",
     ref: "draught" satisfies ConsumableId,
-    cost: { ore: 10, herb: 22 },
-    pitch: "For the ones who throw light about.",
+    cost: { wood: 34, ore: 22 },
+    pitch: "For the ones who throw light about. Costs you no herb either.",
   },
   {
     id: "tonic",
     kind: "consumable",
     ref: "tonic" satisfies ConsumableId,
-    cost: { ore: 8, herb: 20 },
-    pitch: "You will remember the fight more clearly.",
+    cost: { wood: 30, ore: 20 },
+    pitch: "You will remember the fight more clearly. Still no leaves.",
   },
   {
-    id: "recruitblade",
+    id: "falchion",
     kind: "item",
-    ref: "recruitblade",
-    cost: { wood: 14, ore: 28 },
-    pitch: "Every guard in the watch started on one of these.",
+    ref: "falchion",
+    cost: { wood: 26, ore: 54 },
+    pitch: "Heavier than the watch issue, and it keeps its edge. You cannot make one yet.",
   },
   {
-    id: "hunterbow",
+    id: "recurve",
     kind: "item",
-    ref: "hunterbow",
-    cost: { wood: 30, ore: 12 },
-    pitch: "Draws light. Kills at a distance, which is the point.",
+    ref: "recurve",
+    cost: { wood: 52, ore: 26 },
+    pitch: "Laminated, not carved. Half the price of it is the wood it took.",
   },
   {
-    id: "apprenticestaff",
+    id: "oakenstave",
     kind: "item",
-    ref: "apprenticestaff",
-    cost: { wood: 26, herb: 16 },
-    pitch: "Cut from a lightning-struck ash, or so I am told.",
+    ref: "oakenstave",
+    cost: { wood: 44, herb: 30 },
+    pitch: "Seasoned, banded, and steeped in something I am not naming. Herb, not ore.",
   },
   {
-    id: "leatherjerkin",
+    id: "scalemail",
     kind: "item",
-    ref: "leatherjerkin",
-    cost: { wood: 12, ore: 24 },
-    pitch: "It will not stop a troll. It will stop a slime.",
+    ref: "scalemail",
+    cost: { wood: 24, ore: 58 },
+    pitch: "Every scale riveted by hand. That is where the ore goes.",
   },
   {
-    id: "leatherboots",
+    id: "travelboots",
     kind: "item",
-    ref: "leatherboots",
-    cost: { wood: 10, ore: 18 },
-    pitch: "Walk further, come back with more.",
+    ref: "travelboots",
+    cost: { wood: 22, ore: 46 },
+    pitch: "Nailed soles. You will feel the difference on the third ring out.",
   },
   {
-    id: "plankshield",
+    id: "roundshield",
     kind: "item",
-    ref: "plankshield",
-    cost: { wood: 22, ore: 8 },
-    pitch: "Wood. Honest about it.",
+    ref: "roundshield",
+    cost: { wood: 46, ore: 22 },
+    pitch: "Limewood with an iron boss. Takes a blow the plank would split under.",
   },
 ];
 

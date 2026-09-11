@@ -18,7 +18,7 @@
 //
 //   node tools/test/shop.mjs
 import { EXCHANGE_RATE, EXCHANGE_BATCH, EXCHANGE_OFFERS, EXCHANGEABLE, SHOP_STOCK, SHOP_OUTPUT_RARITY, exchangeById, exchangeCost, shopEntry } from "../../shared/shop.ts";
-import { ITEM_BASES, CONSUMABLES } from "../../shared/items.ts";
+import { ITEM_BASES, CONSUMABLES, isBasicRecipe, forgeCost } from "../../shared/items.ts";
 import { RARITIES } from "../../shared/protocol-types.ts";
 
 let failures = 0;
@@ -47,16 +47,64 @@ section("1. every row points at something that exists");
   console.log(`  ${SHOP_STOCK.length} rows, all resolving, sold at "${SHOP_OUTPUT_RARITY}"`);
 }
 
-section("2. a starter shop stocks starter things");
+section("2. the shop sells what the anvil cannot");
 {
-  // Oswyn is the first vendor a level 1 character meets and his whole pitch is
-  // that buying is the expensive way to get band-1 gear. A higher band arriving
-  // in this list would be unaffordable at the level it is offered and would
-  // undercut the anvil at the level it is not.
+  // THIS USED TO ASSERT BAND 1, and the reasoning was that buying should be the
+  // expensive way to get starter gear. It held for two years of commits and
+  // described dead content: band 1 needs no recipe, a new character can afford
+  // to forge on their first visit, and both routes hand back the same fixed
+  // "honed" quality — so every line was a strictly worse copy of the anvil.
+  // M70.245 measured it across three currencies and forging won all eighteen
+  // comparisons. A shop nobody should ever use is not a shop.
+  //
+  // The rule now is the one that gives him a job: he stocks the tier you cannot
+  // make yet. Band 2 needs a recipe, a recipe comes from SALVAGING one, so the
+  // price buys ACCESS and the second one is cheap. Each clause below is a
+  // separate way that could quietly stop being true.
   for (const e of SHOP_STOCK.filter((x) => x.kind === "item")) {
-    const band = ITEM_BASES[e.ref]?.band ?? 1;
-    check(`${e.id} is band 1`, band === 1, `band ${band} in the starter shop`);
+    const base = ITEM_BASES[e.ref];
+    if (!base) continue;
+    check(`${e.id} is band 2`, base.band === 2, `band ${base.band} — band 1 is free at the anvil`);
+    // The load-bearing one. If a line ever becomes forgeable without a recipe,
+    // it is dead stock again and nothing else here would notice.
+    check(
+      `${e.id} cannot simply be forged`,
+      !isBasicRecipe(base.id),
+      "a basic recipe needs no shop",
+    );
+    // And it must stay dearer than making it, or learning the recipe is
+    // pointless and salvage loses the job this change gave it.
+    const fc = forgeCost(base);
+    const total = (c) => (c.wood ?? 0) + (c.ore ?? 0) + (c.herb ?? 0);
+    check(
+      `${e.id} costs more than forging it`,
+      total(e.cost) > total(fc),
+      `${total(e.cost)} bought against ${total(fc)} forged`,
+    );
   }
+  console.log(
+    `  ${SHOP_STOCK.filter((x) => x.kind === "item").length} gear rows, all band 2, all needing a recipe`,
+  );
+}
+
+section("2b. his consumables are the herb-free route");
+{
+  // The same fault the gear had: the bench makes a potion for 2 wood and 8 herb,
+  // so a shop charging wood and herb for one was a worse copy of the bench. What
+  // he sells now is the ABSENCE of herb — out in the field with a bag of ore and
+  // no leaves, his counter is the answer. That only works while his prices
+  // genuinely contain no herb and the bench's genuinely do.
+  for (const e of SHOP_STOCK.filter((x) => x.kind === "consumable")) {
+    const def = CONSUMABLES[e.ref];
+    if (!def) continue;
+    check(`${e.id} costs no herb`, !e.cost.herb, `${e.cost.herb} herb is the thing you came here to avoid`);
+    check(
+      `${e.id} is otherwise craftable with herb`,
+      (def.cost.herb ?? 0) > 0,
+      "the bench does not want herb for it either, so buying saves nothing",
+    );
+  }
+  console.log(`  ${SHOP_STOCK.filter((x) => x.kind === "consumable").length} consumable rows, none priced in herb`);
 }
 
 section("3. trading cannot be done in a circle");

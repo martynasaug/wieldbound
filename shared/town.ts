@@ -1203,6 +1203,22 @@ export const TOWN_NPCS: TownNpc[] = [
       "with rather less than I take. Have a look.",
     topics: [
       {
+        // ADDED WITH M70.246, WHICH GAVE HIM SOMETHING TO SELL. His shelf used
+        // to hold band-1 gear at three times what the anvil charges for the
+        // same thing at the same quality — dead stock, and worse, a trap for a
+        // new player who had not found the anvil yet. He stocks the tier above
+        // it now, and this is where he says so, because a shop whose whole
+        // premise is invisible is a shop people walk past.
+        q: "Why would I buy what I can forge?",
+        a:
+          "You would not, and I would not sell it to you. Look at the shelf: there is nothing " +
+          "on it you can make. That is the whole trade. A recipe comes out of taking a thing " +
+          "APART, and you cannot take apart what you have never owned — so the first one of " +
+          "anything comes from me, at my price. Buy it, wear it, and when you are sick of it " +
+          "break it open at the anvil and make your own forever after. Dear once, cheap after. " +
+          "I have made my peace with that.",
+      },
+      {
         q: "You'll trade one for another?",
         a:
           "Four for one, and do not haggle: I have to cart it, store it and find somebody who " +

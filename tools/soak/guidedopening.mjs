@@ -301,7 +301,18 @@ s = await state();
 console.log(`${mark()}  gathering herb: ${start.herb} -> ${s.herb} ${gotHerb ? "(target met)" : "(gave up)"}`);
 console.log(`      ${await endsSince()}`);
 
-// --- 3. buy the blade the shop sells for exactly this moment -----------------
+// --- 3. look in at the shop, which no longer sells a starter weapon ----------
+//
+// This step used to buy the Recruit's Blade for 14 wood and 28 ore, and that
+// was the harness following bad content: the same blade forges for 4 and 8 at
+// the anvil, at the same quality, with no recipe needed (M70.245). M70.246
+// moved Oswyn's shelf up a tier, so what he sells now genuinely cannot be made
+// yet — and a level-1 character cannot afford it, which is the point rather
+// than a fault.
+//
+// The step is kept because "can a new player buy anything here" is worth
+// reporting either way. Finding nothing affordable is the expected answer now,
+// and the line below says so instead of reading as a failure.
 const oswyn = TOWN_NPCS.find((n) => n.role === "vendor");
 const at = await goTo(npcPos(oswyn.id), NPC_TALK_RANGE_PX * 0.6);
 if (at) {
@@ -317,7 +328,9 @@ if (at) {
   });
   await page.waitForTimeout(900);
   await page.keyboard.press("Escape");
-  console.log(`${mark()}  ${bought ? `bought: ${bought}` : "could not afford or find a blade"}`);
+  console.log(
+    `${mark()}  ${bought ? `bought: ${bought}` : "nothing affordable at Oswyn's yet, which is expected — he stocks the tier above the anvil"}`,
+  );
   // And hold it, since buying a sword you never draw is not the point.
   await page.evaluate(() => {
     const g = window.__wieldbound;
