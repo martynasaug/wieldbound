@@ -540,13 +540,28 @@ export class Hud {
   private nextSyncAt = 0;
   /** Live bottom edge of the unit frames, refreshed by syncLayout. */
   private framesBottom = HUD_FRAME_RECT.h;
-  /** Live edges of the right-hand furniture, so world labels are suppressed
-   *  behind the minimap and the window rail the same way they already are
-   *  behind the unit frame. Infinity until the first syncLayout, which means
-   *  suppress nothing — the right answer before anything has been measured. */
-  private railLeft = Infinity;
-  private railTop = 0;
-  private railBottom = 0;
+  /**
+   * The OPEN WINDOWS, one rectangle each — not the rail that contains them.
+   *
+   * This was a single rect taken from `#window-rail`'s own bounding box, and
+   * that element is not furniture: it is a full-width flex container, CSS
+   * `left: 296px; right: 82px`, and its own comment says why — "spanning the
+   * screen and packing right gives the fitter a real budget to measure
+   * against". Its rect is therefore a band across most of the play area AT ALL
+   * TIMES, whether or not a single window is open.
+   *
+   * Using it as an exclusion zone suppressed every nameplate whose anchor
+   * landed in that band, which is most of the screen below the minimap and
+   * above the hotbar. That is the whole of "nameplates sometimes appear,
+   * sometimes disappear": whether a label survived depended on where its
+   * subject happened to sit relative to an invisible rectangle belonging to a
+   * layout helper. It is also why the fix before this one looked like it
+   * worked in a probe and not in the game — the probe watched a tree label,
+   * which sits high enough to clear the band.
+   *
+   * Empty rail, no exclusion, which is what a player sees: nothing there.
+   */
+  private railRects: { left: number; top: number; right: number; bottom: number }[] = [];
   private minimapLeft = Infinity;
   private minimapBottom = 0;
   /** Looked up once: it lives in index.html and is never replaced. */
@@ -690,12 +705,20 @@ export class Hud {
     // The right-hand furniture, measured on the same throttle. Both are fixed
     // panels that only move when the window resizes, so this costs one more
     // read on a call that is already reading.
+    // The windows themselves. `.window.open` is the same selector the rail's
+    // own fitter uses to decide what is taking up room, so the two agree on
+    // what is actually on screen.
+    this.railRects.length = 0;
     const rail = document.getElementById("window-rail");
     if (rail) {
-      const r = rail.getBoundingClientRect();
-      this.railLeft = r.left - 4;
-      this.railTop = r.top - 4;
-      this.railBottom = r.bottom + 4;
+      // Array.from rather than for-of: this tsconfig does not target a lib
+      // whose NodeList is iterable.
+      for (const el of Array.from(rail.querySelectorAll<HTMLElement>(".window.open"))) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          this.railRects.push({ left: r.left - 4, top: r.top - 4, right: r.right + 4, bottom: r.bottom + 4 });
+        }
+      }
     }
     const minimap = document.getElementById("minimap");
     if (minimap) {
@@ -902,11 +925,13 @@ export class Hud {
       if (!near) return;
       py = this.minimapBottom + PLATE_NUDGE_GAP_PX;
     }
-    // The rail is a tall strip rather than a band across the top, so pushing
-    // DOWN would leave the plate still on top of it. This one moves sideways.
-    if (px > this.railLeft && py > this.railTop && py < this.railBottom) {
+    // An open window is a tall panel rather than a band across the top, so
+    // pushing DOWN would leave the plate still on top of it. These move
+    // sideways, to whichever edge of the panel is nearer.
+    for (const r of this.railRects) {
+      if (px <= r.left || px >= r.right || py <= r.top || py >= r.bottom) continue;
       if (!near) return;
-      px = this.railLeft - PLATE_NUDGE_GAP_PX;
+      px = px - r.left < r.right - px ? r.left - PLATE_NUDGE_GAP_PX : r.right + PLATE_NUDGE_GAP_PX;
     }
     screen = { x: px, y: py };
     const y = Math.max(PLATE_TOP_MARGIN_PX, screen.y);

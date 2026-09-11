@@ -30,6 +30,13 @@ await page.evaluate(() => {
     // Queried AFTER the call, because the element is created inside it. Present
     // means the plate survived every gate; absent means one of them fired.
     const el = document.querySelector(`#hud3d [data-id="${CSS.escape(id)}"]`);
+    // WHERE IT LANDED, not just that it exists. A plate can be present and be
+    // in the wrong place — a screenshot from play showed "Tobin Ash" and
+    // "Workbench" both pinned to the left edge of the screen, hundreds of
+    // pixels from the workbench they name, because a nudge meant to clear a
+    // panel was firing against a full-width layout container. "Drawn" was true
+    // for both of them.
+    const at = el ? { x: Math.round(el.offsetLeft), y: Math.round(el.offsetTop) } : null;
     window.__plateLog.set(id, {
       kind: spec.kind,
       name: spec.name,
@@ -38,6 +45,7 @@ await page.evaluate(() => {
       distance: Math.round(spec.distance ?? 0),
       screen: screen ? { x: Math.round(screen.x), y: Math.round(screen.y) } : null,
       drawn: !!el,
+      at,
     });
     return r;
   };
@@ -53,20 +61,20 @@ const report = async (where) => {
       if (!v.drawn) {
         if (!v.screen) why = "project() returned null";
         else if (v.screen.x < 300 && v.screen.y < hud.framesBottom) why = "behind the unit frames";
-        else if (v.screen.x > hud.railLeft && v.screen.y > hud.railTop && v.screen.y < hud.railBottom) why = "behind the window rail";
+        else if ((hud.railRects ?? []).some((r) => v.screen.x > r.left && v.screen.x < r.right && v.screen.y > r.top && v.screen.y < r.bottom)) why = "behind an open window";
         else if (v.screen.x > hud.minimapLeft && v.screen.y < hud.minimapBottom) why = "behind the minimap";
         else why = "dropped, and none of the known gates explains it";
       }
-      rows.push({ id, kind: v.kind, name: v.name, distance: v.distance, x: v.screen?.x ?? null, y: v.screen?.y ?? null, why });
+      // Displacement between where the label was asked to go and where it is.
+      const drift = v.at && v.screen ? Math.round(Math.hypot(v.at.x - v.screen.x, v.at.y - v.screen.y)) : 0;
+      rows.push({ id, kind: v.kind, name: v.name, distance: v.distance, x: v.screen?.x ?? null, y: v.screen?.y ?? null, why, drift });
     }
     return {
       rows,
       drawn: document.querySelectorAll("#hud3d .plate").length,
       layout: {
         framesBottom: Math.round(hud.framesBottom),
-        railLeft: Math.round(hud.railLeft),
-        railTop: Math.round(hud.railTop),
-        railBottom: Math.round(hud.railBottom),
+        openWindows: (hud.railRects ?? []).length,
         minimapLeft: Math.round(hud.minimapLeft),
         minimapBottom: Math.round(hud.minimapBottom),
       },
@@ -75,11 +83,18 @@ const report = async (where) => {
   console.log(`\n${where}  —  ${s.drawn} plate(s) on screen, ${s.rows.length} asked for`);
   const l = s.layout;
   console.log(
-    `  gates: frames x<300 y<${l.framesBottom} | rail x>${l.railLeft} y ${l.railTop}..${l.railBottom} | minimap x>${l.minimapLeft} y<${l.minimapBottom}`,
+    `  gates: frames x<300 y<${l.framesBottom} | ${l.openWindows} open window(s) | minimap x>${l.minimapLeft} y<${l.minimapBottom}`,
   );
   for (const r of s.rows) {
     const pos = r.x === null ? "   —,   —" : `${String(r.x).padStart(4)},${String(r.y).padStart(4)}`;
-    console.log(`  ${(r.kind ?? "?").padEnd(8)} ${String(r.name ?? r.id).slice(0, 22).padEnd(23)} ${String(r.distance).padStart(3)}u ${pos}  ${r.why}`);
+    console.log(
+      `  ${(r.kind ?? "?").padEnd(8)} ${String(r.name ?? r.id).slice(0, 22).padEnd(23)} ${String(r.distance).padStart(3)}u ${pos}  ${r.why}` +
+        (r.drift > 40 ? `  !! shifted ${r.drift}px from its subject` : ""),
+    );
+  }
+  const stranded = s.rows.filter((r) => r.drift > 120);
+  if (stranded.length) {
+    console.log(`  !! ${stranded.length} plate(s) drawn more than 120px from where they were asked to go`);
   }
   return s;
 };

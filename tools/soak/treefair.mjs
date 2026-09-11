@@ -93,17 +93,44 @@ console.log("1. no monster stands inside a node");
 console.log("\n2. a monster can still reach a player standing behind a tree");
 {
   const w = await world();
-  // A tree with something alive near it — and near enough to be roused.
+  // THE PAIRING IS SOUGHT OUT, NOT WAITED FOR.
+  //
+  // This looked for a tree with a monster already within 260px of it, at
+  // whatever spot the character happened to be standing, and reported
+  // INCONCLUSIVE every run — camps sit at 1320px and up while the character
+  // starts in town, so the two were never near each other. A probe that reports
+  // INCONCLUSIVE every time it runs is not a cautious probe, it is an unused
+  // one, and the question it declines to answer is whether a trunk can be
+  // hidden behind indefinitely.
+  //
+  // The client knows every node and every monster in the world, so the closest
+  // tree-and-monster pairing ANYWHERE is findable from here; the bot then walks
+  // to it.
   let best = null;
-  for (const n of w.nodes) {
-    if (n.kind !== "tree") continue;
+  for (const nd of w.nodes) {
+    if (nd.kind !== "tree") continue;
     for (const m of w.monsters) {
-      const d = Math.hypot(m.x - n.x, m.y - n.y);
-      if (d < 260 && (!best || d < best.d)) best = { node: n, monster: m, d };
+      const d = Math.hypot(m.x - nd.x, m.y - nd.y);
+      if (d < 420 && (!best || d < best.d)) best = { node: nd, monster: m, d };
     }
   }
+  if (best) {
+    // Walk to the tree first. Its monster will notice on the way in, which is
+    // the point — the fight should start before the hiding does.
+    console.log(`  walking to ${best.node.id}, which has a ${best.monster.kind} ${Math.round(best.d)}px away`);
+    for (let i = 0; i < 80; i++) {
+      const here = await world();
+      const d = Math.hypot(best.node.x - here.x, best.node.y - here.y);
+      if (d < 120) break;
+      await approach(page, { x: best.node.x, y: best.node.y, d }, 500);
+    }
+    // Re-read: the monster has been chasing, so its position is stale.
+    const now = await world();
+    const live = now.monsters.find((m) => m.id === best.monster.id);
+    if (live) best = { node: best.node, monster: live, d: Math.hypot(live.x - best.node.x, live.y - best.node.y) };
+  }
   if (!best) {
-    console.log("  INCONCLUSIVE — no monster found within 260px of a tree to test with");
+    console.log("  INCONCLUSIVE — nowhere in the world is a tree within 420px of anything alive");
   } else {
     // Directly opposite the monster, one body's width past the trunk.
     const away = Math.atan2(best.node.y - best.monster.y, best.node.x - best.monster.x);

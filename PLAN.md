@@ -24106,3 +24106,53 @@ probe not knowing the thing it was probing:
     projects onto the bearing now.
 
 Suite 55/55.
+
+**Phase 70 M70.258 — the nameplates were being hidden by a layout helper.**
+Reported with a screenshot, and the screenshot is what solved it: "Tobin Ash"
+and "Workbench" both drawn hard against the LEFT EDGE of the window, hundreds of
+pixels from the bench they name, while other labels were missing entirely.
+
+THE ROOT CAUSE IS OLDER THAN EITHER OF MY LAST TWO FIXES. `Hud.plate` suppressed
+any label overlapping the window rail, measured as `#window-rail`'s own bounding
+box — and that element is not furniture. It is a full-width flex container,
+`left: 296px; right: 82px`, and its own CSS comment says why: "spanning the
+screen and packing right (row-reverse) gives the fitter a real budget to measure
+against". Its rect is therefore a band across most of the play area AT ALL
+TIMES, open windows or not.
+
+So a nameplate survived or vanished depending on whether its subject happened to
+sit inside an invisible rectangle belonging to a layout helper — everything
+below the minimap and above the hotbar, which is most of where things stand.
+That is the whole of "sometimes appear, sometimes disappear", and it predates
+both the M70.256 clamp and the M70.257 nudge. The exclusion now uses the OPEN
+WINDOWS themselves, `.window.open` — the same selector the rail's own fitter
+uses, so the two agree about what is on screen. Empty rail, no exclusion, which
+is what a player sees: nothing there.
+
+AND MY NUDGE TURNED IT FROM INVISIBLE TO VISIBLE, which is the only reason it
+got diagnosed. M70.257 started pushing close labels clear of a panel instead of
+dropping them, so plates that had been silently deleted for months were suddenly
+being shunted to `railLeft - 6` — x=286, the left edge of the screen, which is
+exactly what the screenshot shows. A bug made worse is a bug made findable.
+
+THE PROBE COULD NOT HAVE CAUGHT IT and now can. It reported "drawn" for both of
+those plates, because they WERE drawn — just nowhere near their subject. It
+records where the element actually landed against where the label was asked to
+go, and flags any plate that moved more than 120px.
+
+THE 2-KILL RUN WAS AN OUTLIER. Re-sampled after the monster-collision change: 5
+monsters died, 0 deaths, level 1 -> 2, all three gather phases meeting or nearly
+meeting target (wood 20 -> 53, ore 20 -> 36). That is the 5-6 kills every run
+before it reported, so the open question from M70.255 closes as variance —
+recorded as a second sample rather than as proof.
+
+`treefair.mjs` also stopped declining to answer. Its second half looked for a
+tree that already had a monster within 260px of wherever the character was
+standing, and reported INCONCLUSIVE every single run: camps start at 1320px and
+the character starts in town, so the two were never near each other. A probe
+that reports INCONCLUSIVE every time is not cautious, it is unused. It searches
+the whole world for the closest tree-and-monster pairing and walks there.
+
+Suite 55/55. `clickwalk.mjs` failed one section on one run and passed the next
+two in full; it drives a live world and its INCONCLUSIVE paths are honest, but
+it is not yet reliable enough to be run unattended.
