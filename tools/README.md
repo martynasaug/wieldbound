@@ -427,3 +427,31 @@ a time and a generator can have a long period and still walk a lattice.
 ```powershell
 node tools/test/rng.mjs
 ```
+
+### player_rig.py — our own player body
+
+```powershell
+blender --background --python tools/art/player_rig.py -- client/public/models/player/Player_Base.glb preview.png
+```
+
+Builds the player's skeleton, mesh and idle animation and exports a GLB, plus
+three preview renders (front, side, three-quarter) when a second path is given.
+Needs Blender on PATH or called by full path; developed against 5.2 LTS.
+
+**This is the first asset in the game the player's body does not borrow.** Until
+now the body was Quaternius's Monk and the animation vocabulary was twenty-five
+clips harvested off five of their character rigs, which all happen to share one
+44-bone skeleton. That arrangement decided what the game could do: there is no
+chopping, mining or picking animation anywhere in it, and character
+customisation is impossible on a body you did not author.
+
+The bone names are deliberately the borrowed rig's — `Torso`, `UpperArmR`,
+`WeaponR` and the rest — because `gatherpose.ts` drives them by name,
+`Actor.weaponSocket` looks for `WeaponR`, and `gear.ts` attaches armour to them.
+Keeping the names means this body can be dropped in beside the old one and
+everything that already works goes on working.
+
+Weights are RIGID: every part is bound wholly to one bone. Automatic weights
+need a clean watertight mesh and a human eye on the result, and this runs
+headless — rigid binding is predictable, reproducible from the script, and on a
+faceted low-poly body it is also what the art style wants.
