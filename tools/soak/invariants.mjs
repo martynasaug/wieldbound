@@ -21,9 +21,6 @@ const NAME = process.argv[2] ?? "Player3619";
 const MINUTES = Number(process.argv[3] ?? 10);
 
 const SPAWN = { x: 8000, y: 6000 };
-// `PLAYER_ARRIVAL` in shared/town.ts: `at(150, 60)` from TOWN_CENTER, which is
-// PLAYER_SPAWN. Where the server puts a defeated character.
-const ARRIVAL = { x: SPAWN.x + Math.cos(Math.PI / 3) * 150, y: SPAWN.y + Math.sin(Math.PI / 3) * 150 };
 const CAMPS = [
   [1320, 0], [1600, 45], [1900, 100], [1600, 135], [2000, 160], [1320, 180],
   [1900, 200], [1600, 225], [2450, 250], [1900, 280], [1600, 315], [2350, 310],
@@ -166,6 +163,19 @@ const run = async () => {
   const { browser, page } = await open({ headless: true });
   await login(page, NAME);
   const keys = await hotbarKeys(page);
+  // Deaths counted in the page, off the flag the defeat message sets — see the
+  // note at the counter read below for why not from the aftermath. Held for
+  // DEATH_HOLD_MS (1500) against this quarter-second tick, so no edge is missed.
+  await page.evaluate(() => {
+    const g = window.__wieldbound;
+    window.__deaths = 0;
+    let was = false;
+    setInterval(() => {
+      const dying = !!g.dying;
+      if (dying && !was) window.__deaths++;
+      was = dying;
+    }, 250);
+  });
   console.log(`playing ${MINUTES}m as ${NAME}, checking invariants continuously`);
 
   const violations = new Map(); // name -> { count, first }
@@ -288,11 +298,19 @@ const run = async () => {
       // the character straight back to `floor(maxHp / 2)` at PLAYER_ARRIVAL in
       // the same call that reports the defeat, so hp is never observed at zero
       // from outside — a counter watching for it reports `deaths=0` through any
-      // number of deaths. The teleport is the visible part.
-      if (lastHp !== null && snap.hp > lastHp && snap.hp <= Math.ceil(snap.maxHp / 2) + 1) {
-        const p = await me(page);
-        if (Math.hypot(p.x - ARRIVAL.x, p.y - ARRIVAL.y) < 400) deaths++;
-      }
+      // number of deaths.
+      //
+      // This used to read the aftermath instead: health risen to about half the
+      // pool, within 400px of the arrival point. That is a good deal safer than
+      // the plain "health went up" the sister harnesses used — it survived
+      // potions, which those did not — but it is still describing a death by
+      // what it leaves behind, and every clause is a fact about the respawn rule
+      // that can be retuned. Half becomes two thirds, the arrival point moves,
+      // and the counter quietly reads zero.
+      //
+      // The server says "defeated" on the wire and `dying` is the client
+      // repeating it, so the rising edge is the event itself.
+      deaths = await page.evaluate(() => window.__deaths ?? 0);
       lastHp = snap.hp;
     }
 

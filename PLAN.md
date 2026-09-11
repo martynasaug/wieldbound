@@ -23709,3 +23709,72 @@ where previous runs showed 0-1. One sample, not investigated, not a conclusion �
 recorded here so it is not quietly forgotten.
 
 Suite 51/51.
+
+**Phase 70 M70.253 — the opening harness was measuring itself, twice.** No game
+code changed in this milestone. Both findings are the same shape as the potion
+bug before it: a number I had been reading as a fact about the game was a fact
+about the instrument.
+
+FIRST: THE SIX DEATHS WERE POTIONS. `guidedopening.mjs` counted a death as "the
+pool jumped by more than 15", reasoning that only respawning refills a pool that
+regenerates a point at a time. That stopped being true the moment potions
+started working — a potion heals about 24 — so the run immediately after the
+potion fix counted every drink and every out-of-combat recovery as a respawn.
+Six deaths, none of them real. `firstminutes.mjs` was worse at a +5 threshold:
+regen is 3% of the pool now, which passes 5 HP once maxHp passes 167, so its
+death count got wronger as the character got stronger.
+
+All three death counters now read the rising edge of `Game.dying`, which is set
+by the HP_UPDATE carrying `defeated` — the server saying it outright — held for
+DEATH_HOLD_MS against a 250ms tick so no edge can be missed. `invariants.mjs`
+had a far better inference (half the pool AND within 400px of the arrival point)
+that survived potions, but it still described a death by its aftermath and every
+clause was a hardcoded copy of a respawn rule that can be retuned; it moved to
+the same signal and its now-dead ARRIVAL constant went with it. Re-sampled: 0
+deaths, 1 potion, 7 retreats, on the route that "died six times".
+
+SECOND: THE GATHER PHASES HAD NEVER WORKED. Wood 20 -> 20 with every interrupt
+counter at zero. The output could not say why, so the phase now records its own
+mechanics — whether it ever saw a node, how close it got, how many walks ran out
+of legs, how many orders it placed — and said: `saw 6 node(s), got within 44px
+over 56 legs, and 6 walk(s) ran out of legs without arriving`.
+
+The threshold was INTERACTION_RANGE_PX * 0.7 = 28px. The server gathers at 40.
+Eight-way movement cannot land on a point — the driver's own note logs an
+approach converging to about 35 and bouncing back past 50 — so the phase spent
+its entire budget standing INSIDE gathering range refusing to admit it had
+arrived. It failed intermittently, because a walk that happens to sample below
+28 on the way through succeeds, which is why one run gathered 11 ore and the
+next gathered none and two runs blamed two different materials. At 0.9 all three
+phases met target for the first time: wood 20 -> 54, ore 20 -> 33, herb 15 -> 25,
+one refusal in the whole run.
+
+A THEORY THAT WAS WRONG AND CONVINCING, recorded because it nearly shipped as
+the fix. The walk re-chose "whichever node is nearest" every leg; the rings hold
+42 trees at equal radii; a probe log showed one walk switching target three
+times. So the character was walking the bisector between two equidistant trees.
+It explains the intermittency perfectly. I wrote the fix and the comment
+claiming it before measuring — and then `treewalk.mjs` measured following one
+node by id against re-choosing, twice per kind, and found no difference: both
+stalled in the low thirties, and almost every walk aimed at exactly one node the
+whole way. The switching was real and was not the cause. The node is still
+followed by id because picking a tree and walking to it is what a player does,
+and the comment now says it is not the fix.
+
+`treewalk.mjs` needed correcting mid-flight too: its first table showed one
+strategy arriving in 8 legs and the other failing after 40, from start points
+hundreds of pixels apart, because its reset walk had quietly run out of legs and
+nothing checked. It reports its own starting distance now and says out loud when
+a comparison is not comparable.
+
+WHAT THE HONEST RUN THEN SAID, for a person to judge rather than me:
+  - 12 minutes of following the Herald's advice reaches level 2 with 10 xp into
+    it, 363 attack presses for 6 kills over 8.6 minutes of fighting.
+  - The character finishes the gathering phase with 54 wood and 33 ore and is
+    still holding the starting dagger. The shop's cheapest weapon is the falchion
+    at 26 wood + 54 ore since band 1 was pulled from the stock in M70.247, and 33
+    ore does not buy it. Neither quest completed.
+Both of those are now measurements of the GAME rather than of the bot, which is
+the first time that sentence has been true of this harness.
+
+Suite 51/51.

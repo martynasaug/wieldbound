@@ -204,8 +204,51 @@ const nearestNode = (kinds) => () =>
     return best;
   }, kinds);
 
+// WHY THE PHASE ENDED, kept per phase and printed under it.
+//
+// "gave up" was already known to cover three different worlds — never reached a
+// node, refused as out of range, interrupted — and a run reported a wood phase
+// giving up in 36 seconds against a 150-second cap with all three counters at
+// zero. That is a FOURTH cause the output had no way to name, and no amount of
+// re-reading the three numbers could name it either.
+//
+// So the phase records its own mechanics: whether it ever saw a node in the
+// world, how close it got, how many walks ran out of legs, and how many gather
+// orders it actually placed. A phase that gathered nothing is then a sentence
+// rather than a puzzle.
+let phase = null;
+const newPhase = () => ({ sawNode: 0, noNode: 0, walkFailed: 0, ordered: 0, closest: Infinity, legs: 0 });
+const phaseWhy = (p, capMs, spentMs) => {
+  const cap = spentMs >= capMs * 0.95 ? "ran the phase out of time" : "stopped early";
+  if (p.sawNode === 0) return `${cap}; the client never listed an available node of that kind`;
+  if (p.ordered === 0) {
+    return (
+      `${cap}; saw ${p.sawNode} node(s), got within ${p.closest === Infinity ? "never" : Math.round(p.closest) + "px"} ` +
+      `over ${p.legs} legs, and ${p.walkFailed} walk(s) ran out of legs without arriving`
+    );
+  }
+  return `${cap}; placed ${p.ordered} gather order(s) after ${p.legs} legs of walking`;
+};
+
+/** One specific node, followed by id — its live position and whether it is still worth walking to. */
+const nodeById = (id) => () =>
+  page.evaluate((wanted) => {
+    const g = window.__wieldbound;
+    for (const n of g.nodeStates?.values?.() ?? []) {
+      if (n.id !== wanted) continue;
+      // A node that went spent while being walked to is not worth arriving at,
+      // and returning null here sends the loop back to pick another.
+      if (n.status !== "available") return null;
+      return { x: n.x, y: n.y, d: Math.hypot(n.x - g.playerX, n.y - g.playerY), kind: n.kind, id: n.id };
+    }
+    return null;
+  }, id);
+
 const gatherUntil = async (label, kinds, want, getter, capMs) => {
   const until = Date.now() + capMs;
+  phase = newPhase();
+  phase.t0 = Date.now();
+  phase.capMs = capMs;
   while (Date.now() < until) {
     const cur = await state();
     if (getter(cur) >= want) return true;
@@ -224,7 +267,51 @@ const gatherUntil = async (label, kinds, want, getter, capMs) => {
     // a statement about rate, and that is the thing this phase is for.
     let node = null;
     for (let wait = 0; wait < 6 && !node; wait++) {
-      node = await goTo(nearestNode(kinds), INTERACTION_RANGE_PX * 0.7, 40);
+      // LOOK BEFORE WALKING, so "there was nothing to walk to" and "the walk did
+      // not finish" stop sharing one null.
+      const seen = await nearestNode(kinds)();
+      if (seen) {
+        phase.sawNode++;
+        phase.closest = Math.min(phase.closest, seen.d);
+      } else {
+        phase.noNode++;
+      }
+      const before = Date.now();
+      // STOP WALKING WHERE THE GAME SAYS YOU HAVE ARRIVED.
+      //
+      // This asked for INTERACTION_RANGE_PX * 0.7 — 28px — and the server
+      // gathers at 40. Eight-way movement cannot land on a point: `approach`
+      // converges and then bounces, and `treewalk.mjs` logged six walks in a row
+      // stalling at 30, 31, 35 and 40px while spending all forty legs. So the
+      // phase spent its whole budget standing just inside gathering range,
+      // refusing to admit it had got there, and printed "gave up".
+      //
+      // It fails INTERMITTENTLY, which is what made it look like a game bug: a
+      // walk that happens to sample below 28 on its way through succeeds, so one
+      // run gathered 11 ore and the next gathered none, and two runs in a row
+      // blamed a different material. 0.9 sits inside the range the server
+      // actually enforces with a little room for drift, and the refusal counter
+      // above is what will say if that is too generous — a refused order is
+      // counted and printed, so this cannot go wrong silently.
+      //
+      // THE THEORY THIS REPLACED, recorded because it was wrong and convincing.
+      // The walk re-chose "whichever node is nearest" every leg, the rings hold
+      // 42 trees at equal radii, and a probe log showed a walk switching target
+      // three times — so the character was supposedly walking the bisector
+      // between two equidistant trees forever. It reads perfectly. Following one
+      // node by id was then measured against re-choosing, twice per kind, and it
+      // was no better: both strategies stalled in the low thirties, and almost
+      // every walk aimed at exactly one node the whole way. The switching was
+      // real and was not the cause.
+      //
+      // The node is still followed by id, because picking a tree and walking to
+      // it is what a player does and it makes the leg count mean something. It
+      // is not the fix.
+      const followId = seen?.id ?? null;
+      node = followId ? await goTo(nodeById(followId), INTERACTION_RANGE_PX * 0.9, 40) : null;
+      if (seen && !node) phase.walkFailed++;
+      phase.legs += Math.round((Date.now() - before) / 500);
+      if (node) phase.closest = Math.min(phase.closest, node.d);
       if (!node) {
         if (Date.now() >= until) return false;
         await page.waitForTimeout(2500);
@@ -240,6 +327,7 @@ const gatherUntil = async (label, kinds, want, getter, capMs) => {
     // on arrival and re-placed each time round the loop, because it ends when
     // the node is spent and again if anything walks into reach.
     await page.evaluate((id) => window.__wieldbound.socket.sendGather(id), node.id);
+    phase.ordered++;
     // STAND UNTIL IT IS SPENT, rather than for a fixed four seconds.
     //
     // The first version waited 4000ms and walked on. A gather takes 3000ms at
@@ -280,12 +368,14 @@ const gotWood = await gatherUntil("wood", ["tree"], woodTarget, (s) => s.wood, 2
 let s = await state();
 console.log(`${mark()}  gathering wood: ${start.wood} -> ${s.wood} ${gotWood ? "(target met)" : "(gave up)"}`);
 console.log(`      ${await endsSince()}`);
+if (!gotWood) console.log(`      ${phaseWhy(phase, phase.capMs, Date.now() - phase.t0)}`);
 
 const oreTarget = 30;
 const gotOre = await gatherUntil("ore", ["rock"], oreTarget, (s2) => s2.ore, 2 * 60000);
 s = await state();
 console.log(`${mark()}  gathering ore:  ${start.ore} -> ${s.ore} ${gotOre ? "(target met)" : "(gave up)"}`);
 console.log(`      ${await endsSince()}`);
+if (!gotOre) console.log(`      ${phaseWhy(phase, phase.capMs, Date.now() - phase.t0)}`);
 
 // HERB, BECAUSE ONE OF THE TWO QUESTS IS PAID IN IT AND THIS BOT NEVER PICKED
 // ANY. Marda's work wants 30 ore and 25 herb; a new character arrives with 20
@@ -300,6 +390,7 @@ const gotHerb = await gatherUntil("herb", ["bush"], herbTarget, (s2) => s2.herb,
 s = await state();
 console.log(`${mark()}  gathering herb: ${start.herb} -> ${s.herb} ${gotHerb ? "(target met)" : "(gave up)"}`);
 console.log(`      ${await endsSince()}`);
+if (!gotHerb) console.log(`      ${phaseWhy(phase, phase.capMs, Date.now() - phase.t0)}`);
 
 // --- 3. look in at the shop, which no longer sells a starter weapon ----------
 //
@@ -349,10 +440,24 @@ console.log(`${mark()}  holding: ${s.weapon}`);
 // still in the map when the poll lands; a monster that spawns, dies and is
 // swept between two polls is invisible. A tick installed in the page watches
 // every id it has seen alive and notices the ones that stop being alive.
+//
+// DEATHS COME OFF THE SAME TICK, and for the same reason. This used to be
+// inferred out here from the pool jumping by more than 15 — "respawning is the
+// only thing that refills it" — and that was true only while nothing else could
+// heal that hard. It is not true now: a potion heals around 24, so the run that
+// fixed potions would have counted every drink as a death. The last run before
+// this reported SIX deaths where earlier runs reported none, and that number
+// cannot be told apart from six potions.
+//
+// `dying` is set by the HP_UPDATE that carries `defeated`, which is the server
+// saying it outright, so watching its rising edge counts defeats and nothing
+// else.
 await page.evaluate(() => {
   const g = window.__wieldbound;
   const alive = new Set();
   window.__kills = 0;
+  window.__deaths = 0;
+  let wasDying = false;
   setInterval(() => {
     for (const [id, v] of g.monsters) {
       const st = v.state;
@@ -361,6 +466,9 @@ await page.evaluate(() => {
       if (st.status === "alive" && near) alive.add(id);
       else if (st.status !== "alive" && alive.delete(id)) window.__kills++;
     }
+    const dying = !!g.dying;
+    if (dying && !wasDying) window.__deaths++;
+    wasDying = dying;
   }, 250);
 });
 // THE HOTBAR IS PER WEAPON, AND THIS RUNS RIGHT AFTER BUYING ONE.
@@ -439,10 +547,9 @@ let swings = 0;
 // So it drinks when it can and retreats when it cannot, and counts both. What
 // the run can then say is whether a new player following the advice DIES, which
 // is the actual question.
-let deaths = 0;
 let potionsDrunk = 0;
 let retreats = 0;
-let lastHp = (await state()).hp;
+let refusedOnce = false;
 const survive = async (s) => {
   if (s.hp > s.maxHp * 0.35) return false;
   // ASK, THEN CHECK WHETHER IT WORKED, rather than looking for a count.
@@ -455,12 +562,32 @@ const survive = async (s) => {
   //
   // The server ignores a drink it cannot honour, so asking blind costs nothing
   // and the health afterwards is the only answer that cannot be misread.
+  //
+  // THE COUNT IS READABLE AFTER ALL, and it is read here alongside the health,
+  // because those two answer different questions. `InventoryPanel.potions` is
+  // assigned and never read — that dead field is what "the Game keeps no potion
+  // field" above was really about — but `consumables` is what the footer
+  // renders and what the server spends. Without it, an empty bag and a refused
+  // drink print the same "0 potion(s) drunk", and that is precisely what hid a
+  // real bug for five runs: the daily bonus was granting into a different store
+  // from the one drinking reads, so the character owned a potion it could not
+  // touch and the harness reported only that it had not drunk one.
   const before = s.hp;
+  const held = () => page.evaluate(() => window.__wieldbound.inventoryPanel?.consumables?.potion ?? 0);
+  const hadBefore = await held();
   await page.evaluate(() => window.__wieldbound.socket.sendUseConsumable("potion"));
   await page.waitForTimeout(700);
   if ((await state()).hp > before + 5) {
     potionsDrunk++;
     return true;
+  }
+  if (hadBefore > 0 && (await held()) === hadBefore) {
+    // Owned one, asked, still owns it, no healthier. That is the game refusing,
+    // which is a different report from running dry and is worth saying once.
+    if (!refusedOnce) {
+      console.log(`${mark()}  !! asked to drink holding ${hadBefore} potion(s) and nothing happened`);
+      refusedOnce = true;
+    }
   }
   // Nothing to drink: walk away from whatever is hitting us and wait for the
   // out-of-combat clock plus regen. Capped, because standing still healing for
@@ -520,10 +647,6 @@ while (Date.now() < endAt) {
   // Health first, before deciding to fight. A character at a tenth of its pool
   // walking into another slime is not playing the game as designed.
   const health = await state();
-  // A DEATH shows up as the pool jumping back up on its own — respawning is the
-  // only thing that refills it, since regen is a point every five seconds.
-  if (health.hp > lastHp + 15) deaths++;
-  lastHp = health.hp;
   if (await survive(health)) continue;
 
   if (near) {
@@ -553,6 +676,7 @@ while (Date.now() < endAt) {
 }
 
 const kills = await page.evaluate(() => window.__kills ?? 0);
+const deaths = await page.evaluate(() => window.__deaths ?? 0);
 const end = await state();
 console.log(`\nafter ${MINUTES} minutes of following the advice:`);
 // XP, NOT JUST LEVEL. The first run of this said "level 1 -> 1" and stopped

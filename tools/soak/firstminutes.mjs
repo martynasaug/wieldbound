@@ -114,9 +114,29 @@ const KEYS_FOR = (angle) => {
 let heading = Math.random() * Math.PI * 2;
 const t0 = Date.now();
 const endAt = t0 + MINUTES * 60000;
-let deaths = 0;
+// DEATHS FROM THE SERVER SAYING SO, not from health jumping.
+//
+// This counted "hp rose by more than 5 without a level-up" as a death, on the
+// reasoning that only respawning refills a pool that regenerates a point at a
+// time. Regen is a fraction of the pool now — 3%, which passes 5 HP the moment
+// maxHp passes 167 — and a potion heals around 24, so the inference counts
+// healing as dying and gets worse as the character gets stronger. The sister
+// harness reported six deaths in a run on exactly that arithmetic.
+//
+// `dying` is set by the HP_UPDATE carrying `defeated`, and held for
+// DEATH_HOLD_MS (1500) against this quarter-second tick, so the rising edge
+// cannot be missed and cannot be anything else.
+await page.evaluate(() => {
+  const g = window.__wieldbound;
+  window.__deaths = 0;
+  let was = false;
+  setInterval(() => {
+    const dying = !!g.dying;
+    if (dying && !was) window.__deaths++;
+    was = dying;
+  }, 250);
+});
 let lastLevel = start.level;
-let lastHp = start.hp;
 let i = 0;
 let shots = 0;
 // DID IT ACTUALLY PLAY? Reporting "still level 1 after eight minutes" from a run
@@ -148,10 +168,6 @@ while (Date.now() < endAt) {
   }
 
   const s = await look();
-  // A death shows up as health jumping back up while the character is somewhere
-  // else entirely; the level is what matters for progression.
-  if (s.hp > lastHp + 5 && s.level === lastLevel) deaths++;
-  lastHp = s.hp;
   if (s.level !== lastLevel) {
     const mins = ((Date.now() - t0) / 60000).toFixed(1);
     console.log(`  +${mins}min  level ${lastLevel} -> ${s.level}   ${s.hp}/${s.maxHp} hp   wood ${s.wood} ore ${s.ore} herb ${s.herb}`);
@@ -168,7 +184,7 @@ console.log(
     `gather level ${end.gatherLevel},  holding ${end.weapon}`,
 );
 console.log(`  materials: wood ${end.wood}, ore ${end.ore}, herb ${end.herb}`);
-console.log(`  roughly ${deaths} death(s)`);
+console.log(`  ${await page.evaluate(() => window.__deaths ?? 0)} death(s)`);
 console.log(`  it saw a monster ${sightings} times, got within ${closest === Infinity ? "never" : closest.toFixed(0) + "px"}, and swung ${swings} times; xp ${start.xp} -> ${end.xp}`);
 if (swings === 0) console.log("  !! it never swung at anything — this run says nothing about progression");
 
