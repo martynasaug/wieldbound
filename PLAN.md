@@ -24374,3 +24374,39 @@ leaves a gap over the crown.
 The same instrument answers any future "the helm floats" or "the hair clips"
 report with numbers instead of another photograph. The old boxes were buried at
 the front too; nobody could have seen it from the game camera.
+
+**Phase 70 M70.272 — the goblin question was asked of a second combat
+formula.** Handed over: "goblin armour makes band-2 monsters take ~18 landed
+swings at level 1." NO BALANCE CHANGE, because the number came from the
+instrument and not the game.
+
+`tools/test/earlycombat.mjs` computed a blow as `max(1, avg - armour)` from
+`playerMinHit`/`playerMaxHit` — three rules stale at once. It ignored the
+weapon's damage feel (the broken dirk a new character is handed swings 1-3, not
+1-4), the goblin's 15% physical resist, and the proportional armour floor from
+M70.255. It printed 61.8 swings for a level-1 goblin. Its own comment on the
+interval read "THE SHIPPED FUNCTION, NOT A COPY OF IT", one line below a copy.
+
+It now goes through `hitBandOf`, `resolveHit` and `swingIntervalOf` with the
+dirk `db.ts` actually grants. The expected blow is exact rather than sampled:
+`resolveHit` draws hit, crit, then the roll, so it is handed a scripted sequence
+walking the roll across a grid, and resist, rounding and the floor all come from
+the game's code in the game's order. What it reports, points in the weapon's
+stat:
+
+    goblin   L1 27 landed / 49 swings / 62s    L2 42s    L3 10 landed / 23s
+    mushnub  L1 17 landed / 32s                (band 1)
+    slime    L1 7 landed / 14s
+
+A level-1 character is 1350px and four slimes from ever meeting a goblin, and by
+level 3 it dies in about twenty seconds. That is a ring doing its job. The test
+now asserts the curve rather than a single fight: everything in band 1 dies
+inside 60s at level 1, everything in band 2 inside 30s by level 3. Verified
+falsifiable by doubling the mushnub's health, which fails the first check at 65s.
+
+WHAT THE SABOTAGE TAUGHT. The first attempt raised the mushnub's armour from 1
+to 4 and moved the expected blow from 1.30 to 1.28 — because against a 1-3
+weapon, `ceil(0.4 x blow)` already wins at armour 2. The M70.255 floor means
+armour on a low-band kind literally cannot hurt a new player past that point, so
+the goblin's 2 is already doing everything more armour would. If a band-2 kind
+ever needs to be tougher at level 1, that is health, not armour.
