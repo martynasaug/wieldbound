@@ -497,3 +497,22 @@ the GAME's distance and the only way to answer it is to stand them side by side.
 is ours (21 bones, a `WeaponR` socket for gear to hang on), that every state
 bound to a clip, that moving changes the state, and that asking for a chop, a
 mine and a pick plays Chop, Mine and Pick.
+
+### looks.mjs — do several characters look like several people?
+
+```powershell
+node tools/soak/looks.mjs 6
+```
+
+Logs in as a fixed list of names and photographs each one close up, reporting
+what it drew. Fixed names rather than random ones, because a look is DERIVED
+from the name: the same names make the same people, so a change to the
+derivation can be seen as a change rather than guessed at behind fresh
+randomness.
+
+The body has been tinted from its owner's name for a while — see
+`Actor.tintBody`, and the note there on why that took two attempts. A tint is a
+cast over an identical outline though, and at the distance this camera sits the
+OUTLINE is what the eye sorts people by. `look.ts` adds the parts that change
+it: a hairstyle from five, a beard from four, a hair colour from a short
+authored list, and a build between 0.94 and 1.06.

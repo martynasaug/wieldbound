@@ -28,8 +28,9 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
+import { BUILTIN_WEAPON_MESHES, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, buildHairAndBeard } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
+import { lookFor } from "./look";
 import { pickClip, loadClipLibrary } from "./clips";
 import type { WeaponType } from "../../../shared/protocol-types";
 
@@ -742,6 +743,8 @@ export class Actor {
    * a single armour mesh being re-authored.
    */
   private readonly gearScale = new THREE.Vector3(1, 1, 1);
+  /** Hair and beard — see `applyLook`. Owned by the body, not by the wardrobe. */
+  private lookParts: THREE.Object3D[] = [];
   /** Each bone's world matrix in the rest pose, captured while the rig is
    *  still unanimated. Holders are built lazily — the first time a style
    *  needs a given bone — and by then the skeleton is mid-stride, so reading
@@ -1033,6 +1036,7 @@ export class Actor {
     }
 
     this.tintBody();
+    this.applyLook();
     this.measureLifts(model);
 
     // The new rig has its own action map, so whatever was playing has to be
@@ -1397,6 +1401,50 @@ export class Actor {
    * the split needs no filter: whatever is on the rig at this moment is the
    * person, and everything that arrives later is their kit.
    */
+  /**
+   * Hair, a beard, and a build — the parts of a person that change the OUTLINE.
+   *
+   * Attached beside the tint rather than inside `setAppearance`, because a
+   * look is not kit: it does not change when a helm is equipped, it survives
+   * every dress, and rebuilding it on each inventory update would be work done
+   * over and over for a result that never differs.
+   *
+   * Players only. A shopkeeper with a randomly assigned beard is a shopkeeper
+   * whose face changes meaning, and monsters have no head bone worth the name —
+   * `identity` is set for player characters and nothing else, which is the
+   * same gate the tint uses.
+   */
+  private applyLook(): void {
+    if (!this.identity || !this.instance) return;
+    // The previous body's, if this is a swap. They hang off bones that are
+    // about to stop existing.
+    for (const part of this.lookParts) part.removeFromParent();
+    this.lookParts = [];
+    const look = lookFor(this.identity);
+    for (const piece of buildHairAndBeard(look.hair, look.beard, look.hairColor)) {
+      const holder = this.holderFor(piece.bone);
+      if (!holder) continue;
+      holder.add(piece.object);
+      // TRACKED SEPARATELY FROM GEAR, and that is the whole of a bug worth
+      // recording. Pushing hair onto `worn` looked right — it is worn, and it
+      // would then be cleaned up on a body swap — but `clearGear` empties
+      // `worn` on EVERY dress, and dressing happens on every inventory update.
+      // So the hair was built, attached, and removed by the first items
+      // message to arrive, and six characters photographed bald with nothing
+      // in the log to say a thing had been taken off them.
+      //
+      // A look is not kit. It changes when the BODY changes and at no other
+      // time, which is exactly the lifetime of this list.
+      this.lookParts.push(piece.object);
+      this.trackMaterials(piece.object);
+    }
+    // Build is a scale on the model root. Applied here rather than baked into
+    // the rig because it is per character, and because the root is the one
+    // place a scale does not have to be undone for gear: the wardrobe rides
+    // the bones, so it comes along.
+    this.instance.object.scale.multiplyScalar(look.build);
+  }
+
   private tintBody(): void {
     if (!this.identity || !this.instance) return;
     const h = nameHash(this.identity);
