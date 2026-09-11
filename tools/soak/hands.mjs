@@ -33,10 +33,18 @@ await page.evaluate(() => {
 await page.waitForTimeout(1500);
 
 // Close views aim at the right fist bone; the last is the whole figure.
+// FAR ENOUGH OUT TO SEE THE HAND. The first version stood 0.75m off the fist
+// bone, which is inside the character: both close tiles were a wall of blurred
+// forearm. A hand is about 18cm across, and the near plane and the body's own
+// bulk want more room than that suggests.
+// THE HANDS HANG AT THE HIPS IN AN IDLE, against the body and in its shadow,
+// which is why the first close-ups were a wall of blurred torso however far the
+// camera stood back. The attack pose puts the fist out in front of the
+// character, where it can actually be photographed.
 const VIEWS = [
-  { label: "back of hand", bone: "FistR", yaw: 0.9, dist: 0.75, lift: 0.15 },
-  { label: "forearm", bone: "LowerArmR", yaw: Math.PI / 2, dist: 0.9, lift: 0.05 },
-  { label: "figure", bone: null, yaw: 0.35, dist: 2.8, lift: 0.3 },
+  { label: "fist, mid-punch", bone: "FistR", yaw: -0.7, dist: 1.1, lift: 0.3, anim: "attack", frac: 0.45 },
+  { label: "fist from outside", bone: "FistR", yaw: -1.5, dist: 1.1, lift: 0.15, anim: "attack", frac: 0.45 },
+  { label: "figure", bone: null, yaw: 0.35, dist: 2.8, lift: 0.3, anim: "idle", frac: 0.2 },
 ];
 
 const rows = [];
@@ -68,6 +76,18 @@ for (const item of ITEMS) {
       await page.evaluate((view) => {
         const g = window.__wieldbound;
         const a = g.localActor;
+        // One pose per view, frozen: see the note on VIEWS.
+        a.mixer.stopAllAction();
+        a.mixer.timeScale = 1;
+        a.__realPlay(view.anim, true);
+        const action = a.actions.get(view.anim);
+        if (action) {
+          a.mixer.stopAllAction();
+          action.reset().setEffectiveWeight(1).play();
+          action.time = action.getClip().duration * view.frac;
+        }
+        a.mixer.update(0.0001);
+        a.mixer.timeScale = 0;
         g.__handsHold = () => {
           const target = a.position.clone();
           target.y += 1.0;

@@ -16,6 +16,7 @@ import bpy
 from mathutils import Vector
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import gloves  # noqa: E402
 import weapons  # noqa: E402
 
 
@@ -38,7 +39,9 @@ def parse():
     for token in rest:
         if token in weapons.FAMILIES:
             ids.extend(weapons.FAMILIES[token].keys())
-        elif token in weapons.RECIPES:
+        elif token == "gloves":
+            ids.extend(gloves.RECIPES.keys())
+        elif token in weapons.RECIPES or token in gloves.RECIPES:
             ids.append(token)
         else:
             print(f"UNKNOWN {token}")
@@ -110,12 +113,16 @@ def render_sheet(built, path):
     print(f"SHEET {path}")
 
 
-def export(obj, path):
-    obj.location = (0, 0, 0)
-    obj.rotation_euler = (0, 0, 0)
+def export(objs, path):
+    """One GLB from one or more objects — a weapon is one, a fist item is six."""
+    if not isinstance(objs, (list, tuple)):
+        objs = [objs]
     bpy.ops.object.select_all(action="DESELECT")
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
+    for obj in objs:
+        obj.location = (0, 0, 0)
+        obj.rotation_euler = (0, 0, 0)
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
     bpy.ops.export_scene.gltf(
         filepath=path,
         export_format="GLB",
@@ -139,7 +146,25 @@ def main():
         return
     bpy.ops.wm.read_factory_settings(use_empty=True)
     built = []
+    # A FIST ITEM IS NOT ONE OBJECT. It is a piece per hand bone, NAMED for the
+    # bone the game hangs it on — so one is built, exported and thrown away
+    # before the next is built. Six at once in one session and Blender hands the
+    # second item `Fist1R.002`, which names no bone the game has ever heard of.
+    # They never reach the item sheet either: gloves are reviewed on the
+    # character (`tools/soak/hands.mjs`).
+    for item_id in [i for i in ids if i in gloves.RECIPES]:
+        name, pieces = gloves.build(item_id)
+        tris = sum(sum(len(p.vertices) - 2 for p in obj.data.polygons) for _, obj in pieces)
+        print(f"ITEM {item_id}: {tris} triangles over {len(pieces)} pieces {[n for n, _ in pieces]}")
+        if export_dir:
+            os.makedirs(export_dir, exist_ok=True)
+            export([obj for _, obj in pieces], os.path.join(export_dir, f"{item_id}.glb"))
+        for _, obj in pieces:
+            bpy.data.objects.remove(obj, do_unlink=True)
+
     for item_id in ids:
+        if item_id in gloves.RECIPES:
+            continue
         name, obj = weapons.build(item_id)
         tris = sum(len(p.vertices) - 2 for p in obj.data.polygons)
         print(f"ITEM {item_id}: {tris} triangles, materials {[m.name for m in obj.data.materials]}")
@@ -148,7 +173,7 @@ def main():
         os.makedirs(export_dir, exist_ok=True)
         for item_id, _, obj in built:
             export(obj, os.path.join(export_dir, f"{item_id}.glb"))
-    if sheet:
+    if sheet and built:
         os.makedirs(os.path.dirname(sheet), exist_ok=True)
         render_sheet(built, sheet)
     print("DONE")

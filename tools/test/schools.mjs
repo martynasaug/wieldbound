@@ -442,8 +442,14 @@ section("8. the defensive half");
 section("everyone gets an opinion");
 {
   // What each family can hold, and from what band.
+  //
+  // FISTS ARE IN THIS LIST NOW. `WEAPON_TYPES` still leaves them out, which is
+  // right for the interface — see the note further down — but the catalogue has
+  // fist ITEMS since M70.281, and a table keyed only on `WEAPON_TYPES` threw on
+  // the first one it read rather than reporting anything at all.
+  const FAMILIES = [...WEAPON_TYPES, "fist"];
   const holds = {};
-  for (const family of WEAPON_TYPES) holds[family] = {};
+  for (const family of FAMILIES) holds[family] = {};
   for (const base of Object.values(ITEM_BASES)) {
     if (!base.weaponType) continue;
     const school = baseSchool(base);
@@ -454,7 +460,7 @@ section("everyone gets an opinion");
 
   // And what each family's own tree can cast.
   const casts = {};
-  for (const family of WEAPON_TYPES) {
+  for (const family of FAMILIES) {
     casts[family] = new Set();
     for (const node of WEAPON_TREES[family] ?? []) {
       const skill = node.active ? SKILLS[node.active] : null;
@@ -462,13 +468,13 @@ section("everyone gets an opinion");
     }
   }
 
-  // FISTS ARE ABSENT FROM `WEAPON_TYPES` ALREADY, and deliberately rather than
-  // by oversight: bare hands are a real archetype here and there is no item to
-  // make them out of, so physical is the only honest answer for them. The first
-  // version of this loop skipped "fist" by hand as well, which was dead code —
-  // and the count it printed said "7/6", which is what dead code looks like
-  // when nobody reads the output.
-  for (const family of WEAPON_TYPES) {
+  // FISTS ARE ABSENT FROM `WEAPON_TYPES`, and deliberately: that list is what
+  // the interface offers as a weapon to choose, and being bare-handed is a
+  // state rather than a choice. What has changed is that the state can now be
+  // EQUIPPED — gloves, knuckles and claws worn on both hands — so a fist has a
+  // material like anything else, and the Stormfists are made of storm. It is
+  // asked the same question as every other family here.
+  for (const family of FAMILIES) {
     const held = Object.entries(holds[family]).filter(([, band]) => band <= 3);
     const cast = [...casts[family]];
     check(
@@ -485,7 +491,7 @@ section("everyone gets an opinion");
   // decides what you are good against while you are still choosing.
   for (const school of ELEMENTAL_SCHOOLS) {
     let earliest = null;
-    for (const family of WEAPON_TYPES) {
+    for (const family of FAMILIES) {
       const band = holds[family][school];
       if (band !== undefined && (earliest === null || band < earliest)) earliest = band;
     }
@@ -512,15 +518,14 @@ section("everyone gets an opinion");
     }
   }
 
-  const covered = WEAPON_TYPES.filter(
+  const covered = FAMILIES.filter(
     (f) => Object.keys(holds[f]).length > 0 || casts[f].size > 0,
   );
   console.log(
-    `  ${covered.length}/${WEAPON_TYPES.length} weapon families can deal an element; ` +
-      `fists are physical by construction and are not in the list`,
+    `  ${covered.length}/${FAMILIES.length} weapon families can deal an element, fists included`,
   );
   for (const school of ELEMENTAL_SCHOOLS) {
-    const fams = WEAPON_TYPES.filter((f) => holds[f][school] !== undefined);
+    const fams = FAMILIES.filter((f) => holds[f][school] !== undefined);
     const earliest = Math.min(...fams.map((f) => holds[f][school]));
     console.log(`  ${school.padEnd(10)} held from band ${earliest} (${fams.join(", ")})`);
   }

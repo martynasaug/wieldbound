@@ -162,8 +162,10 @@ for (const b of bases) {
     // Armour is procedural and declares a style instead. Rings are the one slot
     // that is genuinely invisible — no mesh, no layer, nothing to draw — so
     // they are allowed to declare neither.
+    // A fist weapon has neither: it is WORN on both hands, as a mesh per hand
+    // bone, and names that model in `art.hands`. See `ItemArt.hands`.
     if (b.slot !== "ring") {
-      check(`${b.id} has either a model or a style`, !!b.style, `slot ${b.slot}`);
+      check(`${b.id} has either a model or a style`, !!b.style || !!b.art.hands, `slot ${b.slot}`);
     }
     continue;
   }
@@ -218,7 +220,9 @@ section("3b. distinct looks");
 {
   const lookOf = (b) => {
     const a = b.art;
-    const shape = a.build ? `build:${a.build}` : (a.model ?? `style:${b.style ?? ""}`);
+    const shape = a.build
+      ? `build:${a.build}`
+      : (a.model ?? a.hands ?? `style:${b.style ?? ""}`);
     return `${shape} | ${a.palette} | ${(a.scale ?? 1).toFixed(2)} | ${a.lay ?? "along"}`;
   };
   const byLook = new Map();
@@ -456,8 +460,24 @@ for (const b of weapons) {
     }
   }
 }
-// Fists are the unarmed state and must never be a findable item.
-check("no item is a fist", !weapons.some((b) => b.weaponType === "fist"));
+// FISTS ARE A FAMILY NOW, and this check used to say the opposite: "no item is
+// a fist", on the grounds that being unarmed was the whole of the archetype.
+// That left the Adventurer as the one class with a skill tree, an attack
+// animation and nothing in the world to find. Fist items are WORN on both hands
+// (`art.hands`) rather than held, and they climb the same 1-5 bands as everyone
+// else — so the rule is now that they exist, and that none of them is holdable.
+{
+  const fists = weapons.filter((b) => b.weaponType === "fist");
+  const bands = new Set(fists.map((b) => b.band));
+  console.log(`  fist    ${String(fists.length).padStart(2)}  ${fists.map((b) => b.name).join(", ")}`);
+  check("fists are a real family with items", fists.length > 0);
+  check("fists reach every band", [1, 2, 3, 4, 5].every((n) => bands.has(n)), [...bands].join(", "));
+  check("every fist item is worn rather than held",
+    fists.every((b) => !!b.art.hands && !b.art.model && !b.art.build),
+    fists.filter((b) => !b.art.hands).map((b) => b.id).join(", "));
+  check("nothing outside the fist family is worn on the hands",
+    weapons.every((b) => !b.art.hands || b.weaponType === "fist"));
+}
 
 // --- 9. the smithy ----------------------------------------------------------
 section("9. the smithy");

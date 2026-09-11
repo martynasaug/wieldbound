@@ -24768,3 +24768,66 @@ finishes, so the previous item's attack stayed blended into the next item's idle
 actions between shots.
 
 Next: fists as a weapon family, with gloves worn on both hands.
+
+**Phase 70 M70.281 — fists are a family you can equip.** Asked for: "Gloves
+(fists) should be another weapon type. Make a system and models for them."
+
+THE ARCHETYPE THAT HAD NOTHING TO FIND. Fists were the unarmed state: a real
+class (the Adventurer), a real skill tree, their own attack clip — and not one
+item in the world, so the only way to play them was to leave a slot empty and
+never improve. `items.mjs` even enforced it ("no item is a fist").
+
+SEVEN, ACROSS BANDS 1-5: linen Hand Wraps, a Studded Cestus, Iron Knuckles (a
+bar across the knuckles and a loop per finger), the Emberfists, Tiger Claws,
+Warplate Gauntlets and the storm-made Stormfists. They stay the fastest and
+weakest family per swing — `WEAPONS.fist` is 0.6 damage against 0.8 speed — and
+climb the ladder inside that rather than fighting it.
+
+THE EMBERFISTS EXIST BECAUSE A TEST SAID SO, and it was right. `schools.mjs`
+requires every family to be able to put an element in your hand by band 3, on
+the grounds that an element you can only hold at band 5 arrives after the
+monsters that fold to it. Fists had exactly one elemental item, the band-5
+Stormfists, and a tree that casts nothing elemental: the one family that could
+not answer a troll until the end. Band-3 fire, iron plates over bound leather
+with the embers showing between them.
+
+WORN, NOT HELD, which is a second kind of item. `ItemArt.hands` names a model
+whose meshes are named for the HAND BONES they belong to, because a hand is
+three bones — wrist, back, curled fingers — and one rigid glove across all
+three tears off two of them the moment a fist closes.
+`tools/art/items/gloves.py` builds a piece per bone per hand from the kit, and
+`buildHandPieces` attaches each to its own bone. A fist item holds nothing, and
+drops as a pouch rather than as an invisible weapon on the grass.
+
+THREE FAULTS, ALL INVISIBLE IN A SCREENSHOT AND ALL OBVIOUS IN NUMBERS:
+
+1. NAME COLLISION. All six items were built in one Blender session, so the
+   second item's `Fist1R` came out as `Fist1R.002` — a bone the game has never
+   heard of, so five of the six drew nothing at all. Each item is built,
+   exported and thrown away in turn now, and the loader also tolerates the
+   suffix.
+2. THE REST-POSE HOLDER IS NOT GOOD ENOUGH FOR A HAND. `Actor.holderFor` cancels
+   a bone's recorded rest matrix, which is invisible on a head and wrong on an
+   arm: the gloves stayed out at shoulder height in the T-pose the hands were
+   bound in, while the hands hung at the hips. `boneAttachMatrix` uses the
+   skeleton's own bind data (`boneInverse * bindMatrix`) — the same transform
+   skinning applies to a vertex that follows one bone — so a piece rides the
+   bone the way the body's own triangles do.
+3. UNITS. The body's skinned geometry is in metres with Z up, and the bind
+   matrix carries the hundredfold itself; armour's rest-frame numbers are
+   hundredths of that. Authored in the armour convention, the gloves arrived a
+   hundred times life size, eighty metres from the character. Recipes are still
+   written in readable hand units and converted on the way out.
+
+MEASURED AND PHOTOGRAPHED. `tools/soak/handprobe.mjs` reports which bone each
+piece found and how far it landed from the middle of the body's own fist
+vertices — 0.07m at the fingers, 0.11m at the back of the hand — which is what
+found all three faults. `tools/soak/hands.mjs` photographs the hands across
+three skin tones; its close-ups now freeze a mid-punch, because in an idle the
+hands hang against the body and every close shot was a wall of blurred torso.
+The first fitting was honest and bad: cylinders that swallowed the fist and
+buried their own studs, so every glove is cut closer to the hand now.
+
+Tests: `items.mjs` asserts the opposite of what it used to (fists exist, reach
+every band, are worn rather than held, and nothing else is worn on the hands),
+and `schools.mjs` counts fists as a family, since a Stormfist is made of storm.

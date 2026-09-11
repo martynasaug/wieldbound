@@ -198,7 +198,9 @@ export class Drops {
 
     // The model, asynchronously. Weapons and off-hands have one; everything
     // else drops as a pouch.
-    const wants = base.slot === "weapon" || base.slot === "offhand";
+    // A fist weapon has no held model to lie on the grass — it is a pair of
+    // gloves worn on hand bones — so it drops as a pouch like a ring does.
+    const wants = (base.slot === "weapon" || base.slot === "offhand") && !base.art.hands;
     if (wants) {
       void buildHeldItem(base.id, drop.item.rarity).then(async (held) => {
         if (!held || !root.parent) return;

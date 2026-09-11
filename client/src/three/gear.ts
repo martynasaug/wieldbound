@@ -277,6 +277,33 @@ const BARE_FOREARM_UNTIL = 0.6;
 const FOREARMS: [string, string][] = [["LowerArmL", "FistL"], ["LowerArmR", "FistR"]];
 const cufflessGeometry = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
 
+/**
+ * Hang something authored in the BODY's own space rigidly off one of its bones.
+ *
+ * THE REST-POSE HOLDER IS NOT GOOD ENOUGH FOR A HAND. `Actor.holderFor` cancels
+ * a bone's recorded rest matrix, and for a head — which barely moves between
+ * the bind pose and standing — that is invisible. An arm swings from straight
+ * out sideways to hanging down, and gloves attached that way stayed out at
+ * shoulder height with the T-pose while the hands were at the hips.
+ *
+ * The skeleton itself knows better: `boneInverse * bindMatrix` is exactly the
+ * transform that takes a vertex in the bound mesh's space into a bone's, which
+ * is what skinning does for a vertex that follows one bone completely. So a
+ * piece authored on the body's own coordinates rides the bone the way the
+ * body's own triangles do.
+ */
+export function boneAttachMatrix(root: THREE.Object3D, boneName: string): THREE.Matrix4 | null {
+  let found: THREE.Matrix4 | null = null;
+  root.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh;
+    if (found || !mesh.isSkinnedMesh) return;
+    const bone = mesh.skeleton.bones.findIndex((b) => b.name === boneName);
+    if (bone < 0) return;
+    found = mesh.skeleton.boneInverses[bone].clone().multiply(mesh.bindMatrix);
+  });
+  return found;
+}
+
 /** Where a bone stood at bind time, in the skinned mesh's own space. */
 function bindPosition(mesh: THREE.SkinnedMesh, bone: number): THREE.Vector3 {
   const world = mesh.skeleton.boneInverses[bone].clone().invert();
@@ -1185,6 +1212,36 @@ function cachedHeldGeometry(
  * with its own materials, because the wielder owns — and eventually disposes —
  * whatever it is handed.
  */
+/**
+ * A fist weapon's pieces, one per hand bone.
+ *
+ * WORN, NOT HELD, and that is why it is not `buildHeldItem`. A hand is three
+ * bones — wrist, back of the hand, curled fingers — and one rigid glove hung
+ * off any one of them tears off the other two as soon as a clip bends the hand.
+ * So the model is authored as a piece per bone, NAMED for it, in the same rest
+ * frame armour is authored in, and each piece rides its own bone's holder.
+ */
+export async function buildHandPieces(baseId: string, rarity: ItemRarity): Promise<GearAttachment[]> {
+  const base = itemBase(baseId);
+  if (!base.art.hands) return [];
+  const proto = await loadModel(base.art.hands);
+  const palette = PALETTES[base.art.palette] ?? PALETTES.steel;
+  const out: GearAttachment[] = [];
+  for (const child of proto.children) {
+    const piece = wholeModel(child);
+    if (!piece) continue;
+    const mesh = new THREE.Mesh(piece.geometry, repaint(piece.material, palette, rarity));
+    mesh.name = `hand_${baseId}_${child.name}`;
+    mesh.castShadow = true;
+    // `Fist1R.002` is `Fist1R` that shared a Blender session with five other
+    // items. The exporter no longer does that, and this stays so one stale
+    // model cannot silently dress a character in nothing.
+    out.push({ bone: child.name.replace(/\.\d+$/, ""), object: mesh, boneLocal: true });
+  }
+  if (!out.length) console.warn(`gear: ${base.art.hands} has no named pieces; ${baseId} will be invisible`);
+  return out;
+}
+
 export async function buildHeldItem(
   baseId: string | undefined | null,
   rarity: ItemRarity,
@@ -1242,6 +1299,8 @@ async function makeHeldItem(
   hand: "right" | "left",
 ): Promise<HeldWeapon | null> {
   const base = itemBase(baseId);
+  // A fist weapon is worn on both hands, not held in one. See `buildHandPieces`.
+  if (base.art.hands) return null;
   const grip = await donorGrip();
   if (!grip) return null;
 

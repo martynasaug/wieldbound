@@ -28,7 +28,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, bareForearms, fistCentre, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
+import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildHandPieces, fistCentre, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
 import { HAIR_ANCHOR_MESH, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
@@ -1192,6 +1192,37 @@ export class Actor {
     ];
     for (const [baseId, rarity, hand] of hands) {
       if (!baseId) continue;
+      // A FIST WEAPON IS WORN, ON BOTH HANDS. It arrives as a piece per hand
+      // bone rather than one object in a socket, so it rides the same rest-frame
+      // holders armour does. See `buildHandPieces`.
+      if (hand === "right") {
+        void buildHandPieces(baseId, rarity ?? "honed").then(async (pieces) => {
+          if (!pieces.length || generation !== this.dressGeneration) return;
+          for (const piece of pieces) {
+            const bone = this.bones.get(piece.bone);
+            // Rigidly, off the skeleton's own bind data rather than through a
+            // rest-pose holder: see `boneAttachMatrix`. A holder left gloves out
+            // at shoulder height, in the T-pose the hands were bound in.
+            const onBone = this.instance ? boneAttachMatrix(this.instance.object, piece.bone) : null;
+            if (!bone || !onBone) {
+              // Loud, because the failure is invisible: a fist weapon whose
+              // pieces find no bone simply draws nothing, and the character
+              // looks bare-handed rather than broken.
+              console.warn(`gear: ${baseId} piece for bone "${piece.bone}" has ${bone ? "no bind matrix" : "no such bone"}`);
+              continue;
+            }
+            await this.options.warmUp?.(piece.object);
+            if (generation !== this.dressGeneration) return; // swapped mid-compile
+            piece.object.matrixAutoUpdate = false;
+            piece.object.matrix.copy(onBone);
+            bone.add(piece.object);
+            this.held.push(piece.object);
+            this.trackMaterials(piece.object);
+          }
+          this.refreshOutlines();
+          this.options.warmDraw?.(this.root);
+        });
+      }
       void buildHeldItem(baseId, rarity ?? "honed", hand).then(async (held) => {
         if (!held || generation !== this.dressGeneration) return;
         // See ActorOptions.warmUp — compiled before it ever touches the

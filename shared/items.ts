@@ -185,6 +185,15 @@ export interface ItemArt {
    */
   build?: "crystalstave" | "quiver" | "fangblade" | "flail" | "glaive";
   palette: PaletteId;
+  /**
+   * WORN ON BOTH HANDS rather than held in one: a fist weapon. Names a model
+   * whose meshes are named for the hand bones they belong to (`Fist1R`,
+   * `Fist2L`, `LowerArmR`), because a hand is three bones and one rigid glove
+   * across all of them tears off two of them the moment a fist closes. Built by
+   * `tools/art/items/gloves.py`, attached by `buildHandPieces` in `gear.ts`.
+   * An item with this holds nothing.
+   */
+  hands?: string;
   /** Multiplies the fitted length. A wand is a staff cut down. */
   scale?: number;
   /**
@@ -603,6 +612,50 @@ const WEAPON_BASES: ItemBase[] = [
     { model: "items/stormrod.glb", palette: "storm", scale: 0.58 },
     "It hums between castings, which the apprentices are told is normal.",
     { mods: { speed: 0.8, damage: 1.15 } }),
+
+  // ------------------------------------------------------------------ fists
+  // THE ARCHETYPE THAT HAD NOTHING TO FIND. Fists were the unarmed state: a
+  // real class (the Adventurer), a real skill tree, its own attack animation —
+  // and not one item in the world, so the only way to play it was to leave a
+  // slot empty and never improve. These are what a bare-handed fighter wears:
+  // worn on both hands rather than held (see `ItemArt.hands`), and the same 1-5
+  // bands as every other family, so the Adventurer has somewhere to go.
+  //
+  // They stay the FASTEST and WEAKEST family per swing — `WEAPONS.fist` carries
+  // 0.6 damage against 0.8 speed — and the items do not fight that; they climb
+  // the same ladder inside it.
+  w("handwraps", "Hand Wraps", 1, "fist",
+    { hands: "items/handwraps.glb", palette: "bone" },
+    "Linen, wound tight. The knuckles still split, only later."),
+  w("studdedcestus", "Studded Cestus", 2, "fist",
+    { hands: "items/studdedcestus.glb", palette: "wood" },
+    "Leather with iron let into it, which is the whole idea.",
+    { mods: { damage: 1.1, speed: 1.05 } }),
+  w("ironknuckles", "Iron Knuckles", 3, "fist",
+    { hands: "items/ironknuckles.glb", palette: "iron" },
+    "A bar across four fingers. Nothing about it is subtle.",
+    { mods: { damage: 1.18 } }),
+  // AND ONE MADE OF SOMETHING. Every other family can put an element in your
+  // hand by band 3 — `schools.mjs` checks it, because an element you can only
+  // hold at band 5 arrives after the monsters that fold to it — and the fist
+  // tree casts none. With only the band-5 Stormfists, fists were the one family
+  // that could not answer a troll or a golem until the end.
+  w("emberfists", "Emberfists", 3, "fist",
+    { hands: "items/emberfists.glb", palette: "crimson" },
+    "The iron over the knuckles never quite goes cold.",
+    { mods: { damage: 1.15, speed: 1.02 } }),
+  w("tigerclaws", "Tiger Claws", 4, "fist",
+    { hands: "items/tigerclaws.glb", palette: "bone" },
+    "Three blades where the knuckles are. They open more than they bruise.",
+    { mods: { damage: 1.12, speed: 1.08 } }),
+  w("warplategauntlets", "Warplate Gauntlets", 4, "fist",
+    { hands: "items/warplategauntlets.glb", palette: "steel" },
+    "Fluted at the cuff, ridged at the knuckle. Made for hitting plate.",
+    { mods: { damage: 1.25, speed: 0.88 } }),
+  w("stormfists", "Stormfists", 5, "fist",
+    { hands: "items/stormfists.glb", palette: "storm" },
+    "The air tastes of iron before the blow lands.",
+    { mods: { damage: 1.3, speed: 0.95 } }),
 ];
 
 // --- Off-hand ---------------------------------------------------------------
