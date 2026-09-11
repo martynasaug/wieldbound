@@ -46,7 +46,8 @@ console.log("1. the server accepts exactly the looks the tables describe");
   const old = parseStoredLook(JSON.stringify({ skin: "umber", build: "slight" }), "Alder");
   check(
     "a look stored before a field existed keeps its choices and fills the rest",
-    !!old && old.skin === "umber" && old.build === "slight" && old.hair === good.hair && old.hairColor === good.hairColor,
+    !!old && old.skin === "umber" && old.build === "slight" && old.hair === good.hair &&
+      old.beard === good.beard && old.hairColor === good.hairColor,
     JSON.stringify(old),
   );
   check("the wire gets no such allowance", sanitizeLook({ skin: "umber", build: "slight" }) === null);
@@ -85,7 +86,7 @@ console.log("3. nobody's colouring changed on the day the creator shipped");
 console.log("4. a new character is sent into the creator, and what they pick stays");
 {
   const name = `Creator${Date.now() % 100000}`;
-  const chosen = { skin: "umber", build: "slight", hair: "ponytail", hairColor: "ginger" };
+  const chosen = { skin: "umber", build: "slight", hair: "ponytail", beard: "braided", hairColor: "ginger" };
   const { browser, page } = await open({ headless: true, width: 1280, height: 800 });
   try {
     await login(page, name, { creator: true });

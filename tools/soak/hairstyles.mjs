@@ -10,9 +10,14 @@
 //   node tools/soak/hairstyles.mjs [out]
 import { mkdirSync, writeFileSync } from "node:fs";
 import { open, login } from "./driver.mjs";
-import { HAIR_STYLE_IDS } from "../../shared/look.ts";
+import { BEARD_STYLE_IDS, HAIR_STYLE_IDS } from "../../shared/look.ts";
 
-const OUT = process.argv[2] ?? "tools/soak/shots/hairstyles";
+// `hair` (the default) or `beard`: which head piece the sheet walks.
+//   node tools/soak/hairstyles.mjs tools/soak/shots/beards beard
+const FIELD = process.argv[3] === "beard" ? "beard" : "hair";
+const IDS = FIELD === "beard" ? BEARD_STYLE_IDS : HAIR_STYLE_IDS;
+const SHEET = FIELD === "beard" ? "beards" : "hairstyles";
+const OUT = process.argv[2] ?? `tools/soak/shots/${SHEET}`;
 mkdirSync(OUT, { recursive: true });
 
 // A colour that reads against the Monk's tan skin and the grey background, so
@@ -38,32 +43,38 @@ await page.evaluate(() => {
 await page.waitForTimeout(1500);
 
 const rows = [];
-for (const style of HAIR_STYLE_IDS) {
-  await page.evaluate(({ style, color }) => {
+for (const style of IDS) {
+  await page.evaluate(({ style, color, field }) => {
     const c = window.__wieldbound.creator;
-    c.set("hair", style);
+    c.set(field, style);
+    // Beards are judged under an ordinary haircut, not a bare scalp.
+    if (field === "beard") c.set("hair", "short");
     c.set("hairColor", color);
     c.setTab("hair");
-    c.zoomTarget = 0.85;
-    c.zoom = 0.85;
-  }, { style, color: COLOR });
+    // Further out for beards: at the hair framing the crop ended at the chin,
+    // and the long beard and both braids were cut out of every front view —
+    // a sheet that could not show the thing it existed to judge.
+    const zoom = field === "beard" ? 0.55 : 0.85;
+    c.zoomTarget = zoom;
+    c.zoom = zoom;
+  }, { style, color: COLOR, field: FIELD });
   // The GLB loads on first use; wait until the mesh is actually on the head.
   await page.waitForFunction(
-    (style) => {
+    ({ style, field }) => {
       let found = false;
-      window.__wieldbound.localActor.root.traverse((o) => { if (o.name === "look_hair") found = true; });
+      window.__wieldbound.localActor.root.traverse((o) => { if (o.name === `look_${field}`) found = true; });
       return style === "none" ? !found : found;
     },
-    style,
+    { style, field: FIELD },
     { timeout: 15000 },
   ).catch(() => {});
-  const worn = await page.evaluate(() => {
+  const worn = await page.evaluate((field) => {
     let tris = 0;
     window.__wieldbound.localActor.root.traverse((o) => {
-      if (o.name === "look_hair") tris = o.geometry.index ? o.geometry.index.count / 3 : o.geometry.attributes.position.count / 3;
+      if (o.name === `look_${field}`) tris = o.geometry.index ? o.geometry.index.count / 3 : o.geometry.attributes.position.count / 3;
     });
     return tris;
-  });
+  }, FIELD);
   const tiles = [];
   for (const [, yaw] of VIEWS) {
     await page.evaluate((yaw) => { window.__wieldbound.creator.yaw = yaw; }, yaw);
@@ -97,7 +108,7 @@ const sheet = await page.evaluate(async ({ rows, views }) => {
   return canvas.toDataURL("image/png").split(",")[1];
 }, { rows, views: VIEWS.map(([v]) => v) });
 
-writeFileSync(`${OUT}/hairstyles.png`, Buffer.from(sheet, "base64"));
+writeFileSync(`${OUT}/${SHEET}.png`, Buffer.from(sheet, "base64"));
 console.log(errors.length ? `page errors:\n  ${errors.join("\n  ")}` : "no page errors");
-console.log(`sheet: ${OUT}/hairstyles.png`);
+console.log(`sheet: ${OUT}/${SHEET}.png`);
 await browser.close();

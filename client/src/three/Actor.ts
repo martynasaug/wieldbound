@@ -28,10 +28,10 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, removeBakedBeads, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
+import { BUILTIN_WEAPON_MESHES, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
-import { HAIR_ANCHOR_MESH, hairGeometry, hairMaterial } from "./hair";
+import { HAIR_ANCHOR_MESH, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
 import type { CharacterLook } from "../../../shared/look";
 import { applySkin } from "./skin";
 import { pickClip, loadClipLibrary } from "./clips";
@@ -790,12 +790,12 @@ export class Actor {
   private appliedBuild = 1;
   /** The body's own materials, the only ones a skin tone may touch — hair and gear are tracked in `litMaterials` too. */
   private bodyMaterials: THREE.MeshStandardMaterial[] = [];
-  /** The modelled hairstyle hung beside the head piece, if one is worn. See `applyHair`. */
-  private hairMesh: THREE.Mesh | null = null;
-  /** Style and colour the current hair was built for, so snapshots do not rebuild it. */
-  private hairKey = "";
-  /** Bumped per request, so a slow load for a style since changed is dropped. */
-  private hairToken = 0;
+  /** Modelled hair, beard and brows hung beside the head piece. See `applyLookPieces`. */
+  private readonly lookPieces = new Map<string, THREE.Mesh>();
+  /** File and colour each piece was built for, so snapshots do not rebuild it. */
+  private readonly lookPieceKeys = new Map<string, string>();
+  /** Bumped per request, so a slow load for a choice since changed is dropped. */
+  private readonly lookPieceTokens = new Map<string, number>();
   private flashUntil = 0;
   private flashColor = 0xffffff;
   private chilled = false;
@@ -1011,8 +1011,11 @@ export class Actor {
     });
     for (const o of builtIn) o.removeFromParent();
     // And the Monk's prayer beads, which are welded into its head mesh rather
-    // than being a node of their own — see `removeBakedBeads`.
-    removeBakedBeads(instance.object);
+    // than being a node of their own — see `removeBakedBeads`. A player keeps only
+    // its nose: brows and facial hair come from `applyLookPieces`, in their own
+    // hair colour, so the one piece of the face they chose is theirs.
+    if (this.identity) keepBakedNose(instance.object);
+    else removeBakedBeads(instance.object);
 
     this.mixer = new THREE.AnimationMixer(instance.object);
     this.buildActions();
@@ -1065,8 +1068,8 @@ export class Actor {
     // A fresh rig carries no build yet, whatever the previous one had — and no
     // hair: the old mesh hung off the old rig's bones and went with it.
     this.appliedBuild = 1;
-    this.hairMesh = null;
-    this.hairKey = "";
+    this.lookPieces.clear();
+    this.lookPieceKeys.clear();
     this.tintBody();
     this.applyLook();
     this.measureLifts(model);
@@ -1472,30 +1475,39 @@ export class Actor {
     const { build } = this.resolvedLook();
     this.instance.object.scale.multiplyScalar(build / this.appliedBuild);
     this.appliedBuild = build;
-    this.applyHair();
+    this.applyLookPieces();
   }
 
   /**
-   * Hang the chosen hairstyle beside the Monk's head piece.
+   * Hang the chosen hair, beard and brows beside the Monk's head piece.
    *
-   * The file is modelled in that piece's local space (`tools/art/hair.py`), so it
-   * takes the piece's parent — the Head bone — and the piece's own transform,
-   * and nothing is fitted here. It is part of the rig from then on, so
-   * `refreshOutlines` gives it its outline and through-walls ghost the way it
-   * does the body, and rebuilding outlines is all that removing it needs.
+   * Each file is modelled in that piece's local space (`tools/art/hair.py`,
+   * `tools/art/facial_hair.py`), so it takes the piece's parent — the Head bone —
+   * and the piece's own transform, and nothing is fitted here. They are part of
+   * the rig from then on, so `refreshOutlines` gives them their through-walls
+   * ghost the way it does the body, and rebuilding outlines is all that removing
+   * one needs.
    */
-  private applyHair(): void {
+  private applyLookPieces(): void {
     if (!this.identity || !this.instance) return;
-    const { hair, hairColor } = this.resolvedLook();
-    const key = `${hair}|${hairColor.getHexString()}`;
-    if (key === this.hairKey) return;
-    this.hairKey = key;
-    const token = ++this.hairToken;
+    const { hair, beard, hairColor } = this.resolvedLook();
+    this.applyLookPiece("hair", lookPieceFile("hair", hair), hairColor);
+    this.applyLookPiece("beard", lookPieceFile("beard", beard), hairColor);
+    this.applyLookPiece("brows", lookPieceFile("brows"), hairColor);
+  }
+
+  private applyLookPiece(slot: "hair" | "beard" | "brows", file: string | null, colour: THREE.Color): void {
     const instance = this.instance;
-    void hairGeometry(hair).then((geometry) => {
+    if (!instance) return;
+    const key = `${file ?? "none"}|${colour.getHexString()}`;
+    if (this.lookPieceKeys.get(slot) === key) return;
+    this.lookPieceKeys.set(slot, key);
+    const token = (this.lookPieceTokens.get(slot) ?? 0) + 1;
+    this.lookPieceTokens.set(slot, token);
+    void lookPieceGeometry(file).then((geometry) => {
       // A later choice, or a new rig, has overtaken this one.
-      if (token !== this.hairToken || instance !== this.instance) return;
-      this.removeHair();
+      if (this.lookPieceTokens.get(slot) !== token || instance !== this.instance) return;
+      this.removeLookPiece(slot);
       let anchor: THREE.Object3D | null = null;
       instance.object.traverse((o) => {
         if (!anchor && o.name === HAIR_ANCHOR_MESH && (o as THREE.Mesh).isMesh) anchor = o;
@@ -1503,24 +1515,24 @@ export class Actor {
       const parent = (anchor as THREE.Object3D | null)?.parent;
       if (geometry && anchor && parent) {
         const from = anchor as THREE.Object3D;
-        const mesh = new THREE.Mesh(geometry, hairMaterial(hairColor));
-        mesh.name = "look_hair";
+        const mesh = new THREE.Mesh(geometry, hairMaterial(colour));
+        mesh.name = `look_${slot}`;
         mesh.position.copy(from.position);
         mesh.quaternion.copy(from.quaternion);
         mesh.scale.copy(from.scale);
-        mesh.castShadow = true;
+        mesh.castShadow = slot !== "brows";
         mesh.receiveShadow = true;
         parent.add(mesh);
-        this.hairMesh = mesh;
+        this.lookPieces.set(slot, mesh);
         this.trackMesh(mesh);
-        this.syncHairVisibility();
       }
+      this.syncHairVisibility();
       this.refreshOutlines();
     });
   }
 
-  private removeHair(): void {
-    const mesh = this.hairMesh;
+  private removeLookPiece(slot: string): void {
+    const mesh = this.lookPieces.get(slot);
     if (!mesh) return;
     mesh.removeFromParent();
     // The geometry is shared by everyone wearing the style; the material is ours.
@@ -1528,12 +1540,13 @@ export class Actor {
     this.litMaterials = this.litMaterials.filter((e) => e.mat !== material);
     this.ownedMaterials.delete(material);
     material.dispose();
-    this.hairMesh = null;
+    this.lookPieces.delete(slot);
   }
 
-  /** Hair under a helm would poke through it, so a worn helm hides it. */
+  /** Hair under a helm would poke through it, so a worn helm hides it. A beard stays. */
   private syncHairVisibility(): void {
-    if (this.hairMesh) this.hairMesh.visible = !this.appearance?.layers.helm;
+    const hair = this.lookPieces.get("hair");
+    if (hair) hair.visible = !this.appearance?.layers.helm;
   }
 
   private tintBody(): void {
@@ -1827,7 +1840,7 @@ export class Actor {
       // mesh, and the hull outlines every one of them: photographed in the game,
       // white lines laced through every fringe and fall and the hair read as
       // plastic pieces. The body's own outline still rings the figure.
-      if (mesh.name === "look_hair") return;
+      if (mesh.name.startsWith("look_")) return;
       sources.push(mesh);
     });
 

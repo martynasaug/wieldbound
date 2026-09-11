@@ -14,7 +14,14 @@
 
 import * as THREE from "three";
 
-import { BUILD_SCALE, defaultLookFor, lookColorHex, type CharacterLook, type HairStyleId } from "../../../shared/look";
+import {
+  BUILD_SCALE,
+  defaultLookFor,
+  lookColorHex,
+  type BeardStyleId,
+  type CharacterLook,
+  type HairStyleId,
+} from "../../../shared/look";
 import { toneById, type SkinTone } from "./skin";
 
 export interface ResolvedLook {
@@ -32,6 +39,9 @@ export interface ResolvedLook {
   build: number;
   /** Which modelled hairstyle, or "none". */
   hair: HairStyleId;
+  /** Which facial hair, or "none". */
+  beard: BeardStyleId;
+  /** Hair, beard and brows. */
   hairColor: THREE.Color;
 }
 
@@ -41,6 +51,7 @@ export function resolveLook(look: CharacterLook): ResolvedLook {
     skin: toneById(look.skin),
     build: BUILD_SCALE[look.build],
     hair: look.hair,
+    beard: look.beard,
     hairColor: new THREE.Color(lookColorHex("hairColor", look.hairColor)),
   };
 }

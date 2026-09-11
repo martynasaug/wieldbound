@@ -14,7 +14,7 @@ import { open, login } from "./driver.mjs";
 const OUT = process.argv[2] ?? "tools/soak/shots/creator";
 mkdirSync(OUT, { recursive: true });
 const NAME = `Maker${Date.now() % 100000}`;
-const CHOSEN = { skin: "porcelain", build: "broad", hair: "long", hairColor: "auburn" };
+const CHOSEN = { skin: "porcelain", build: "broad", hair: "long", beard: "long", hairColor: "auburn" };
 
 const { browser, page } = await open({ headless: true, width: 1280, height: 800 });
 const errors = [];

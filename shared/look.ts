@@ -24,6 +24,10 @@
 export const SKIN_TONE_IDS = ["porcelain", "fair", "light", "olive", "tan", "bronze", "umber", "ebony"] as const;
 export const BUILD_IDS = ["slight", "lean", "average", "sturdy", "broad"] as const;
 export const HAIR_STYLE_IDS = ["none", "short", "long", "ponytail", "bun", "mohawk", "spiky"] as const;
+// Four are the Monk's own authored clumps, recombined; two are modelled on top of
+// them. See `tools/art/facial_hair.py`. "monk" is the beard every character
+// already wore, which is why it is the default.
+export const BEARD_STYLE_IDS = ["none", "moustache", "goatee", "chops", "monk", "long", "braided"] as const;
 
 export const HAIR_COLORS = [
   { id: "black", label: "Black", hex: 0x141013 },
@@ -46,11 +50,14 @@ export type SkinToneId = (typeof SKIN_TONE_IDS)[number];
 export type BuildId = (typeof BUILD_IDS)[number];
 export type HairStyleId = (typeof HAIR_STYLE_IDS)[number];
 export type HairColorId = (typeof HAIR_COLORS)[number]["id"];
+export type BeardStyleId = (typeof BEARD_STYLE_IDS)[number];
 
 export interface CharacterLook {
   skin: SkinToneId;
   build: BuildId;
   hair: HairStyleId;
+  beard: BeardStyleId;
+  /** Hair, beard and brows together, so a character's hair matches itself. */
   hairColor: HairColorId;
 }
 
@@ -132,13 +139,27 @@ export const LOOK_OPTIONS: readonly LookOption[] = [
       { id: "spiky", label: "Spiky" },
     ],
   },
+  {
+    key: "beard",
+    label: "Facial hair",
+    kind: "style",
+    choices: [
+      { id: "none", label: "Clean-shaven" },
+      { id: "moustache", label: "Moustache" },
+      { id: "goatee", label: "Goatee" },
+      { id: "chops", label: "Mutton chops" },
+      { id: "monk", label: "Full beard" },
+      { id: "long", label: "Long beard" },
+      { id: "braided", label: "Braided beard" },
+    ],
+  },
   { key: "hairColor", label: "Hair colour", kind: "color", choices: HAIR_COLORS },
 ];
 
 /** How the creator groups the options, and whether each group wants the face or the whole figure. */
 export const LOOK_CATEGORIES: readonly { id: string; label: string; focus: "face" | "body"; keys: readonly LookKey[] }[] = [
   { id: "body", label: "Body", focus: "body", keys: ["skin", "build"] },
-  { id: "hair", label: "Hair", focus: "face", keys: ["hair", "hairColor"] },
+  { id: "hair", label: "Hair", focus: "face", keys: ["hair", "beard", "hairColor"] },
 ];
 
 export function lookOption(key: LookKey): LookOption {
@@ -229,6 +250,8 @@ export function defaultLookFor(name: string): CharacterLook {
     skin,
     build: BUILD_IDS[Math.min(BUILD_IDS.length - 1, Math.floor((((h >>> 24) & 0xff) / 256) * BUILD_IDS.length))],
     hair: HAIR_STYLE_IDS[(h & 0xff) % HAIR_STYLE_IDS.length],
+    // The beard every character wore before there was a choice.
+    beard: "monk",
     hairColor: readableHair((h >>> 4) & 0xff, skin),
   };
 }
@@ -241,6 +264,7 @@ export function randomLook(random: () => number = Math.random): CharacterLook {
     skin,
     build: pick(BUILD_IDS),
     hair: pick(HAIR_STYLE_IDS),
+    beard: pick(BEARD_STYLE_IDS),
     hairColor: readableHair(Math.floor(random() * HAIR_COLORS.length), skin),
   };
 }

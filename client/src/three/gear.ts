@@ -132,12 +132,39 @@ export const BUILTIN_WEAPON_MESHES = new Set([
 //
 // Filtered once per source geometry and shared, the same way `SkeletonUtils`
 // shares the original, and never disposed for the same reason (`Actor.dispose`).
+//
+// AND THE SAME CUT KEEPS JUST THE NOSE, for players. Their brows and facial hair
+// are separate modelled pieces now (`tools/art/facial_hair.py`), coloured with
+// their hair, so of this piece they keep only the strip down the nose — measured
+// at centre (0, -0.283, 2.441), 16 triangles, and the only island that narrow on
+// the centre line above the mouth.
 const BEAD_HOST_MESH = "Monk001";
 const BEAD_TRIANGLES = 288;
-const beadless = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
 
-function withoutBeads(source: THREE.BufferGeometry): THREE.BufferGeometry {
-  const cached = beadless.get(source);
+interface HeadIsland {
+  tris: number;
+  box: THREE.Box3;
+}
+
+const filteredPieces = new Map<string, WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>>();
+
+/**
+ * The head piece's geometry with only the islands `keep` accepts, cached per rule
+ * and per source. If the rule keeps everything, or nothing, the source comes back
+ * untouched — a model that changes shape must never lose its whole face to a rule
+ * that no longer matches it.
+ */
+function filterIslands(
+  source: THREE.BufferGeometry,
+  rule: string,
+  keep: (island: HeadIsland) => boolean,
+): THREE.BufferGeometry {
+  let cache = filteredPieces.get(rule);
+  if (!cache) {
+    cache = new WeakMap();
+    filteredPieces.set(rule, cache);
+  }
+  const cached = cache.get(source);
   if (cached) return cached;
   const geo = source.index ? source.toNonIndexed() : source;
   const pos = geo.attributes.position;
@@ -165,7 +192,7 @@ function withoutBeads(source: THREE.BufferGeometry): THREE.BufferGeometry {
     }
   }
 
-  const islands = new Map<number, { tris: number; box: THREE.Box3 }>();
+  const islands = new Map<number, HeadIsland>();
   const p = new THREE.Vector3();
   for (let t = 0; t < triangles; t++) {
     const root = find(weld[t * 3]);
@@ -174,27 +201,20 @@ function withoutBeads(source: THREE.BufferGeometry): THREE.BufferGeometry {
     island.tris++;
     for (let k = 0; k < 3; k++) island.box.expandByPoint(p.fromBufferAttribute(pos, t * 3 + k));
   }
-  const size = new THREE.Vector3();
-  const beads = new Set<number>();
-  for (const [root, island] of islands) {
-    if (island.tris !== BEAD_TRIANGLES) continue;
-    island.box.getSize(size);
-    const lo = Math.min(size.x, size.y, size.z);
-    const hi = Math.max(size.x, size.y, size.z);
-    if (lo > 0.12 && hi < 0.24 && hi / lo < 1.2) beads.add(root);
-  }
-  if (!beads.size) {
-    beadless.set(source, source);
+  const dropped = new Set<number>();
+  for (const [root, island] of islands) if (!keep(island)) dropped.add(root);
+  if (!dropped.size || dropped.size === islands.size) {
+    cache.set(source, source);
     return source;
   }
 
-  const keep: number[] = [];
-  for (let t = 0; t < triangles; t++) if (!beads.has(find(weld[t * 3]))) keep.push(t);
+  const kept: number[] = [];
+  for (let t = 0; t < triangles; t++) if (!dropped.has(find(weld[t * 3]))) kept.push(t);
   const out = new THREE.BufferGeometry();
   for (const [name, attr] of Object.entries(geo.attributes)) {
     const a = attr as THREE.BufferAttribute;
-    const data = new (a.array.constructor as new (n: number) => THREE.TypedArray)(keep.length * 3 * a.itemSize);
-    keep.forEach((t, j) => {
+    const data = new (a.array.constructor as new (n: number) => THREE.TypedArray)(kept.length * 3 * a.itemSize);
+    kept.forEach((t, j) => {
       for (let k = 0; k < 3; k++) {
         for (let c = 0; c < a.itemSize; c++) {
           data[(j * 3 + k) * a.itemSize + c] = a.array[(t * 3 + k) * a.itemSize + c];
@@ -205,26 +225,55 @@ function withoutBeads(source: THREE.BufferGeometry): THREE.BufferGeometry {
   }
   out.computeBoundingBox();
   out.computeBoundingSphere();
-  beadless.set(source, out);
+  cache.set(source, out);
   return out;
 }
 
-/** Strip the baked-in prayer beads from a body, if it carries them. */
-export function removeBakedBeads(root: THREE.Object3D): void {
+function isBead(island: HeadIsland): boolean {
+  if (island.tris !== BEAD_TRIANGLES) return false;
+  const size = island.box.getSize(new THREE.Vector3());
+  const lo = Math.min(size.x, size.y, size.z);
+  const hi = Math.max(size.x, size.y, size.z);
+  return lo > 0.12 && hi < 0.24 && hi / lo < 1.2;
+}
+
+function isNose(island: HeadIsland): boolean {
+  const centre = island.box.getCenter(new THREE.Vector3());
+  const size = island.box.getSize(new THREE.Vector3());
+  return Math.abs(centre.x) < 0.02 && island.tris <= 24 && centre.z > 2.3 && size.x < 0.15;
+}
+
+/** Swap the head piece's geometry for a filtered one, on every mesh that shares it. */
+function swapHeadPiece(root: THREE.Object3D, rule: string, keep: (island: HeadIsland) => boolean): boolean {
   let host: THREE.Mesh | null = null;
   root.traverse((o) => {
     if (!host && o.name === BEAD_HOST_MESH && (o as THREE.Mesh).isMesh) host = o as THREE.Mesh;
   });
-  if (!host) return;
+  if (!host) return false;
   const source = (host as THREE.Mesh).geometry;
-  const filtered = withoutBeads(source);
-  if (filtered === source) return;
+  const filtered = filterIslands(source, rule, keep);
+  if (filtered === source) return false;
   // Every mesh sharing the geometry, not just the named one, so anything
-  // already copied off it — a hull, a silhouette — loses the beads too.
+  // already copied off it — a hull, a silhouette — changes too.
   root.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (mesh.isMesh && mesh.geometry === source) mesh.geometry = filtered;
   });
+  return true;
+}
+
+/** Strip the baked-in prayer beads from a body, if it carries them. */
+export function removeBakedBeads(root: THREE.Object3D): void {
+  swapHeadPiece(root, "beads", (island) => !isBead(island));
+}
+
+/**
+ * Keep only the nose of the head piece, for a player whose brows and facial
+ * hair are their own. If no nose matches, fall back to losing just the beads
+ * rather than the whole face.
+ */
+export function keepBakedNose(root: THREE.Object3D): void {
+  if (!swapHeadPiece(root, "nose", isNose)) removeBakedBeads(root);
 }
 
 // --- Rarity ---------------------------------------------------------------

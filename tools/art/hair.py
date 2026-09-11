@@ -719,4 +719,7 @@ def main():
     print("DONE")
 
 
-main()
+# Guarded so `facial_hair.py` can import the skull, the builder and the preview
+# and export helpers without building every hairstyle as a side effect.
+if __name__ == "__main__":
+    main()

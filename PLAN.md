@@ -24576,3 +24576,33 @@ serves fresh. And stopping a background `npm run dev` task leaves its node
 children holding 5173 and 8080; they have to be found and closed by PID.
 
 Weakest of the six: spiky, which is still a little crown-like dead on.
+
+**Phase 70 M70.277 — facial hair, mostly the Monk's own.** Asked for: "start
+doing different facial hair."
+
+THE BEST BEARD IN THE GAME WAS ALREADY MODELLED, AND IT IS IN PIECES. The Monk's
+rigid head piece is a set of islands — colour-coded in a render and printed with
+their bounds by `tools/art/facial_hair.py`: two brows, a nose strip, a looped
+moustache, six chin clumps, twenty cheek clumps and ten beads. Islands recombine
+without redrawing a face, so four of the six styles ARE the Monk's authored art:
+moustache, goatee, mutton chops, and the full beard every character already
+wore (still the default). Two are modelled on top of those clumps — a long beard
+falling to a point, and two woven braids.
+
+BOTH MODELLED BEARDS FIRST HAD A JAW OF THEIR OWN, ray-cast over the lower face
+like the scalp is, and beside the Monk's faceted clumps a smooth shell read as a
+balaclava with a hard edge from ear to moustache. The authored cheek and chin
+clumps are the upper half now; only the length is new.
+
+Players' brows and facial hair are exported as pieces in the head piece's local
+space, like the hair, and take the hair colour, so a character's hair matches
+itself. The baked head piece keeps ONLY its nose for a player (`keepBakedNose`,
+the same island filter the beads use, generalised); NPCs keep the whole piece
+without beads. `hair.ts` loads any of the three kinds of piece and `Actor`
+hangs each on its own slot, with its own load token so a slow file for a
+changed choice is dropped; a worn helm hides the hair and leaves the beard.
+
+`tools/soak/hairstyles.mjs … beard` shoots the beard sheet in the game. ITS FIRST
+RUN COULD NOT SHOW THE TWO NEW BEARDS: the hair framing cropped at the chin, and
+both the long fall and the braids were outside every front view. Beards are
+framed further out now, and judged on that sheet.
