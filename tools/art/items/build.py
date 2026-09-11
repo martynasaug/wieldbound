@@ -125,6 +125,9 @@ def export(obj, path):
         export_normals=True,
         export_materials="EXPORT",
         export_animations=False,
+        # Custom properties ride along as glTF extras: `grip` is how a model
+        # tells the game where it is held.
+        export_extras=True,
     )
     print(f"EXPORTED {path}")
 

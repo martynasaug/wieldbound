@@ -194,12 +194,12 @@ export interface ItemArt {
    * which is what a sword, an axe and a staff all want. "flat" points its
    * SHORTEST axis down the grip instead, turning the face outward — which is
    * what a shield wants, and the one thing a bounding box cannot work out on
-   * its own. "cross" stands the item across the grip, centred on the fist —
-   * a bow, which is held at its middle and upright, not pointed like a lance.
-   * "upright" stands an OFF-HAND item on end in the fist, head up — a quiver,
-   * a focus — where "along" would point it level out of the left hand.
+   * its own. "upright" stands an OFF-HAND item on end in the fist, head up — a
+   * quiver, a focus — where "along" would point it level out of the left hand.
+   * (A bow is "along": its handle goes through the fist like a sword's. Where
+   * on it the fist closes is authored in the model — see `grip` below.)
    */
-  lay?: "along" | "flat" | "cross" | "upright";
+  lay?: "along" | "flat" | "upright";
   /**
    * HOW IT IS HELD — see `HoldOptions` in `client/src/three/gear.ts`. Reported:
    * axes held with the blade towards the character, staves held at the bottom,
@@ -207,7 +207,9 @@ export interface ItemArt {
    * and nothing else.
    *
    * `grip` is where along the length the fist closes, 0 = butt, 1 = tip; left out,
-   * the item is held at its butt, as anything with a handle is. `flip` turns a
+   * the item is held at its butt, as anything with a handle is. A model from the
+   * item kit can instead carry its own grip POINT (a bow's handle is on its back,
+   * off the axis), and that wins. `flip` turns a
    * model authored head-down end for end. `roll` turns it about its length, in
    * degrees; generated models default to 180 so the edge faces out.
    */
@@ -296,13 +298,6 @@ export function baseGuard(base: ItemBase): number {
 
 // Shorthand, so a row reads as the item it describes rather than as a wall of
 // field names. Every catalogue row below is one call.
-/**
- * A bow stands across the aim and is held at its handle: the handle sits on the
- * bow's back, four fifths of the way from the string. Not rolled — its back is
- * authored facing out already. See `ItemArt.lay`.
- */
-const BOW_HOLD = { lay: "cross", roll: 0, grip: 0.8 } as const;
-
 /**
  * A shield lies flat on the forearm with its face — boss, bands, device —
  * turned out. Generated shields put that face on -Y, which the fitting turned
@@ -517,15 +512,15 @@ const WEAPON_BASES: ItemBase[] = [
   // ------------------------------------------------------------------- bows
   // All two-handed, which is a rule about hands rather than about balance.
   w("hunterbow", "Hunter's Bow", 1, "bow",
-    { model: "items/hunterbow.glb", palette: "wood", ...BOW_HOLD },
+    { model: "items/hunterbow.glb", palette: "wood" },
     "Drawn more often at deer than at anything that draws back.",
     { twoHanded: true }),
   w("shortbow", "Shortbow", 1, "bow",
-    { model: "items/shortbow.glb", palette: "wood", scale: 0.85, ...BOW_HOLD },
+    { model: "items/shortbow.glb", palette: "wood", scale: 0.85 },
     "Quick to raise, short to reach.",
     { mods: { range: 0.85, speed: 0.85 }, twoHanded: true }),
   w("recurve", "Recurve Bow", 2, "bow",
-    { model: "items/recurve.glb", palette: "wood", scale: 0.95, ...BOW_HOLD },
+    { model: "items/recurve.glb", palette: "wood", scale: 0.95 },
     "The curve stores what your arm cannot.",
     { twoHanded: true }),
   // The armabee is the earliest thing in the world that folds to frost and it
@@ -534,19 +529,19 @@ const WEAPON_BASES: ItemBase[] = [
   // lives on the wing and never touches the ground, so cold is what takes the
   // wing away and a shot is how you reach it.
   w("hoarstring", "Hoarstring", 2, "bow",
-    { model: "items/hoarstring.glb", palette: "frost", scale: 0.95, ...BOW_HOLD },
+    { model: "items/hoarstring.glb", palette: "frost", scale: 0.95 },
     "The nocks are rimed even indoors, and the string never quite warms.",
     { twoHanded: true }),
   w("yewlongbow", "Yew Longbow", 3, "bow",
-    { model: "items/yewlongbow.glb", palette: "bone", scale: 1.3, ...BOW_HOLD },
+    { model: "items/yewlongbow.glb", palette: "bone", scale: 1.3 },
     "A slow draw and a long argument.",
     { mods: { range: 1.3, speed: 1.25, damage: 1.3 }, twoHanded: true }),
   w("gildedbow", "Gilded Bow", 4, "bow",
-    { model: "items/gildedbow.glb", palette: "gold", ...BOW_HOLD },
+    { model: "items/gildedbow.glb", palette: "gold" },
     "A gift to someone who would have preferred a plainer one.",
     { twoHanded: true }),
   w("ruinstring", "Ruinstring", 5, "bow",
-    { model: "items/ruinstring.glb", palette: "crimson", scale: 1.05, ...BOW_HOLD },
+    { model: "items/ruinstring.glb", palette: "crimson", scale: 1.05 },
     "The string hums a half-tone flat and never goes slack.",
     { mods: { range: 1.15, damage: 1.2 }, twoHanded: true }),
 

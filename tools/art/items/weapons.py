@@ -477,7 +477,8 @@ DAGGERS = {
 
 # --- bows ---------------------------------------------------------------------------------------
 # Limbs along Z with the grip at the middle, the back of the bow on +X (towards the
-# target) and the string on the archer's side. Held with `lay: "cross"`, centred.
+# target) and the string on the archer's side. Held like a sword — the handle runs
+# through the fist, limbs out of either end of it — at the grip point the wrap sets.
 
 def bow_path(length, depth, recurve=0.0, steps=10):
     """The curve of a braced bow: the grip forward, the limbs drawing back to the tips."""
@@ -503,6 +504,9 @@ def string(m, path, mat="White"):
 
 
 def grip(m, z, r, mat="DarkBrown", band="DarkWood", x=0.0):
+    # The fist closes round this wrap, and it sits on the bow's back — nowhere
+    # near the origin the game would otherwise centre on.
+    m.grip = (x, 0.0, z)
     m.lathe([(r, z - 0.07), (r * 1.15, z - 0.05), (r * 1.15, z + 0.05), (r, z + 0.07)], mat, sides=6, centre=(x, 0))
 
 

@@ -24704,3 +24704,67 @@ shaft wiggled like a noodle.
 
 Still open: the `rig:` Wizard staff flip and the `crystalstave` and `quiver`
 builders are unused by the catalogue now; the armour remake.
+
+**Phase 70 M70.280 — the grip point comes from the model, and the gloves come
+off.** Reported, from a screenshot of a character running with a bow: "The bows
+are held upside down or something, definitely not right… Scythe is also not
+attached to the hand. There's probably even more similar cases I haven't checked
+all of them. Remove the gloves from player character model."
+
+THREE FAULTS, AND ONE OF THEM EXPLAINED THE OTHERS.
+
+1. A LIVE BOUNDING BOX. `fitToGrip` held a REFERENCE to the geometry's own
+   `boundingBox` and then recomputed it after turning the geometry — so the box
+   it read the grip point from was the TURNED box, and the point was turned a
+   second time. Every handle-held weapon crept towards its butt by the scale
+   factor (a hand axe read 0.02 along its haft instead of 0.12) and an off-hand
+   focus was held two thirds of a metre from the hand. Aliasing, not geometry:
+   `.clone()`.
+2. A BOW IS NOT HELD ACROSS THE AIM. M70.279 stood bows on the grip's cross
+   axis, which photographs well in an idle and lies flat like a lance in the
+   run — which is the screenshot. A bow's handle runs THROUGH the fist exactly
+   as a sword's does, limbs out of either end, which is how the Ranger's own bow
+   sits on its own rig. The "cross" lay is gone.
+3. THE SCYTHE WAS HELD BY ITS BLADE'S SHADOW. The fitting centred each model's
+   bounding box across the grip, and a scythe's blade sweeps two thirds of a
+   metre to one side, so the snath sat a hand's width out of the fist. Kit
+   models are authored with the handle's axis at x = y = 0, so they are centred
+   on THAT (`onAxis`), and a model can now carry its own grip POINT as a glTF
+   extra (`Model.grip` in `kit.py`, `export_extras=True`) — which the bows do,
+   their handle being on the back rather than the axis.
+
+AND THE LEFT HAND HAD NO FIST. The off-hand hangs on `FistL` carrying the right
+hand's grip offset, authored against `WeaponR` — a different bone, so every
+off-hand item was displaced by the difference. Shields hid it inside a
+hand-tuned stand-off; a focus did not. `fistCentre` measures the middle of the
+body's own fist vertices and `seatInFist` puts the item's grip point there.
+
+THE GLOVES ARE PAINT, not a node: the Monk is one skinned mesh, and its fists
+and the flared cuffs over its wrists are faces like any other.
+`tools/art/bare_hands.py` repaints exactly their texture islands as skin —
+measured off the bare upper arms, keeping each island's brushwork so the hands
+are painted rather than filled, and landing inside `skinWeight` so a chosen skin
+tone reaches them. The islands were checked to be shared with nothing else. The
+fist is already modelled as a curled bare hand; the cuff is not, so
+`bareForearms` pulls it in to the forearm at load. The cuff is found by SHAPE
+(faces standing more than 1.2x the bare forearm's radius off the bone) after
+finding it by colour left speckle, the leather and the skin being the same brown
+in places.
+
+MEASURED, NOT EYEBALLED. `tools/soak/grips.mjs` now shoots four poses — idle
+front and side, the run from the GAME's camera, and a frozen mid-attack, the
+pose the first version never looked at — and reports the gap in metres from the
+fist to the nearest point on the item, sampled across triangles rather than at
+their vertices (a staff's shaft has vertices only at its two ends and runs
+straight through the fist between them). `GRIPS_SHOTS=0` measures without
+photographing; `tools/soak/gripprobe.mjs` prints one item's fitted bounds and
+grip point, which is what found the aliasing. Every handle weapon now reads
+0.10-0.13 along its length with a 2-4cm gap, staves 0.37, bows 0.50, the scythe
+0.46, and the off-hand focus 0.001m.
+
+WHAT THE PICTURES CAUGHT: with the animation clock frozen a cross-fade never
+finishes, so the previous item's attack stayed blended into the next item's idle
+— every pose in the first contact sheet was a lie until the harness stopped all
+actions between shots.
+
+Next: fists as a weapon family, with gloves worn on both hands.

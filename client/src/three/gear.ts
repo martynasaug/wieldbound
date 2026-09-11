@@ -262,6 +262,166 @@ function swapHeadPiece(root: THREE.Object3D, rule: string, keep: (island: HeadIs
   return true;
 }
 
+// --- Bare hands -----------------------------------------------------------------
+// Asked for: "Remove the gloves from player character model." The Monk's gloves
+// are part of its one skinned mesh — a leather fist and a flared cuff over each
+// wrist. `tools/art/bare_hands.py` repaints their texture islands as skin; the
+// fist is already modelled as a curled bare hand, so that is all it needs. The
+// cuff is not: it stands twice as proud of the forearm as the arm itself, and a
+// skin-coloured cuff is a swollen wrist. So it is pulled in here, at load.
+
+/** A cuff vertex is one further than this times the bare forearm's radius from the bone. */
+const CUFF_PROUD = 1.2;
+/** Where the bare forearm is along its bone (0 elbow, 1 wrist): measured 0.42-0.47. */
+const BARE_FOREARM_UNTIL = 0.6;
+const FOREARMS: [string, string][] = [["LowerArmL", "FistL"], ["LowerArmR", "FistR"]];
+const cufflessGeometry = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+
+/** Where a bone stood at bind time, in the skinned mesh's own space. */
+function bindPosition(mesh: THREE.SkinnedMesh, bone: number): THREE.Vector3 {
+  const world = mesh.skeleton.boneInverses[bone].clone().invert();
+  return new THREE.Vector3().applyMatrix4(world).applyMatrix4(mesh.bindMatrixInverse);
+}
+
+function pullInCuffs(mesh: THREE.SkinnedMesh): THREE.BufferGeometry {
+  const source = mesh.geometry;
+  const cached = cufflessGeometry.get(source);
+  if (cached) return cached;
+  const bones = mesh.skeleton.bones.map((b) => b.name);
+  const pos = source.attributes.position as THREE.BufferAttribute | undefined;
+  const index = source.attributes.skinIndex as THREE.BufferAttribute | undefined;
+  const weight = source.attributes.skinWeight as THREE.BufferAttribute | undefined;
+  if (!pos || !index || !weight) {
+    cufflessGeometry.set(source, source);
+    return source;
+  }
+  const out = source.clone();
+  const moved = out.attributes.position as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  let pulled = 0;
+  for (const [armName, fistName] of FOREARMS) {
+    const arm = bones.indexOf(armName);
+    const fist = bones.indexOf(fistName);
+    if (arm < 0 || fist < 0) continue;
+    const head = bindPosition(mesh, arm);
+    const axis = bindPosition(mesh, fist).sub(head);
+    const lengthSq = axis.lengthSq();
+    if (lengthSq === 0) continue;
+
+    // The vertices that follow the forearm most, placed along and around it.
+    const placed: { i: number; t: number; radial: THREE.Vector3 }[] = [];
+    for (let i = 0; i < pos.count; i++) {
+      let best = 0;
+      for (let k = 1; k < 4; k++) if (weight.getComponent(i, k) > weight.getComponent(i, best)) best = k;
+      if (index.getComponent(i, best) !== arm) continue;
+      v.fromBufferAttribute(pos, i).sub(head);
+      const t = v.dot(axis) / lengthSq;
+      placed.push({ i, t, radial: v.clone().sub(axis.clone().multiplyScalar(t)) });
+    }
+    const bare = placed.filter((p) => p.t < BARE_FOREARM_UNTIL).map((p) => p.radial.length()).sort((a, b) => a - b);
+    if (!bare.length) continue;
+    const radius = bare[Math.floor(bare.length / 2)];
+    for (const p of placed) {
+      const r = p.radial.length();
+      if (r <= radius * CUFF_PROUD) continue;
+      // Onto the forearm, tapering a little towards the wrist the way an arm does.
+      const taper = 1 - 0.12 * THREE.MathUtils.clamp((p.t - BARE_FOREARM_UNTIL) / (1 - BARE_FOREARM_UNTIL), 0, 1);
+      v.copy(head).addScaledVector(axis, p.t).addScaledVector(p.radial, (radius * taper) / r);
+      moved.setXYZ(p.i, v.x, v.y, v.z);
+      pulled++;
+    }
+  }
+  if (!pulled) {
+    cufflessGeometry.set(source, source);
+    return source;
+  }
+  moved.needsUpdate = true;
+  out.computeBoundingBox();
+  out.computeBoundingSphere();
+  cufflessGeometry.set(source, out);
+  return out;
+}
+
+/**
+ * The middle of a closed fist, in that fist bone's own space: the centroid of
+ * the body's vertices that follow the hand and its fingers.
+ *
+ * THE LEFT HAND HAS NO SOCKET, AND ITS STAND-IN WAS IN THE WRONG PLACE. The
+ * off-hand hangs on `FistL` carrying the right hand's grip offset, which was
+ * authored against `WeaponR` — a different bone with a different origin. So
+ * every off-hand item was displaced from the fist by the difference: a shield's
+ * hand-tuned stand-off absorbed it, and a focus held by its handle floated
+ * three quarters of a metre off the hand (`tools/soak/grips.mjs`, "gap").
+ * Measured from the body rather than tuned by eye, so a new body carries its
+ * own fists with it.
+ */
+export function fistCentre(root: THREE.Object3D, fistBone: string): THREE.Vector3 | null {
+  const side = fistBone.slice(-1);
+  const bonesOfHand = new Set([`Fist${side}`, `Fist1${side}`, `Fist2${side}`, `Thumb1${side}`, `Thumb2${side}`]);
+  let found: THREE.Vector3 | null = null;
+  root.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh;
+    if (found || !mesh.isSkinnedMesh) return;
+    const names = mesh.skeleton.bones.map((b) => b.name);
+    const fist = names.indexOf(fistBone);
+    const pos = mesh.geometry.attributes.position as THREE.BufferAttribute | undefined;
+    const index = mesh.geometry.attributes.skinIndex as THREE.BufferAttribute | undefined;
+    const weight = mesh.geometry.attributes.skinWeight as THREE.BufferAttribute | undefined;
+    if (fist < 0 || !pos || !index || !weight) return;
+    const toBone = mesh.skeleton.boneInverses[fist].clone().multiply(mesh.bindMatrix);
+    const sum = new THREE.Vector3();
+    const v = new THREE.Vector3();
+    let count = 0;
+    for (let i = 0; i < pos.count; i++) {
+      let best = 0;
+      for (let k = 1; k < 4; k++) if (weight.getComponent(i, k) > weight.getComponent(i, best)) best = k;
+      if (!bonesOfHand.has(names[index.getComponent(i, best)])) continue;
+      sum.add(v.fromBufferAttribute(pos, i).applyMatrix4(toBone));
+      count++;
+    }
+    if (count) found = sum.divideScalar(count);
+  });
+  return found;
+}
+
+/**
+ * Move a held item on the socketless hand so its grip point sits in the fist.
+ * `holder` must already be a direct child of the fist bone.
+ */
+export function seatInFist(holder: THREE.Object3D, fist: THREE.Vector3): void {
+  let carrier: THREE.Object3D | null = null;
+  holder.traverse((o) => {
+    if (!carrier && Array.isArray(o.userData.gripPoint)) carrier = o;
+  });
+  if (!carrier) return;
+  const item = carrier as THREE.Object3D;
+  holder.position.set(0, 0, 0);
+  // Down the chain from the item to the holder, in the bone's space.
+  const grip = new THREE.Vector3(...(item.userData.gripPoint as [number, number, number]));
+  for (let o: THREE.Object3D | null = item; o; o = o === holder ? null : o.parent) {
+    o.updateMatrix();
+    grip.applyMatrix4(o.matrix);
+  }
+  holder.position.copy(fist).sub(grip);
+}
+
+/** Take the cuffs off every skinned body under `root`, and off anything sharing their geometry. */
+export function bareForearms(root: THREE.Object3D): void {
+  const swaps = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
+  root.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh;
+    if (!mesh.isSkinnedMesh || swaps.has(mesh.geometry)) return;
+    const bare = pullInCuffs(mesh);
+    if (bare !== mesh.geometry) swaps.set(mesh.geometry, bare);
+  });
+  if (!swaps.size) return;
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    const bare = mesh.isMesh ? swaps.get(mesh.geometry) : undefined;
+    if (bare) mesh.geometry = bare;
+  });
+}
+
 /** Strip the baked-in prayer beads from a body, if it carries them. */
 export function removeBakedBeads(root: THREE.Object3D): void {
   swapHeadPiece(root, "beads", (island) => !isBead(island));
@@ -938,14 +1098,19 @@ async function loadGrip(): Promise<Grip | null> {
  */
 function wholeModel(
   root: THREE.Object3D,
-): { geometry: THREE.BufferGeometry; material: THREE.Material | THREE.Material[] } | null {
+): { geometry: THREE.BufferGeometry; material: THREE.Material | THREE.Material[]; grip: [number, number, number] | undefined } | null {
   const meshes: THREE.Mesh[] = [];
+  let grip: [number, number, number] | undefined;
   root.updateMatrixWorld(true);
   root.traverse((o) => {
     if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+    // Authored in Blender (`Model.grip` in tools/art/items/kit.py), carried as a
+    // glTF extra, which the loader puts on the node's userData.
+    const g = o.userData?.grip;
+    if (Array.isArray(g) && g.length === 3) grip = [g[0], g[1], g[2]];
   });
   if (meshes.length === 0) return null;
-  if (meshes.length === 1) return { geometry: meshes[0].geometry, material: meshes[0].material };
+  if (meshes.length === 1) return { geometry: meshes[0].geometry, material: meshes[0].material, grip };
   const parts: THREE.BufferGeometry[] = [];
   const materials: THREE.Material[] = [];
   for (const mesh of meshes) {
@@ -961,7 +1126,7 @@ function wholeModel(
   }
   const geometry = mergeGeometries(parts, true);
   if (!geometry) return null;
-  return { geometry, material: materials };
+  return { geometry, material: materials, grip };
 }
 
 function findMesh(root: THREE.Object3D, name: string): THREE.Mesh | null {
@@ -1147,9 +1312,10 @@ async function makeHeldItem(
     // mesh with a material per part, and glTF loads that as one mesh PER
     // MATERIAL — so taking the first drew a blade with no grip, guard or pommel.
     // The downloaded FBX weapons keep the old pick, which they were fitted with.
-    const donor = base.art.model.endsWith(".glb")
-      ? wholeModel(proto)
-      : findMesh(proto, "") ?? firstMesh(proto);
+    const donor: { geometry: THREE.BufferGeometry; material: THREE.Material | THREE.Material[]; grip?: [number, number, number] } | null =
+      base.art.model.endsWith(".glb")
+        ? wholeModel(proto)
+        : findMesh(proto, "") ?? firstMesh(proto);
     if (!donor) {
       console.warn(`gear: ${base.art.model} has no mesh; ${baseId} will be invisible`);
       return null;
@@ -1168,9 +1334,11 @@ async function makeHeldItem(
       flip: base.art.flip ?? false,
       roll: base.art.roll ?? (generated ? 180 : 0),
       clearance: SHIELD_CLEARANCE / (base.art.scale ?? 1),
+      point: donor.grip,
+      onAxis: generated,
     };
     const fitted = await cachedHeldGeometry(
-      `fit:${base.art.model}|${lay}|${hold.grip ?? "-"}|${hold.flip}|${hold.roll}|${hold.clearance}`,
+      `fit:${base.art.model}|${lay}|${hold.grip ?? "-"}|${hold.flip}|${hold.roll}|${hold.clearance}|${hold.point ?? "-"}|${hold.onAxis}`,
       () => fitToGrip(donor.geometry, grip.box, lay, hold),
     );
     mesh = new THREE.Mesh(fitted, repaint(donor.material, palette, rarity));
@@ -1228,6 +1396,10 @@ async function makeHeldItem(
 
   mesh.name = `held_${baseId}`;
   mesh.castShadow = true;
+  // Where the fist closes, in this mesh's own space — the point `fitToGrip`
+  // seats every item on. An array, not a Vector3: userData survives `clone` by
+  // JSON. See `seatInFist`, which uses it for the hand with no authored socket.
+  mesh.userData.gripPoint = [0, 0, grip.box.min.z + HAND_ALONG_DONOR * (grip.box.max.z - grip.box.min.z)];
 
   if (hand === "left") {
     // AUTHORED, and the only authored transform here. The pack gives no left
@@ -1316,6 +1488,18 @@ export interface HoldOptions {
    * knuckles by as much as a tower shield does.
    */
   clearance?: number;
+  /**
+   * Where the fist goes, in the model's own coordinates, as the model itself
+   * says (a glTF extra authored in Blender). Beats every guess below.
+   */
+  point?: [number, number, number];
+  /**
+   * The model follows the item kit's convention: its handle's axis is x = y = 0.
+   * So the fist is centred on that axis, NOT on the middle of the bounding box —
+   * which was a hand's width off for an axe and nowhere near the snath of a
+   * scythe, whose blade sweeps two thirds of a metre to one side.
+   */
+  onAxis?: boolean;
 }
 
 /**
@@ -1335,32 +1519,44 @@ const SHIELD_CLEARANCE = 0.13;
 function fitToGrip(
   source: THREE.BufferGeometry,
   box: THREE.Box3,
-  lay: "along" | "flat" | "cross" | "upright" = "along",
+  lay: "along" | "flat" | "upright" = "along",
   hold: HoldOptions = {},
 ): THREE.BufferGeometry {
   const geo = source.clone();
   geo.computeBoundingBox();
-  const b = geo.boundingBox!;
+  // A COPY. `computeBoundingBox` writes into the geometry's own Box3, and this
+  // function computes it again after turning the geometry — so a reference here
+  // silently became the TURNED bounds, and the grip point below was then read
+  // off post-turn numbers and turned a second time. Every handle-held weapon
+  // crept towards its butt by the scale factor, and an off-hand focus ended up
+  // held two thirds of a metre from the hand.
+  const b = geo.boundingBox!.clone();
   const size = [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z];
+
+  // Every turn and the scale go into ONE matrix, so the grip point can be
+  // carried through exactly what the geometry goes through.
+  const turn = new THREE.Matrix4();
+  const then = (m: THREE.Matrix4) => turn.premultiply(m);
 
   // The axis that should end up pointing down the grip.
   const pick = lay === "flat"
     ? size.indexOf(Math.min(...size))
     : size.indexOf(Math.max(...size));
-  if (pick === 0) geo.rotateY(Math.PI / 2);
-  else if (pick === 1) geo.rotateX(-Math.PI / 2);
-  if (hold.flip) geo.rotateX(Math.PI);
-  if (hold.roll) geo.rotateZ((hold.roll * Math.PI) / 180);
-  // A BOW STANDS ACROSS THE AIM. Down the grip it pointed forward like a lance,
-  // which no string can be drawn on; turned onto the grip's cross axis it stands
-  // upright in the fist, belly (+X as authored) out and string towards the archer.
-  if (lay === "cross") geo.rotateY(-Math.PI / 2);
+  if (pick === 0) then(new THREE.Matrix4().makeRotationY(Math.PI / 2));
+  else if (pick === 1) then(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+  if (hold.flip) then(new THREE.Matrix4().makeRotationX(Math.PI));
+  if (hold.roll) then(new THREE.Matrix4().makeRotationZ((hold.roll * Math.PI) / 180));
+  // (A bow used to be turned ACROSS the grip here, and that was wrong: in the
+  // run it lay flat and pointed forward like a lance. A bow's handle runs
+  // through the fist exactly as a sword's does, limbs out of either end — the
+  // Ranger's own bow is held that way on its own rig.)
+  //
   // A QUIVER OR A FOCUS STANDS UP IN THE OFF HAND. Down the left grip they
   // stuck out of the fist level with the ground, a quiver like a plank and a
   // focus aimed at the shin. The left grip's +Y is up — the same axis a shield
   // stands along — so the length goes there, head up. (Measured the hard way:
   // -Y hung the focus orb-down by the ankle.)
-  if (lay === "upright") geo.rotateX(-Math.PI / 2);
+  if (lay === "upright") then(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
 
   // SCALE BY THE LARGEST EXTENT, ALWAYS — orientation and size are separate
   // questions and conflating them was a real bug. Scaling by whatever ends up
@@ -1372,20 +1568,29 @@ function fitToGrip(
   const longest = Math.max(...size) || 1;
   const target = box.max.z - box.min.z;
   const scale = target / longest;
-  geo.scale(scale, scale, scale);
+  then(new THREE.Matrix4().makeScale(scale, scale, scale));
+  geo.applyMatrix4(turn);
 
   geo.computeBoundingBox();
   const after = geo.boundingBox!;
   const hand = box.min.z + HAND_ALONG_DONOR * target;
-  if (lay === "upright") {
-    // Butt at the smallest Y, which is down; `grip` of the way up it in the fist.
-    const g = hold.grip ?? 0.5;
-    geo.translate(
-      -(after.min.x + after.max.x) / 2,
-      -(after.min.y + g * (after.max.y - after.min.y)),
-      hand - (after.min.z + after.max.z) / 2,
-    );
-  } else if (lay === "flat") {
+  if (lay !== "flat") {
+    // WHERE THE FIST GOES, found in the model's own space and carried through
+    // the same turns: the authored point if the model has one; otherwise on the
+    // handle's axis for a kit model, or the box's middle for anything else, at
+    // `grip` of the way up the length (the donor's own 0.12 when unset).
+    const along = hold.grip ?? HAND_ALONG_DONOR;
+    const p = new THREE.Vector3();
+    if (hold.point) {
+      p.set(...hold.point);
+    } else {
+      b.getCenter(p);
+      if (hold.onAxis) p.setComponent((pick + 1) % 3, 0).setComponent((pick + 2) % 3, 0);
+      p.setComponent(pick, b.min.getComponent(pick) + along * size[pick]);
+    }
+    p.applyMatrix4(turn);
+    geo.translate(-p.x, -p.y, hand - p.z);
+  } else {
     // A SHIELD IS STRAPPED OUTSIDE THE FIST, NOT THROUGH IT. Placed at the
     // donor's butt like a sword, the board cut through the middle of the left
     // hand and the knuckles showed on its face. The face is -Z here, so the
@@ -1394,32 +1599,6 @@ function fitToGrip(
       -(after.min.x + after.max.x) / 2,
       -(after.min.y + after.max.y) / 2,
       hand - (hold.clearance ?? SHIELD_CLEARANCE) * target - after.max.z,
-    );
-  } else if (lay === "cross") {
-    // Centred on the fist along its length: a bow is held at its middle. Its
-    // depth — string to back — now runs down the grip, and `grip` says where on
-    // that the fist closes; a bow's handle is on its back, not in the air
-    // between the string and the wood.
-    geo.translate(
-      -(after.min.x + after.max.x) / 2,
-      -(after.min.y + after.max.y) / 2,
-      hand - (after.min.z + (hold.grip ?? 0.5) * (after.max.z - after.min.z)),
-    );
-  } else if (hold.grip !== undefined) {
-    // The point `grip` of the way up goes where the donor's fist is.
-    geo.translate(
-      -(after.min.x + after.max.x) / 2,
-      -(after.min.y + after.max.y) / 2,
-      hand - (after.min.z + hold.grip * (after.max.z - after.min.z)),
-    );
-  } else {
-    // Centred across the grip, with the butt of the handle at the donor's own
-    // start, so every weapon is held at the same point in the fist however long
-    // it is.
-    geo.translate(
-      -(after.min.x + after.max.x) / 2,
-      -(after.min.y + after.max.y) / 2,
-      box.min.z - after.min.z,
     );
   }
   return geo;

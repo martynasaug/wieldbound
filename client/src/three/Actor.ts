@@ -28,7 +28,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
+import { BUILTIN_WEAPON_MESHES, bareForearms, fistCentre, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
 import { HAIR_ANCHOR_MESH, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
@@ -664,6 +664,8 @@ export class Actor {
 
   private instance: Instance | null = null;
   private mixer: THREE.AnimationMixer | null = null;
+  /** The left fist's centre in `FistL` space, measured off this body once. See `fistCentre`. */
+  private leftFist: THREE.Vector3 | null = null;
   private actions = new Map<ActorAnim, THREE.AnimationAction>();
   /** Where `instantiate` seated the model, before any lift. See `NO_LIFT`. */
   private seatY = 0;
@@ -989,6 +991,8 @@ export class Actor {
       for (const m of this.ownedMaterials) m.dispose();
     }
     this.instance = instance;
+    // A different body has different hands. See `fistCentre`.
+    this.leftFist = null;
     this.bodyModel = model;
     // The bind-pose seat, captured before anything can add a lift to it. Every
     // frame writes `seatY + lift` rather than adding to whatever is there, or
@@ -1016,6 +1020,9 @@ export class Actor {
     // hair colour, so the one piece of the face they chose is theirs.
     if (this.identity) keepBakedNose(instance.object);
     else removeBakedBeads(instance.object);
+    // And the gloves: bare hands are the body now, and fists are a weapon
+    // family that puts gloves back on. See `bareForearms`.
+    bareForearms(instance.object);
 
     this.mixer = new THREE.AnimationMixer(instance.object);
     this.buildActions();
@@ -1195,6 +1202,12 @@ export class Actor {
         const socket = this.bones.get(held.bone) ?? (hand === "right" ? this.weaponSocket : null);
         if (!socket) return;
         socket.add(held.object);
+        // The left hand has no authored socket: seat the item on the fist the
+        // body actually has. See `fistCentre`.
+        if (hand === "left" && this.instance) {
+          this.leftFist ??= fistCentre(this.instance.object, held.bone);
+          if (this.leftFist) seatInFist(held.object, this.leftFist);
+        }
         this.held.push(held.object);
         this.trackMaterials(held.object);
         // The old weapon's ghost is still on this bone until this runs, and the

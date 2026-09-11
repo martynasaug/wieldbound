@@ -75,6 +75,12 @@ class Model:
         self.name = name
         self.bm = bmesh.new()
         self.slots = []
+        # WHERE THE FIST GOES, as (x, y, z) in the model's own space. Exported as a
+        # glTF extra and read by `gear.ts`. Left as None the game uses the handle
+        # convention: the handle's axis is x = y = 0 and the fist sits near the
+        # butt — right for anything lathed round the origin. A bow's handle is on
+        # its back, not at the origin, so it says so.
+        self.grip = None
 
     # --- plumbing ---------------------------------------------------------------
 
@@ -315,6 +321,8 @@ class Model:
         for poly in mesh.polygons:
             poly.use_smooth = False
         obj = bpy.data.objects.new(self.name, mesh)
+        if self.grip is not None:
+            obj["grip"] = [float(v) for v in self.grip]
         bpy.context.collection.objects.link(obj)
         for name in self.slots:
             obj.data.materials.append(material(name))
