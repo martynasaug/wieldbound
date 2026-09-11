@@ -173,9 +173,16 @@ for (const b of bases) {
     const [body] = model.slice(4).split("/");
     check(`${b.id} rig body ${body}.fbx exists`, existsSync(path.join(MODEL_DIR, `${body}.fbx`)), model);
   } else {
+    // A name that carries its own extension is looked up as written — the same
+    // rule `loadModel` follows. The generated item models are `items/<id>.glb`,
+    // and appending `.fbx` to them reported 27 files missing that were on disk
+    // and in the character's hand.
+    const hasExtension = /\.(glb|gltf)$/.test(model);
     check(
       `${b.id} model ${model} exists`,
-      existsSync(path.join(MODEL_DIR, `${model}.fbx`)) || existsSync(path.join(MODEL_DIR, `${model}.gltf`)),
+      hasExtension
+        ? existsSync(path.join(MODEL_DIR, model))
+        : existsSync(path.join(MODEL_DIR, `${model}.fbx`)) || existsSync(path.join(MODEL_DIR, `${model}.gltf`)),
       model,
     );
   }

@@ -853,11 +853,38 @@ function donor(id: DonorPartId, role: MaterialRole): Part | null {
 // because it is exactly the kind of constant that rots quietly.
 
 /** Which pack material names map onto which palette role. */
-const MATERIAL_ROLE: Record<string, "metal" | "wood" | "accent"> = {
-  Steel: "metal", LightSteel: "metal", DarkSteel: "metal",
-  Wood: "wood", LightWood: "wood", DarkWood: "wood", DarkBrown: "wood",
-  Gold: "accent", LightGold: "accent", White: "accent", Black: "metal",
-  Red: "accent", LightRed: "accent", Green: "accent", LightBlue: "accent",
+/**
+ * How each material name in a weapon model is painted.
+ *
+ * THREE ROLES FLATTENED EVERY MODEL TO ONE COLOUR. This was a name-to-role map
+ * — metal, wood or accent — and the palette coloured each role, so Steel and
+ * DarkSteel came out identical, a leather grip took the palette's colour, and
+ * the first generated swords photographed in the game as single-colour shapes:
+ * a crimson claymore whose blade, guard, grip and rings were all the same red,
+ * a greatsword whose leather-bound grip was the same steel-blue as its blade.
+ * The modelling put the contrast there and the repaint erased it.
+ *
+ * So a name now carries a SHADE against its role (DarkSteel is half as bright as
+ * the blade), or a FIXED colour it keeps whatever the palette: leather is
+ * leather, bone is bone, gold trim is gold. The palette still decides what the
+ * blade, the haft and the gems are, which is what makes a frost weapon frost.
+ */
+const MATERIAL_LOOK: Record<string, { role: "metal" | "wood" | "accent"; shade?: number; fixed?: number }> = {
+  Steel: { role: "metal" },
+  LightSteel: { role: "metal", shade: 1.3 },
+  DarkSteel: { role: "metal", shade: 0.5 },
+  Wood: { role: "wood" },
+  LightWood: { role: "wood", shade: 1.3 },
+  DarkWood: { role: "wood", shade: 0.7 },
+  DarkBrown: { role: "wood", fixed: 0x3a281b },
+  Gold: { role: "accent", fixed: 0xd4a53a },
+  LightGold: { role: "accent", fixed: 0xf0c860 },
+  White: { role: "accent", fixed: 0xd9d0b8 },
+  Black: { role: "metal", fixed: 0x1d1c22 },
+  Red: { role: "accent" },
+  LightRed: { role: "accent", shade: 1.2 },
+  Green: { role: "accent" },
+  LightBlue: { role: "accent" },
 };
 
 export interface HeldWeapon {
@@ -903,6 +930,38 @@ async function loadGrip(): Promise<Grip | null> {
     bone: donor.parent?.name ?? "WeaponR",
     box: donor.geometry.boundingBox!.clone(),
   };
+}
+
+/**
+ * Every mesh under a loaded model as ONE geometry, with a material group per
+ * part, so a model built from several materials is fitted and repainted whole.
+ */
+function wholeModel(
+  root: THREE.Object3D,
+): { geometry: THREE.BufferGeometry; material: THREE.Material | THREE.Material[] } | null {
+  const meshes: THREE.Mesh[] = [];
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+  });
+  if (meshes.length === 0) return null;
+  if (meshes.length === 1) return { geometry: meshes[0].geometry, material: meshes[0].material };
+  const parts: THREE.BufferGeometry[] = [];
+  const materials: THREE.Material[] = [];
+  for (const mesh of meshes) {
+    const g = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    g.applyMatrix4(mesh.matrixWorld);
+    parts.push(g);
+    materials.push(Array.isArray(mesh.material) ? mesh.material[0] : mesh.material);
+  }
+  // `mergeGeometries` refuses parts that disagree about which attributes exist.
+  const shared = Object.keys(parts[0].attributes).filter((k) => parts.every((p) => p.attributes[k]));
+  for (const p of parts) {
+    for (const k of Object.keys(p.attributes)) if (!shared.includes(k)) p.deleteAttribute(k);
+  }
+  const geometry = mergeGeometries(parts, true);
+  if (!geometry) return null;
+  return { geometry, material: materials };
 }
 
 function findMesh(root: THREE.Object3D, name: string): THREE.Mesh | null {
@@ -1084,7 +1143,13 @@ async function makeHeldItem(
     if (flip) mesh.rotateOnAxis(new THREE.Vector3(flip[0], flip[1], flip[2]), Math.PI);
   } else if (base.art.model) {
     const proto = await loadModel(base.art.model);
-    const donor = findMesh(proto, "") ?? firstMesh(proto);
+    // ALL OF A GENERATED MODEL, not its first mesh. `tools/art/items/` exports one
+    // mesh with a material per part, and glTF loads that as one mesh PER
+    // MATERIAL — so taking the first drew a blade with no grip, guard or pommel.
+    // The downloaded FBX weapons keep the old pick, which they were fitted with.
+    const donor = base.art.model.endsWith(".glb")
+      ? wholeModel(proto)
+      : findMesh(proto, "") ?? firstMesh(proto);
     if (!donor) {
       console.warn(`gear: ${base.art.model} has no mesh; ${baseId} will be invisible`);
       return null;
@@ -1274,8 +1339,8 @@ function repaint(
   const list = Array.isArray(source) ? source : [source];
   const out = list.map((m) => {
     const src = m as THREE.MeshStandardMaterial;
-    const role = MATERIAL_ROLE[src.name] ?? "metal";
-    const mat = paletteMaterial(palette, role, rarity);
+    const look = MATERIAL_LOOK[src.name] ?? { role: "metal" as const };
+    const mat = paletteMaterial(palette, look.role, rarity, look);
     mat.name = src.name;
     return mat;
   });
@@ -1286,10 +1351,13 @@ function paletteMaterial(
   palette: PaletteDef,
   role: "metal" | "wood" | "accent",
   rarity: ItemRarity,
+  look?: { shade?: number; fixed?: number },
 ): THREE.MeshStandardMaterial {
-  const base = palette[role];
+  const base = look?.fixed ?? palette[role];
+  const color = new THREE.Color(base);
+  if (look?.shade) color.multiplyScalar(look.shade);
   const mat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(base),
+    color,
     roughness: role === "metal" ? 0.4 : role === "accent" ? 0.5 : 0.85,
     metalness: role === "wood" ? 0 : 0.5,
     flatShading: true,

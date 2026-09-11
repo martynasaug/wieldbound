@@ -24606,3 +24606,49 @@ changed choice is dropped; a worn helm hides the hair and leaves the beard.
 RUN COULD NOT SHOW THE TWO NEW BEARDS: the hair framing cropped at the chin, and
 both the long fall and the braids were outside every front view. Beards are
 framed further out now, and judged on that sheet.
+
+**Phase 70 M70.278 — an item kit in Blender, and 27 weapons that are not
+recolours.** Asked for: "Try making a system for item creation with blender.
+Try reviewing current in game items and remake some of them/make new better
+ones. No same model different color garbage like in the game right now."
+
+THE REVIEW, photographed from the preview sheets (`tools/soak/itemsheets.mjs`,
+which captures `/preview/?sheet=weapons|offhand|armour` whole): fifty weapons on
+twenty-three downloaded models — five swords that were one sword, five maces one
+mallet, three axes one axe — with Chainfall drawn as a speck beside the head.
+Shields were flat discs. The armour was worse: most chest pieces invisible,
+sunk into the body or a slab behind it; helms a bucket and a pair of sticks;
+boots coloured boxes; every cape the same drape because `capeParts` ignores its
+style. (The armour sheet's labels also sit one cell off — a preview-page bug.)
+
+THE KIT, `tools/art/items/`. `kit.py` is a small vocabulary of faceted
+operations in the Quaternius style: blades lofted through diamond cross-sections
+(curves, single edges, ricassos, fullers), octagonal lathes for grips and
+pommels and drums, chamfered 2D outlines extruded into guards, axe bits and
+flanges, shards, rings, bound grips and bent tubes. `weapons.py` holds one
+RECIPE per item. `build.py` builds a family or ids, renders a labelled sheet,
+and exports one GLB each into `client/public/models/items/`. Materials are named
+from the game's vocabulary (Steel, DarkSteel, Wood, DarkBrown, Gold, …), because
+the game repaints by name.
+
+Twelve swords, seven axes and eight maces are their own models now, each a
+different silhouette: a clipped falchion, a lugged boar spear, crystals growing
+from the Rimeblade, a claymore with ring-ended quillons, a zigzag Levinbrand, a
+serrated bone Wyrmtooth, a flame-bitted Cinderbite, a crescent Moon Glaive, a
+real chain flail for Chainfall, a sunburst Dawnbreaker, a bolt-plated
+Thunderhead. The catalogue points each at `items/<id>.glb`, and `scale` carries
+its authored proportion (compressed towards 1) because the grip fitting
+normalises every weapon to one length.
+
+WHAT THE PICTURES CAUGHT: the first swords were needles at true-to-life widths
+(blades are 1.6x wide now); Rimeblade's crystals floated off its edge; a
+generated model loads as one mesh PER MATERIAL and `makeHeldItem` took only the
+first (`wholeModel` merges them); a haft helper drew its metal butt the whole
+length of every shaft; the first Moon Glaive crescent was zero wide across its
+middle. AND THE REPAINT ERASED THE MODELLING: three roles meant a crimson
+claymore was one red shape, grip and rings included. `MATERIAL_LOOK` gives each
+name a shade against its role or a fixed colour — leather is leather, bone is
+bone, gold trim is gold — and the palette still decides the blade.
+
+Not yet remade: daggers, bows, staves, wands, shields, and all the armour. The
+old procedural `glaive`, `flail` and `fangblade` builders are now unused.

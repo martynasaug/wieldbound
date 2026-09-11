@@ -343,59 +343,66 @@ const WEAPON_BASES: ItemBase[] = [
     { mods: { speed: 0.88, damage: 1.1 } }),
 
   // ----------------------------------------------------------------- swords
+  // EVERY SWORD IS ITS OWN MODEL, from `tools/art/items/weapons.py`. They were
+  // five pack swords shared eleven ways and told apart by palette. `scale` now
+  // carries each one's authored proportion — the grip fitting normalises every
+  // weapon to one length — compressed towards 1 so a claymore reads long without
+  // dwarfing the character holding it.
   w("recruitblade", "Recruit's Blade", 1, "sword",
-    { model: "rig:Warrior/Warrior_Sword", palette: "iron" },
+    { model: "items/recruitblade.glb", palette: "iron", scale: 0.83 },
     "Issued, not chosen. It still counts."),
   w("armingsword", "Arming Sword", 1, "sword",
-    { model: "weapons/Sword", palette: "iron" },
+    { model: "items/armingsword.glb", palette: "iron" },
     "One hand, one edge, no opinions."),
   w("falchion", "Falchion", 2, "sword",
-    { model: "weapons/Sword_2", palette: "steel" },
+    { model: "items/falchion.glb", palette: "steel", scale: 0.95 },
     "Heavier at the tip than it looks, and quicker than it has any right to be.",
     { mods: { speed: 0.88, damage: 0.95 } }),
   w("boarspear", "Boar Spear", 2, "sword",
-    { model: "weapons/Spear", palette: "iron", scale: 1.15 },
+    { model: "items/boarspear.glb", palette: "iron", scale: 1.34 },
     "Made for something that charges. It does not much care what.",
     { mods: { range: 1.55, speed: 1.15, damage: 1.05 }, twoHanded: true }),
   w("longsword", "Longsword", 3, "sword",
-    { model: "weapons/Sword", palette: "steel", scale: 1.12 },
+    { model: "items/longsword.glb", palette: "steel", scale: 1.19 },
     "The measure every other blade in the yard gets compared against."),
   // A sword you can hold an element with before band 4, which the family could
   // not do at all: frost existed only at band 5, and the demon that folds to it
   // stands at band 4.
   w("rimeblade", "Rimeblade", 3, "sword",
-    { model: "weapons/Sword_2", palette: "frost", scale: 1.05 },
+    { model: "items/rimeblade.glb", palette: "frost", scale: 0.99 },
     "It sweats in summer and the water runs the wrong way."),
   w("greatsword", "Greatsword", 3, "sword",
-    { model: "weapons/Sword_Big", palette: "steel" },
+    { model: "items/greatsword.glb", palette: "steel", scale: 1.28 },
     "Two hands, and a stance you have to commit to.",
     { mods: { range: 1.2, speed: 1.4, damage: 1.5 }, twoHanded: true }),
   w("gildedblade", "Gilded Blade", 4, "sword",
-    { model: "weapons/Sword_Golden", palette: "gold" },
+    { model: "items/gildedblade.glb", palette: "gold", scale: 1.02 },
     "Ceremonial, allegedly. The edge disagrees."),
   w("frostbrand", "Frostbrand", 5, "sword",
-    { model: "weapons/Sword_Big", palette: "frost" },
+    { model: "items/frostbrand.glb", palette: "frost", scale: 1.24 },
     "Cold before you draw it, and colder after.",
     { mods: { range: 1.2, speed: 1.35, damage: 1.45 }, twoHanded: true }),
   w("claymore", "Bloodclaim Claymore", 5, "sword",
-    { model: "weapons/Claymore", palette: "crimson" },
+    { model: "items/claymore.glb", palette: "crimson", scale: 1.36 },
     "It has a name because it earned one.",
     { mods: { range: 1.25, speed: 1.45, damage: 1.6 }, twoHanded: true }),
   // The first lightning weapon in the game. Band 4 rather than 5 on purpose:
   // the golem is the one creature with a seam of it, and a player who can only
   // buy the answer at the same ring as the question has no answer at all.
   w("levinbrand", "Levinbrand", 4, "sword",
-    { model: "weapons/Sword_2", palette: "storm", scale: 1.08 },
+    { model: "items/levinbrand.glb", palette: "storm", scale: 1.04 },
     "The fuller is scorched in a line nobody cut.",
     { mods: { speed: 0.92, damage: 1.05 } }),
 
   // ------------------------------------------------------------------- axes
+  // Each its own model from `tools/art/items/weapons.py`, like the swords; they
+  // were one pack axe recoloured three ways and two others.
   w("handaxe", "Hand Axe", 1, "axe",
-    { model: "weapons/Axe_Small", palette: "iron" },
+    { model: "items/handaxe.glb", palette: "iron", scale: 0.78 },
     "Cuts firewood on the way to the fight.",
     { mods: { speed: 0.85, damage: 0.85 } }),
   w("woodcutter", "Woodcutter's Axe", 2, "axe",
-    { model: "weapons/Axe", palette: "steel" },
+    { model: "items/woodcutter.glb", palette: "steel", scale: 1.02 },
     "Honest work, redirected."),
   // THE FIRST ELEMENTAL AXE IN THE GAME. Measured before it was written: the
   // axe family could not deal a single one of the five elements by any route —
@@ -403,31 +410,33 @@ const WEAPON_BASES: ItemBase[] = [
   // fists. Half the warrior families had no opinion at all about the deepest
   // system in the combat design.
   w("cinderbite", "Cinderbite", 2, "axe",
-    { model: "weapons/Axe", palette: "crimson" },
+    { model: "items/cinderbite.glb", palette: "crimson", scale: 0.93 },
     "Left in the coals overnight by somebody who meant to."),
   w("beardedaxe", "Bearded Axe", 3, "axe",
-    { model: "weapons/Axe", palette: "bronze", scale: 1.1 },
+    { model: "items/beardedaxe.glb", palette: "bronze", scale: 1.01 },
     "The hook below the blade is for pulling shields aside.",
     { mods: { damage: 1.1 } }),
   w("twinbite", "Twinbite", 4, "axe",
-    { model: "weapons/Axe_Double", palette: "steel" },
+    { model: "items/twinbite.glb", palette: "steel", scale: 1.07 },
     "Two heads, so the swing back is still a swing.",
     { mods: { speed: 1.15, damage: 1.25 }, twoHanded: true }),
   // A POLEARM. The pack's one long weapon is a spear — a point on a pole — and
   // this is the other half of that family, an edge out at the end with a hook
   // behind it.
   w("moonglaive", "Moon Glaive", 5, "axe",
-    { build: "glaive", palette: "silver" },
+    { model: "items/moonglaive.glb", palette: "silver", scale: 1.3 },
     "Reach enough that the first thing most people learn about it is the sound.",
     { mods: { range: 1.35, speed: 1.2, damage: 1.3 }, twoHanded: true }),
   w("reaperscythe", "Reaper's Scythe", 5, "axe",
-    { model: "weapons/Scythe", palette: "obsidian" },
+    { model: "items/reaperscythe.glb", palette: "obsidian", scale: 1.2 },
     "A farm tool that stopped pretending.",
     { mods: { range: 1.3, speed: 1.3, damage: 1.35 }, twoHanded: true }),
 
   // ------------------------------------------------------------------ maces
+  // Each its own model from `tools/art/items/weapons.py`. Five of these were the
+  // same small hammer and two the same double one.
   w("smithhammer", "Smith's Hammer", 1, "mace",
-    { model: "weapons/Hammer_Small", palette: "iron" },
+    { model: "items/smithhammer.glb", palette: "iron", scale: 0.76 },
     "Off the bench at the world's centre, where everything starts."),
   // A BAND-2 MACE, which the family did not have. Weapon IS class here, so a
   // family with a hole in it is a BUILD with a hole in it: a mace user reaching
@@ -436,20 +445,20 @@ const WEAPON_BASES: ItemBase[] = [
   // band 2, staff band 3 and wand band 2 were the three gaps; all three are
   // filled here.
   w("quarrymaul", "Quarry Maul", 2, "mace",
-    { model: "weapons/Hammer_Small", palette: "bronze", scale: 1.08 },
+    { model: "items/quarrymaul.glb", palette: "bronze", scale: 1.02 },
     "Made for splitting stone, and never told the difference."),
   w("warhammer", "Warhammer", 3, "mace",
-    { model: "weapons/Hammer_Small", palette: "steel", scale: 1.15 },
+    { model: "items/warhammer.glb", palette: "steel", scale: 1.07 },
     "Armour does not have to be cut to stop working."),
   // And the first for the mace, which reached exactly one element — lightning,
   // at band 5, which is the same ring as the golem it answers. "A player who
   // can only buy the answer at the same ring as the question has no answer at
   // all" is Levinbrand's own note, one family over.
   w("sparkhead", "Sparkhead", 3, "mace",
-    { model: "weapons/Hammer_Small", palette: "storm" },
+    { model: "items/sparkhead.glb", palette: "storm", scale: 1.05 },
     "Sits in the rack with its head pointed away from the others."),
   w("deepsledge", "Deepsledge", 4, "mace",
-    { model: "weapons/Hammer_Double", palette: "steel" },
+    { model: "items/deepsledge.glb", palette: "steel", scale: 1.04 },
     "Slow enough to see coming. It does not help.",
     // The golem's trophy opens the golem's relic. See the relic block.
     { mods: { speed: 1.3, damage: 1.45 }, twoHanded: true, teaches: "golemheart" }),
@@ -457,15 +466,15 @@ const WEAPON_BASES: ItemBase[] = [
   // block on a stick. Procedural, so it is still repainted by palette and
   // tinted by quality like everything else. See HELD_BUILDERS in gear.ts.
   w("chainfall", "Chainfall", 4, "mace",
-    { build: "flail", palette: "iron" },
+    { model: "items/chainfall.glb", palette: "iron", scale: 0.94 },
     "The head arrives a moment after you think it will. That is the trick of it.",
     { mods: { speed: 1.15, damage: 1.3 } }),
   w("dawnbreaker", "Dawnbreaker", 5, "mace",
-    { model: "weapons/Hammer_Double", palette: "gold" },
+    { model: "items/dawnbreaker.glb", palette: "gold", scale: 1.16 },
     "Struck at the right angle it rings for a long time.",
     { mods: { speed: 1.25, damage: 1.5 }, twoHanded: true }),
   w("thunderhead", "Thunderhead", 5, "mace",
-    { model: "weapons/Hammer_Small", palette: "storm", scale: 1.2 },
+    { model: "items/thunderhead.glb", palette: "storm", scale: 1.13 },
     "The air goes tight just before it lands. Everyone notices; nobody moves.",
     { mods: { speed: 1.15, damage: 1.35 } }),
 
@@ -890,7 +899,7 @@ const KIT_BASES: ItemBase[] = [
   // Nothing about them is a new system. They are three rows in this table, one
   // field on the three signatures, and a cost override.
   w("wyrmtooth", "Wyrmtooth", 5, "sword",
-    { build: "fangblade", palette: "crimson" },
+    { model: "items/wyrmtooth.glb", palette: "crimson", scale: 1.05 },
     "Not forged so much as fitted. The edge was already there.",
     {
       mods: { speed: 1.2, damage: 1.55, range: 1.1 },
