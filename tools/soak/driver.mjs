@@ -76,9 +76,13 @@ export async function open({ headless = true, width = 1600, height = 900 } = {})
 }
 
 /** Logs in as `name` and waits for the world to actually be running. */
-export async function login(page, name, { timeout = 180000 } = {}) {
+export async function login(page, name, { timeout = 180000, query = "" } = {}) {
   const t0 = Date.now();
-  await page.goto(CLIENT_URL, { waitUntil: "domcontentloaded" });
+  // A QUERY STRING SURVIVES THE LOGIN, which matters for anything the client
+  // reads off the URL at startup — `?body=new` picks the player model, and it
+  // is read once at module load, so it has to be present on the page that
+  // loads the module rather than added afterwards.
+  await page.goto(query ? `${CLIENT_URL}?${query}` : CLIENT_URL, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("#name-input", { timeout: 30000 });
   await page.fill("#name-input", name);
   await page.click("#play-button");

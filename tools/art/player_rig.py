@@ -273,10 +273,13 @@ def build_body():
         lx = sx * HIP_X
         add(tube(f"upperleg{side}", lx, KNEE_Y, HIP_Y + 0.02, 0.072, 0.090, squash=1.05), f"UpperLeg{side}")
         add(tube(f"lowerleg{side}", lx, ANKLE_Y, KNEE_Y + 0.02, 0.056, 0.074, squash=1.0), f"LowerLeg{side}")
-        # The boot reaches forward of the ankle: a foot is the one part that is
-        # not symmetric about its joint, and a character without one looks like
-        # it is standing on its shins.
-        add(blockish(f"foot{side}", (lx, 0.048, 0.062),
+        # FORWARD IS -Y, MEASURED OFF THE GAME'S OWN CHARACTER rather than
+        # assumed. The Monk's toes extend toward -Y and mine extended toward
+        # +Y, so the boots were on backwards. Spotted immediately by somebody
+        # looking at the renders, and invisible to me because a foot is the only
+        # part of this body that is not symmetric front-to-back — nothing else
+        # in the figure disagreed with it, so there was nothing to notice.
+        add(blockish(f"foot{side}", (lx, -0.048, 0.062),
                      (0.135, 0.245, 0.145), bevel=0.035, segments=3), f"Foot{side}")
     return parts
 
@@ -301,7 +304,7 @@ for _side, _sx in (("L", 1.0), ("R", -1.0)):
         (f"Fist{_side}", f"LowerArm{_side}", (_sx * SHOULDER_X, WRIST_Y, 0), (_sx * SHOULDER_X, WRIST_Y - 0.11, 0)),
         (f"UpperLeg{_side}", "Hips", (_sx * HIP_X, HIP_Y, 0), (_sx * HIP_X, KNEE_Y, 0)),
         (f"LowerLeg{_side}", f"UpperLeg{_side}", (_sx * HIP_X, KNEE_Y, 0), (_sx * HIP_X, ANKLE_Y, 0)),
-        (f"Foot{_side}", f"LowerLeg{_side}", (_sx * HIP_X, ANKLE_Y, 0), (_sx * HIP_X, ANKLE_Y - 0.02, 0.11)),
+        (f"Foot{_side}", f"LowerLeg{_side}", (_sx * HIP_X, ANKLE_Y, 0), (_sx * HIP_X, ANKLE_Y - 0.02, -0.11)),
     ]
 # THE WEAPON SOCKET, which is not a joint and does not deform anything: it is a
 # named place on the right fist for `Actor.weaponSocket` to find and parent a

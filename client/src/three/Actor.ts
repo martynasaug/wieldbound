@@ -28,7 +28,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, PLAYER_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
+import { BUILTIN_WEAPON_MESHES, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { pickClip, loadClipLibrary } from "./clips";
 import type { WeaponType } from "../../../shared/protocol-types";
@@ -156,13 +156,26 @@ const CLIP_PREFERENCES: Record<ActorAnim, string[]> = {
   // Monsters have neither, and the empty list is the honest way to say so: a
   // slime does not roll and a dragon does not pick things up. `buildActions`
   // simply binds nothing, and `play` refuses a state it has no action for.
-  roll: [],
+  roll: ["Roll"],
+  // GATHERING IS NOT A STATE ON THIS TABLE, and that is deliberate rather than
+  // an omission. Binding `gather` to "Chop" here made the state machine the
+  // owner of that clip's action — three.js returns ONE action per clip per
+  // root — so `gatherStroke` asking the mixer for it got back an action the
+  // machine had already faded to zero, and the chop silently did not play.
+  // Mine and Pick, bound to nothing, ran perfectly. The three gathering clips
+  // are driven directly and own their own actions.
   pickup: [],
-  // Nothing in the bestiary chops wood.
   gather: [],
   // A monster that casts falls back to whatever it attacks with, since nothing
   // in the bestiary has a separate cast pose.
   cast: ["Spell1", "Spell2", "Attack", "Bite"],
+};
+
+/** The clip each kind of gathering plays, on a body that ships them. */
+const GATHER_CLIPS: Record<GatherPoseKind, string> = {
+  tree: "Chop",
+  rock: "Mine",
+  bush: "Pick",
 };
 
 const FADE_MS = 180;
@@ -780,7 +793,11 @@ export class Actor {
     this.variance = options.variance ?? Math.random();
     this.idleGlance = options.idleGlance ?? false;
     this.wantsSilhouette = options.silhouette ?? true;
-    this.usesClipLibrary = options.model === PLAYER_BODY;
+    // The pooled library belongs to the Monk alone — see POOLED_CLIP_BODY.
+    // Comparing against PLAYER_BODY instead would send our own rig, which
+    // carries its clips inside it, looking for them in a pool built from
+    // somebody else's skeleton.
+    this.usesClipLibrary = options.model === POOLED_CLIP_BODY;
     this.identity = options.identity;
     this.nextGlanceAt = performance.now() + this.glanceDelay();
     this.bodyModel = options.model;
@@ -2008,8 +2025,38 @@ export class Actor {
    * five seconds.
    */
   gatherStroke(kind: GatherPoseKind, durationMs: number): void {
-    this.stroke = { kind, startedAt: performance.now(), durationMs: Math.max(120, durationMs) };
     void this.showGatherTool(kind);
+    // A REAL CLIP IF THE BODY HAS ONE, and the posed arc if it does not.
+    //
+    // `gatherpose.ts` exists because the borrowed rig had no chop, no mine and
+    // no pick — it drives the bones by hand every frame to approximate them.
+    // Our own body ships all three as animation, which is better in every way
+    // that matters: it moves the whole figure rather than the seven joints the
+    // pose table lists, it is authored at 24fps with impact timing, and it
+    // costs the mixer nothing extra.
+    //
+    // Both paths stay because both bodies stay. Deleting the posed one the
+    // moment a clip existed would leave the Monk gathering with a sword swing
+    // again, and comparing the two is the entire reason for keeping it.
+    const clip = GATHER_CLIPS[kind];
+    const action = this.instance ? findClip(this.instance.animations, clip) : null;
+    if (action) {
+      const bound = this.mixer?.clipAction(action);
+      if (bound) {
+        this.stroke = null;
+        bound.reset();
+        bound.setLoop(THREE.LoopOnce, 1);
+        bound.clampWhenFinished = false;
+        // Stretched to the beat rather than played at its authored speed, so a
+        // gather that takes four seconds is four strokes and not four strokes
+        // and a wait. `GatherFx` strikes on the same clock.
+        const native = action.duration * 1000;
+        bound.setEffectiveTimeScale(native / Math.max(120, durationMs));
+        bound.play();
+        return;
+      }
+    }
+    this.stroke = { kind, startedAt: performance.now(), durationMs: Math.max(120, durationMs) };
   }
 
   /**

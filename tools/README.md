@@ -480,3 +480,20 @@ blender --background --python tools/art/player_rig.py -- client/public/models/Pl
 # gait is judged — a still of a walk says nothing
 blender --background --python tools/art/player_rig.py -- out.glb preview.png Walk
 ```
+
+### Wearing it in the game
+
+```
+http://localhost:5173/            the Monk, as before
+http://localhost:5173/?body=new   our own body
+```
+
+Read once at module load in `gear.ts`, so a session is all one body — a world
+with one of each would answer nothing. Both are kept while there are two,
+because "does the new body look right" is a question about the GAME's camera at
+the GAME's distance and the only way to answer it is to stand them side by side.
+
+`tools/soak/newbody.mjs` checks the swap end to end: that the rig loads, that it
+is ours (21 bones, a `WeaponR` socket for gear to hang on), that every state
+bound to a clip, that moving changes the state, and that asking for a chop, a
+mine and a pick plays Chop, Mine and Pick.

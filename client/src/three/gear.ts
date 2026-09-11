@@ -74,7 +74,37 @@ import { PALETTES, itemBase, type PaletteDef } from "../../../shared/items";
  * the plainest silhouette of the five, the only one with genuinely empty hands,
  * and the one least dressed as a profession before you have chosen one.
  */
-export const PLAYER_BODY = "Monk";
+/**
+ * The body the player wears.
+ *
+ * SWITCHABLE WHILE THERE ARE TWO. `Player_Base.glb` is ours —
+ * `tools/art/player_rig.py` builds it, and it carries its own nine clips
+ * including the chop, mine and pick that no borrowed pack has. The Monk is
+ * Quaternius's, and the whole of the game's animation vocabulary is
+ * twenty-five clips harvested off it and its four siblings.
+ *
+ * Both are kept for now because "does the new body look right" is a question
+ * about the GAME's camera at the GAME's distance, and the only way to answer it
+ * is to stand them side by side:
+ *
+ *     http://localhost:5173/            the Monk, as before
+ *     http://localhost:5173/?body=new   ours
+ *
+ * Read once at module load rather than per actor, so every character in a
+ * session is the same body — a world with one of each would answer nothing.
+ */
+const WANT_NEW_BODY =
+  typeof location !== "undefined" && new URLSearchParams(location.search).get("body") === "new";
+export const PLAYER_BODY = WANT_NEW_BODY ? "Player_Base.glb" : "Monk";
+
+/**
+ * The body whose clips come from the pooled library rather than from itself.
+ *
+ * Only the Monk. `clips.ts` exists to unweld twenty-five animations off five
+ * rigs that share a skeleton; a body that ships its own does not want any of
+ * that, and `Actor.buildActions` reads its `instance.animations` instead.
+ */
+export const POOLED_CLIP_BODY = "Monk";
 
 // Every body carries its own weapon baked into the scene graph, so they all
 // have to go: otherwise a ranger who picks up a sword walks around holding both
