@@ -513,7 +513,24 @@ export async function approach(page, target, ms = 600, sign = 1) {
       : crossesTown(p, target)
         ? skirtTown(p, target)
         : target;
-  const aim = steerToward(p, gated);
+  // STEERING IS FOR GETTING THERE, NOT FOR ARRIVING.
+  //
+  // `steerToward` fans out from the direct bearing until it finds a line clear
+  // of the town's furniture, which is what stops a bot grinding down a bench on
+  // the way somewhere. Within the last stride it is actively harmful: the
+  // workbench stands in a furnished square, so every probe near it is "blocked"
+  // by a bench or a trough, the aim is deflected by 18 degrees or more, and the
+  // character circles a target it is already next to. Measured against the
+  // anvil: 35, 46, 63, 43, 56, 37, 49, 34 — an orbit straddling the 40px
+  // interaction range, so the same probe forged happily one run and reported
+  // "too far from the workbench" the next.
+  //
+  // Inside this radius the aim is the target itself. There is nothing to avoid
+  // at arm's length that matters more than arriving, and the sidestep below
+  // still handles anything genuinely in the way.
+  const CLOSE_ENOUGH_TO_AIM_STRAIGHT_PX = 90;
+  const straight = Math.hypot(gated.x - p.x, gated.y - p.y) <= CLOSE_ENOUGH_TO_AIM_STRAIGHT_PX;
+  const aim = straight ? gated : steerToward(p, gated);
   const dirs = keysToward(p, aim);
   // NEVER STEP FURTHER THAN HALF THE REMAINING DISTANCE.
   //

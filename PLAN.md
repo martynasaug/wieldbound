@@ -23233,3 +23233,57 @@ residual is written down instead.
 Also recorded: the one-ray/five-ray asymmetry STILL has no instance. The frame
 that sent me looking turned out to be this bug, which is twice now that a
 "legs eaten" capture has had a different cause. Suite 48/48.
+
+**Phase 70 M70.244 — the anvil, which nothing had ever used.** The Herald gives
+three instructions: take the work, gather, "then stand at the anvil and forge
+something". The first two have been measured to death. The third had never been
+exercised at all — `guidedopening` buys from the shop and stops — so the thing
+the entire material economy feeds had never been opened, let alone used, by a
+new character in any harness.
+
+IT WORKS, AND IT PAYS ON THE FIRST VISIT. A character that has never logged in
+arrives with 20 wood and 20 ore and a BROKEN Notched Dirk. All nine band-1
+weapons need no recipe (`isBasicRecipe`) and all nine are affordable on
+arrival; the cheapest costs 4 wood and 8 ore. Eight runs forged eight weapons
+and every one came out HONED with an affix — True, Keen, Stout, Warded, of the
+Bear, of the Hawk, of the Fox. A new player can walk to the bench before
+gathering anything and replace their starting weapon with a better one.
+
+THREE THINGS THAT LOOKED LIKE GAME FAULTS AND WERE NOT:
+
+  * "Nothing was made." The probe was clicking the TAB BAR: its text is
+    "ForgeRefineReforgeEtchSalvage", so `/craft|forge/` matched it before any
+    Craft button. It now forges through `sendForgeItem`, which is the narrower
+    and honest thing to guard here — the panel has its own coverage.
+  * "You are too far from the workbench." True, and about the bot. The smithy
+    prop has `blockRadiusPx` 0, no blocking prop is anywhere near the station,
+    and pushing 36 sample positions through the game's own
+    `resolvePlayerPosition` leaves a body 24px from it on EVERY bearing. The
+    bench is reachable from all sides.
+  * The craft window showing 8% of its list at 1280x800, which looked like a
+    cramped panel and is a cramped TEST VIEWPORT: it scales with the window —
+    10.9% at 1600x900, 15.4% at 1080p, 24.4% at 1440p. Nothing to fix.
+
+AND ONE REAL LIMITATION OF THE HARNESS, WRITTEN DOWN. Eight-way movement cannot
+land on a point, so `approach` settles into an orbit — against this bench it
+touched 29, 31, 32, 33, 34, 36, 38 and 39px around a 40px range without ever
+STAYING inside. Walking first and forging second therefore asks where the last
+leg happened to stop: four consecutive runs ended at 43, 41, 33 and 44 and one
+forged. Two attempted fixes made it worse and are recorded rather than kept —
+tightening the leg clamp to 0.2 dropped it to one in four (short legs exhaust
+the iteration budget before arriving), and holding the keys down to release
+mid-stride was worse still at a flat 62px, because every poll costs a round trip
+during which the character keeps moving, so it thrashes at a radius set by
+latency. That primitive was deleted rather than left in.
+
+What works is asking WHILE walking: the server decides range, a refused attempt
+is one INFO line, so the probe forges on any iteration inside half again the
+range and the first one the server accepts wins. Four runs, four forges.
+
+`approach` did keep two repairs from this hunt: legs clamped to a fraction of
+the distance remaining, and steering switched off inside 90px — the workbench
+stands in a furnished square, so every probe near it reads as blocked and the
+aim was being deflected 18 degrees or more while the character was already next
+to its target.
+
+Suite 48/48.
