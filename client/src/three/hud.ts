@@ -415,6 +415,20 @@ const HUD_FRAME_RECT = { w: 300, h: 130 };
  *  frame — so the margin has to cover the tallest of them, not the shortest. */
 const PLATE_TOP_MARGIN_PX = 42;
 
+/**
+ * How near a subject has to be before its plate is moved out of a panel's way
+ * rather than dropped, in world units.
+ *
+ * The same threshold `World.project` uses to decide between clamping a label to
+ * the screen edge and culling it, and for the same reason: inside this range
+ * the subject is a large part of what the player is looking at, so a plate
+ * displaced by a few dozen pixels is still unmistakably ITS plate. Beyond it,
+ * moving a label is worse than losing one.
+ */
+const PLATE_NUDGE_WITHIN = 14;
+/** Clearance left between a nudged plate and the panel it was sitting behind. */
+const PLATE_NUDGE_GAP_PX = 6;
+
 /** Which nameplate treatment something gets. */
 export type PlateKind = "monster" | "player" | "node" | "station" | "drop" | "npc";
 
@@ -849,41 +863,52 @@ export class Hud {
 
   plate(id: string, screen: { x: number; y: number } | null, spec: PlateSpec): void {
     if (!screen) return;
-    // Nameplates are world-anchored and the unit frame is not, so anything
-    // behind the frame drew straight over the player's own health. Suppress
-    // rather than reposition: a label yanked away from the thing it names is
-    // worse than a label that briefly is not there.
-    if (screen.x < HUD_FRAME_RECT.w && screen.y < this.framesBottom) return;
-    // AND THE RIGHT-HAND SIDE, which had the same problem and no fix.
+    // THE PANELS PUSH A LABEL ASIDE; THEY ONLY DELETE ONE THAT IS FAR AWAY.
     //
-    // The exclusion above was written for the unit frame and stops at the left
-    // edge of the screen, so everything down the other side — the minimap and
-    // the window rail — went on drawing world labels underneath itself. Seen in
-    // `weapons.mjs`: a dropped "Adderfang" printed behind the rail buttons and
-    // clipped off the edge, and a quiver's name half under the minimap.
+    // Nameplates are world-anchored and the interface is not, so a label
+    // drifting behind the unit frames, the window rail or the minimap draws
+    // underneath them and reads as a rendering fault. Each of these three used
+    // to answer that by dropping the plate, on the argument recorded below:
+    // "a label yanked away from the thing it names is worse than a label that
+    // briefly is not there."
     //
+    // THAT ARGUMENT COST THE FEATURE. Plates are anchored above their subject,
+    // so the closer you stand the higher the anchor climbs, and `project`
+    // clamps a close one to the top of the screen — straight into the two
+    // panels that live along the top. Standing next to a townsperson put their
+    // plate at x=1053 y=202, inside the minimap's rectangle, and it vanished.
+    // Reported as nameplates missing "on most things when standing close to
+    // them", which is exactly what it was: the fix for the vertical cull moved
+    // every close label into the one band of screen the panels own.
+    //
+    // So a CLOSE subject's plate is nudged clear instead — pushed below the
+    // panel it would sit behind, keeping its horizontal alignment, which is the
+    // same kind and size of displacement the top clamp already makes. Anything
+    // further away is still dropped, because that is where the note above is
+    // right: a plate shunted across the screen for a monster you can barely see
+    // is attached to nothing a player can identify.
+    const near = (spec.distance ?? 0) <= PLATE_NUDGE_WITHIN;
+    let px = screen.x;
+    let py = screen.y;
+    if (px < HUD_FRAME_RECT.w && py < this.framesBottom) {
+      if (!near) return;
+      py = this.framesBottom + PLATE_NUDGE_GAP_PX;
+    }
     // Measured in `syncLayout` rather than hardcoded, for the reason the note
     // on `HUD_FRAME_RECT` gives — the last set of constants here stopped
     // covering the frames the moment a row was added, and the failure reads as
     // a rendering glitch rather than as a stale number.
-    if (screen.x > this.railLeft && screen.y > this.railTop && screen.y < this.railBottom) return;
-    if (screen.x > this.minimapLeft && screen.y < this.minimapBottom) return;
-    // A label whose top is off the screen is a truncated word, which is worse
-    // than nothing — so it is PUSHED DOWN rather than dropped. Plates are
-    // anchored bottom-centre, so `screen.y` is their BASE and this margin is
-    // the room the plate needs above it.
-    //
-    // This used to `return`, and between it and `World.project`'s vertical cull
-    // the effect was that walking up to anything tall deleted its nameplate:
-    // the anchor sits above the body, so the closer you get the higher it
-    // climbs, and the plate went out through the top of the screen at exactly
-    // the moment the thing filled it. Reported from play. `project` now clamps
-    // instead of culling for anything close, and dropping it here would have
-    // put the whole fault straight back.
-    //
-    // A pixel of clamping is not the "label yanked away from the thing it
-    // names" the note above warns about: at this range the subject is most of
-    // the screen and there is nothing to confuse it with.
+    if (px > this.minimapLeft && py < this.minimapBottom) {
+      if (!near) return;
+      py = this.minimapBottom + PLATE_NUDGE_GAP_PX;
+    }
+    // The rail is a tall strip rather than a band across the top, so pushing
+    // DOWN would leave the plate still on top of it. This one moves sideways.
+    if (px > this.railLeft && py > this.railTop && py < this.railBottom) {
+      if (!near) return;
+      px = this.railLeft - PLATE_NUDGE_GAP_PX;
+    }
+    screen = { x: px, y: py };
     const y = Math.max(PLATE_TOP_MARGIN_PX, screen.y);
     this.seenThisFrame.add(id);
 

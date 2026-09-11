@@ -390,6 +390,20 @@ const TARGET_STICKINESS_PX = 26;
 const PICK_CANDIDATE_PX = 90;
 
 /**
+ * How much closer an errand has to get before it counts as making progress, and
+ * how long it may fail to before it is abandoned.
+ *
+ * The threshold is there because arrival is not smooth: eight-way movement and
+ * collision mean the last strides wobble, and a strict "closer than ever"
+ * test would call a perfectly good approach stalled. Four seconds is long
+ * enough to walk round a tree or be shoved aside by a pack and short enough
+ * that a character leaning into a wall gives up while the player is still
+ * watching it happen.
+ */
+const ERRAND_PROGRESS_PX = 4;
+const ERRAND_STALL_MS = 4000;
+
+/**
  * How big a hit has to be, as a share of the creature's own health, before it
  * rocks back. Same measure the floating damage numbers size themselves by, so
  * "a hit worth reacting to" means one thing in this file.
@@ -943,7 +957,34 @@ export class Game {
     y: number;
     withinPx: number;
     act: () => void;
-    expiresAt: number;
+    /**
+     * A dead man's switch, not a stopwatch.
+     *
+     * This was a deadline estimated from the distance and the character's own
+     * speed, which is right only for a walk in a straight line across open
+     * ground. Anything that lengthens the route — a pack in the way, a tree to
+     * go round, a monster shoving you — spends time the estimate never
+     * allowed, and the errand gives up somewhere short of its target for no
+     * reason the player can see. Measured: 986px walked toward a target 549px
+     * away, abandoned at 83px with nothing to show.
+     *
+     * So what is watched is PROGRESS. As long as the gap keeps closing the
+     * errand stands, however long the route turns out to be; when it stops
+     * closing for a few seconds the character is stuck against something and
+     * the errand is the thing to drop.
+     */
+    closestPx: number;
+    progressAt: number;
+    /**
+     * Where the subject is NOW, for anything that moves.
+     *
+     * A tree stays where it was clicked; a wolf does not, and it is usually
+     * running at you while you walk at it. An errand with a destination frozen
+     * at click time walks to where the wolf used to be and stops there. Returns
+     * null when the subject is gone — dead, despawned, out of the snapshot —
+     * which cancels the errand rather than marching to a corpse.
+     */
+    follow?: () => { x: number; y: number } | null;
   } | null = null;
   private readonly minimap: Minimap;
   private readonly shakeScratch = new THREE.Vector3();
@@ -4080,7 +4121,29 @@ export class Game {
     if (picked) {
       // Clicking what is already locked unlocks it, which is how you hand
       // control back to auto-targeting without hunting for empty ground.
-      this.setTarget(picked === this.lockedId ? null : picked);
+      const unlocking = picked === this.lockedId;
+      this.setTarget(unlocking ? null : picked);
+      // AND GO AND FIGHT IT. Combat is proximity-driven — walking into reach is
+      // the whole of starting a fight — so the errand needs no action of its
+      // own beyond arriving, which is why `act` is empty. Clicking a monster
+      // across the field used to select it and leave the player to close the
+      // distance themselves, which is the same refusal the nodes and the bench
+      // had.
+      //
+      // Not when unlocking: that click means "stop paying attention to this",
+      // and walking towards it would be the exact opposite.
+      const vis = unlocking ? null : this.monsters.get(picked);
+      if (vis && vis.state.status === "alive") {
+        const reach = reachOf(this.items.find((i) => i.equipped && i.slot === "weapon") ?? null);
+        const stop = reachToBody(reach, MONSTER_STATS[vis.kind].bodyRadiusPx) * 0.85;
+        if (Math.hypot(vis.state.x - this.playerX, vis.state.y - this.playerY) > stop) {
+          this.setErrand(vis.state.x, vis.state.y, stop, () => {}, () => {
+            const now = this.monsters.get(picked);
+            if (!now || now.dead || now.state.status !== "alive") return null;
+            return { x: now.state.x, y: now.state.y };
+          });
+        }
+      }
       return;
     }
     // Townspeople, before players and before the bench. They stand in the one
@@ -4093,8 +4156,12 @@ export class Game {
       // Live position again: you clicked the person, so the distance that
       // decides whether they answer has to be to the person.
       const dist = Math.hypot(this.playerX - npc.x, this.playerY - npc.y);
+      // Walk over and talk to them, rather than reporting the distance back to
+      // the player as if it were their problem. Live position again on arrival:
+      // townspeople keep their own routines, so the one you clicked may have
+      // moved by the time you get there — `talkTo` reads their position itself.
       if (dist <= NPC_TALK_RANGE_PX) this.talkTo(id);
-      else this.hud.toast(`${npc.def.name} is too far away.`, "#c98d5e");
+      else this.setErrand(npc.x, npc.y, NPC_TALK_RANGE_PX * 0.7, () => this.talkTo(id));
       return;
     }
     // One selection covers enemies and allies — the server looks the id up in
@@ -5957,6 +6024,14 @@ export class Game {
     // be the character walking back to the tree you just walked away from.
     if (dx !== 0 || dy !== 0) this.errand = null;
 
+    if (this.errand?.follow) {
+      const at = this.errand.follow();
+      if (!at) this.errand = null;
+      else {
+        this.errand.x = at.x;
+        this.errand.y = at.y;
+      }
+    }
     if (this.errand) {
       const ex = this.errand.x - this.playerX;
       const ey = this.errand.y - this.playerY;
@@ -5967,7 +6042,12 @@ export class Game {
         const { act } = this.errand;
         this.errand = null;
         act();
-      } else if (performance.now() > this.errand.expiresAt) {
+      } else if (d < this.errand.closestPx - ERRAND_PROGRESS_PX) {
+        this.errand.closestPx = d;
+        this.errand.progressAt = performance.now();
+        dx = ex / d;
+        dy = ey / d;
+      } else if (performance.now() - this.errand.progressAt > ERRAND_STALL_MS) {
         this.errand = null;
         this.hud.toast("Could not get there.", "#c98d5e");
       } else {
@@ -6123,15 +6203,22 @@ export class Game {
    * whatever is in the way. A flat number would expire early for a slow
    * character crossing the map and hang around for a fast one.
    */
-  private setErrand(x: number, y: number, withinPx: number, act: () => void): void {
+  private setErrand(
+    x: number,
+    y: number,
+    withinPx: number,
+    act: () => void,
+    follow?: () => { x: number; y: number } | null,
+  ): void {
     const distance = Math.hypot(x - this.playerX, y - this.playerY);
-    const travelMs = (distance / Math.max(1, this.moveSpeed())) * 1000;
     this.errand = {
       x,
       y,
       withinPx,
       act,
-      expiresAt: performance.now() + Math.min(30000, travelMs * 1.5 + 2000),
+      closestPx: distance,
+      progressAt: performance.now(),
+      follow,
     };
   }
 
@@ -6207,7 +6294,7 @@ export class Game {
       // never read them: Hud.plate() already draws a bar off any hp/maxHp it
       // is handed, gated on nothing but their presence.
       const hp = this.playerHp.get(id);
-      this.hud.plate(id, this.world.project(p.x, p.y + 2.05, p.z), {
+      this.hud.plate(id, this.world.projectLabel(p.x, p.y, 2.05, p.z), {
         kind: "player",
         name: this.playerNames.get(id) ?? "player",
         icon: `class-${this.playerClasses.get(id) ?? "adventurer"}`,
@@ -6230,7 +6317,7 @@ export class Game {
           ? (performance.now() - vis.windupStartedAt) / windupMs
           : undefined;
 
-      this.hud.plate(id, this.world.project(p.x, p.y + model.height + 0.4, p.z), {
+      this.hud.plate(id, this.world.projectLabel(p.x, p.y, model.height + 0.4, p.z), {
         kind: "monster",
         name: MONSTER_LABELS[vis.kind],
         hp: vis.state.hp,
@@ -6255,7 +6342,9 @@ export class Game {
       if (!obj) continue;
       this.hud.plate(
         `node-${id}`,
-        this.world.project(obj.position.x, NODE_LABEL_Y[state.kind], obj.position.z, 34),
+        // Base plus lift, so a label that cannot be drawn at treetop height is
+        // drawn lower instead of not at all — see `projectLabel`.
+        this.world.projectLabel(obj.position.x, obj.position.y, NODE_LABEL_Y[state.kind], obj.position.z, 34),
         {
           kind: "node",
           // What it is worth, on the label. The rule — richer the further out

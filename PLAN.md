@@ -24026,3 +24026,83 @@ measured is still unexplained.
 
 Suite 55/55 (`throwers.mjs` failed once and passed alone; it is a live-world
 positioning measurement and has flaked before).
+
+**Phase 70 M70.257 — the scenery blocks both of you, and the click works on
+everything.** Three faults, and two of them are mine from the last two
+milestones.
+
+MONSTERS WALKED THROUGH TREES. M70.255 made nodes solid for the player and
+stopped there — monsters resolved against player bodies and nothing else. So
+every creature in the world got a privilege the player did not have: it could
+come through a trunk you had to go round. That is not cosmetic. Retreating to
+heal is the one defensive move the early game has, and an obstacle that only
+slows the person running away makes it strictly worse — a change about how the
+world LOOKS quietly taking a piece out of how it plays. Fixed in the same pass
+that pushes them out of players, and filtered to nearby nodes first: the
+player's own collision hands every node in the world to the solver, which is
+fine for one body and is a hundred bodies against eighty-two nodes across three
+settling passes for monsters.
+
+`tools/soak/treefair.mjs` asks both halves, because the opposite failure is just
+as bad: a monster that CANNOT get past a tree turns every trunk into a wall you
+can kite behind forever. Depenetration slides rather than sticks, which is why
+it does not need pathfinding. 74 samples, deepest overlap 0px.
+
+"NO NAMEPLATES ON MOST THINGS WHEN STANDING CLOSE." The M70.256 fix was real and
+incomplete, and the reason it looked complete is the important part: the probe
+watched a TREE, and a tree is the one subject whose label sits highest and
+therefore the least like every other. Two more gates were dropping close plates.
+
+  - The panels. `Hud.plate` suppressed anything overlapping the unit frames, the
+    minimap or the window rail. Clamping a close label to the TOP of the screen
+    walked it straight into the two that live along the top: a townsperson
+    standing in front of the character had their plate at x=1053 y=202, inside
+    the minimap's rectangle, and it vanished. The M70.256 fix MOVED the fault
+    rather than fixing it. A close subject's plate is nudged clear now, keeping
+    its horizontal alignment; a distant one is still dropped, which is where the
+    original note is right.
+  - The near plane. A tree's label sits 4.4 units up, and standing against the
+    trunk puts that point behind the camera while the tree fills the screen —
+    rejected by `project` before any clamping could save it. `projectLabel`
+    walks the anchor down the body until one projects.
+
+CLICK-TO-WALK ONLY WORKED ON GATHERABLES, reported from play, and the cause is
+embarrassing in a useful way: the click handler has FIVE branches and M70.256
+wired two. Townspeople still printed "X is too far away"; clicking a monster
+across the field selected it and left you to walk. Both carry errands now, and
+the monster's FOLLOWS ITS TARGET — a wolf is running at you while you walk at
+it, so a destination frozen at click time walks to where it used to be.
+
+The probe missed it for exactly the reason the bug survived: it only ever
+clicked a tree. A test that clicks gatherable objects will happily tell you
+that clicking gatherable objects works.
+
+AND THE ERRAND'S DEADLINE WAS THE WRONG SHAPE. It was estimated from distance
+and speed, which is right only for a straight walk across open ground; anything
+that lengthens the route spends time the estimate never allowed, and the errand
+quits short of its target for no reason the player can see — measured at 986px
+walked toward something 549px away, abandoned at 83px. It watches PROGRESS now:
+while the gap keeps closing the errand stands however long the route turns out
+to be, and four seconds without closing means stuck.
+
+FOUR MORE MEASUREMENT FAULTS, all in one file, all of the same family — the
+probe not knowing the thing it was probing:
+  - it converted world pixels to scene units as `px / 40` when the scene is
+    RECENTRED ON SPAWN, `(px - PLAYER_SPAWN) / 40`. Warden Cabel at world 8293
+    stands at scene 7.3, not 207.3, so every click was aimed two hundred units
+    off the map and three tests reported "not on screen" about a person standing
+    in front of the character.
+  - it clicked monsters at an assumed mid-body height of 2 units. `pickMonsterAt`
+    tests a sphere centred at half the model's height, which touches the ground
+    for every creature, so aiming low hits all of them and aiming at 2 units
+    sails over the short ones — and the miss fell through to the GROUND branch,
+    which clears errands, so the probe's own click was cancelling the thing it
+    was testing.
+  - it picked a thrower for the monster test. Cactoro, demon and golem hold
+    station at about 150px and back away as you close, so "never got closer than
+    145px" was a statement about their design.
+  - and it measured raw displacement where the subject is running at you, so a
+    working errand read as a failure at 56px against a 60px threshold. It
+    projects onto the bearing now.
+
+Suite 55/55.

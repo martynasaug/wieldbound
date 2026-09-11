@@ -4307,18 +4307,50 @@ setInterval(() => {
     y: p.y,
     radiusPx: PLAYER_BODY_RADIUS_PX,
   }));
-  if (playerBodies.length > 0) {
-    for (const monster of monsters) {
-      if (monster.status !== "alive") continue;
-      const clear = resolveBodyCollision(
-        monster.x,
-        monster.y,
-        MONSTER_STATS[monster.kind].bodyRadiusPx,
-        playerBodies,
-      );
-      monster.x = clear.x;
-      monster.y = clear.y;
+  // --- And out of the scenery ----------------------------------------------
+  //
+  // NODES BLOCK MONSTERS TOO, OR THEY ONLY BLOCK YOU.
+  //
+  // M70.255 made trees, rocks and bushes solid for the player and stopped
+  // there, which quietly handed every monster in the world a privilege: it
+  // could walk through a trunk while the person it was chasing had to go round.
+  // That is not a small unfairness. Retreating to heal is the one defensive
+  // move the early game has, and it was being made strictly worse by a change
+  // that was supposed to be about how the world LOOKS — the player snags on a
+  // tree, the wolf behind them does not.
+  //
+  // Depenetration slides along the contact normal, which is why this does not
+  // pin anything: a monster pushing into a tree slides around it, exactly as
+  // the note on `resolveBodyCollision` describes for a player walking into a
+  // monster. It does not need pathfinding to get past a trunk, and neither did
+  // the player.
+  //
+  // One pass over both sets rather than two passes: pushing a monster out of a
+  // player and then out of a tree can put it back inside the player, and the
+  // function already iterates to settle exactly that argument.
+  //
+  // NEARBY NODES ONLY, and that is not premature. The player's own collision
+  // hands `resolveBodyCollision` every node in the world, which is fine for one
+  // body; doing the same for every monster is a hundred bodies against
+  // eighty-two nodes across three settling passes, every tick, to discover that
+  // almost none of them touch. Filtering first is one distance check per pair
+  // and leaves the settling loop with the two or three that matter.
+  const nearby: { x: number; y: number; radiusPx: number }[] = [];
+  for (const monster of monsters) {
+    if (monster.status !== "alive") continue;
+    const radius = MONSTER_STATS[monster.kind].bodyRadiusPx;
+    nearby.length = 0;
+    for (const body of playerBodies) nearby.push(body);
+    for (const node of nodeBodies()) {
+      const reach = radius + node.radiusPx;
+      const dx = node.x - monster.x;
+      const dy = node.y - monster.y;
+      if (dx * dx + dy * dy <= reach * reach) nearby.push(node);
     }
+    if (nearby.length === 0) continue;
+    const clear = resolveBodyCollision(monster.x, monster.y, radius, nearby);
+    monster.x = clear.x;
+    monster.y = clear.y;
   }
 
   // --- Player actions: decided by proximity, re-evaluated every tick ------

@@ -1076,6 +1076,36 @@ export class World {
    */
   private readonly projectScratch = new THREE.Vector3();
 
+  /**
+   * A label's screen position, preferring an anchor above the subject but
+   * settling for a lower one rather than giving up.
+   *
+   * THE ANCHOR CAN GO BEHIND THE CAMERA WHILE THE SUBJECT IS IN FRONT OF IT.
+   * A tree's label sits 4.4 units up. Stand against the trunk and that point is
+   * above and behind the lens even though the tree fills the screen, and
+   * `project` rejects it on the near plane — before any of the clamping below
+   * gets a chance to save it. That is the last way a nameplate could still
+   * vanish as you walked up to something, and it was caught by a probe watching
+   * a tree plate through a whole approach: four samples drawn, one missing.
+   *
+   * Walking the anchor down is the obvious answer and stays honest: the label
+   * ends up over the subject's middle or its feet instead of its crown, which
+   * is where a plate for a short thing sits anyway.
+   */
+  projectLabel(
+    x: number,
+    yBase: number,
+    yLift: number,
+    z: number,
+    maxDistance = 70,
+  ): { x: number; y: number } | null {
+    for (const share of [1, 0.6, 0.3, 0]) {
+      const at = this.project(x, yBase + yLift * share, z, maxDistance);
+      if (at) return at;
+    }
+    return null;
+  }
+
   project(x: number, y: number, z: number, maxDistance = 70): { x: number; y: number } | null {
     const v = this.projectScratch.set(x, y, z).applyMatrix4(this.camera.matrixWorldInverse);
     if (v.z > -this.camera.near) return null; // behind the camera
