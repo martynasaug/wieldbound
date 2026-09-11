@@ -1,0 +1,246 @@
+// DIFFERENT SKIN, NOT THE SAME SKIN DARKER.
+//
+// The body is one mesh with one painted 1024x1024 texture, and until now a
+// character's colouring was `material.color.multiply(tint)`. A multiply can
+// only ever DARKEN: the texture's own browns are the ceiling, so the palest
+// setting produced the model exactly as shipped and every other setting
+// produced the same model with the lights turned down. Reported as the
+// characters all looking like the standard Monk, which was precisely true —
+// there was no axis on which they differed except brightness.
+//
+// So the texture itself is recoloured. Each skin tone is a hue, saturation and
+// lightness transform applied to every pixel once, producing a variant texture
+// that the material then uses as its map. That can go LIGHTER, which is the
+// whole point, and it can shift hue, which is what makes a warm tone different
+// from a cool one rather than merely paler.
+//
+// IT RECOLOURS THE CLOTHING TOO, and that is a consequence of one mesh with one
+// texture rather than a decision. It is also not a bad one: the robe shifts
+// with the wearer, so characters differ in two ways at once instead of sharing
+// a uniform. What it cannot do is give one character dark skin and a pale robe,
+// and that limit belongs to the model.
+//
+// ONE CANVAS PASS PER TONE, CACHED FOR THE SESSION. Eight tones against a
+// million pixels is eight million operations if every one is used, which at
+// startup would be visible; lazily, it is a few milliseconds the first time a
+// tone appears and nothing ever again. Two players sharing a tone share the
+// texture, which also keeps the upload count at the number of tones rather than
+// the number of people.
+
+import * as THREE from "three";
+
+/** A skin tone as a transform of the body texture, rather than as a colour. */
+export interface SkinTone {
+  id: string;
+  /** Turns of the hue wheel, 0..1. Small numbers: skin is a narrow band. */
+  hueShift: number;
+  /** Multiplies saturation. Below 1 washes out, above 1 deepens. */
+  saturation: number;
+  /**
+   * Where this tone's MEAN lightness lands, 0..1.
+   *
+   * The texture is re-centred on this rather than shifted by an offset, and the
+   * difference is the whole of a bug worth recording. An offset of -0.24 on a
+   * texture whose mean is 0.36 leaves 0.12, with the painted shadows below it
+   * clamped flat at zero — a character with no face, no fold in the robe and no
+   * edge between arm and chest. That was the first dark tone here and it looked
+   * like a hole in the world, which is the same complaint as the one that
+   * started this work, arrived at from the opposite direction.
+   */
+  target: number;
+  /**
+   * How much of the texture's own light and shade survives the re-centring.
+   *
+   * Below 1 compresses it. The dark tones need that: there is less headroom
+   * below 0.2 than there is around 0.5, so the same spread that reads as
+   * modelling on pale skin reads as blotches on deep skin.
+   */
+  contrast: number;
+}
+
+/**
+ * The body texture's own mean lightness — MEASURED, not assumed.
+ *
+ * Dumped from `Monk_Texture.png`: the dominant colours are a cluster of browns
+ * around #6b543a, and the whole image averages to roughly this. Every tone is
+ * expressed as a move away from it.
+ */
+const BASE_MEAN = 0.36;
+
+/**
+ * Eight tones, spread across LIGHTNESS first.
+ *
+ * Lightness is the channel that survives fog, dusk, shadow and ninety pixels;
+ * hue is the one everybody reaches for and the one that reads least. The hue
+ * shifts move WITH the lightness the way real skin does — pale skin is pink,
+ * mid tones are yellow-olive, deep tones are red-brown — because a palette that
+ * only changes brightness looks like one person under eight lighting rigs.
+ *
+ * THE RANGE STOPS SHORT OF BOTH ENDS, 0.21 to 0.62 rather than 0.05 to 0.95.
+ * Three times the lightness from end to end is already an unmistakable
+ * difference between two characters standing together, and the last stop in
+ * either direction buys nothing but a silhouette or a ghost: detail dies at
+ * both ends, and detail is what makes a character look like a person rather
+ * than a shape.
+ */
+export const SKIN_TONES: SkinTone[] = [
+  { id: "porcelain", hueShift: +0.014, saturation: 0.55, target: 0.62, contrast: 0.95 },
+  { id: "fair", hueShift: +0.008, saturation: 0.70, target: 0.56, contrast: 1.0 },
+  { id: "light", hueShift: +0.002, saturation: 0.85, target: 0.50, contrast: 1.0 },
+  { id: "olive", hueShift: -0.020, saturation: 0.95, target: 0.44, contrast: 1.0 },
+  { id: "tan", hueShift: -0.008, saturation: 1.05, target: 0.39, contrast: 1.0 },
+  { id: "bronze", hueShift: -0.016, saturation: 1.12, target: 0.33, contrast: 0.92 },
+  { id: "umber", hueShift: -0.010, saturation: 1.08, target: 0.27, contrast: 0.82 },
+  { id: "ebony", hueShift: -0.004, saturation: 0.98, target: 0.21, contrast: 0.72 },
+];
+
+/** Roughly how light this tone comes out, for keeping hair off the skin. */
+export function toneLightness(tone: SkinTone): number {
+  return tone.target;
+}
+
+const cache = new Map<string, THREE.Texture>();
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h: number;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return [h, s, l];
+}
+
+function hueToRgb(p: number, q: number, t: number): number {
+  let x = t;
+  if (x < 0) x += 1;
+  if (x > 1) x -= 1;
+  if (x < 1 / 6) return p + (q - p) * 6 * x;
+  if (x < 1 / 2) return q;
+  if (x < 2 / 3) return p + (q - p) * (2 / 3 - x) * 6;
+  return p;
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) return [l, l, l];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [hueToRgb(p, q, h + 1 / 3), hueToRgb(p, q, h), hueToRgb(p, q, h - 1 / 3)];
+}
+
+/**
+ * The body texture recoloured for one skin tone, or null if it cannot be yet.
+ *
+ * Null means the source image has not decoded — see `applySkin`, which is what
+ * callers should use.
+ */
+function recolour(base: THREE.Texture, tone: SkinTone): THREE.Texture | null {
+  const cached = cache.get(tone.id);
+  if (cached) return cached;
+
+  const image = base.image as (CanvasImageSource & { width?: number; height?: number }) | undefined;
+  const width = image?.width ?? 0;
+  const height = image?.height ?? 0;
+  if (!image || !width || !height) return null;
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(image, 0, 0);
+    const pixels = ctx.getImageData(0, 0, width, height);
+    const d = pixels.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      const [h, sat, l] = rgbToHsl(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
+      const [r, g, b] = hslToRgb(
+        (h + tone.hueShift + 1) % 1,
+        clamp01(sat * tone.saturation),
+        clamp01(tone.target + (l - BASE_MEAN) * tone.contrast),
+      );
+      d[i] = r * 255;
+      d[i + 1] = g * 255;
+      d[i + 2] = b * 255;
+    }
+    ctx.putImageData(pixels, 0, 0);
+
+    const out = new THREE.CanvasTexture(canvas);
+    // EVERYTHING THE ORIGINAL WAS SET TO. A CanvasTexture defaults to flipY
+    // true and to no colour space, and either of those wrong is a body that
+    // renders upside down or washed out — a whole-character fault out of a
+    // one-line omission.
+    out.colorSpace = base.colorSpace;
+    out.flipY = base.flipY;
+    out.wrapS = base.wrapS;
+    out.wrapT = base.wrapT;
+    out.magFilter = base.magFilter;
+    out.minFilter = base.minFilter;
+    out.anisotropy = base.anisotropy;
+    out.needsUpdate = true;
+    cache.set(tone.id, out);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Give a material the body texture in one skin tone.
+ *
+ * RETRIES, BECAUSE THE TEXTURE ARRIVES LATE. The model and its texture load
+ * independently: the FBX can be parsed, instantiated and dressed onto a
+ * character while `Monk_Texture.png` is still in flight, and a canvas cannot
+ * read pixels out of an image that has not decoded. Recolouring once at build
+ * time would therefore work or not work depending on network timing, which is
+ * the kind of bug that is invisible on a local dev server and universal for
+ * everyone else.
+ *
+ * So a failed attempt is retried on later frames rather than abandoned. The cap
+ * exists because a texture that 404s never decodes, and a retry that never
+ * stops would poll for the life of the session.
+ */
+export function applySkin(mat: THREE.MeshStandardMaterial, tone: SkinTone): void {
+  const base = mat.map;
+  if (!base) {
+    // No texture to recolour — a flat-coloured material, which some bodies do
+    // have. A multiply is all that is available, and it is enough: a flat
+    // colour has no painted detail for it to flatten.
+    mat.color.multiplyScalar(clamp01(tone.target / BASE_MEAN));
+    mat.needsUpdate = true;
+    return;
+  }
+
+  let tries = 0;
+  const attempt = () => {
+    // The material may have been swapped or the actor torn down while this was
+    // waiting. Re-reading `mat.map` rather than closing over the old one keeps
+    // it from resurrecting a texture the actor has moved on from.
+    const current = mat.map;
+    if (!current) return;
+    const out = recolour(current, tone);
+    if (out) {
+      mat.map = out;
+      // The colour stays white under a map: the recolour lives in the pixels
+      // now, and a multiply on top would apply it a second time.
+      mat.color.setHex(0xffffff);
+      mat.needsUpdate = true;
+      return;
+    }
+    if (++tries > MAX_TRIES) return;
+    requestAnimationFrame(attempt);
+  };
+  attempt();
+}
+
+/** About four seconds of frames. See `applySkin`. */
+const MAX_TRIES = 240;

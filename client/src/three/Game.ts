@@ -86,6 +86,7 @@ import {
 } from "../../../shared/protocol-types";
 import { SkillFx, fxFor } from "./skillfx";
 import { GatherFx, GATHER_STROKE_MS } from "./gatherfx";
+import { lookFor } from "./look";
 import { CursorHint, publishCursorDebug } from "./cursors";
 
 /**
@@ -1605,6 +1606,12 @@ export class Game {
     // screenshot alone, and this is how the "keys stick after a panel steals
     // focus" bug was found.
     (window as unknown as Record<string, unknown>).__wieldbound = this;
+    // WHAT A NAME LOOKS LIKE, for anything that wants to check the derivation
+    // without reverse-engineering it from pixels. A look is deterministic, so
+    // "is this character supposed to have a beard" is answerable exactly, and
+    // a harness that guesses at it from a screenshot answers a different and
+    // much weaker question.
+    (window as unknown as Record<string, unknown>).__wieldboundLook = lookFor;
     // The profiler beside it, for the same reason and one it earned: it already
     // times every model parse as `loaderParse:<name>` and every dress pass, and
     // none of that was reachable from outside the module. The load's long frames

@@ -40,13 +40,55 @@ for (const name of NAMES.slice(0, COUNT)) {
     const a = g.localActor;
     const worn = [];
     a?.root.traverse((o) => { if (o.name?.startsWith("look_")) worn.push(o.name.slice(5)); });
-    return { worn, scale: +(a?.instance?.object?.scale?.x ?? 0).toFixed(3) };
+    // WHAT THE CHARACTER ACTUALLY IS, in the terms the look is described in.
+    // The first version reported `instance.scale.x`, which is the model's fit
+    // scale multiplied by the build — 0.006 for every character, a number that
+    // says nothing about any of them.
+    const look = window.__wieldboundLook?.(g.name ?? "");
+    const hex = (c) => (c ? "#" + c.getHexString() : "?");
+
+    // THE TEXTURE THE BODY IS ACTUALLY WEARING, averaged — not the tone that
+    // was requested. Reporting the request is how the previous version of this
+    // harness printed eight different skins for eight identical characters:
+    // the tint was applied to a material channel that could not lighten, so
+    // the numbers varied and the pixels did not. This reads the map back.
+    let painted = "?";
+    a?.root.traverse((o) => {
+      // THE BODY'S MATERIAL BY NAME, not the first mesh that happens to carry
+      // a texture. Gear is added to the same root and is never recoloured, so a
+      // helmet would be measured instead of a face and the harness would report
+      // that skin tone does nothing — a broken instrument describing working
+      // code, which is the failure mode this project keeps meeting.
+      if (painted !== "?" || !o.isMesh) return;
+      if (!String(o.material?.name ?? "").includes("Monk")) return;
+      if (!o.material?.map?.image) return;
+      const img = o.material.map.image;
+      const c = document.createElement("canvas");
+      c.width = 32; c.height = 32;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, 32, 32);
+      const d = ctx.getImageData(0, 0, 32, 32).data;
+      let r = 0, gg = 0, b = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) { if (!d[i + 3]) continue; r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++; }
+      const h = (v) => Math.round(v / n).toString(16).padStart(2, "0");
+      painted = n ? "#" + h(r) + h(gg) + h(b) : "?";
+    });
+
+    return {
+      worn,
+      hair: look?.hair, beard: look?.beard,
+      skin: look?.skin?.id ?? "?", painted, hairColor: hex(look?.hairColor),
+      build: look ? +look.build.toFixed(2) : null,
+    };
   });
   await page.waitForTimeout(900);
   // Cropped to the character rather than the whole frame, so eight of these
   // can be looked at side by side without the interface between them.
   await page.screenshot({ path: `${OUT}/${name}.png`, clip: { x: 330, y: 180, width: 340, height: 430 } });
-  console.log(`${name.padEnd(8)} ${look.worn.join("+") || "(no hair, no beard)"}  build=${look.scale}`);
+  console.log(
+    `${name.padEnd(8)} ${String(look.hair).padEnd(8)} ${String(look.beard).padEnd(8)}` +
+      ` skin ${String(look.skin).padEnd(10)} painted ${look.painted}  hair ${look.hairColor}  build ${look.build}`,
+  );
 }
 console.log(`\nshots in ${OUT}/`);
 await browser.close();

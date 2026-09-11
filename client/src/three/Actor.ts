@@ -31,6 +31,7 @@ import { instantiate, findNode, findClip, type Instance } from "./assets";
 import { BUILTIN_WEAPON_MESHES, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, buildHairAndBeard } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor } from "./look";
+import { applySkin } from "./skin";
 import { pickClip, loadClipLibrary } from "./clips";
 import type { WeaponType } from "../../../shared/protocol-types";
 
@@ -1447,45 +1448,24 @@ export class Actor {
 
   private tintBody(): void {
     if (!this.identity || !this.instance) return;
-    const h = nameHash(this.identity);
 
-    // TWO AXES, AND THEY ARE SEPARATED ON PURPOSE.
+    // THE TEXTURE IS RECOLOURED, NOT THE MATERIAL TINTED, and that distinction
+    // is the whole of a bug that survived three attempts at this function.
     //
-    // The first attempt multiplied one HSL colour over the material and got
-    // four characters within ten values of each other on every channel —
-    // `#d7bb99`, `#e8bfa3`, `#d3b29d`, `#d6bea8`. Measured, and it is obvious in
-    // hindsight: an HSL colour at L=0.5 with low saturation is a mid grey with a
-    // hint, and multiplying four mid greys over one texture gives four of the
-    // same thing. The knob was turned; it was not connected to anything.
+    // It used to be `mat.color.multiply(tint)`, and the note it replaces
+    // records the earlier failures: characters within ten values of each other,
+    // then characters clipped to the same near-white, then every character
+    // coming out brown. The fourth and real one was that A MULTIPLY CANNOT
+    // LIGHTEN. The body's texture is a painted 1024x1024 of mid-browns, so the
+    // palest setting in the palette was a no-op and every other setting was the
+    // same model dimmed — reported, accurately, as everybody still looking like
+    // the standard Monk.
     //
-    // So the tint is normalised to a MEAN OF ONE before it is applied. That
-    // makes hue and saturation change the CAST at constant brightness, and
-    // leaves brightness to a separate multiplier that can then have a real
-    // range without fighting it.
-    const hue = ((h & 0xff) / 255) * 0.11;
-    const sat = 0.08 + (((h >>> 8) & 0xff) / 255) * 0.34;
-    // AND VALUE DOES MOST OF THE WORK. Two people a shade apart in hue are the
-    // same person at ninety pixels; two people twice apart in value are not, and
-    // value is the one that survives being fogged, shadowed and seen at dusk.
-    // The ceiling is 1.0 and not a shade more, and the reason is that this
-    // MULTIPLIES a base colour that is already 0.78 of white. The first pass
-    // ran to 1.28 and every character came out clipped to the same near-white —
-    // `#fef3b0`, `#fffac4`, `#ffe4bf` — which is the identical failure as the
-    // pass before it (four indistinguishable people) arrived at from the other
-    // side. A knob with a range wider than the thing it drives is a knob with no
-    // range at all.
-    const value = 0.48 + (((h >>> 16) & 0xff) / 255) * 0.54;
+    // `skin.ts` transforms the texture's pixels instead, which can go lighter
+    // and can shift hue, and caches one variant per tone.
+    const tone = lookFor(this.identity).skin;
 
-    const tint = new THREE.Color().setHSL(hue, sat, 0.5);
-    const mean = (tint.r + tint.g + tint.b) / 3;
-    if (mean > 0) tint.multiplyScalar(value / mean);
-
-    for (const { mat } of this.litMaterials) {
-      // Multiplied over whatever the material already carries, exactly as the
-      // rarity tint is — so the texture's own light and shade survive and only
-      // the cast and the depth change.
-      mat.color.multiply(tint);
-    }
+    for (const { mat } of this.litMaterials) applySkin(mat, tone);
   }
 
   /**

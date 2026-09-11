@@ -1584,10 +1584,18 @@ export async function buildGatherTool(kind: GatherToolKind): Promise<THREE.Objec
 // Authored in the same head-bone space as the helms above — HEAD_TOP 296,
 // HEAD_HALF_WIDTH 33 — so they sit on the same skull those were fitted to, and
 // so a helm and a hairstyle can be worn at once without either being refitted.
-export type HairStyle = "bald" | "crop" | "mane" | "topknot" | "tail";
+export type HairStyle =
+  | "bald" | "crop" | "mane" | "topknot" | "tail" | "braids" | "crest" | "bun" | "wild";
 export type BeardStyle = "none" | "stubble" | "full" | "braided";
 
-export const HAIR_STYLES: HairStyle[] = ["bald", "crop", "mane", "topknot", "tail"];
+// NINE, AND THE ONES THAT READ FROM ABOVE ARE THE POINT. This game looks down
+// at its characters, so the crown is most of what anybody ever sees: a crest, a
+// bun and a topknot are three completely different people from overhead, where
+// a crop and a mane differ mainly in width. Five was thin for a system whose
+// entire job is telling players apart.
+export const HAIR_STYLES: HairStyle[] = [
+  "bald", "crop", "mane", "topknot", "tail", "braids", "crest", "bun", "wild",
+];
 export const BEARD_STYLES: BeardStyle[] = ["none", "stubble", "full", "braided"];
 
 function hairGeometry(style: HairStyle): THREE.BufferGeometry | null {
@@ -1628,6 +1636,50 @@ function hairGeometry(style: HairStyle): THREE.BufferGeometry | null {
       dome(13, [0, HEAD_TOP + 2, -8], [1, 1.3, 1]),
       shell(6, 9, 14, [0, HEAD_TOP - 6, -8], 1),
     ]);
+  }
+
+  if (style === "braids") {
+    // A centre parting with a plait either side of the face — unmistakable
+    // from the front and still legible from overhead.
+    return merge([
+      dome(HEAD_HALF_WIDTH + 4, [0, brow - 5, -5], [1, 0.92, 1.12]),
+      box([5, 12, 26], [0, brow + 6, 2]),
+      shell(7, 5, 44, [-HEAD_HALF_WIDTH + 2, brow - 30, 6], 1),
+      shell(7, 5, 44, [HEAD_HALF_WIDTH - 2, brow - 30, 6], 1),
+      dome(6, [-HEAD_HALF_WIDTH + 2, brow - 54, 6], [1, -1.3, 1]),
+      dome(6, [HEAD_HALF_WIDTH - 2, brow - 54, 6], [1, -1.3, 1]),
+    ]);
+  }
+
+  if (style === "crest") {
+    // Shaved sides and a ridge running front to back. The single most legible
+    // hairstyle from directly overhead, which is where this camera is.
+    return merge([
+      shell(HEAD_HALF_WIDTH + 1, HEAD_HALF_WIDTH + 2, 12, [0, brow - 12, -4], 1.1),
+      box([11, 26, 70], [0, HEAD_TOP - 6, -6]),
+      box([15, 14, 54], [0, HEAD_TOP - 16, -6]),
+    ]);
+  }
+
+  if (style === "bun") {
+    // Gathered tight with a knot at the back of the crown. Reads as neat, which
+    // none of the others do.
+    return merge([
+      dome(HEAD_HALF_WIDTH + 3, [0, brow - 6, -5], [1, 0.88, 1.1]),
+      dome(15, [0, HEAD_TOP - 14, HEAD_BACK_Z + 10], [1, 1, 1]),
+      shell(15, 13, 18, [0, HEAD_TOP - 22, HEAD_BACK_Z + 10], 1),
+    ]);
+  }
+
+  if (style === "wild") {
+    // Unkempt: a cap with clumps thrown off it in four directions. The same
+    // primitive four times, which is what stops "messy" costing more than tidy.
+    const parts = [dome(HEAD_HALF_WIDTH + 5, [0, brow - 6, -5], [1, 1.02, 1.14])];
+    for (const [dx, dz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]] as [number, number][]) {
+      parts.push(dome(13, [dx * 26, brow + 4, dz * 20 - 6], [1, 1.5, 1]));
+    }
+    parts.push(box([HEAD_HALF_WIDTH * 1.5, 10, 8], [0, brow + 3, HEAD_FRONT_Z - 5]));
+    return merge(parts);
   }
 
   // "tail": gathered at the back and hanging clear of the shoulders.

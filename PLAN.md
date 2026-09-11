@@ -24278,3 +24278,68 @@ because the instinct to measure the magnitude of a drift is exactly the wrong
 one here.
 
 Suite 56/56.
+
+**Phase 70 M70.261–269 — the Blender detour, and what it cost.** Nine
+milestones went into building the player a body of its own so that it could
+carry a chop, a mine and a pick: the three animations the borrowed pack has
+never shipped, and which three earlier milestones went into faking at runtime.
+`tools/art/player_rig.py` generated it, `player_clips.py` animated it, and it
+was measured, rebuilt and re-measured six times.
+
+It never stopped looking like a mannequin, and the reason is that a figure
+assembled from tapered tubes and rounded blocks IS a mannequin. Asked "are you
+not looking yourself at these things?" I had to admit I had never once put my
+body next to the Monk at matched scale — `compare_bodies.py` exists because of
+that question, and the first render it produced settled the argument in one
+frame. The bugs found along the way are worth keeping even though the body was
+not: a taper applied in local space where the measurement was in world (58%
+short), a half-extent halved twice, a perspective camera judged as if it were
+orthographic, a root bone whose local Y is world vertical, a quaternion whose
+`(w=1, x=v)` is a rotation of `2*atan(v)` and not of `v`, and toes on the wrong
+side of the ankle — then, after flipping the foot bone, ankles that bent
+backwards because the rotation signs had gone with it.
+
+M70.267 abandoned it. The Monk already looks like the Monk, is skinned to the
+44-bone skeleton the whole game is built on, and every piece of armour in the
+wardrobe is authored to fit it. `monk_clips.py` builds Chop, Mine and Pick onto
+THAT skeleton instead, renaming `UpperArm.L` to the `UpperArmL` spelling three's
+loader produces so the clips target the names the game looks for. Nine
+milestones to arrive at a one-file answer that was available at the start.
+
+**Phase 70 M70.270 — skin colour, and why a multiply could never do it.**
+Reported after M70.269 shipped a palette of eight skin tones: "i peaked at
+cass and it still looks exactly the same as regular monk - black."
+
+Exactly right, and the palette was not the problem. Colouring was
+`mat.color.multiply(tint)`, and A MULTIPLY CANNOT LIGHTEN. The body wears a
+painted 1024x1024 texture whose dominant colours are mid-browns around #6b543a
+— dumped with a Blender script rather than guessed — so the palest entry in the
+palette was arithmetically a no-op and all seven others were the same character
+with the lights turned down. Three previous attempts at this function each
+adjusted the numbers; none asked what the operation could express. The note in
+`tintBody` now records all four failures in order, because the shape of the
+mistake repeated three times before it was seen.
+
+`skin.ts` recolours the TEXTURE instead: each tone is a hue, saturation and
+lightness transform run over every pixel once, cached as one `CanvasTexture` per
+tone and shared by everyone wearing it. Lightness is re-centred on a TARGET mean
+rather than shifted by an offset, and that detail is a bug of its own that was
+caught in a screenshot before it shipped — an offset of -0.24 on a texture whose
+mean is 0.36 clamps every painted shadow flat at zero, and the first `ebony`
+character rendered as a featureless black silhouette. The same complaint as the
+original one, reached from the opposite end. Tones now span 0.21 to 0.62 and
+stop short of both extremes, because detail dies at both and detail is what
+makes a character read as a person rather than a shape.
+
+TWO THINGS THE INSTRUMENT TAUGHT ME AGAIN. `looks.mjs` used to print the tone
+that was REQUESTED, which is how eight identical characters were reported as
+eight different skins; it samples the body material's actual map now, and
+selects that material BY NAME, because gear hangs off the same root and a
+helmet would have been measured instead of a face. And the hair-against-skin
+contrast walk was comparing a three.js `Color`'s linear components against an
+sRGB lightness — a mid-brown reads as 0.065 rather than 0.29 — so it was
+passing exactly the pairings it exists to prevent. Dark brown hair on the
+darkest skin, invisible, approved by a check that was measuring the wrong space.
+
+It recolours the robe along with the wearer, which is a consequence of one mesh
+with one texture and not a decision. Suite 56/56.
