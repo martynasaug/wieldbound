@@ -211,9 +211,19 @@ function pickPose(t: number): BoneOffsets {
  *
  * MULTIPLIED, NOT ASSIGNED. The clip is still playing underneath — the body
  * keeps whatever idle sway or run cycle it had — and these are a rotation
- * layered on that, so nothing has to be authored twice and letting go of the
- * pose restores the clip exactly. The mixer rewrites every bone each frame, so
- * the offsets cannot accumulate.
+ * layered on that, so nothing has to be authored twice.
+ *
+ * THE CALLER MUST UNDO THE PREVIOUS FRAME FIRST. This note used to end "the
+ * mixer rewrites every bone each frame, so the offsets cannot accumulate",
+ * which is wrong in the one way that matters: the mixer rewrites the bones the
+ * CLIP KEYS. An idle keys the arms and the spine's sway and does not key the
+ * knees, so every unkeyed bone kept last frame's rotation and had this frame's
+ * multiplied onto it sixty times a second. Reported from play as the whole
+ * upper body spinning the moment gathering began — which is what a quaternion
+ * compounded sixty times a second looks like.
+ *
+ * `Actor.clearStrokePose` restores the saved rotations before the mixer runs.
+ * Any other caller of this function owes the same thing.
  */
 const scratch = new THREE.Quaternion();
 const scratchEuler = new THREE.Euler();

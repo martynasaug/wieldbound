@@ -24232,3 +24232,49 @@ became layered — `currentAnim` reads "idle" throughout a gather now, because t
 idle is exactly what plays underneath. It reports the stroke and the tool.
 
 Suite 56/56.
+
+**Phase 70 M70.260 — the upper body span, because the mixer does not rewrite
+every bone.** Reported immediately: "when starting gathering the whole upper
+body starts spinning now." The cause is a sentence I wrote one milestone earlier
+and was wrong about.
+
+`applyPose` MULTIPLIES its offsets onto the bones, and the note defending that
+said "the mixer rewrites every bone each frame, so the offsets cannot
+accumulate". The mixer rewrites the bones THE CLIP KEYS. An idle animation keys
+the arms and the spine's sway; it does not key the knees, and depending on the
+clip it may key neither the abdomen nor the neck. Every unkeyed bone therefore
+kept last frame's rotation and had this frame's multiplied onto it, sixty times
+a second — which is a quaternion compounded sixty times a second, and looks
+exactly like what was reported.
+
+`Actor.clearStrokePose` restores the saved rotations BEFORE the mixer runs, and
+that ordering is what makes it correct rather than merely better: the mixer then
+overwrites what it owns with fresh values, everything else is back where the
+stroke found it, and the pose starts from a clean skeleton either way.
+
+THE GUARD TOOK THREE ATTEMPTS AND THE THIRD ONE TAUGHT ME SOMETHING.
+`tools/soak/posedrift.mjs` watches the bones across several strokes, because no
+screenshot can catch this: a single frame of a body rotating through its third
+revolution is just a body at some angle, and the fault lives in the derivative.
+
+  - It first compared `rotation.x/y/z` and reported every stroke as bending a
+    joint 6.00 radians. Euler components WRAP: -3.0 and +3.0 are a tenth of a
+    turn apart and differ by 6.0 as numbers. Quaternion angle instead.
+  - It then failed on a body that had not settled: the "resting pose" was
+    captured immediately after the approach walk, mid-blend out of a run, so
+    every comparison carried the walk in it.
+  - And it failed once on `UpperArmL` while a slime was attacking the character
+    — a bent arm for reasons that have nothing to do with a stroke. It samples
+    the settle repeatedly now, takes the closest, and says INCONCLUSIVE if the
+    body never reaches idle.
+
+THEN I PUT THE BUG BACK, and found the check I had been relying on does not
+catch it. The angle between two orientations SATURATES AT PI — one more
+revolution brings two rotations back together — so a freely spinning bone reads
+as a number bouncing between 0 and 3.14 rather than as a growing one. The
+"has it come back" residue test caught all three kinds; the "how far has it
+gone" drift test caught two. Both are kept and the reason is written down,
+because the instinct to measure the magnitude of a drift is exactly the wrong
+one here.
+
+Suite 56/56.

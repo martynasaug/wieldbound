@@ -657,6 +657,9 @@ export class Actor {
   private toolObject: THREE.Object3D | null = null;
   private toolKind: GatherPoseKind | null = null;
   private toolToken = 0;
+  /** Bone rotations as the mixer left them, before the stroke was layered on —
+   *  see `clearStrokePose`. */
+  private readonly posed = new Map<THREE.Object3D, THREE.Quaternion>();
   /** Whether a gather is in progress at all, tool or not — see showGatherTool. */
   private gathering = false;
   /** While set, a one-shot (attack/hit) owns the pose and update() will not override it. */
@@ -2107,6 +2110,32 @@ export class Actor {
    * Ten per cent at each end is enough to read as a body starting and stopping
    * rather than a pose being switched.
    */
+  /**
+   * Undoes last frame's stroke before the mixer runs.
+   *
+   * THE OFFSETS ACCUMULATE WITHOUT THIS, and the note that used to sit on
+   * `applyPose` — "the mixer rewrites every bone each frame, so the offsets
+   * cannot accumulate" — was wrong in the one way that matters. The mixer
+   * rewrites the bones the CLIP KEYS. An idle animation keys the arms and the
+   * spine's sway; it does not key the knees, and depending on the clip it may
+   * not key the abdomen or the neck either. Every unkeyed bone therefore kept
+   * last frame's rotation and had this frame's multiplied onto it, sixty times
+   * a second — reported as the whole upper body spinning the moment gathering
+   * started, which is exactly what a quaternion multiplied by itself sixty
+   * times a second does.
+   *
+   * Restoring BEFORE the mixer rather than after is what makes this correct
+   * rather than merely better: the mixer then overwrites the bones it owns with
+   * fresh values, the ones it does not own are back at the pose they had before
+   * the stroke touched them, and `applyStroke` starts from a clean skeleton
+   * either way.
+   */
+  private clearStrokePose(): void {
+    if (this.posed.size === 0) return;
+    for (const [bone, q] of this.posed) bone.quaternion.copy(q);
+    this.posed.clear();
+  }
+
   private applyStroke(): void {
     const s = this.stroke;
     if (!s) return;
@@ -2115,8 +2144,15 @@ export class Actor {
       this.stroke = null;
       return;
     }
-    const weight = t < 0.1 ? t / 0.1 : t > 0.9 ? (1 - t) / 0.1 : 1;
-    applyPose(this.bones, strokePose(s.kind, t), weight);
+    // The envelope lives in `strokePose` now, so the weight here is 1: the
+    // fade in and out is part of the motion rather than something applied to
+    // it. Kept as an argument because `applyPose` is the general operation.
+    const pose = strokePose(s.kind, t);
+    for (const name in pose) {
+      const bone = this.bones.get(name);
+      if (bone && !this.posed.has(bone)) this.posed.set(bone, bone.quaternion.clone());
+    }
+    applyPose(this.bones, pose, 1);
     // The bones moved after the mixer wrote them, so anything downstream that
     // reads a world matrix this frame — the held tool, the gear riding the
     // arms — has to be told.
@@ -2400,6 +2436,9 @@ export class Actor {
     if (this.currentAnim === "run") {
       this.actions.get("run")?.setEffectiveTimeScale(this.runTimeScale * this.leapMultiplier);
     }
+    // Before the mixer, so an unkeyed bone starts this frame where the clip
+    // left it rather than where the last stroke bent it. See clearStrokePose.
+    this.clearStrokePose();
     this.mixer?.update(dtSeconds);
     // AFTER THE MIXER AND BEFORE ANYTHING READS A BONE. The stroke is layered
     // on the clip's own pose, so it has to be written once the mixer has
