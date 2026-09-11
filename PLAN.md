@@ -24652,3 +24652,55 @@ bone, gold trim is gold — and the palette still decides the blade.
 
 Not yet remade: daggers, bows, staves, wands, shields, and all the armour. The
 old procedural `glaive`, `flail` and `fangblade` builders are now unused.
+
+**Phase 70 M70.279 — every weapon held the way it is used, and the rest of the
+held catalogue remade.** Reported: "some weapons like axes are held the opposite
+way (blade facing character), staves are held on the bottom for some reason,
+some wands are held upside down, some bows are held at the bottom too … Look
+through every model and make it properly, logically."
+
+ONE CAUSE UNDER ALL FOUR. `fitToGrip` knew a weapon's length and nothing else:
+longest axis down the grip, butt in the fist, whichever side happened to face
+out. Right for a sword; wrong for a staff held a third of the way up, a bow
+held at its middle and stood across the aim, an axe whose bit could land on
+either side, and the Wizard staff mesh (still harvested off its rig for four
+items) that hung orb-down.
+
+MEASURED FIRST. `tools/soak/grips.mjs [out] [id|family …]` equips each weapon and
+off-hand on the real character, reads where the fist sits along it (0 butt, 1
+tip), and shoots front and side views onto one contact sheet (`GRIPS_BIG=1` for
+full-size tiles — small ones show which end is up, not which way a face points).
+Every generated edge pointed up and back at its owner; every staff and polearm
+was held at 0.09–0.12.
+
+HOW IT IS HELD is now data. `ItemArt` gains `grip` (where the fist closes),
+`flip` (end for end), `roll` (degrees about the length; generated models default
+to 180 so the edge faces out), and two lays beside "along" and "flat": "cross"
+stands a bow across the grip, held at its handle; "upright" stands an off-hand
+quiver or focus on end in the left fist. Shields ("flat") are strapped OUTSIDE
+the fist now — placed like swords, the board cut through the left hand and the
+knuckles showed on its face — with a stand-off that ignores the shield's own
+scale so a buckler clears as far as a bulwark. Staves hold at 0.36, the boar
+spear 0.3, the Moon Glaive 0.35, the scythe 0.45.
+
+THE REST OF THE HELD CATALOGUE, remade in the kit so the convention is authored
+rather than guessed at: six daggers (a notched dirk, a ring-pommelled throwing
+knife, a curved bone fang, a wavy black kris, a snake-headed Adderfang, a
+venom-vial stiletto), seven bows (a plain arc, horn-nocked hunter's bow, recurve,
+a frost bow bristling ice, a tall yew longbow with pale sapwood, a winged gold
+bow, a barbed black one), six staves (knobbed, gnarled oak, a pilgrim's crook
+with a bone charm, a vine-wound Thornstave in leaf, a gold-banded Runewood with a
+held crystal, a Starcaller whose star hangs inside a ring), five wands (birch,
+icicle cluster, ember in an iron claw, a crystal floating in a ring, forked
+lightning), and ten off-hands (planks and bands, a bossed round shield, a kite
+with its cross, a spiked tower Bulwark, faceted Stillward Glass, a leaf-shaped
+Aegis, a star-bossed buckler, a ringed focus, a quiver full of arrows, a tied
+bundle of kindling). No held item in the catalogue is a downloaded model now.
+
+WHAT THE PICTURES CAUGHT: every shield's boss, bands and cross faced the wearer
+(`flip`); the fist poked through every board; the focus hung orb-down by the
+ankle on the first guess at which way is up in the left hand; the Oaken Stave's
+shaft wiggled like a noodle.
+
+Still open: the `rig:` Wizard staff flip and the `crystalstave` and `quiver`
+builders are unused by the catalogue now; the armour remake.

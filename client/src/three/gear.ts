@@ -1157,8 +1157,21 @@ async function makeHeldItem(
     // The fitted clone depends on the donor model and the lay, and on nothing
     // else — not on rarity, not on which hand holds it.
     const lay = base.art.lay ?? "along";
-    const fitted = await cachedHeldGeometry(`fit:${base.art.model}|${lay}`, () =>
-      fitToGrip(donor.geometry, grip.box, lay),
+    // HOW IT IS HELD, not only how long it is. See `HoldOptions`. A generated
+    // model is authored with its edge on +X, and in this hand +X faces the
+    // wielder — measured by `tools/soak/grips.mjs`, where every axe bit pointed
+    // up and back at its owner — so generated models are turned half round by
+    // default and the edge faces out.
+    const generated = base.art.model.endsWith(".glb");
+    const hold: HoldOptions = {
+      grip: base.art.grip,
+      flip: base.art.flip ?? false,
+      roll: base.art.roll ?? (generated ? 180 : 0),
+      clearance: SHIELD_CLEARANCE / (base.art.scale ?? 1),
+    };
+    const fitted = await cachedHeldGeometry(
+      `fit:${base.art.model}|${lay}|${hold.grip ?? "-"}|${hold.flip}|${hold.roll}|${hold.clearance}`,
+      () => fitToGrip(donor.geometry, grip.box, lay, hold),
     );
     mesh = new THREE.Mesh(fitted, repaint(donor.material, palette, rarity));
   }
@@ -1279,10 +1292,51 @@ function firstMesh(root: THREE.Object3D): THREE.Mesh | null {
  * SHORTEST axis does, so the face turns outward instead of lying edge-on like
  * a plank.
  */
+/**
+ * How an item sits in the hand, beyond its length.
+ *
+ * Reported: axes held with the blade facing the character, staves held at the
+ * bottom, wands upside down, bows held by one end. `fitToGrip` knew a weapon's
+ * longest axis and nothing else, so every item was held at its butt with an
+ * arbitrary side facing out. These say what it is:
+ *
+ *   grip   where along the length the hand closes, 0 = butt, 1 = tip. Left
+ *          undefined an item is held at its butt, which is right for anything
+ *          with a handle; a staff or polearm is held a third of the way up
+ *   flip   the model was authored with its head at the bottom
+ *   roll   degrees around the length, to put an edge, a beak or a face outward
+ */
+export interface HoldOptions {
+  grip?: number;
+  flip?: boolean;
+  roll?: number;
+  /**
+   * A shield's stand-off from the fist, in donor lengths BEFORE the item's own
+   * `scale` — so the caller divides by it, and a small buckler clears the
+   * knuckles by as much as a tower shield does.
+   */
+  clearance?: number;
+}
+
+/**
+ * Where the fist closes along the donor sword, as a fraction of its length —
+ * measured, not chosen: `tools/soak/grips.mjs` reads 0.12 for every
+ * handle-held weapon fitted the old way.
+ */
+const HAND_ALONG_DONOR = 0.12;
+
+/**
+ * How far a shield's back stands off the fist, in donor lengths as finally
+ * drawn. Tuned on `grips.mjs` photos: at 0.1 a thumb still showed through the
+ * middle of the kite shield's cross.
+ */
+const SHIELD_CLEARANCE = 0.13;
+
 function fitToGrip(
   source: THREE.BufferGeometry,
   box: THREE.Box3,
-  lay: "along" | "flat" = "along",
+  lay: "along" | "flat" | "cross" | "upright" = "along",
+  hold: HoldOptions = {},
 ): THREE.BufferGeometry {
   const geo = source.clone();
   geo.computeBoundingBox();
@@ -1290,11 +1344,23 @@ function fitToGrip(
   const size = [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z];
 
   // The axis that should end up pointing down the grip.
-  const pick = lay === "along"
-    ? size.indexOf(Math.max(...size))
-    : size.indexOf(Math.min(...size));
+  const pick = lay === "flat"
+    ? size.indexOf(Math.min(...size))
+    : size.indexOf(Math.max(...size));
   if (pick === 0) geo.rotateY(Math.PI / 2);
   else if (pick === 1) geo.rotateX(-Math.PI / 2);
+  if (hold.flip) geo.rotateX(Math.PI);
+  if (hold.roll) geo.rotateZ((hold.roll * Math.PI) / 180);
+  // A BOW STANDS ACROSS THE AIM. Down the grip it pointed forward like a lance,
+  // which no string can be drawn on; turned onto the grip's cross axis it stands
+  // upright in the fist, belly (+X as authored) out and string towards the archer.
+  if (lay === "cross") geo.rotateY(-Math.PI / 2);
+  // A QUIVER OR A FOCUS STANDS UP IN THE OFF HAND. Down the left grip they
+  // stuck out of the fist level with the ground, a quiver like a plank and a
+  // focus aimed at the shin. The left grip's +Y is up — the same axis a shield
+  // stands along — so the length goes there, head up. (Measured the hard way:
+  // -Y hung the focus orb-down by the ankle.)
+  if (lay === "upright") geo.rotateX(-Math.PI / 2);
 
   // SCALE BY THE LARGEST EXTENT, ALWAYS — orientation and size are separate
   // questions and conflating them was a real bug. Scaling by whatever ends up
@@ -1310,14 +1376,52 @@ function fitToGrip(
 
   geo.computeBoundingBox();
   const after = geo.boundingBox!;
-  // Centred across the grip, with the butt of the handle at the donor's own
-  // start, so every weapon is held at the same point in the fist however long
-  // it is.
-  geo.translate(
-    -(after.min.x + after.max.x) / 2,
-    -(after.min.y + after.max.y) / 2,
-    box.min.z - after.min.z,
-  );
+  const hand = box.min.z + HAND_ALONG_DONOR * target;
+  if (lay === "upright") {
+    // Butt at the smallest Y, which is down; `grip` of the way up it in the fist.
+    const g = hold.grip ?? 0.5;
+    geo.translate(
+      -(after.min.x + after.max.x) / 2,
+      -(after.min.y + g * (after.max.y - after.min.y)),
+      hand - (after.min.z + after.max.z) / 2,
+    );
+  } else if (lay === "flat") {
+    // A SHIELD IS STRAPPED OUTSIDE THE FIST, NOT THROUGH IT. Placed at the
+    // donor's butt like a sword, the board cut through the middle of the left
+    // hand and the knuckles showed on its face. The face is -Z here, so the
+    // board goes that way, its back clear of the fist.
+    geo.translate(
+      -(after.min.x + after.max.x) / 2,
+      -(after.min.y + after.max.y) / 2,
+      hand - (hold.clearance ?? SHIELD_CLEARANCE) * target - after.max.z,
+    );
+  } else if (lay === "cross") {
+    // Centred on the fist along its length: a bow is held at its middle. Its
+    // depth — string to back — now runs down the grip, and `grip` says where on
+    // that the fist closes; a bow's handle is on its back, not in the air
+    // between the string and the wood.
+    geo.translate(
+      -(after.min.x + after.max.x) / 2,
+      -(after.min.y + after.max.y) / 2,
+      hand - (after.min.z + (hold.grip ?? 0.5) * (after.max.z - after.min.z)),
+    );
+  } else if (hold.grip !== undefined) {
+    // The point `grip` of the way up goes where the donor's fist is.
+    geo.translate(
+      -(after.min.x + after.max.x) / 2,
+      -(after.min.y + after.max.y) / 2,
+      hand - (after.min.z + hold.grip * (after.max.z - after.min.z)),
+    );
+  } else {
+    // Centred across the grip, with the butt of the handle at the donor's own
+    // start, so every weapon is held at the same point in the fist however long
+    // it is.
+    geo.translate(
+      -(after.min.x + after.max.x) / 2,
+      -(after.min.y + after.max.y) / 2,
+      box.min.z - after.min.z,
+    );
+  }
   return geo;
 }
 

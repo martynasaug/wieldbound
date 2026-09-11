@@ -165,11 +165,12 @@ export const PALETTES: Record<PaletteId, PaletteDef> = {
  *
  * `model` is a path under /models with no extension for FBX, exactly as
  * `loadModel` takes it. `build` names a procedural shape instead, for the two
- * silhouettes no pack in the project ships. Everything else is optional tuning,
- * and the grip itself is NOT here on purpose: it comes from the character rig
- * that authored the weapon socket, and every model is fitted into that space by
- * its own bounding box (see `gear.ts`). A per-item grip offset would be a
- * constant that drifts the first time a model is swapped.
+ * silhouettes no pack in the project ships. Everything else is optional tuning.
+ * The SOCKET is still not here: it comes from the character rig that authored
+ * the weapon bone, and every model is fitted into that space by its own bounding
+ * box (see `gear.ts`). What is here, since M70.279, is how the item is HELD in
+ * that socket — where along it the fist closes, which way round it faces — as
+ * fractions and turns, never offsets, so they survive a model being swapped.
  */
 export interface ItemArt {
   model?: string;
@@ -193,9 +194,26 @@ export interface ItemArt {
    * which is what a sword, an axe and a staff all want. "flat" points its
    * SHORTEST axis down the grip instead, turning the face outward — which is
    * what a shield wants, and the one thing a bounding box cannot work out on
-   * its own.
+   * its own. "cross" stands the item across the grip, centred on the fist —
+   * a bow, which is held at its middle and upright, not pointed like a lance.
+   * "upright" stands an OFF-HAND item on end in the fist, head up — a quiver,
+   * a focus — where "along" would point it level out of the left hand.
    */
-  lay?: "along" | "flat";
+  lay?: "along" | "flat" | "cross" | "upright";
+  /**
+   * HOW IT IS HELD — see `HoldOptions` in `client/src/three/gear.ts`. Reported:
+   * axes held with the blade towards the character, staves held at the bottom,
+   * wands upside down, bows held by one end. The fitting knew a weapon's length
+   * and nothing else.
+   *
+   * `grip` is where along the length the fist closes, 0 = butt, 1 = tip; left out,
+   * the item is held at its butt, as anything with a handle is. `flip` turns a
+   * model authored head-down end for end. `roll` turns it about its length, in
+   * degrees; generated models default to 180 so the edge faces out.
+   */
+  grip?: number;
+  flip?: boolean;
+  roll?: number;
 }
 
 /**
@@ -278,6 +296,24 @@ export function baseGuard(base: ItemBase): number {
 
 // Shorthand, so a row reads as the item it describes rather than as a wall of
 // field names. Every catalogue row below is one call.
+/**
+ * A bow stands across the aim and is held at its handle: the handle sits on the
+ * bow's back, four fifths of the way from the string. Not rolled — its back is
+ * authored facing out already. See `ItemArt.lay`.
+ */
+const BOW_HOLD = { lay: "cross", roll: 0, grip: 0.8 } as const;
+
+/**
+ * A shield lies flat on the forearm with its face — boss, bands, device —
+ * turned out. Generated shields put that face on -Y, which the fitting turned
+ * towards the wearer: every boss and cross was on the inside. `flip` turns it
+ * out, and the default half roll then stands it back upright.
+ */
+const SHIELD_HOLD = { lay: "flat", flip: true } as const;
+
+/** Staves are held a third of the way up, not by the ferrule. */
+const STAFF_HOLD = { grip: 0.36 } as const;
+
 function w(
   id: string, name: string, band: ItemBand, weaponType: WeaponType,
   art: ItemArt, flavour: string,
@@ -317,17 +353,17 @@ const WEAPON_BASES: ItemBase[] = [
   // Ranger by family, and the shortest reach in the game. Fast enough that the
   // per-item speed tuning matters more here than anywhere else.
   w("dirk", "Notched Dirk", 1, "dagger",
-    { model: "weapons/Dagger", palette: "iron" },
+    { model: "items/dirk.glb", palette: "iron" },
     "Someone's first knife, and someone else's last."),
   w("thiefknife", "Thief's Knife", 2, "dagger",
-    { model: "weapons/Dagger_2", palette: "steel", scale: 0.92 },
+    { model: "items/thiefknife.glb", palette: "steel", scale: 0.92 },
     "Balanced for the throw it will never be used for.",
     { mods: { speed: 0.9 } }),
   w("fangtooth", "Fangtooth", 3, "dagger",
-    { model: "weapons/Dagger_2", palette: "bone" },
+    { model: "items/fangtooth.glb", palette: "bone" },
     "Ground down from something that bit first."),
   w("nightedge", "Nightedge", 4, "dagger",
-    { model: "weapons/Dagger", palette: "obsidian" },
+    { model: "items/nightedge.glb", palette: "obsidian" },
     "The edge is hard to see. That is most of the point.",
     { mods: { damage: 1.12 } }),
   // The early rung of the nature ladder. Venomkiss was the ONLY thing in the
@@ -335,10 +371,10 @@ const WEAPON_BASES: ItemBase[] = [
   // folds to nature — the orc brute, at band 3 — could not be answered with a
   // weapon until two rings past it. See the note above `PALETTE_SCHOOL`.
   w("adderfang", "Adderfang", 2, "dagger",
-    { model: "weapons/Dagger", palette: "verdant" },
+    { model: "items/adderfang.glb", palette: "verdant" },
     "Kept in its sheath for reasons that have nothing to do with the edge."),
   w("venomkiss", "Venomkiss", 5, "dagger",
-    { model: "weapons/Dagger_2", palette: "verdant" },
+    { model: "items/venomkiss.glb", palette: "verdant" },
     "The groove down the blade is not decorative.",
     { mods: { speed: 0.88, damage: 1.1 } }),
 
@@ -359,7 +395,7 @@ const WEAPON_BASES: ItemBase[] = [
     "Heavier at the tip than it looks, and quicker than it has any right to be.",
     { mods: { speed: 0.88, damage: 0.95 } }),
   w("boarspear", "Boar Spear", 2, "sword",
-    { model: "items/boarspear.glb", palette: "iron", scale: 1.34 },
+    { model: "items/boarspear.glb", palette: "iron", scale: 1.34, grip: 0.3 },
     "Made for something that charges. It does not much care what.",
     { mods: { range: 1.55, speed: 1.15, damage: 1.05 }, twoHanded: true }),
   w("longsword", "Longsword", 3, "sword",
@@ -424,11 +460,11 @@ const WEAPON_BASES: ItemBase[] = [
   // this is the other half of that family, an edge out at the end with a hook
   // behind it.
   w("moonglaive", "Moon Glaive", 5, "axe",
-    { model: "items/moonglaive.glb", palette: "silver", scale: 1.3 },
+    { model: "items/moonglaive.glb", palette: "silver", scale: 1.3, grip: 0.35 },
     "Reach enough that the first thing most people learn about it is the sound.",
     { mods: { range: 1.35, speed: 1.2, damage: 1.3 }, twoHanded: true }),
   w("reaperscythe", "Reaper's Scythe", 5, "axe",
-    { model: "items/reaperscythe.glb", palette: "obsidian", scale: 1.2 },
+    { model: "items/reaperscythe.glb", palette: "obsidian", scale: 1.2, grip: 0.45 },
     "A farm tool that stopped pretending.",
     { mods: { range: 1.3, speed: 1.3, damage: 1.35 }, twoHanded: true }),
 
@@ -481,15 +517,15 @@ const WEAPON_BASES: ItemBase[] = [
   // ------------------------------------------------------------------- bows
   // All two-handed, which is a rule about hands rather than about balance.
   w("hunterbow", "Hunter's Bow", 1, "bow",
-    { model: "rig:Ranger/Ranger_Bow", palette: "wood" },
+    { model: "items/hunterbow.glb", palette: "wood", ...BOW_HOLD },
     "Drawn more often at deer than at anything that draws back.",
     { twoHanded: true }),
   w("shortbow", "Shortbow", 1, "bow",
-    { model: "weapons/Bow_Wooden", palette: "wood" },
+    { model: "items/shortbow.glb", palette: "wood", scale: 0.85, ...BOW_HOLD },
     "Quick to raise, short to reach.",
     { mods: { range: 0.85, speed: 0.85 }, twoHanded: true }),
   w("recurve", "Recurve Bow", 2, "bow",
-    { model: "weapons/Bow_Wooden2", palette: "wood" },
+    { model: "items/recurve.glb", palette: "wood", scale: 0.95, ...BOW_HOLD },
     "The curve stores what your arm cannot.",
     { twoHanded: true }),
   // The armabee is the earliest thing in the world that folds to frost and it
@@ -498,33 +534,33 @@ const WEAPON_BASES: ItemBase[] = [
   // lives on the wing and never touches the ground, so cold is what takes the
   // wing away and a shot is how you reach it.
   w("hoarstring", "Hoarstring", 2, "bow",
-    { model: "weapons/Bow_Wooden", palette: "frost" },
+    { model: "items/hoarstring.glb", palette: "frost", scale: 0.95, ...BOW_HOLD },
     "The nocks are rimed even indoors, and the string never quite warms.",
     { twoHanded: true }),
   w("yewlongbow", "Yew Longbow", 3, "bow",
-    { model: "weapons/Bow_Wooden", palette: "bone", scale: 1.15 },
+    { model: "items/yewlongbow.glb", palette: "bone", scale: 1.3, ...BOW_HOLD },
     "A slow draw and a long argument.",
     { mods: { range: 1.3, speed: 1.25, damage: 1.3 }, twoHanded: true }),
   w("gildedbow", "Gilded Bow", 4, "bow",
-    { model: "weapons/Bow_Golden", palette: "gold" },
+    { model: "items/gildedbow.glb", palette: "gold", ...BOW_HOLD },
     "A gift to someone who would have preferred a plainer one.",
     { twoHanded: true }),
   w("ruinstring", "Ruinstring", 5, "bow",
-    { model: "weapons/Bow_Evil", palette: "crimson" },
+    { model: "items/ruinstring.glb", palette: "crimson", scale: 1.05, ...BOW_HOLD },
     "The string hums a half-tone flat and never goes slack.",
     { mods: { range: 1.15, damage: 1.2 }, twoHanded: true }),
 
   // ----------------------------------------------------------------- staves
   w("apprenticestaff", "Apprentice's Staff", 1, "staff",
-    { model: "rig:Wizard/Wizard_Staff", palette: "wood" },
+    { model: "items/apprenticestaff.glb", palette: "wood", scale: 1.3, ...STAFF_HOLD },
     "Mostly for leaning on. Mostly.",
     { twoHanded: true }),
   w("oakenstave", "Oaken Stave", 2, "staff",
-    { model: "rig:Wizard/Wizard_Staff", palette: "bronze" },
+    { model: "items/oakenstave.glb", palette: "bronze", scale: 1.33, ...STAFF_HOLD },
     "Cut from something already struck by lightning once.",
     { twoHanded: true }),
   w("pilgrimstaff", "Pilgrim's Staff", 2, "staff",
-    { model: "Cleric_Staff", palette: "bone" },
+    { model: "items/pilgrimstaff.glb", palette: "bone", scale: 1.38, ...STAFF_HOLD },
     "Carried a long way before it was ever pointed at anything.",
     { twoHanded: true }),
   // THE STAFF GAP, and it was the worst of the three. A staff user IS a Mage —
@@ -533,35 +569,35 @@ const WEAPON_BASES: ItemBase[] = [
   // band 3 is where the orc brute stands and the catalogue answers a creature
   // in the ring it lives in wherever it can.
   w("thornstave", "Thornstave", 3, "staff",
-    { model: "Cleric_Staff", palette: "verdant" },
+    { model: "items/thornstave.glb", palette: "verdant", scale: 1.36, ...STAFF_HOLD },
     "Still putting out leaves, which the owner has stopped apologising for.",
     { mods: { damage: 1.08 }, twoHanded: true }),
   w("runewood", "Runewood Staff", 4, "staff",
-    { build: "crystalstave", palette: "arcane" },
+    { model: "items/runewood.glb", palette: "arcane", scale: 1.4, ...STAFF_HOLD },
     "The grain runs in shapes the tree did not grow.",
     { mods: { damage: 1.15 }, twoHanded: true }),
   w("starcaller", "Starcaller", 5, "staff",
-    { build: "crystalstave", palette: "frost", scale: 1.1 },
+    { model: "items/starcaller.glb", palette: "frost", scale: 1.55, ...STAFF_HOLD },
     "Cold light, and it answers before you finish asking.",
     { mods: { range: 1.15, damage: 1.25 }, twoHanded: true }),
 
   // ------------------------------------------------------------------ wands
   w("birchrod", "Birch Rod", 1, "wand",
-    { model: "rig:Wizard/Wizard_Staff", palette: "wood", scale: 0.5 },
+    { model: "items/birchrod.glb", palette: "wood", scale: 0.5 },
     "Short, light, and honest about what it is."),
   // And the wand at band 2. Frost, because the frost answer in the catalogue
   // sits at band 2 for the bow already (Hoarstring) and a caster reaching the
   // armabee ring should not have to pick up a bow to have one.
   w("iciclerod", "Icicle Rod", 2, "wand",
-    { model: "rig:Wizard/Wizard_Staff", palette: "frost", scale: 0.5 },
+    { model: "items/iciclerod.glb", palette: "frost", scale: 0.5 },
     "Beads of meltwater run down it indoors and never quite reach the grip.",
     { mods: { speed: 0.92 } }),
   w("emberwand", "Ember Wand", 3, "wand",
-    { model: "Cleric_Staff", palette: "crimson", scale: 0.52 },
+    { model: "items/emberwand.glb", palette: "crimson", scale: 0.52 },
     "Warm at the tip whether or not you are casting.",
     { mods: { speed: 0.9 } }),
   w("arcwand", "Arcwand", 4, "wand",
-    { build: "crystalstave", palette: "arcane", scale: 0.55 },
+    { model: "items/arcwand.glb", palette: "arcane", scale: 0.55 },
     "The crystal is not attached. It simply stays.",
     { mods: { speed: 0.85, damage: 1.1 } }),
   // The wand family had no band-5 entry at all, which made it the one family
@@ -569,7 +605,7 @@ const WEAPON_BASES: ItemBase[] = [
   // that is the gap being filled, and because the fastest weapon in the game is
   // the right shape for the school that hits and is gone.
   w("stormrod", "Stormrod", 5, "wand",
-    { build: "crystalstave", palette: "storm", scale: 0.58 },
+    { model: "items/stormrod.glb", palette: "storm", scale: 0.58 },
     "It hums between castings, which the apprentices are told is normal.",
     { mods: { speed: 0.8, damage: 1.15 } }),
 ];
@@ -586,30 +622,30 @@ const WEAPON_BASES: ItemBase[] = [
 const OFFHAND_BASES: ItemBase[] = [
   g("plankshield", "Plank Shield", "offhand", 1, null, "offhand-shield", "wood",
     "Boards, a strap, and optimism.",
-    { art: { model: "weapons/Shield_Round", palette: "wood", scale: 0.55, lay: "flat" } }),
+    { art: { model: "items/plankshield.glb", palette: "wood", scale: 0.55, ...SHIELD_HOLD } }),
   g("roundshield", "Round Shield", "offhand", 2, null, "offhand-shield", "steel",
     "Rimmed in iron, which is the half that matters.",
-    { art: { model: "weapons/Shield_Round_2", palette: "steel", scale: 0.55, lay: "flat" } }),
+    { art: { model: "items/roundshield.glb", palette: "steel", scale: 0.55, ...SHIELD_HOLD } }),
   g("kiteshield", "Kite Shield", "offhand", 3, null, "offhand-shield", "steel",
     "Long enough to cover the leg you keep forgetting about.",
-    { art: { model: "weapons/Shield_Heater", palette: "steel", scale: 0.55, lay: "flat" } }),
+    { art: { model: "items/kiteshield.glb", palette: "steel", scale: 0.6, ...SHIELD_HOLD } }),
   g("wardingfocus", "Warding Focus", "offhand", 3, null, "offhand-focus", "arcane",
     "Not a shield. It simply occupies the same argument.",
-    { art: { model: "weapons/Shield_Round_2", palette: "arcane", scale: 0.42, lay: "flat" }, guard: 1.4 }),
+    { art: { model: "items/wardingfocus.glb", palette: "arcane", scale: 0.42, lay: "upright", grip: 0.2 }, guard: 1.4 }),
   g("hunterquiver", "Hunter's Quiver", "offhand", 2, null, "offhand-quiver", "bone",
     "Twenty arrows and room for the ones you get back.",
-    { art: { build: "quiver", palette: "bone" }, power: 0.6, guard: 1.6 }),
+    { art: { model: "items/hunterquiver.glb", palette: "bone", scale: 0.55, lay: "upright", grip: 0.45 }, power: 0.6, guard: 1.6 }),
   g("bulwark", "Bulwark", "offhand", 4, null, "offhand-shield", "iron",
     "Heavy enough that standing still becomes a tactic.",
-    { art: { model: "weapons/Shield_Heater_2", palette: "iron", scale: 0.55, lay: "flat" }, power: 1.25, guard: 0.7,
+    { art: { model: "items/bulwark.glb", palette: "iron", scale: 0.65, ...SHIELD_HOLD }, power: 1.25, guard: 0.7,
       // The troll's trophy is the key to the troll's relic. See the relic block.
       teaches: "trollhide" }),
   g("stillwardglass", "Stillward Glass", "offhand", 5, null, "offhand-focus", "frost",
     "Whatever it is showing you, it is not this room.",
-    { art: { model: "weapons/Shield_Round_2", palette: "frost", scale: 0.42, lay: "flat" }, power: 1.25, guard: 0.6 }),
+    { art: { model: "items/stillwardglass.glb", palette: "frost", scale: 0.5, ...SHIELD_HOLD }, power: 1.25, guard: 0.6 }),
   g("verdantaegis", "Verdant Aegis", "offhand", 5, null, "offhand-shield", "gold",
     "The green stone in the boss is warm, and nobody will say why.",
-    { art: { model: "weapons/Shield_Celtic_Golden", palette: "gold", scale: 0.55, lay: "flat" } }),
+    { art: { model: "items/verdantaegis.glb", palette: "gold", scale: 0.6, ...SHIELD_HOLD } }),
 ];
 
 // --- Head -------------------------------------------------------------------
@@ -761,7 +797,7 @@ const KIT_BASES: ItemBase[] = [
     "Plain, cold, and slightly too large for whoever it was made for."),
   g("silverbuckler", "Silvered Buckler", "offhand", 4, null, "offhand-shield", "silver",
     "Small enough to be quick, bright enough to be seen.",
-    { art: { model: "weapons/Shield_Round_2", palette: "silver", scale: 0.5, lay: "flat" } }),
+    { art: { model: "items/silverbuckler.glb", palette: "silver", scale: 0.4, ...SHIELD_HOLD } }),
 
   // ------------------------------------------------------------------ gold
   g("gildedcrown", "Gilded Crown", "helm", 5, "circlet", "helm-circlet", "gold",
@@ -865,7 +901,7 @@ const KIT_BASES: ItemBase[] = [
     // Not 0.5: a band-1 off-hand at half power rounds to 1, and a stat of 1 is
     // a stat that cannot get worse — which makes Broken indistinguishable from
     // Honed on it, and the bottom of the ladder meaningless for that one item.
-    { art: { build: "quiver", palette: "wood" }, power: 0.9, guard: 1.4 }),
+    { art: { model: "items/woodoffhand.glb", palette: "wood", scale: 0.5, lay: "upright", grip: 0.45 }, power: 0.9, guard: 1.4 }),
 
   // --- Relics: the three things you cannot find, only make -------------------
   //

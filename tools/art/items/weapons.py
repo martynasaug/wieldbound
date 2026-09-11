@@ -399,8 +399,474 @@ MACES = {
     "thunderhead": ("Thunderhead", thunderhead),
 }
 
-RECIPES = {**SWORDS, **AXES, **MACES}
-FAMILIES = {"swords": SWORDS, "axes": AXES, "maces": MACES}
+# --- daggers --------------------------------------------------------------------------------
+# Handle about two fifths of the length: the game halves a dagger's size, so the
+# grip has to stay big enough to be seen in a fist.
+
+def dirk(m):
+    """A plain dirk with a notch worn into its edge, a short bar and a wooden grip."""
+    m.lathe([(0.0, 0.0), (0.035, 0.012), (0.04, 0.03), (0.024, 0.05)], "DarkSteel", sides=6)
+    m.lathe([(0.024, 0.05), (0.028, 0.12), (0.024, 0.2)], "Wood", sides=6)
+    m.box((0, 0, 0.21), (0.12, 0.05, 0.025), "DarkSteel")
+    m.blade([(0.22, 0.04, 0.04, 0.012, 0), (0.33, 0.04, 0.04, 0.012, 0), (0.35, 0.025, 0.04, 0.012, 0),
+             (0.38, 0.037, 0.037, 0.011, 0), (0.44, 0.03, 0.03, 0.01, 0)], (0, 0.52), "Steel")
+
+
+def thiefknife(m):
+    """A slim throwing knife: no guard, a bound grip, a ring for a pommel, a single keen edge."""
+    m.torus(V(0, 0, 0.02), V(0, 1, 0), 0.03, 0.009, "DarkSteel", segments=8)
+    m.wrap(0.045, 0.19, 0.02, "DarkBrown", "DarkSteel", bands=3)
+    m.blade([(0.19, 0.03, 0.012, 0.009, 0), (0.34, 0.03, 0.012, 0.008, 0.004), (0.43, 0.02, 0.01, 0.007, 0.004)],
+            (0.01, 0.52), "LightSteel", back_sharp=False)
+
+
+def fangtooth(m):
+    """A beast's fang for a blade, bone for a grip, cord wound round it."""
+    m.lathe([(0.0, 0.0), (0.03, 0.015), (0.026, 0.04)], "White", sides=6)
+    m.wrap(0.04, 0.19, 0.024, "White", "DarkBrown", bands=3)
+    stations = []
+    for i, z in enumerate((0.2, 0.28, 0.36, 0.44)):
+        u = i / 3
+        stations.append((z, 0.05 - u * 0.02, 0.025 - u * 0.008, 0.016 - u * 0.004, -0.06 * u * u))
+    m.blade(stations, (-0.09, 0.54), "White", back_sharp=False)
+
+
+def nightedge(m):
+    """A black wavy blade in the kris manner, and a guard swept back like wings."""
+    m.shard(V(0, 0, 0.04), V(0, 0, -1), 0.04, 0.03, "Black", sides=5)
+    m.lathe([(0.022, 0.04), (0.025, 0.12), (0.022, 0.19)], "Black", sides=6)
+    for sx in (-1, 1):
+        m.slab([(0, 0.18), (sx * 0.09, 0.14), (sx * 0.1, 0.17), (sx * 0.02, 0.21)], 0.03, "DarkSteel", chamfer=0.006)
+    stations = []
+    for i, z in enumerate((0.21, 0.27, 0.33, 0.39, 0.45)):
+        stations.append((z, 0.036 - i * 0.003, 0.036 - i * 0.003, 0.01, 0.018 * (1 if i % 2 else -1)))
+    m.blade(stations, (0.0, 0.56), "DarkSteel")
+
+
+def adderfang(m):
+    """A serpent's knife: the guard is a snake's open head, fangs bared, the blade its tongue."""
+    m.lathe([(0.0, 0.0), (0.03, 0.02), (0.024, 0.04)], "Green", sides=6)
+    m.wrap(0.04, 0.18, 0.023, "DarkBrown", "Green", bands=4)
+    m.lathe([(0.03, 0.18), (0.05, 0.2), (0.045, 0.24), (0.02, 0.26)], "DarkSteel", sides=6, squash=(1.3, 0.8))
+    for sx in (-1, 1):
+        m.shard(V(sx * 0.03, 0.0, 0.25), V(sx * 0.4, 0, 1), 0.06, 0.012, "White")
+        m.shard(V(sx * 0.04, -0.03, 0.22), V(0, -1, 0), 0.015, 0.01, "Red", sides=5)
+    stations = [(0.26, 0.03, 0.03, 0.01, 0), (0.33, 0.034, 0.034, 0.01, 0.02), (0.41, 0.03, 0.03, 0.009, -0.01)]
+    m.blade(stations, (0.012, 0.52), "Steel")
+
+
+def venomkiss(m):
+    """A stiletto with a vial of venom set in its guard, and a groove to carry it down the blade."""
+    m.lathe([(0.0, 0.0), (0.03, 0.015), (0.02, 0.035)], "Gold", sides=8)
+    m.lathe([(0.018, 0.035), (0.022, 0.12), (0.018, 0.19)], "Black", sides=8)
+    m.lathe([(0.03, 0.19), (0.05, 0.2), (0.05, 0.215), (0.03, 0.225)], "Gold", sides=8)
+    m.shard(V(0, -0.045, 0.207), V(0, -1, 0), 0.025, 0.02, "Green", sides=6)
+    m.shard(V(0, 0.045, 0.207), V(0, 1, 0), 0.025, 0.02, "Green", sides=6)
+    m.blade([(0.225, 0.018, 0.018, 0.012, 0), (0.4, 0.012, 0.012, 0.01, 0)], (0, 0.56), "LightSteel", fuller=0.6)
+
+
+DAGGERS = {
+    "dirk": ("Notched Dirk", dirk),
+    "thiefknife": ("Thief's Knife", thiefknife),
+    "fangtooth": ("Fangtooth", fangtooth),
+    "nightedge": ("Nightedge", nightedge),
+    "adderfang": ("Adderfang", adderfang),
+    "venomkiss": ("Venomkiss", venomkiss),
+}
+
+
+# --- bows ---------------------------------------------------------------------------------------
+# Limbs along Z with the grip at the middle, the back of the bow on +X (towards the
+# target) and the string on the archer's side. Held with `lay: "cross"`, centred.
+
+def bow_path(length, depth, recurve=0.0, steps=10):
+    """The curve of a braced bow: the grip forward, the limbs drawing back to the tips."""
+    pts = []
+    for i in range(steps + 1):
+        t = -1 + 2 * i / steps
+        x = depth * (1 - t * t)
+        if recurve:
+            x += recurve * max(0.0, abs(t) - 0.75) ** 2 * 16
+        pts.append(V(x, 0, (t + 1) * length / 2))
+    return pts
+
+
+def limbs(m, path, grip_r, tip_r, mat, sides=6):
+    n = len(path) - 1
+    radii = [tip_r + (grip_r - tip_r) * (1 - abs(-1 + 2 * i / n)) ** 0.7 for i in range(n + 1)]
+    m.tube(path, radii, mat, sides=sides)
+
+
+def string(m, path, mat="White"):
+    top, bottom = path[-1], path[0]
+    m.tube([bottom + V(-0.012, 0, 0.01), top + V(-0.012, 0, -0.01)], 0.004, mat, sides=4)
+
+
+def grip(m, z, r, mat="DarkBrown", band="DarkWood", x=0.0):
+    m.lathe([(r, z - 0.07), (r * 1.15, z - 0.05), (r * 1.15, z + 0.05), (r, z + 0.07)], mat, sides=6, centre=(x, 0))
+
+
+def shortbow(m):
+    """A short hunting bow: one plain arc of wood and a leather grip."""
+    path = bow_path(0.9, 0.12)
+    limbs(m, path, 0.024, 0.01, "Wood")
+    string(m, path)
+    grip(m, 0.45, 0.028, x=0.12)
+
+
+def hunterbow(m):
+    """A hunter's bow: a longer self bow, horn nocks at the tips, a thick bound grip."""
+    path = bow_path(1.1, 0.13)
+    limbs(m, path, 0.026, 0.011, "DarkWood")
+    string(m, path)
+    grip(m, 0.55, 0.031, x=0.13)
+    for p in (path[0], path[-1]):
+        m.shard(p, V(-0.3, 0, 1 if p.z > 0.5 else -1), 0.05, 0.014, "White")
+
+
+def recurve(m):
+    """A recurve: limbs that flick forward again at the tips, tipped in bone."""
+    path = bow_path(1.0, 0.1, recurve=0.07)
+    limbs(m, path, 0.026, 0.01, "DarkWood")
+    string(m, path)
+    grip(m, 0.5, 0.03, x=0.1)
+    for p in (path[0], path[-1]):
+        m.lathe([(0.013, p.z - 0.03), (0.016, p.z), (0.0, p.z + (0.04 if p.z > 0.5 else -0.04))], "White", sides=5, centre=(p.x, 0))
+
+
+def hoarstring(m):
+    """A bow grown over with frost: ice shards bristling back along both limbs."""
+    path = bow_path(1.0, 0.12)
+    limbs(m, path, 0.025, 0.011, "Wood")
+    string(m, path, "LightBlue")
+    grip(m, 0.5, 0.03, x=0.12)
+    for i in (2, 3, 4, 6, 7, 8):
+        p = path[i]
+        m.shard(p + V(0.01, 0, 0), V(1, 0, 0.6 if p.z > 0.5 else -0.6), 0.07, 0.018, "LightBlue")
+
+
+def yewlongbow(m):
+    """A yew longbow: taller than its archer, slim, pale sapwood on the back."""
+    path = bow_path(1.5, 0.11, steps=14)
+    limbs(m, path, 0.024, 0.009, "Wood")
+    back = [p + V(0.012, 0, 0) for p in path]
+    limbs(m, back, 0.014, 0.005, "White")
+    string(m, path)
+    grip(m, 0.75, 0.028, x=0.11)
+
+
+def gildedbow(m):
+    """A ceremonial bow: gold limbs that sweep into wings beside the grip, and curled tips."""
+    path = bow_path(1.0, 0.13, recurve=0.05)
+    limbs(m, path, 0.026, 0.011, "Gold")
+    string(m, path)
+    grip(m, 0.5, 0.032, mat="Red", x=0.13)
+    for sz in (1, -1):
+        z = 0.5 + sz * 0.09
+        m.slab([(0.13, z), (0.22, z + sz * 0.05), (0.2, z + sz * 0.13), (0.15, z + sz * 0.06)], 0.02, "Gold", chamfer=0.004)
+
+
+def ruinstring(m):
+    """A cruel black bow: barbs down both limbs and a red grip."""
+    path = bow_path(1.05, 0.13)
+    limbs(m, path, 0.027, 0.011, "Black")
+    string(m, path, "Red")
+    grip(m, 0.525, 0.032, mat="Red", x=0.13)
+    for i in (1, 2, 3, 7, 8, 9):
+        p = path[i]
+        m.shard(p, V(0.8, 0, 0.8 if p.z > 0.5 else -0.8), 0.08, 0.018, "Black")
+
+
+BOWS = {
+    "shortbow": ("Shortbow", shortbow),
+    "hunterbow": ("Hunter's Bow", hunterbow),
+    "recurve": ("Recurve Bow", recurve),
+    "hoarstring": ("Hoarstring", hoarstring),
+    "yewlongbow": ("Yew Longbow", yewlongbow),
+    "gildedbow": ("Gilded Bow", gildedbow),
+    "ruinstring": ("Ruinstring", ruinstring),
+}
+
+
+# --- staves ---------------------------------------------------------------------------------------
+# Butt at z = 0, head at the top. Held about a third of the way up (`grip`).
+
+def ferrule(m, r=0.028):
+    m.lathe([(0.0, -0.02), (r * 1.1, 0.0), (r, 0.05)], "DarkSteel", sides=6)
+
+
+def apprenticestaff(m):
+    """A plain quarterstaff with an iron ferrule and a turned knob at the head."""
+    ferrule(m)
+    m.lathe([(0.025, 0.05), (0.024, 1.3)], "Wood", sides=6)
+    m.lathe([(0.028, 1.3), (0.045, 1.34), (0.05, 1.39), (0.03, 1.44), (0.0, 1.46)], "DarkWood", sides=8)
+
+
+def oakenstave(m):
+    """A gnarled oak stave, twisting as it rises into a heavy burl."""
+    ferrule(m, 0.03)
+    path = [V(0.008 * math.sin(i * 0.9), 0.006 * math.cos(i * 0.7), 0.05 + i * 0.12) for i in range(11)]
+    m.tube(path, [0.03 - i * 0.001 for i in range(11)], "Wood", sides=6)
+    top = path[-1]
+    m.lathe([(0.03, top.z - 0.02), (0.07, top.z + 0.04), (0.075, top.z + 0.1), (0.04, top.z + 0.16), (0.0, top.z + 0.18)],
+            "DarkWood", sides=7, centre=(top.x, top.y))
+    for k in range(3):
+        a = k * 2.1
+        m.shard(V(top.x, top.y, top.z + 0.08), V(math.cos(a), math.sin(a), 0.5), 0.07, 0.02, "DarkWood")
+
+
+def pilgrimstaff(m):
+    """A pilgrim's staff: long and straight, a crook at the head, a bone charm tied beneath it."""
+    ferrule(m)
+    m.lathe([(0.024, 0.05), (0.023, 1.3)], "DarkWood", sides=6)
+    hook = [V(0, 0, 1.3), V(0, 0, 1.42), V(0.04, 0, 1.5), V(0.12, 0, 1.52), V(0.17, 0, 1.46), V(0.16, 0, 1.38)]
+    m.tube(hook, [0.023, 0.022, 0.021, 0.02, 0.019, 0.017], "DarkWood", sides=6)
+    m.lathe([(0.03, 1.24), (0.034, 1.27), (0.03, 1.3)], "White", sides=6)
+    m.tube([V(0.02, 0, 1.26), V(0.05, 0, 1.18)], 0.004, "DarkBrown", sides=4)
+    m.shard(V(0.05, 0, 1.18), V(0, 0, -1), 0.06, 0.02, "White", sides=5)
+
+
+def thornstave(m):
+    """A living staff: a vine-wound shaft bristling with thorns, still leafing at the head."""
+    ferrule(m)
+    m.lathe([(0.024, 0.05), (0.024, 1.3)], "Wood", sides=6)
+    vine = [V(0.03 * math.cos(i * 0.9), 0.03 * math.sin(i * 0.9), 0.3 + i * 0.08) for i in range(13)]
+    m.tube(vine, 0.009, "Green", sides=4)
+    for i in range(2, 12, 2):
+        p = vine[i]
+        m.shard(p, V(p.x, p.y, 0.3), 0.05, 0.01, "DarkWood")
+    for k in range(5):
+        a = k * 2 * math.pi / 5
+        m.shard(V(0, 0, 1.32), V(math.cos(a), math.sin(a), 1.2), 0.14, 0.03, "Green", sides=4, roll=a)
+
+
+def runewood(m):
+    """A dark staff banded with gold runes, splitting at the head into prongs that hold a crystal."""
+    ferrule(m)
+    m.lathe([(0.025, 0.05), (0.024, 1.25)], "DarkWood", sides=8)
+    for z in (0.5, 0.7, 0.9, 1.1):
+        m.lathe([(0.029, z - 0.012), (0.031, z), (0.029, z + 0.012)], "Gold", sides=8)
+    for k in range(3):
+        a = k * 2 * math.pi / 3
+        d = V(math.cos(a), math.sin(a), 0)
+        m.tube([V(0, 0, 1.24), V(0, 0, 1.24) + d * 0.05 + V(0, 0, 0.1), V(0, 0, 1.24) + d * 0.035 + V(0, 0, 0.24)], 0.012, "Gold", sides=4)
+    m.shard(V(0, 0, 1.3), V(0, 0, 1), 0.2, 0.045, "Red", sides=6)
+    m.shard(V(0, 0, 1.32), V(0, 0, -1), 0.06, 0.045, "Red", sides=6)
+
+
+def starcaller(m):
+    """A tall staff crowned with a ring, and in the ring a star that hangs without touching it."""
+    ferrule(m)
+    m.lathe([(0.024, 0.05), (0.022, 1.4)], "DarkWood", sides=8)
+    m.lathe([(0.03, 1.38), (0.04, 1.42), (0.03, 1.46)], "LightSteel", sides=8)
+    m.torus(V(0, 0, 1.58), V(0, 1, 0), 0.12, 0.013, "LightSteel", segments=12)
+    m.tube([V(0, 0, 1.46), V(0, 0, 1.47)], 0.01, "LightSteel", sides=4)
+    for k in range(5):
+        a = k * 2 * math.pi / 5 + math.pi / 2
+        m.shard(V(0, 0, 1.58), V(math.cos(a), 0, math.sin(a)), 0.07, 0.022, "LightBlue", sides=4)
+
+
+STAVES = {
+    "apprenticestaff": ("Apprentice's Staff", apprenticestaff),
+    "oakenstave": ("Oaken Stave", oakenstave),
+    "pilgrimstaff": ("Pilgrim's Staff", pilgrimstaff),
+    "thornstave": ("Thornstave", thornstave),
+    "runewood": ("Runewood Staff", runewood),
+    "starcaller": ("Starcaller", starcaller),
+}
+
+
+# --- wands ------------------------------------------------------------------------------------------
+# Butt at z = 0, business end at the top; held at the butt like anything with a handle.
+
+def birchrod(m):
+    """A birch rod: pale bark with dark rings, a knot at the tip."""
+    m.lathe([(0.0, 0.0), (0.02, 0.01), (0.022, 0.12), (0.016, 0.5), (0.012, 0.58)], "White", sides=6)
+    for z in (0.2, 0.31, 0.44):
+        m.lathe([(0.019, z - 0.006), (0.02, z), (0.019, z + 0.006)], "DarkWood", sides=6)
+    m.lathe([(0.014, 0.58), (0.024, 0.61), (0.0, 0.65)], "Wood", sides=6)
+
+
+def iciclerod(m):
+    """A rod that ends in a cluster of icicles."""
+    m.wrap(0.0, 0.14, 0.02, "DarkBrown", "LightBlue", bands=2)
+    m.lathe([(0.018, 0.14), (0.014, 0.5)], "LightSteel", sides=6)
+    m.shard(V(0, 0, 0.5), V(0, 0, 1), 0.14, 0.03, "LightBlue", sides=5)
+    for k in range(4):
+        a = k * math.pi / 2 + 0.4
+        m.shard(V(0, 0, 0.52), V(math.cos(a), math.sin(a), 1.8), 0.08, 0.018, "LightBlue", sides=4)
+
+
+def emberwand(m):
+    """A charred rod with an ember held in an iron claw."""
+    m.lathe([(0.0, 0.0), (0.022, 0.01), (0.02, 0.14), (0.015, 0.46)], "Black", sides=6)
+    m.lathe([(0.018, 0.46), (0.03, 0.48), (0.02, 0.5)], "DarkSteel", sides=6)
+    for k in range(3):
+        a = k * 2 * math.pi / 3
+        m.tube([V(0, 0, 0.49), V(math.cos(a) * 0.04, math.sin(a) * 0.04, 0.55), V(math.cos(a) * 0.02, math.sin(a) * 0.02, 0.61)], 0.007, "DarkSteel", sides=4)
+    m.lathe([(0.0, 0.52), (0.03, 0.55), (0.03, 0.58), (0.0, 0.61)], "Red", sides=6)
+
+
+def arcwand(m):
+    """A rod whose crystal floats inside a gold ring above the tip."""
+    m.wrap(0.0, 0.14, 0.02, "DarkBrown", "Gold", bands=2)
+    m.lathe([(0.018, 0.14), (0.014, 0.46)], "DarkWood", sides=6)
+    m.lathe([(0.02, 0.46), (0.028, 0.48), (0.018, 0.5)], "Gold", sides=6)
+    m.torus(V(0, 0, 0.6), V(0, 1, 0), 0.06, 0.009, "Gold", segments=10)
+    m.shard(V(0, 0, 0.6), V(0, 0, 1), 0.05, 0.025, "Red", sides=6)
+    m.shard(V(0, 0, 0.6), V(0, 0, -1), 0.05, 0.025, "Red", sides=6)
+
+
+def stormrod(m):
+    """A dark rod forking at the tip into two lightning prongs."""
+    m.wrap(0.0, 0.14, 0.02, "DarkBrown", "LightBlue", bands=2)
+    m.lathe([(0.018, 0.14), (0.015, 0.46)], "DarkSteel", sides=6)
+    for sx in (-1, 1):
+        bolt = [V(0, 0, 0.46), V(sx * 0.04, 0, 0.51), V(sx * 0.02, 0, 0.54), V(sx * 0.06, 0, 0.6), V(sx * 0.04, 0, 0.66)]
+        m.tube(bolt, [0.012, 0.011, 0.01, 0.008, 0.001], "Gold", sides=4)
+
+
+WANDS = {
+    "birchrod": ("Birch Rod", birchrod),
+    "iciclerod": ("Icicle Rod", iciclerod),
+    "emberwand": ("Ember Wand", emberwand),
+    "arcwand": ("Arcwand", arcwand),
+    "stormrod": ("Stormrod", stormrod),
+}
+
+
+# --- off-hands -------------------------------------------------------------------------------------
+# Shields face -Y, flat in the XZ plane, and are held with `lay: "flat"`.
+
+def circle(cx, cz, r, n=12, start=0.0):
+    return [(cx + math.cos(start + 2 * math.pi * i / n) * r, cz + math.sin(start + 2 * math.pi * i / n) * r) for i in range(n)]
+
+
+def rim(m, points, thickness, mat, width=0.03, y=0.0):
+    """A raised band round a shield's edge, following its outline."""
+    n = len(points)
+    for i in range(n):
+        a, b = V(points[i][0], y, points[i][1]), V(points[(i + 1) % n][0], y, points[(i + 1) % n][1])
+        m.tube([a, b], width * 0.5, mat, sides=4)
+
+
+def plankshield(m):
+    """Boards, a strap and optimism: five planks, two iron bands across them."""
+    for i in range(5):
+        x = -0.2 + i * 0.1
+        top = 0.55 + 0.04 * (1 - abs(i - 2) / 2)
+        m.box((x, 0, (0.0 + top) / 2), (0.095, 0.035, top), "Wood" if i % 2 else "DarkWood")
+    for z in (0.14, 0.42):
+        m.box((0, -0.025, z), (0.52, 0.015, 0.045), "DarkSteel")
+
+
+def roundshield(m):
+    """A round shield: a wooden board, an iron rim and a domed boss."""
+    ring = circle(0, 0, 0.28, n=14)
+    m.slab(ring, 0.035, "Wood", chamfer=0.006)
+    rim(m, ring, 0.035, "DarkSteel", width=0.035)
+    m.lathe([(0.07, 0.02), (0.065, -0.02), (0.04, -0.05), (0.0, -0.06)], "Steel", sides=8, axis="x")
+    m.lathe([(0.0, -0.06), (0.05, -0.04), (0.07, -0.02)], "Steel", sides=8, axis="x", cap=False)
+
+
+def kiteshield(m):
+    """A kite shield: long enough to cover the leg, a raised rim and a cross on its face."""
+    outline = [(-0.22, 0.5), (0.22, 0.5), (0.24, 0.3), (0.16, 0.05), (0.0, -0.3), (-0.16, 0.05), (-0.24, 0.3)]
+    m.slab(outline, 0.035, "Steel", chamfer=0.01)
+    rim(m, outline, 0.035, "DarkSteel", width=0.03)
+    m.box((0, -0.03, 0.22), (0.05, 0.02, 0.44), "Red")
+    m.box((0, -0.03, 0.34), (0.3, 0.02, 0.05), "Red")
+
+
+def bulwark(m):
+    """A tower shield: a tall slab of banded iron with spikes along its top."""
+    outline = [(-0.25, -0.35), (0.25, -0.35), (0.27, 0.45), (0.0, 0.52), (-0.27, 0.45)]
+    m.slab(outline, 0.045, "DarkSteel", chamfer=0.012)
+    for z in (-0.15, 0.1, 0.35):
+        m.box((0, -0.035, z), (0.54, 0.02, 0.05), "Steel")
+    for x in (-0.18, 0.0, 0.18):
+        m.shard(V(x, 0, 0.47 + (0.04 if x == 0 else 0)), V(0, 0, 1), 0.09, 0.025, "Steel")
+
+
+def stillwardglass(m):
+    """A shield of faceted crystal in a silver frame."""
+    ring = circle(0, 0, 0.26, n=8, start=math.pi / 8)
+    m.slab(ring, 0.05, "LightBlue", chamfer=0.03)
+    rim(m, ring, 0.05, "LightSteel", width=0.03)
+    m.shard(V(0, -0.05, 0), V(0, -1, 0), 0.06, 0.06, "LightBlue", sides=8)
+
+
+def verdantaegis(m):
+    """A shield shaped like a great leaf, veined, with a vine curling round its edge."""
+    outline = [(0.0, 0.58), (0.16, 0.4), (0.24, 0.15), (0.2, -0.1), (0.0, -0.32), (-0.2, -0.1), (-0.24, 0.15), (-0.16, 0.4)]
+    m.slab(outline, 0.035, "Green", chamfer=0.01)
+    m.box((0, -0.03, 0.13), (0.025, 0.015, 0.8), "Wood")
+    for sz in (0.0, 0.2, 0.38):
+        for sx in (-1, 1):
+            m.tube([V(0, -0.03, sz - 0.05), V(sx * 0.15, -0.03, sz + 0.06)], 0.008, "Wood", sides=4)
+    rim(m, outline, 0.035, "Gold", width=0.022)
+
+
+def silverbuckler(m):
+    """A small fist-shield: a silver disc and a pointed star for a boss."""
+    ring = circle(0, 0, 0.18, n=12)
+    m.slab(ring, 0.03, "LightSteel", chamfer=0.008)
+    rim(m, ring, 0.03, "Steel", width=0.03)
+    for k in range(6):
+        a = k * math.pi / 3
+        m.shard(V(math.cos(a) * 0.02, -0.02, math.sin(a) * 0.02), V(math.cos(a), -0.6, math.sin(a)), 0.1, 0.025, "Steel")
+
+
+def wardingfocus(m):
+    """A caster's focus: an orb of power turning inside a gold ring on a short handle."""
+    m.wrap(0.0, 0.14, 0.02, "DarkBrown", "Gold", bands=2)
+    m.lathe([(0.02, 0.14), (0.03, 0.17), (0.02, 0.2)], "Gold", sides=6)
+    m.torus(V(0, 0, 0.32), V(0, 1, 0), 0.12, 0.014, "Gold", segments=12)
+    m.torus(V(0, 0, 0.32), V(1, 0, 0), 0.1, 0.01, "Gold", segments=12)
+    m.lathe([(0.0, 0.25), (0.05, 0.28), (0.065, 0.32), (0.05, 0.36), (0.0, 0.39)], "LightBlue", sides=8)
+
+
+def hunterquiver(m):
+    """A quiver: a leather tube with a strap, full of fletched arrows."""
+    m.lathe([(0.0, 0.0), (0.06, 0.01), (0.065, 0.1), (0.07, 0.42), (0.06, 0.44)], "DarkBrown", sides=8, cap=True)
+    for z in (0.1, 0.38):
+        m.lathe([(0.071, z - 0.012), (0.074, z), (0.071, z + 0.012)], "Wood", sides=8)
+    for k in range(5):
+        a = k * 2 * math.pi / 5
+        base = V(math.cos(a) * 0.03, math.sin(a) * 0.03, 0.4)
+        m.tube([base, base + V(0, 0, 0.16)], 0.005, "Wood", sides=4)
+        m.slab([(base.x - 0.018, 0.5), (base.x + 0.018, 0.5), (base.x + 0.012, 0.58), (base.x - 0.012, 0.58)], 0.004, "White", y=base.y)
+
+
+def woodoffhand(m):
+    """A bundle of kindling: split sticks tied round the middle with cord."""
+    for k in range(7):
+        a = k * 2 * math.pi / 7
+        r = 0.035 if k else 0.0
+        x, y = math.cos(a) * r, math.sin(a) * r
+        m.tube([V(x, y, 0.0 + 0.02 * (k % 3)), V(x * 1.2, y * 1.2, 0.5 - 0.03 * (k % 2))], 0.014, "Wood" if k % 2 else "DarkWood", sides=5)
+    for z in (0.14, 0.34):
+        m.lathe([(0.058, z - 0.012), (0.062, z), (0.058, z + 0.012)], "DarkBrown", sides=8)
+
+
+OFFHANDS = {
+    "plankshield": ("Plank Shield", plankshield),
+    "roundshield": ("Round Shield", roundshield),
+    "kiteshield": ("Kite Shield", kiteshield),
+    "bulwark": ("Bulwark", bulwark),
+    "stillwardglass": ("Stillward Glass", stillwardglass),
+    "verdantaegis": ("Verdant Aegis", verdantaegis),
+    "silverbuckler": ("Silvered Buckler", silverbuckler),
+    "wardingfocus": ("Warding Focus", wardingfocus),
+    "hunterquiver": ("Hunter's Quiver", hunterquiver),
+    "woodoffhand": ("Bundled Kindling", woodoffhand),
+}
+
+RECIPES = {**SWORDS, **AXES, **MACES, **DAGGERS, **BOWS, **STAVES, **WANDS, **OFFHANDS}
+FAMILIES = {
+    "swords": SWORDS, "axes": AXES, "maces": MACES, "daggers": DAGGERS,
+    "bows": BOWS, "staves": STAVES, "wands": WANDS, "offhands": OFFHANDS,
+}
 
 
 def build(item_id):
