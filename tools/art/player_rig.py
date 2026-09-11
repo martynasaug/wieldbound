@@ -33,9 +33,16 @@
 # also what the art style wants — these characters bend at joints, not through
 # their limbs.
 
-import bpy
+import os
 import sys
+
+import bpy
 from mathutils import Vector
+
+# Blender does not put a --python script's own folder on the path, so a sibling
+# module is not importable without this.
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from player_clips import all_actions  # noqa: E402
 
 # --- proportions ------------------------------------------------------------
 #
@@ -383,79 +390,6 @@ def material(body):
     body.data.materials.append(mat)
 
 
-def action_fcurves(act):
-    """The F-curves of an action, across the old and new Action APIs."""
-    if hasattr(act, "fcurves"):
-        return list(act.fcurves)
-    out = []
-    for layer in getattr(act, "layers", []):
-        for strip in getattr(layer, "strips", []):
-            for bag in getattr(strip, "channelbags", []):
-                out.extend(bag.fcurves)
-    return out
-
-
-def idle_action(arm):
-    """
-    Breathing, and the weight shifting a little.
-
-    WHAT AN IDLE IS FOR: telling the player the game has not frozen. It is the
-    animation they will look at for more of the session than any other, and the
-    failure mode is not ugliness — it is a character that reads as a statue, or
-    one that sways so much it looks like it is on a boat.
-    """
-    arm.animation_data_create()
-    act = bpy.data.actions.new("Idle")
-    arm.animation_data.action = act
-    for b in arm.pose.bones:
-        b.rotation_mode = "QUATERNION"
-
-    # A 96-frame loop at 24fps: four seconds, slow enough not to read as a tic.
-    keys = {
-        # (bone, axis, [(frame, radians)])
-        "Abdomen": ("x", [(1, 0.0), (24, 0.022), (48, 0.0), (72, -0.012), (96, 0.0)]),
-        "Torso": ("x", [(1, 0.0), (24, -0.030), (48, 0.0), (72, 0.016), (96, 0.0)]),
-        "Neck": ("x", [(1, 0.0), (24, 0.020), (48, 0.0), (72, -0.010), (96, 0.0)]),
-        # The head drifts rather than nodding in time with the chest, which is
-        # what stops the whole figure pulsing as one object.
-        "Head": ("y", [(1, 0.0), (32, 0.045), (64, -0.035), (96, 0.0)]),
-        # Arms hang and swing a few degrees, out of phase with each other.
-        "UpperArmL": ("x", [(1, 0.0), (30, 0.035), (66, -0.020), (96, 0.0)]),
-        "UpperArmR": ("x", [(1, 0.0), (36, -0.030), (72, 0.030), (96, 0.0)]),
-        "LowerArmL": ("x", [(1, 0.0), (48, 0.040), (96, 0.0)]),
-        "LowerArmR": ("x", [(1, 0.0), (52, 0.035), (96, 0.0)]),
-    }
-    for name, (axis, frames) in keys.items():
-        pb = arm.pose.bones[name]
-        for frame, value in frames:
-            q = pb.rotation_quaternion
-            q.identity()
-            setattr(q, axis, value)
-            q.w = 1.0
-            q.normalize()
-            pb.rotation_quaternion = q
-            pb.keyframe_insert("rotation_quaternion", frame=frame)
-
-    # The whole body rises and falls a couple of centimetres with the breath.
-    root = arm.pose.bones["Root"]
-    for frame, dz in ((1, 0.0), (24, 0.012), (48, 0.0), (72, -0.006), (96, 0.0)):
-        root.location = Vector((0.0, 0.0, dz))
-        root.keyframe_insert("location", frame=frame)
-
-    # EVERY CURVE, WHEREVER THIS BLENDER KEEPS THEM.
-    #
-    # Actions grew layers and slots in 4.4 and `Action.fcurves` is gone in 5.x,
-    # which is the kind of break that turns a script into a one-version
-    # artefact. Both shapes are handled so re-running this in two years is not
-    # an archaeology exercise.
-    for fc in action_fcurves(act):
-        for kp in fc.keyframe_points:
-            kp.interpolation = "BEZIER"
-    bpy.context.scene.frame_start = 1
-    bpy.context.scene.frame_end = 96
-    return act
-
-
 def look_at(obj, target):
     """Point an object at a point, rather than guessing Euler angles.
 
@@ -523,7 +457,7 @@ def main():
     parts = build_body()
     body = bind(parts, arm)
     material(body)
-    act = idle_action(arm)
+    acts = all_actions(arm)
 
     bpy.ops.object.select_all(action="DESELECT")
     arm.select_set(True)
@@ -533,11 +467,35 @@ def main():
         filepath=out,
         export_format="GLB",
         export_animations=True,
+        # EVERY ACTION, not just the active one. The default exports whatever is
+        # assigned plus NLA strips, which on a rig carrying eight loose actions
+        # is one clip and a shrug.
+        export_animation_mode="ACTIONS",
         export_yup=True,
         use_selection=True,
     )
-    print(f"RIG bones={len(arm.data.bones)} verts={len(body.data.vertices)} action={act.name}")
+    print(f"RIG bones={len(arm.data.bones)} verts={len(body.data.vertices)} clips={len(acts)}: " + ", ".join(a.name for a in acts))
     print(f"EXPORTED {out}")
+    # A STRIP OF FRAMES THROUGH ONE CLIP, which is how a gait is judged. A
+    # still of a walk says nothing: what matters is whether the legs alternate,
+    # whether the arms oppose them, and whether the pose at the end matches the
+    # pose at the start. Six frames from the side answers all three.
+    strip = args[2] if len(args) > 2 else None
+    if strip and preview:
+        stem = preview[:-4] if preview.endswith(".png") else preview
+        act = next((x for x in acts if x.name.lower() == strip.lower()), None)
+        if act is None:
+            print(f"NO CLIP {strip}")
+        else:
+            arm.animation_data.action = act
+            length = int(act.frame_range[1])
+            for i in range(6):
+                frame = 1 + round(i * (length - 1) / 5)
+                path = f"{stem}-{act.name.lower()}-{i}.png"
+                render_preview(path, frame=frame, angle="side")
+                print(f"FRAME {frame} {path}")
+        return
+
     if preview:
         stem = preview[:-4] if preview.endswith(".png") else preview
         for angle in ("front", "side", "three-quarter"):

@@ -465,3 +465,18 @@ breathing or as twitching is not one of them.
 > `public/models` (see `client/vite.config.ts` for why), so a file created while
 > it is running is not served — the request returns the HTML fallback with a
 > 200, and the loader fails on `Unexpected token '<'`.
+
+**`player_clips.py`** holds the animation set — Idle, Walk, Run, Attack, Chop,
+Mine, Pick, Hit, Death — as tables of (frame, radians) per bone and axis. Chop,
+Mine and Pick are the three the borrowed pack had no answer for, and the reason
+this rig exists: three milestones went into approximating them at runtime before
+there was a body that could simply be animated.
+
+```powershell
+# the body and every clip
+blender --background --python tools/art/player_rig.py -- client/public/models/Player_Base.glb
+
+# and a strip of six frames through one clip, from the side, which is how a
+# gait is judged — a still of a walk says nothing
+blender --background --python tools/art/player_rig.py -- out.glb preview.png Walk
+```
