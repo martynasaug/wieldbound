@@ -178,6 +178,16 @@ const GATHER_CLIPS: Record<GatherPoseKind, string> = {
   bush: "Pick",
 };
 
+/**
+ * The root scale of the body every armour mesh in `gear.ts` was authored
+ * against — Quaternius's Monk, whose raw model units become metres at 0.0062.
+ *
+ * Measured from the running game rather than derived: `instantiate` fits a
+ * model to a requested height, so this number is a property of that FBX's
+ * units and nothing else.
+ */
+const GEAR_AUTHORED_ROOT_SCALE = 0.0062;
+
 const FADE_MS = 180;
 
 // --- Standing ON the ground rather than in it ---------------------------------
@@ -724,6 +734,14 @@ export class Actor {
   private readonly holders = new Map<string, THREE.Object3D>();
   /** The model's world matrix in its rest pose, which the holders undo. */
   private restFrame = new THREE.Matrix4();
+  /**
+   * How much to shrink authored gear for THIS body — see `holderFor`.
+   *
+   * One for the body the gear was authored against, and the ratio of root
+   * scales for anything else, so a new rig wears the existing wardrobe without
+   * a single armour mesh being re-authored.
+   */
+  private readonly gearScale = new THREE.Vector3(1, 1, 1);
   /** Each bone's world matrix in the rest pose, captured while the rig is
    *  still unanimated. Holders are built lazily — the first time a style
    *  needs a given bone — and by then the skeleton is mid-stride, so reading
@@ -1003,6 +1021,12 @@ export class Actor {
     // the bones, so it grows with them, which is how this was found.
     instance.object.updateMatrixWorld(true);
     this.restFrame.copy(instance.object.matrixWorld);
+    // The root scale this body renders at, against the one the wardrobe was
+    // drawn for. Read off the matrix rather than from a table, so a body nobody
+    // has thought about yet still wears clothes.
+    const rootScale = new THREE.Vector3().setFromMatrixScale(this.restFrame).x || 1;
+    const k = GEAR_AUTHORED_ROOT_SCALE / rootScale;
+    this.gearScale.set(k, k, k);
     this.restBoneMatrices.clear();
     for (const [name, bone] of this.bones) {
       this.restBoneMatrices.set(name, bone.matrixWorld.clone());
@@ -1056,7 +1080,21 @@ export class Actor {
     holder.matrixAutoUpdate = false;
     holder.matrix.copy(this.restBoneMatrices.get(boneName) ?? bone.matrixWorld)
       .invert()
-      .multiply(this.restFrame);
+      .multiply(this.restFrame)
+      // GEAR IS AUTHORED IN ONE BODY'S UNITS AND WORN BY ANOTHER'S.
+      //
+      // Every armour mesh in `gear.ts` is written in numbers that fit the
+      // Monk — `box([50, 11, 8], ...)` and the like — and those are the Monk's
+      // raw model units, which its root transform scales to metres by 0.0062.
+      // Our own body is authored in metres, so its root scale is about 1, and
+      // the same helm came out at ninety-four METRES across: attached
+      // correctly, sized like a cathedral, and therefore invisible because the
+      // camera was inside it. The contact sheet showed a completely undressed
+      // character and nothing in it hinted at why.
+      //
+      // Measured, not guessed: the helm renders 0.52 units wide on the Monk and
+      // 94.7 on ours, and the two root scales are 0.0062 and 1.049.
+      .scale(this.gearScale);
     this.holders.set(boneName, holder);
     return holder;
   }
@@ -2039,7 +2077,14 @@ export class Actor {
     // moment a clip existed would leave the Monk gathering with a sword swing
     // again, and comparing the two is the entire reason for keeping it.
     const clip = GATHER_CLIPS[kind];
-    const action = this.instance ? findClip(this.instance.animations, clip) : null;
+    // BOTH PLACES A CLIP CAN LIVE. A body that ships its own animations carries
+    // them on the instance; the Monk's come from the pooled library, which is
+    // also where `Monk_Gather.glb` puts Chop, Mine and Pick. Asking only the
+    // instance worked for our own rig and silently fell through to the posed
+    // arc for the body almost everybody is actually wearing.
+    const action =
+      (this.instance ? findClip(this.instance.animations, clip) : null) ??
+      (this.usesClipLibrary ? pickClip(clip) : null);
     if (action) {
       const bound = this.mixer?.clipAction(action);
       if (bound) {

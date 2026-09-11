@@ -36,6 +36,7 @@ import {
 } from "../../shared/protocol-types";
 import { ITEM_BASES } from "../../shared/items";
 import { Actor } from "../src/three/Actor";
+import { PLAYER_BODY } from "../src/three/gear";
 
 const CELL_PX = 260;
 const CELL_HEIGHT_PX = 360;
@@ -215,7 +216,13 @@ async function run(): Promise<void> {
   const actors: { actor: Actor; index: number }[] = [];
   await Promise.all(
     cells.map(async (cell, index) => {
-      const actor = new Actor({ model: "Monk", height: PLAYER_HEIGHT });
+      // WHICHEVER BODY IS SELECTED, not always the Monk. `?body=new` wears
+      // ours here too, which matters more than it sounds: the Monk has its
+      // armour MODELLED INTO ITS MESH, and ours is a bare body the wardrobe
+      // dresses at runtime. Comparing the two undressed compares an armoured
+      // hero against a mannequin, and that is the comparison that was being
+      // made when the new body was called blocky.
+      const actor = new Actor({ model: PLAYER_BODY, height: PLAYER_HEIGHT });
       actor.setAppearance(cell.appearance);
       await actor.load();
       // Spread the cells apart in world space; the scissor picks one at a time,
@@ -232,6 +239,11 @@ async function run(): Promise<void> {
       }
       scene.add(actor.root);
       actors.push({ actor, index });
+      // THE SAME DEBUG HANDLE THE GAME EXPOSES, for the same reason: "is this
+      // character actually wearing anything" is not answerable from a
+      // screenshot of a body whose armour might be attached at a hundred times
+      // scale and therefore off screen entirely.
+      (window as unknown as Record<string, unknown>).__preview = { scene, actors };
 
       const label = document.createElement("div");
       label.className = "label";

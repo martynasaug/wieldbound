@@ -86,6 +86,16 @@ HEIGHT = 1.80
 # Overshot once at 0.48 tall and 0.43 wide, which reads as a helmet balanced
 # on a gap rather than a head. The Monk's skull bone spans 0.38; this is that
 # plus a little, sunk far enough into the chest that no neck shows.
+# MATCHING THE MONK'S HEAD EXACTLY MADE THE FIT WORSE, which is worth
+# recording because the reasoning sounded right: the game's helms are authored
+# for that head, so copying its 0.45 x 0.50 should make them fit. It did not —
+# the head then protruded THROUGH the helms, because a helm is positioned
+# relative to the head BONE and the Monk's skull sits differently on its bone
+# than ours does on ours. Size is only half of a fit.
+#
+# So this is back to the size that photographed best, and helm alignment is an
+# open problem: it wants a per-body offset on the head attachment rather than a
+# body reshaped around hats.
 HEAD_BOTTOM = 1.26
 HEAD_TOP = 1.70
 HEAD_HW = 0.190
