@@ -52,6 +52,22 @@ export type ActorAnim =
   | "roll"
   | "pickup"
   /**
+   * Working a tree, a rock or a bush — the action, not the weapon.
+   *
+   * GATHERING USED TO PLAY YOUR ATTACK. `GatherFx` called `play("attack")` for
+   * a tree or a rock, which resolves through `ATTACK_CLIPS[weapon]` — so a
+   * ranger chopping wood SHOT AN ARROW AT THE TREE, a mage mined a rock by
+   * casting a spell at it, and a swordsman did a one-handed duelling cut at a
+   * trunk. Every one of those is the right clip for the wrong verb.
+   *
+   * Chopping and mining are the same motion whatever is in your hands: both
+   * hands, over the shoulder, down into the thing. `Sword_Attack` is the
+   * closest the pooled library has to that swing and it is chosen for ALL
+   * weapons here — which is the whole point of a separate state, since the one
+   * thing it must not do is vary by what you are holding.
+   */
+  | "gather"
+  /**
    * Casting, as opposed to swinging.
    *
    * `Spell1` and `Spell2` have been in the pooled library since M55.1 and were
@@ -141,6 +157,8 @@ const CLIP_PREFERENCES: Record<ActorAnim, string[]> = {
   // simply binds nothing, and `play` refuses a state it has no action for.
   roll: [],
   pickup: [],
+  // Nothing in the bestiary chops wood.
+  gather: [],
   // A monster that casts falls back to whatever it attacks with, since nothing
   // in the bestiary has a separate cast pose.
   cast: ["Spell1", "Spell2", "Attack", "Bite"],
@@ -795,6 +813,7 @@ export class Actor {
         anim === "die" ||
         anim === "roll" ||
         anim === "pickup" ||
+        anim === "gather" ||
         anim === "cast"
       ) {
         action.setLoop(THREE.LoopOnce, 1);
@@ -840,6 +859,11 @@ export class Actor {
         return ["Roll"];
       case "pickup":
         return ["PickUp", "Pickup"];
+      // DELIBERATELY IGNORES `weapon`. A two-handed overhead swing is the motion
+      // for chopping and mining whatever you happen to be carrying, and the
+      // fallbacks stay swings rather than falling through to the bow.
+      case "gather":
+        return ["Sword_Attack", "Attack", "Sword_AttackFast", "Punch"];
       // Every body in the game can reach these, which is exactly what pooling
       // the five rigs' clips bought: a warrior holding a greatsword still has
       // the Wizard's cast to call on when the thing being done is a spell.
@@ -2046,7 +2070,17 @@ export class Actor {
     }
 
     this.currentAnim = anim;
-    if (anim === "attack" || anim === "hit") {
+    // A ONE-SHOT HAS TO CLAIM THE BODY FOR ITS OWN LENGTH. Without an
+    // `oneShotUntil` the clip is bound, played, and overwritten by the base
+    // state on the very next frame — which is exactly what `pickup` did. It has
+    // been in the library since M55.1, GatherFx has been asking for it on every
+    // bush beat, and picking a bush animated as standing still: photographed at
+    // seven points through a gather, the pose read `idle` every time.
+    //
+    // `gather` needs the same for the opposite reason: the clip is LoopOnce and
+    // clamps, so without a window the body would hold the last frame of a chop
+    // between strokes and stand bent over the tree.
+    if (anim === "attack" || anim === "hit" || anim === "gather" || anim === "pickup") {
       const clip = next.getClip();
       this.oneShotUntil = performance.now() + clip.duration * 1000;
     } else if (anim === "die") {

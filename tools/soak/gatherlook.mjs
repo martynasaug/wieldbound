@@ -10,7 +10,7 @@
 //   node tools/soak/gatherlook.mjs Fighter tools/soak/shots/gather
 import { mkdirSync } from "node:fs";
 import { open, login, approach } from "./driver.mjs";
-import { INTERACTION_RANGE_PX } from "../../shared/protocol-types.ts";
+import { gatherRangeToNode } from "../../shared/protocol-types.ts";
 
 const NAME = process.argv[2] ?? "Fighter";
 const OUT = process.argv[3] ?? "tools/soak/shots/gather";
@@ -49,7 +49,11 @@ for (const [kind, label] of [["tree", "wood"], ["rock", "ore"], ["bush", "herb"]
   console.log(`\n${kind}: walking ${at.d.toFixed(0)}px to ${at.id}`);
   for (let i = 0; i < 60; i++) {
     at = await nearest(kind);
-    if (!at || at.d <= INTERACTION_RANGE_PX * 0.6) break;
+    // NODES ARE SOLID NOW, so collision holds the player about 30px from a
+    // tree's centre and the old target of 24px could never be met — the walk
+    // would burn every one of its sixty legs and photograph a character in
+    // the middle of a field. Gathering is measured to the surface; so is this.
+    if (!at || at.d <= gatherRangeToNode(kind) * 0.8) break;
     await approach(page, at, 400);
   }
   const arrived = await nearest(kind);
@@ -60,12 +64,12 @@ for (const [kind, label] of [["tree", "wood"], ["rock", "ore"], ["bush", "herb"]
 
   const before = await gatherState();
   let sawGather = false;
-  for (let shot = 0; shot < 5; shot++) {
+  for (let shot = 0; shot < 7; shot++) {
     await page.waitForTimeout(700);
     const s = await gatherState();
     if (s.node) sawGather = true;
     await page.screenshot({ path: `${OUT}/${kind}-${shot}.png` });
-    console.log(`  +${((shot + 1) * 0.7).toFixed(1)}s  gathering=${s.node ?? "null"}  ${label}=${s[label]}`);
+    console.log(`  +${((shot + 1) * 0.7).toFixed(1)}s  gathering=${s.node ?? "null"}  ${label}=${s[label]}  pose=${await page.evaluate(() => window.__wieldbound.localActor?.currentAnim ?? "?")}`);
   }
   const after = await gatherState();
   console.log(

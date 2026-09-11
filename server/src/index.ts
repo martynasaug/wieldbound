@@ -4,6 +4,8 @@ import {
   GATHER_RESPAWN_MS,
   INVENTORY_CAP,
   INTERACTION_RANGE_PX,
+  gatherRangeToNode,
+  NODE_BODY_RADIUS_PX,
   LOOT_DROP_CHANCE,
   LOOT_PICKUP_RANGE_PX,
   LOOT_RESERVED_MS,
@@ -747,6 +749,29 @@ function aliveMonsterBodies(): { x: number; y: number; radiusPx: number }[] {
     out.push({ x: m.x, y: m.y, radiusPx: MONSTER_STATS[m.kind].bodyRadiusPx });
   }
   return out;
+}
+
+/**
+ * Trees, rocks and bushes, as things you cannot walk through.
+ *
+ * SPENT NODES ARE STILL SOLID. A harvested tree is a stump and a worked rock is
+ * a broken rock — both still objects — and a trunk that becomes walk-through for
+ * eight seconds after the last swing would be the strangest thing in the world.
+ * The list is therefore every node, not the available ones.
+ *
+ * Rebuilt per call like `aliveMonsterBodies`, and unlike that one it never
+ * changes: nodes do not move and none is ever added or removed at runtime. It is
+ * a fixed array wearing a function's clothes, kept that way only so both body
+ * sources read the same at the call site.
+ */
+const NODE_BODIES: { x: number; y: number; radiusPx: number }[] = [];
+function nodeBodies(): { x: number; y: number; radiusPx: number }[] {
+  if (NODE_BODIES.length === 0) {
+    for (const n of nodes) {
+      NODE_BODIES.push({ x: n.x, y: n.y, radiusPx: NODE_BODY_RADIUS_PX[n.kind] });
+    }
+  }
+  return NODE_BODIES;
 }
 
 const monsters: MonsterState[] = [
@@ -3107,7 +3132,7 @@ wss.on("connection", (socket) => {
         askedX,
         askedY,
         PLAYER_BODY_RADIUS_PX,
-        aliveMonsterBodies(),
+        [...aliveMonsterBodies(), ...nodeBodies()],
       );
       // Heading is DERIVED from consecutive positions, because `MOVE` carries
       // a place and never a facing. Noted before the write, so the delta is
@@ -3206,7 +3231,10 @@ wss.on("connection", (socket) => {
       // gather something across the map should be told no rather than have the
       // order sit until they happen to walk into it — which would be a gather
       // starting on its own, one indirection further away.
-      if (Math.hypot(player.x - node.x, player.y - node.y) > INTERACTION_RANGE_PX) {
+      // To the SURFACE. Nodes are solid now, so collision holds the player a
+      // body-radius clear of the centre and a centre-measured range would put a
+      // fat node outside its own reach.
+      if (Math.hypot(player.x - node.x, player.y - node.y) > gatherRangeToNode(node.kind)) {
         sendInfo(socket, "Too far away to gather that.", "#c98d5e");
         return;
       }
@@ -4404,7 +4432,7 @@ setInterval(() => {
     let node: ResourceNodeState | null = null;
     if (ordered) {
       const d = Math.hypot(player.x - ordered.x, player.y - ordered.y);
-      if (d > INTERACTION_RANGE_PX) {
+      if (d > gatherRangeToNode(ordered.kind)) {
         // Out of reach ends the order outright rather than leaving it pending.
         // A standing order that resumes when you happen to wander back is a
         // gather starting on its own again, which is the thing being removed.

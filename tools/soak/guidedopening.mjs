@@ -23,7 +23,9 @@
 //   node tools/soak/guidedopening.mjs Guided7 12
 import { open, login, approach, step } from "./driver.mjs";
 import { TOWN_NPCS, NPC_TALK_RANGE_PX } from "../../shared/town.ts";
-import { INTERACTION_RANGE_PX, xpToNextLevel, PLAYER_SPAWN } from "../../shared/protocol-types.ts";
+import {
+  INTERACTION_RANGE_PX, xpToNextLevel, PLAYER_SPAWN, gatherRangeToNode, gatherDurationForLevel,
+} from "../../shared/protocol-types.ts";
 
 const NAME = process.argv[2] ?? `Guided${Math.floor(Math.random() * 100000)}`;
 const MINUTES = Number(process.argv[3] ?? 12);
@@ -308,7 +310,14 @@ const gatherUntil = async (label, kinds, want, getter, capMs) => {
       // it is what a player does and it makes the leg count mean something. It
       // is not the fix.
       const followId = seen?.id ?? null;
-      node = followId ? await goTo(nodeById(followId), INTERACTION_RANGE_PX * 0.9, 40) : null;
+      // THE RANGE THE GAME ACTUALLY ENFORCES. Nodes are solid as of M70.255, so
+      // gathering is measured to the node SURFACE — `gatherRangeToNode` — and
+      // collision holds the player 30px from a tree's centre no matter how well
+      // it walks. A threshold under that would be unreachable by construction.
+      // 0.8 of the real range leaves room for the orbit without ever asking for
+      // a position the game would refuse.
+      const want = seen ? gatherRangeToNode(seen.kind) * 0.8 : INTERACTION_RANGE_PX;
+      node = followId ? await goTo(nodeById(followId), want, 40) : null;
       if (seen && !node) phase.walkFailed++;
       phase.legs += Math.round((Date.now() - before) / 500);
       if (node) phase.closest = Math.min(phase.closest, node.d);
@@ -341,10 +350,30 @@ const gatherUntil = async (label, kinds, want, getter, capMs) => {
     // Now it holds position while the node is still available and the wallet is
     // still moving, which is what a player does, and only walks when the node
     // is spent.
+    // HOW LONG TO WAIT IS A QUESTION THE GAME ANSWERS, not a number chosen here.
+    //
+    // This waited three times 1500ms — 4.5 seconds — before deciding nothing was
+    // happening and re-ordering. Gathering then became 4600ms, and re-ordering
+    // RESETS the server's clock ("cleared so the first tick in reach starts a
+    // fresh clock"), so the bot gave up exactly 100ms before every payout it was
+    // waiting for, forever. Measured: 33 gather orders placed, wood 20 -> 20, no
+    // interrupts and no refusals — a phase that looked like the ground had
+    // stopped paying and was a stopwatch set slightly too short.
+    //
+    // The patience is a multiple of the real duration now, so the harness cannot
+    // be left behind by a tuning change again. A third probe caught out by a
+    // hard-coded fraction of a design constant in one day.
+    // The client does not keep the interval from GATHER_STATE, so it is derived
+    // from the same shared function the server uses, with the character's own
+    // gather level read out of the page.
+    const gatherLevel = await page.evaluate(() => window.__wieldbound.gatherLevel ?? 0);
+    const patienceMs = Math.max(6000, gatherDurationForLevel(gatherLevel) * 1.6);
+    const pollMs = 500;
+    const idleLimit = Math.ceil(patienceMs / pollMs);
     let idle = 0;
     let held = getter(await state());
-    while (idle < 3 && Date.now() < until) {
-      await page.waitForTimeout(1500);
+    while (idle < idleLimit && Date.now() < until) {
+      await page.waitForTimeout(pollMs);
       const now = await state();
       if (getter(now) > held) {
         held = getter(now);

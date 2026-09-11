@@ -23858,3 +23858,105 @@ because its 2 armour cuts an average 3-damage blow to 1. That is a damage
 question rather than an accuracy one and it is reported, not smuggled in.
 
 Suite 53/53.
+
+**Phase 70 M70.255 — armour that bites without erasing, and gathering you can
+watch.** Four things asked for directly, and the thread through all of them is
+that each was about to get worse as content is added rather than better.
+
+ARMOUR. `Math.max(1, damage - armor)` means any armour larger than the blow
+produces 1, so the SAME value is a wall to one character and a rounding error to
+another: a new character hits for about 3 and a goblin's 2 armour took that to
+1 — 61 landed swings for one goblin. The golem's 14 and the dragon's 9 say
+nothing to a small attacker beyond "no". That is a problem that GROWS: every
+monster added from here needs an armour number, and under a flat floor that
+number cannot be chosen without knowing who will be swinging at it.
+
+Flat subtraction is kept, because it is what makes armour read as armour — a
+heavy blow shrugs it off and a light one does not, so a golem genuinely asks for
+a bigger weapon rather than more of the same. Percentage mitigation would have
+answered this and thrown that away. What changed is the floor: `applyArmor`
+lets at least `ARMOR_MIN_THROUGH` (0.4) of a blow through. A 60-damage hit
+against 14 armour still loses the full 14 — the rule only appears where armour
+was about to become immunity. The goblin is 18 landed swings now and still a
+longer fight than a slime. `tools/test/armour.mjs` states the shape as rules
+rather than as a table, so the constant can be retuned and the shape cannot be
+broken.
+
+NODES ARE SOLID. Asked for, and the reason given was the right one: walking onto
+a tree made it dissolve. That was the camera's occlusion fade doing its job
+perfectly on a situation that should never arise — the thing between the lens
+and the character WAS the trunk. Trees, rocks and bushes are collision bodies on
+both sides now, and every node rather than the available ones, because a
+harvested tree is a stump and a worked rock is still a rock.
+
+That change has a trap in it, and it is silent and total: collision holds the
+player at `radius + PLAYER_BODY_RADIUS_PX` from the centre, so a node sized for
+how it LOOKS can put itself permanently outside its own interaction range. A
+bush too fat to pick, responding to nothing. So gathering is measured to the
+SURFACE now — `gatherRangeToNode`, exactly as `reachToBody` has always done for
+a monster's reach — and `tools/test/gathershape.mjs` asserts every kind can be
+gathered from as close as collision permits, with at least 20px of room to stand
+rather than one exact ring.
+
+THE ANIMATION STARTED A THIRD OF THE WAY IN, BY DESIGN. `beatsAt` was
+`floor(done * BEATS)`, which does not reach 1 until a third of the gather has
+passed — so a three-second gather stood still for a full second, and the last
+stroke landed exactly ON the reward rather than causing it. `+ 1` puts stroke i
+at i/BEATS: the first on the frame the gather begins.
+
+The beat COUNT is derived from the duration now rather than fixed at three,
+since gathering is slower and will vary more as tiers arrive: a fixed count
+means the spacing stretches, and three strokes across five seconds is a swing, a
+long pause, and another swing. One stroke per 850ms keeps the rhythm constant
+and lets the number of strokes say how much work the thing took.
+
+AND THE SWING WAS THE WRONG SWING. Gathering called `play("attack")`, which
+resolves through `ATTACK_CLIPS[weapon]` — so a ranger chopping wood SHOT AN
+ARROW AT THE TREE and a mage mined a rock by casting a spell at it. There is a
+`gather` state now that is the same two-handed swing whatever is in your hands,
+which is the entire point of it being a separate state.
+
+Photographing it turned up two more. `pickup` — the bush's own animation, in the
+library since M55.1 — played and was overwritten by the base state on the very
+next frame, because only `attack` and `hit` ever claimed the body for a clip's
+length; picking a bush animated as standing perfectly still, and the pose read
+`idle` at all seven sampled points. And nothing ever turned the character to
+face the node, so the stroke was delivered at whatever angle they stopped
+walking at, chips flying off a tree nobody was looking at. Combat has called
+`faceToward` on every swing since the beginning; gathering never asked.
+
+GATHERING IS SLOWER, 3000 -> 4600, with the floor 500 -> 900. The old floor was
+shorter than one stroke of the animation, so a high-level gatherer paid out
+mid-swing and the motion never completed. The room is the point: more material
+tiers are coming gated behind gather level, and the whole reward for that level
+is time. Five levels now takes a gather from 4.6s to 2.6 — nearly half — where
+the old pair moved 3.0 to 1.0 and hit the floor at the seventh.
+
+TWO HARNESSES AND A TEST HAD TO MOVE WITH IT, and the way they failed is worth
+recording: `gatherstate.mjs` walked to `INTERACTION_RANGE_PX * 0.5` — 20px — a
+position the world now refuses to allow, so it could only ever run out of legs
+and reported "the character never got within reach". Same for `gatherlook.mjs`
+at 0.6. Any probe that hard-codes a fraction of a range is one design change
+from measuring nothing. `animation.mjs` also caught the new state being played
+through a ternary, which hid both `play()` calls from the reachability guard —
+the guard exists precisely because `pickup` sat bound and uncalled for a dozen
+milestones, so it was right and the call is two plain statements now.
+
+Suite 55/55.
+
+A THIRD PROBE CAUGHT BY A HARD-CODED CONSTANT, in the same session as the other
+two, and this one was the most convincing yet. `guidedopening` stood at a node
+for at most three polls of 1500ms before deciding nothing was happening and
+re-ordering — and re-ordering RESETS the server's gather clock. Gathering became
+4600ms, so the bot gave up 100ms before every payout it was waiting for, every
+time: 33 gather orders placed, wood 20 -> 20, no interrupts and no refusals. It
+reads exactly like the ground having stopped paying. The patience is a multiple
+of `gatherDurationForLevel` now. Re-run: wood 20 -> 49, ore 20 -> 36, herb
+15 -> 25.
+
+NOT EXPLAINED, AND NOT CLAIMED AS FINE: the same run killed 2 monsters with 1
+death, against 5-6 kills and 0 deaths before this milestone. One sample. Solid
+nodes are new obstacles for a bot that moves in eight directions and sidesteps
+when it snags, so the harness is the first suspect rather than the game — but
+that is a suspicion and the number is recorded here as an open question, not as
+variance.

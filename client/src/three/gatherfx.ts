@@ -220,10 +220,31 @@ export class GatherFx {
     struckAt: number;
   } | null = null;
 
-  /** How many times the character strikes across one gather. Three reads as
-   *  work being done; one reads as a delay, and five at a three-second gather
-   *  is a flurry rather than a chop. */
-  private static readonly BEATS = 3;
+  /**
+   * How long one stroke takes, and therefore how many fit in a gather.
+   *
+   * THIS USED TO BE A FIXED THREE, which was right for exactly one gather
+   * duration. Gathering is slower now and will vary more as gather levels and
+   * material tiers arrive, and a fixed count means the SPACING stretches with
+   * the duration: three strokes across five seconds is a character swinging,
+   * pausing for most of two seconds, and swinging again. Deriving the count
+   * from a fixed stroke length keeps the rhythm constant and lets the number of
+   * strokes say how much work the thing took, which is the honest reading.
+   *
+   * The bounds keep both ends sane: never fewer than three, so a fast gather
+   * still reads as work rather than as a delay, and never more than eight, so a
+   * slow one is a steady chop rather than a flurry.
+   */
+  private static readonly STROKE_MS = 850;
+  private static readonly MIN_BEATS = 3;
+  private static readonly MAX_BEATS = 8;
+
+  private static beatsFor(durationMs: number): number {
+    return Math.max(
+      GatherFx.MIN_BEATS,
+      Math.min(GatherFx.MAX_BEATS, Math.round(durationMs / GatherFx.STROKE_MS)),
+    );
+  }
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -323,10 +344,25 @@ export class GatherFx {
     };
   }
 
-  /** How many beats should already have been struck with this much left. */
+  /**
+   * How many beats should already have been struck with this much left.
+   *
+   * THE FIRST STROKE LANDS AT ZERO. This was `floor(done * BEATS)`, which does
+   * not reach 1 until a third of the way through — so a three-second gather
+   * stood still for a full second before the character moved at all, and the
+   * last stroke landed exactly ON the reward rather than causing it. Reported
+   * as "the gathering animation starts too late", which it did, by design, for
+   * a third of every gather.
+   *
+   * `floor(done * BEATS) + 1` puts stroke i at i/BEATS: the first on the frame
+   * the gather begins, and the last one stroke-length short of the payout, so
+   * the "+N" arrives just after a swing lands rather than alongside it.
+   */
   private beatsAt(readyInMs: number, intervalMs: number): number {
+    const beats = GatherFx.beatsFor(intervalMs);
     const done = 1 - readyInMs / Math.max(1, intervalMs);
-    return Math.max(0, Math.min(GatherFx.BEATS, Math.floor(done * GatherFx.BEATS)));
+    if (done < 0) return 0;
+    return Math.max(0, Math.min(beats, Math.floor(done * beats) + 1));
   }
 
   /**
@@ -428,7 +464,8 @@ export class GatherFx {
     // just before the reward rather than exactly on it, so the swing reads as
     // the cause of the "+N" and not as a reaction to it.
     const due = this.beatsAt(Math.max(0, left), cur.durationMs);
-    while (cur.beatsDone < due && cur.beatsDone < GatherFx.BEATS) {
+    const beats = GatherFx.beatsFor(cur.durationMs);
+    while (cur.beatsDone < due && cur.beatsDone < beats) {
       const look = KIND_LOOK[cur.kind];
       this.fx.debris(cur.x, cur.y + 0.7, cur.z, look.debris, cur.awayX, cur.awayZ, look.count, look.speed);
       this.onBeat(cur.kind, cur.beatsDone);

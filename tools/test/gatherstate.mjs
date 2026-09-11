@@ -34,6 +34,7 @@
 import WebSocket from "ws";
 import {
   INTERACTION_RANGE_PX,
+  gatherRangeToNode,
   gatherDurationForLevel,
 } from "../../shared/protocol-types.ts";
 
@@ -95,7 +96,11 @@ ws.on("open", async () => {
     const dx = target.x - x;
     const dy = target.y - y;
     const d = Math.hypot(dx, dy);
-    if (d <= INTERACTION_RANGE_PX * 0.5) break;
+    // NODES ARE SOLID as of M70.255: collision holds the player about 30px from
+    // a tree's centre, so half of INTERACTION_RANGE_PX (20px) is a position the
+    // world will not allow and the walk can only ever run out of legs.
+    // Gathering is measured to the node surface; so is getting there.
+    if (d <= gatherRangeToNode(target.kind) * 0.6) break;
     const s = Math.min(STEP, d);
     x += (dx / d) * s;
     y += (dy / d) * s;
@@ -108,7 +113,7 @@ ws.on("open", async () => {
     for (let i = 0; i < 120; i++) {
       send({ type: "MOVE", payload: { x, y } });
       await sleep(100);
-      if (serverAt && Math.hypot(target.x - serverAt.x, target.y - serverAt.y) <= INTERACTION_RANGE_PX * 0.6) {
+      if (serverAt && Math.hypot(target.x - serverAt.x, target.y - serverAt.y) <= gatherRangeToNode(target.kind) * 0.75) {
         return true;
       }
     }
@@ -221,7 +226,11 @@ ws.on("open", async () => {
     const dx = target.x - x;
     const dy = target.y - y;
     const d = Math.hypot(dx, dy);
-    if (d <= INTERACTION_RANGE_PX * 0.5) break;
+    // NODES ARE SOLID as of M70.255: collision holds the player about 30px from
+    // a tree's centre, so half of INTERACTION_RANGE_PX (20px) is a position the
+    // world will not allow and the walk can only ever run out of legs.
+    // Gathering is measured to the node surface; so is getting there.
+    if (d <= gatherRangeToNode(target.kind) * 0.6) break;
     const s = Math.min(40, d);
     x += (dx / d) * s;
     y += (dy / d) * s;

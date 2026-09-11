@@ -38,9 +38,29 @@ export const BATTLE_RANGE_PX = 110;
 export const WORLD_WIDTH = 16000;
 export const WORLD_HEIGHT = 12000;
 
-export const GATHER_DURATION_MS = 3000;
+/**
+ * How long one gather takes at gather level 0, and how much a level takes off.
+ *
+ * SLOWER ON PURPOSE, 3000 -> 4600. Gathering is the loop the game opens with and
+ * it was over almost before the arc had finished filling — which made the
+ * gather LEVEL nearly worthless, since the whole reward for levelling it is
+ * time, and there was not much time in it to give back.
+ *
+ * The room this buys is the point. More material tiers are coming, gated behind
+ * gather levels, and a tier ladder needs a duration long enough that a level
+ * saves something a player can feel. At 4600 with 400 a level, five levels takes
+ * a gather from 4.6 seconds to 2.6 — nearly half — where before the same five
+ * levels moved 3.0 to 1.0 and then ran into the floor at the seventh.
+ *
+ * THE FLOOR MOVED WITH IT, 500 -> 900. 500ms was below the length of a single
+ * stroke of the gathering animation, so a high-level gatherer paid out mid-swing
+ * and the body never finished the motion: the reward appeared, the arc vanished,
+ * and the character was still winding up. `GatherFx.STROKE_MS` is 850, so 900
+ * guarantees at least one complete stroke however good you get.
+ */
+export const GATHER_DURATION_MS = 4600;
 export const GATHER_LEVEL_STEP_MS = 400;
-export const GATHER_DURATION_FLOOR_MS = 500;
+export const GATHER_DURATION_FLOOR_MS = 900;
 
 // --- The clock ------------------------------------------------------------
 // The world has a time of day, and it is DERIVED rather than sent.
@@ -671,6 +691,46 @@ export interface HitResult {
  * balances against, and would have made a dragon's breath unanswerable by
  * anything a player could wear.
  */
+/**
+ * The most of a blow armour is allowed to take, whatever the numbers say.
+ *
+ * Kept high on purpose. This is not a softening of armour — it is the line below
+ * which armour stops being armour and becomes immunity.
+ */
+export const ARMOR_MIN_THROUGH = 0.4;
+
+/**
+ * Armour, subtracted flat, with a floor proportional to the blow.
+ *
+ * FLAT IS THE RIGHT SHAPE AND IS KEPT. Subtracting a number is what makes
+ * armour read as armour: a heavy blow shrugs it off and a light one does not, so
+ * a golem genuinely does ask for a bigger weapon rather than for more of the
+ * same. Percentage mitigation would answer the problem below and throw that
+ * away, making every monster equally annoying to everybody.
+ *
+ * WHAT WAS ACTUALLY BROKEN was the floor. `Math.max(1, damage - armor)` means
+ * any armour larger than the blow produces 1, so the SAME armour value is a wall
+ * to one character and a rounding error to another: a new character hits for
+ * about 3, and a goblin's 2 armour took that to 1 — 61 landed swings for one
+ * goblin, measured in `tools/test/earlycombat.mjs`. The golem's 14 and the
+ * dragon's 9 say nothing at all to a small attacker beyond "no".
+ *
+ * That is a problem that grows. Every monster added from here needs an armour
+ * number, and under a flat floor that number cannot be chosen without knowing
+ * who will be swinging at it — too much and low-band players cannot scratch it,
+ * too little and it means nothing up the ladder. The proportional floor makes
+ * the value answerable on its own terms: armour bites hard, and never erases.
+ *
+ * At 0.4 a blow always lands for at least two fifths of itself. A heavy hit is
+ * untouched by this — 60 against 14 armour still takes the full 14, because 46
+ * is well above the floor — so the rule only appears where armour was about to
+ * become immunity, and is invisible everywhere else.
+ */
+export function applyArmor(damage: number, armor: number): number {
+  const floor = Math.ceil(damage * ARMOR_MIN_THROUGH);
+  return Math.max(1, Math.max(floor, damage - Math.max(0, armor)));
+}
+
 export function resolveHit(
   params: {
     attackerAccuracy: number;
@@ -701,7 +761,7 @@ export function resolveHit(
   if (crit) damage = Math.round(damage * params.attackerCritMultiplier);
   const resisted = Math.max(-MAX_RESIST, Math.min(MAX_RESIST, params.defenderResist ?? 0));
   damage = applyResist(damage, resisted);
-  damage = Math.max(1, damage - params.defenderArmor);
+  damage = applyArmor(damage, params.defenderArmor);
 
   return { hit: true, crit, damage, school, resisted };
 }
@@ -1129,6 +1189,38 @@ export function reachToBody(reachPx: number, bodyRadiusPx: number): number {
 
 export function separationFor(a: number, b: number): number {
   return a + b;
+}
+
+/**
+ * How wide each harvestable thing stands, as something you cannot walk through.
+ *
+ * NODES USED TO BE SCENERY YOU WALKED INSIDE. A tree was a picture on the
+ * ground: step onto it and the camera's occlusion fade dissolved the trunk,
+ * because the thing between the lens and the character was the trunk. The fade
+ * was doing its job perfectly on a situation that should never arise — you were
+ * standing in the middle of a tree.
+ *
+ * Solid, they read as places instead of decals: you walk UP to a tree, it stops
+ * you, and gathering becomes something you do beside an object rather than on
+ * top of one. It also fixes the only reason a node ever vanished.
+ *
+ * THE NUMBERS ARE BOUNDED BY GATHERING, NOT BY ART. Collision holds the player
+ * at `radius + PLAYER_BODY_RADIUS_PX` from the centre, so a radius chosen freely
+ * could put every node permanently out of its own interaction range — a bush you
+ * cannot reach because it is too fat. `gatherRangeToNode` below is what keeps
+ * those two honest: the range is measured to the SURFACE, exactly as
+ * `reachToBody` does for a monster's reach, so these can be sized for how they
+ * look and the range follows.
+ */
+export const NODE_BODY_RADIUS_PX: Record<ResourceNodeState["kind"], number> = {
+  tree: 16,
+  rock: 17,
+  bush: 11,
+};
+
+/** Gathering reach measured to a node's surface rather than to its centre. */
+export function gatherRangeToNode(kind: ResourceNodeState["kind"]): number {
+  return INTERACTION_RANGE_PX + NODE_BODY_RADIUS_PX[kind];
 }
 
 export interface BodyCircle {

@@ -9,6 +9,8 @@
 import * as THREE from "three";
 import {
   INTERACTION_RANGE_PX,
+  gatherRangeToNode,
+  NODE_BODY_RADIUS_PX,
   EMPTY_PASSIVES,
   ITEM_SLOTS,
   MONSTER_LABELS,
@@ -1009,10 +1011,37 @@ export class Game {
     // are the game's, because only this class owns the local actor and the
     // hotbar's idea of what a swing is.
     this.gatherFx = new GatherFx(this.world.scene, this.skillFx, (kind) => {
-      // Picking is a crouch, chopping and mining are swings. `pickup` and
-      // `attack` are both already in the clip library and neither was reachable
-      // from gathering — see `ActorAnim`.
-      this.localActor?.play(kind === "bush" ? "pickup" : "attack");
+      // TURN AND FACE THE THING YOU ARE WORKING.
+      //
+      // Nothing ever pointed the body at the node, so the character swung at
+      // whatever angle they happened to stop walking at — an axe stroke
+      // delivered ninety degrees away from the trunk, with chips flying off a
+      // tree nobody was looking at. Combat has done this since the beginning
+      // (`faceToward` on every swing) and gathering simply never asked.
+      //
+      // Eased rather than instant: unlike a bow shot, nothing here reads a bone
+      // position in the same frame, and a body that snaps round between strokes
+      // is its own kind of wrong.
+      // `lastGatherNode` is the node's position in SCENE units, recorded where
+      // the arc is placed. Converting the wallet-side pixel coordinates by hand
+      // here would be a second conversion to keep in step with that one.
+      const at = this.lastGatherNode;
+      if (at) this.localActor?.faceToward(at.x, at.z);
+      // Picking is a crouch, chopping and mining are swings.
+      //
+      // `attack` was the wrong one and had been since gathering got a body:
+      // it resolves through `ATTACK_CLIPS[weapon]`, so a ranger chopping wood
+      // shot an arrow at the tree and a mage mined by casting at the rock. The
+      // `gather` state is the same swing for every weapon, which is the point
+      // of it — see `ActorAnim`.
+      //
+      // Two statements rather than a ternary, because `animation.mjs` looks for
+      // a literal `play("state")` to prove a state is reachable at all, and a
+      // conditional expression hides both of them from it. That guard exists
+      // because `pickup` sat bound and uncalled for a dozen milestones, which
+      // is exactly the fault this line is fixing.
+      if (kind === "bush") this.localActor?.play("pickup");
+      else this.localActor?.play("gather");
       // Quieter than the completion cue, and pitched per material, so three
       // beats and a payoff read as one action on a particular thing rather
       // than as four identical events. There is one `gather.wav`; see the note
@@ -4053,7 +4082,11 @@ export class Game {
       const s = this.nodeStates.get(id);
       if (!s) return;
       const dist = Math.hypot(this.playerX - s.x, this.playerY - s.y);
-      if (dist > INTERACTION_RANGE_PX) {
+      // The same surface-measured range the server checks. Centre-measured here
+      // and surface-measured there would put a band of positions where the
+      // client refuses a gather the server would have allowed — the player
+      // standing against a solid trunk being told they are too far from it.
+      if (dist > gatherRangeToNode(s.kind)) {
         this.hud.toast(`Too far from the ${NODE_LABELS[s.kind].toLowerCase()}.`, "#c98d5e");
       } else if (s.status !== "available") {
         // Clicking a stump is a reasonable thing to do and deserves an answer
@@ -6017,6 +6050,20 @@ export class Game {
         y: vis.state.y,
         radiusPx: MONSTER_STATS[vis.kind].bodyRadiusPx,
       });
+    }
+    // TREES AND ROCKS ARE SOLID, AND THE CLIENT HAS TO AGREE.
+    //
+    // The server resolves against the same bodies, so leaving them out here
+    // would not let anybody walk through a tree — it would let them walk into
+    // one and be pushed back out on the next snapshot, which is the rubber-band
+    // that `resolvePlayerPosition` exists in shared/ to prevent. Both sides run
+    // the same function over the same circles, which is the only reason the two
+    // answers agree.
+    //
+    // Every node, not just the available ones: a spent tree is a stump and a
+    // worked rock is still a rock.
+    for (const node of this.nodeStates.values()) {
+      out.push({ x: node.x, y: node.y, radiusPx: NODE_BODY_RADIUS_PX[node.kind] });
     }
     return out;
   }
