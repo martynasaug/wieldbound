@@ -26,13 +26,24 @@ import {
   type GatherableResource,
   type QuestProgressState,
 } from "./protocol-types.ts";
-import type { MaterialCost, ConsumableId } from "./items.ts";
+import type { MaterialCost, ConsumableId, ItemBand } from "./items.ts";
 import { landmarkById, type Landmark } from "./landmarks.ts";
 
 export type QuestObjective =
   | { kind: "kill"; monster: MonsterKind; count: number }
   | { kind: "gather"; resource: GatherableResource; count: number }
-  | { kind: "forge"; count: number }
+  /**
+   * Make something at the anvil.
+   *
+   * `minBand` narrows it to a TIER, and exists because "forge two things" can
+   * be finished with the recipes a character is born knowing — which is the
+   * right ask for `inn-forge`, the quest that teaches the anvil exists, and the
+   * wrong one for a quest about getting better. Band 2 and up needs a recipe,
+   * and a recipe is learned by salvaging one, so asking for a band-2 item asks
+   * for the whole loop: come by one, take it apart, then make your own.
+   * Omitted means any band, so every existing quest is untouched.
+   */
+  | { kind: "forge"; count: number; minBand?: ItemBand }
   | { kind: "salvage"; count: number }
   /**
    * Go and stand somewhere.
@@ -289,6 +300,39 @@ export const QUESTS: QuestDef[] = [
     after: "inn-forge",
     reward: { xp: 240, materials: { ore: 80, herb: 60 }, consumable: { id: "tonic", count: 1 } },
   },
+  // THE RUNG ABOVE, and the only quest in the game that cannot be finished with
+  // what a character is born knowing.
+  //
+  // `inn-forge` teaches that the anvil exists and `inn-salvage` teaches that
+  // taking things apart is how recipes arrive. Both can be satisfied entirely
+  // with band-1 stock, so a player can finish the pair and still not have used
+  // the loop for anything — which is exactly what the shop being dead content
+  // caused (M70.245): there was no tier worth climbing to.
+  //
+  // This asks for a band-2 item, which cannot be forged until its recipe is
+  // learned, which needs one in hand first — bought from Oswyn, who stocks that
+  // tier and nothing else since M70.246, or taken off a corpse, since
+  // `rollBase` reaches one band past the monster. Either way the quest is the
+  // three verbs in order: acquire, break, make.
+  {
+    id: "inn-secondring",
+    giver: "marda",
+    name: "Better Than You Were",
+    brief:
+      "Everything you have made so far, you knew how to make before you got here. Bring me " +
+      "something off that anvil from the SECOND ring — the heavier stuff, the scale and the " +
+      "banded staves. You cannot simply make one: get hold of one first, break it open to " +
+      "learn it, then make your own. Oswyn keeps a shelf of them and charges for the privilege. " +
+      "Or gut something and hope. Both count.",
+    done:
+      "That is the ladder, and you just climbed a rung of it under your own power. Everything " +
+      "above this works the same way: find one, take it apart, make it forever. Nobody tells " +
+      "you that, which is why I do.",
+    objective: { kind: "forge", count: 1, minBand: 2 },
+    requiresLevel: 4,
+    after: "inn-salvage",
+    reward: { xp: 320, materials: { wood: 80, ore: 90 }, consumable: { id: "potion", count: 2 } },
+  },
 
   // --- Elsbet Vane: what a thing is made of ----------------------------------
   // A THIRD GIVER, and the reason for one is that her work is a different KIND
@@ -428,7 +472,12 @@ export function questsFrom(giver: string): QuestDef[] {
 export function objectiveLabel(o: QuestObjective): string {
   if (o.kind === "kill") return `${MONSTER_PLURAL[o.monster] ?? o.monster} slain`;
   if (o.kind === "gather") return `${o.resource} gathered`;
-  if (o.kind === "forge") return "things forged";
+  // The tier is in the label, not just the brief. A tracker reading "things
+  // forged 0 / 1" beside a character who has just forged three band-1 items is
+  // a tracker the player will read as broken.
+  if (o.kind === "forge") {
+    return o.minBand ? `band-${o.minBand} things forged` : "things forged";
+  }
   if (o.kind === "salvage") return "things salvaged";
   // The school's own verb, out of the table the combat log already reads —
   // "Wolves burned", "Golems shocked". Restating it as a per-quest string would

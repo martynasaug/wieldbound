@@ -23397,3 +23397,49 @@ Oswyn also has a new topic, "Why would I buy what I can forge?", because a shop
 whose whole premise is invisible is a shop people walk past.
 
 Suite 48/48.
+
+**Phase 70 M70.247 — a rung above the anvil, and an honest shopkeeper.** Two
+follow-ons from M70.246.
+
+THE QUEST THAT CANNOT BE FINISHED WITH WHAT YOU WERE BORN KNOWING. Marda's chain
+taught the anvil (`inn-forge`, two things made) and then taught salvage
+(`inn-salvage`, three things broken), and BOTH can be satisfied entirely with
+band-1 stock — so a player could finish the pair and never once have used the
+loop for anything. That was fine while there was no tier worth climbing to, and
+M70.246 created one.
+
+`inn-secondring` — "Better Than You Were" — asks for one band-2 item off the
+anvil. Band 2 cannot be forged until its recipe is learned, and a recipe needs
+one in hand first, so the quest is the three verbs in order: get hold of one,
+break it open, make your own. It names both routes because both are real —
+Oswyn's shelf, or a drop, since `rollBase` reaches one band past the monster.
+
+`QuestObjective`'s forge variant gained an optional `minBand`, and the server's
+`advanceQuests` call now checks it. Omitted means any band, so every existing
+quest is untouched. `objectiveLabel` puts the tier in the tracker text too,
+because "things forged 0 / 1" beside a character who has just forged three
+band-1 items reads as a broken tracker.
+
+Verified as behaviour: band-1 forge leaves the counter at 0, band-2 forge takes
+it to 1. `tools/soak/questtier.mjs` does it, and writes the four prerequisite
+quests straight into the database rather than walking them — two of them count
+real gathers, which is twenty minutes of bot time to reach the four lines
+actually under test. The chain is covered elsewhere; this file is about whether
+a band gate holds.
+
+THAT PROBE WAS WRONG TWICE IN THE SAME WAY, both now guarded. It reported "BAND
+2 DID NOT COUNT" on a re-run because the fixture reset the prerequisites and not
+the quest under test, so the counter was already at its threshold. Then it said
+it again when the character had simply run out of materials and nothing was
+forged at all. It now clears its own quest and reports INCONCLUSIVE when the
+forge never succeeded.
+
+AND OSWYN NO LONGER OVERSTATES HIS CASE. His new topic said "the first one of
+anything comes from me", which reads well and is false: `rollBase` picks within
+ONE BAND of the monster, so a slime can turn out a band-2 piece and a patient
+player never needs his counter. He now says so — "or wait for one to fall off
+something, and it will, eventually... I sell the morning" — because a line
+describing a world the tables do not have is the exact fault this project has
+fixed three times in NPC dialogue.
+
+Suite 48/48.

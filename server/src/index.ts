@@ -3587,7 +3587,12 @@ wss.on("connection", (socket) => {
       sendLootUpdate(socket, item);
       sendItemsUpdate(socket, id, listItems(id));
       sendMaterials(socket, id);
-      advanceQuests(id, (o) => (o.kind === "forge" ? 1 : 0));
+      // The TIER counts, not just the act. `minBand` is what separates "you
+      // have found the anvil" from "you have climbed a rung", and without this
+      // clause the second quest is finished by the first quest's own work.
+      advanceQuests(id, (o) =>
+        o.kind === "forge" && (o.minBand === undefined || base.band >= o.minBand) ? 1 : 0,
+      );
       return;
     }
 

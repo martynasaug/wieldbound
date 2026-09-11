@@ -1210,13 +1210,22 @@ export const TOWN_NPCS: TownNpc[] = [
         // it now, and this is where he says so, because a shop whose whole
         // premise is invisible is a shop people walk past.
         q: "Why would I buy what I can forge?",
+        // ACCURATE ABOUT THE DROP, and the first draft was not. It said "the
+        // first one of anything comes from me", which reads well and is false:
+        // `rollBase` picks within ONE BAND of the monster, so even a slime can
+        // turn out a band-2 piece, and at a 30% drop chance a patient player
+        // never needs this counter. Overstating him would be the same fault
+        // this project has fixed three times in NPC dialogue — a line
+        // describing a world the tables do not have.
         a:
           "You would not, and I would not sell it to you. Look at the shelf: there is nothing " +
           "on it you can make. That is the whole trade. A recipe comes out of taking a thing " +
-          "APART, and you cannot take apart what you have never owned — so the first one of " +
-          "anything comes from me, at my price. Buy it, wear it, and when you are sick of it " +
-          "break it open at the anvil and make your own forever after. Dear once, cheap after. " +
-          "I have made my peace with that.",
+          "APART, and you cannot take apart what you have never owned. Buy it, wear it, and " +
+          "when you are sick of it break it open at the anvil and make your own forever after. " +
+          "Dear once, cheap after.\n\n" +
+          "Or wait for one to fall off something, and it will, eventually. I have watched a man " +
+          "clear the same field for a week over a blade he could have had from me on the first " +
+          "morning. I sell the morning.",
       },
       {
         q: "You'll trade one for another?",
