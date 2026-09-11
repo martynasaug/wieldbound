@@ -24410,3 +24410,23 @@ weapon, `ceil(0.4 x blow)` already wins at armour 2. The M70.255 floor means
 armour on a low-band kind literally cannot hurt a new player past that point, so
 the goblin's 2 is already doing everything more armour would. If a band-2 kind
 ever needs to be tougher at level 1, that is health, not armour.
+
+**Phase 70 M70.273 — the prayer beads come off.** Asked for: "Can you remove
+those beads around neck?" The ring of large dark spheres under the Monk's chin,
+which every player and every Monk-bodied NPC wore.
+
+They could not be hidden like the baked-in weapons, because they are not a node.
+`Monk001` — a rigid mesh on the Head bone — carries the beads together with the
+Monk's own beard, moustache and brows, and hiding it photographed a blank head.
+So `removeBakedBeads` splits that geometry into connected islands (welded by
+position, so UV seams do not fragment them) and drops the ones shaped like a
+bead: 288 triangles, about 0.18 across on all three axes. Ten islands match and
+the other 31 — 16-92 triangles, elongated — are the facial hair. The head piece
+goes from 5078 triangles to 2198, exactly ten beads' worth, which is how the
+first count of "nine" in the note got caught.
+
+It runs at instance setup before the outline hulls are built, and swaps every
+mesh sharing the source geometry, so the hulls lose the beads too. The filtered
+geometry is cached per source and never disposed, the same terms `SkeletonUtils`
+already shares the original on. If the model ever changes and no island
+matches, the mesh is left exactly as it shipped.

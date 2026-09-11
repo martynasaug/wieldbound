@@ -28,7 +28,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, buildHairAndBeard } from "./gear";
+import { BUILTIN_WEAPON_MESHES, removeBakedBeads, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, buildHairAndBeard } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor } from "./look";
 import { applySkin } from "./skin";
@@ -987,6 +987,9 @@ export class Actor {
       if (BUILTIN_WEAPON_MESHES.has(o.name)) builtIn.push(o);
     });
     for (const o of builtIn) o.removeFromParent();
+    // And the Monk's prayer beads, which are welded into its head mesh rather
+    // than being a node of their own — see `removeBakedBeads`.
+    removeBakedBeads(instance.object);
 
     this.mixer = new THREE.AnimationMixer(instance.object);
     this.buildActions();

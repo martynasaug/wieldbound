@@ -117,6 +117,116 @@ export const BUILTIN_WEAPON_MESHES = new Set([
   "Cleric_Staff",
 ]);
 
+// THE MONK'S PRAYER BEADS, cut out of the mesh they are welded into.
+//
+// Asked for: "remove those beads around neck." They cannot be hidden the way
+// the weapons above are, because they are not their own node. `Monk001` rides
+// the Head bone and carries the beads AND the Monk's own beard, moustache and
+// brows — hiding it photographed a blank egg of a head. So the geometry is
+// split into connected islands and the beads are dropped by shape: ten
+// identical spheres of 288 triangles, about 0.18 across on every axis, which
+// nothing else on that mesh resembles (the 31 other islands are 16-92
+// triangles and elongated). The head piece goes from 5078 triangles to 2198,
+// exactly ten beads' worth. A model that ever changes shape here loses nothing:
+// if no island matches, the mesh is left exactly as it shipped.
+//
+// Filtered once per source geometry and shared, the same way `SkeletonUtils`
+// shares the original, and never disposed for the same reason (`Actor.dispose`).
+const BEAD_HOST_MESH = "Monk001";
+const BEAD_TRIANGLES = 288;
+const beadless = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+
+function withoutBeads(source: THREE.BufferGeometry): THREE.BufferGeometry {
+  const cached = beadless.get(source);
+  if (cached) return cached;
+  const geo = source.index ? source.toNonIndexed() : source;
+  const pos = geo.attributes.position;
+  const triangles = pos.count / 3;
+
+  // Weld by position so an island is a surface, not a run of UV seams.
+  const ids = new Map<string, number>();
+  const weld = new Int32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const key = `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`;
+    let id = ids.get(key);
+    if (id === undefined) { id = ids.size; ids.set(key, id); }
+    weld[i] = id;
+  }
+  const parent = Int32Array.from({ length: ids.size }, (_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+  };
+  for (let t = 0; t < triangles; t++) {
+    const a = find(weld[t * 3]);
+    for (let k = 1; k < 3; k++) {
+      const b = find(weld[t * 3 + k]);
+      if (a !== b) parent[b] = a;
+    }
+  }
+
+  const islands = new Map<number, { tris: number; box: THREE.Box3 }>();
+  const p = new THREE.Vector3();
+  for (let t = 0; t < triangles; t++) {
+    const root = find(weld[t * 3]);
+    let island = islands.get(root);
+    if (!island) { island = { tris: 0, box: new THREE.Box3() }; islands.set(root, island); }
+    island.tris++;
+    for (let k = 0; k < 3; k++) island.box.expandByPoint(p.fromBufferAttribute(pos, t * 3 + k));
+  }
+  const size = new THREE.Vector3();
+  const beads = new Set<number>();
+  for (const [root, island] of islands) {
+    if (island.tris !== BEAD_TRIANGLES) continue;
+    island.box.getSize(size);
+    const lo = Math.min(size.x, size.y, size.z);
+    const hi = Math.max(size.x, size.y, size.z);
+    if (lo > 0.12 && hi < 0.24 && hi / lo < 1.2) beads.add(root);
+  }
+  if (!beads.size) {
+    beadless.set(source, source);
+    return source;
+  }
+
+  const keep: number[] = [];
+  for (let t = 0; t < triangles; t++) if (!beads.has(find(weld[t * 3]))) keep.push(t);
+  const out = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(geo.attributes)) {
+    const a = attr as THREE.BufferAttribute;
+    const data = new (a.array.constructor as new (n: number) => THREE.TypedArray)(keep.length * 3 * a.itemSize);
+    keep.forEach((t, j) => {
+      for (let k = 0; k < 3; k++) {
+        for (let c = 0; c < a.itemSize; c++) {
+          data[(j * 3 + k) * a.itemSize + c] = a.array[(t * 3 + k) * a.itemSize + c];
+        }
+      }
+    });
+    out.setAttribute(name, new THREE.BufferAttribute(data, a.itemSize, a.normalized));
+  }
+  out.computeBoundingBox();
+  out.computeBoundingSphere();
+  beadless.set(source, out);
+  return out;
+}
+
+/** Strip the baked-in prayer beads from a body, if it carries them. */
+export function removeBakedBeads(root: THREE.Object3D): void {
+  let host: THREE.Mesh | null = null;
+  root.traverse((o) => {
+    if (!host && o.name === BEAD_HOST_MESH && (o as THREE.Mesh).isMesh) host = o as THREE.Mesh;
+  });
+  if (!host) return;
+  const source = (host as THREE.Mesh).geometry;
+  const filtered = withoutBeads(source);
+  if (filtered === source) return;
+  // Every mesh sharing the geometry, not just the named one, so anything
+  // already copied off it — a hull, a silhouette — loses the beads too.
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh && mesh.geometry === source) mesh.geometry = filtered;
+  });
+}
+
 // --- Rarity ---------------------------------------------------------------
 // One tint table, multiplied over whatever colour the piece's material role
 // already carries. That is what keeps the two axes independent: a plate
