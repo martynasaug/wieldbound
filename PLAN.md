@@ -24482,5 +24482,41 @@ from 0.21 to 0.24. All eight now read as skin and step visibly by lightness.
 
 `tools/test/creator.mjs` checks the table, 1000 defaults and rolls, that no
 existing character's skin changed, and that a new character is asked, keeps
-its choice and is not asked again. Still true and still unsolved: the robe
-takes the skin tone, because body and robe are one mesh with one texture.
+its choice and is not asked again. Still true at the time of writing: the robe
+and the beard took the skin tone — see M70.275 below.
+
+**Phase 70 M70.275 — the skin tone changed the clothes, and I had seen it.**
+Reported: "Why are facial hair and equiped clothes are changing colors when
+changing skin tone?" — and then, "And why am I the one noticing that when
+you've been building it?"
+
+The honest answer to the second question: I did see it. The tone sheets I
+judged in M70.274 show the beard darkening and the robe shifting with every
+tone, and I wrote "the robe takes the skin tone" into the entry above as a limit
+of the model and moved on. It was a visible defect, in my own review images, in
+the feature I had just built, and I filed it instead of fixing it or saying so.
+Same failure as the faces: judging the thing I set out to change and not what
+else changed in the picture.
+
+TWO CAUSES. The beard and brows are modelled in the Monk's rigid head piece
+(`Monk001`), whose material was in the list the tone recolours; `tintBody` now
+takes the skinned body's materials only. The robe is painted into the SAME
+texture as the skin, so no material split can separate it — the recolour itself
+has to. `skinWeight` in `skin.ts` decides how much of each texel is skin, and
+the recolour blends by it.
+
+HUE ALONE COULD NOT DO IT. A hue x lightness histogram of the texture put every
+region between 27 and 42 degrees. They separate on all three channels together:
+skin is hue ~30, lightness 25-35%, saturation ~0.27; the olive robe is the same
+saturation at hue 36-39; the dark cloth is lightness 15-20% at saturation 0.15;
+the wraps are lightness 45-60% at saturation 0.14. Soft ramps on each edge, not
+cuts, or brush strokes crossing a threshold speckle.
+
+`tools/soak/skinmask.mjs` imports the real function from the dev server and
+paints every recoloured texel magenta over the texture: the skin areas are
+covered, the robe panels, dark cloth, emblem and wraps are not (41% of the
+texture, weighted). A few dark-brown patches take a partial, speckled weight;
+nothing shows at creator zoom, and it is recorded rather than tuned away. On the
+tone sheets the vest, sash, shorts, wraps, beard and brows now hold one colour
+across all eight tones while the skin steps from porcelain to ebony. Equipped
+armour and weapons were never in the tinted set and still are not.

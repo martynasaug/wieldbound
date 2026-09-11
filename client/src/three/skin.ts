@@ -112,6 +112,43 @@ export function toneLightness(tone: SkinTone): number {
   return tone.target;
 }
 
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp01((x - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * How much a texel of the body texture is SKIN, 0..1, from its hue, saturation
+ * and lightness.
+ *
+ * THE ROBE CHANGED COLOUR WITH THE SKIN, and so did the beard, and it was the
+ * player who pointed it out. The Monk is one mesh painted from one texture:
+ * skin, the olive robe panels, the near-black cloth and the pale wraps all share
+ * it, so a transform over every pixel recoloured all of them.
+ *
+ * Hue alone cannot tell them apart — the whole texture sits between 27 and 42
+ * degrees. Measured from the texture itself (a hue x lightness histogram of
+ * every fourth pixel), the classes separate on all three channels together:
+ *
+ *     skin         hue ~30   lightness 25-35%   saturation 0.25-0.29
+ *     olive robe   hue 36-39 lightness 30-40%   saturation 0.24-0.29
+ *     dark cloth   hue 36-39 lightness 15-20%   saturation ~0.15
+ *     pale wraps   hue 33-36 lightness 45-60%   saturation ~0.14
+ *
+ * So skin is warm, saturated and mid-lit, and each edge is a soft ramp rather
+ * than a cut, because a hard threshold on a painted texture leaves speckle
+ * where the brush strokes cross it. `tools/soak/skinmask.mjs` draws this
+ * function over the texture so the boundary can be seen, not assumed.
+ */
+export function skinWeight(h: number, s: number, l: number): number {
+  const hueDeg = h * 360;
+  const hue = 1 - smoothstep(33, 37, hueDeg);
+  const saturation = smoothstep(0.15, 0.21, s);
+  const dark = smoothstep(0.15, 0.22, l);
+  const pale = 1 - smoothstep(0.46, 0.56, l);
+  return hue * saturation * dark * pale;
+}
+
 /** A tone by its wire id (`shared/look.ts`). Unknown ids get a middle tone rather than a throw. */
 export function toneById(id: string): SkinTone {
   return SKIN_TONES.find((t) => t.id === id) ?? SKIN_TONES[3];
@@ -220,14 +257,19 @@ function recolour(base: THREE.Texture, tone: SkinTone): THREE.Texture | null {
     for (let i = 0; i < d.length; i += 4) {
       if (d[i + 3] === 0) continue;
       const [h, sat, l] = rgbToHsl(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
+      // ONLY THE SKIN. See `skinWeight`: the robe, the wraps and the dark cloth
+      // are painted into this same texture, and recolouring all of it changed a
+      // character's clothes whenever they changed their skin.
+      const w = skinWeight(h, sat, l);
+      if (w <= 0) continue;
       const [r, g, b] = hslToRgb(
         (h + tone.hueShift + 1) % 1,
         clamp01(sat * tone.saturation),
         clamp01(tone.target + (l - BASE_MEAN) * tone.contrast),
       );
-      d[i] = r * 255;
-      d[i + 1] = g * 255;
-      d[i + 2] = b * 255;
+      d[i] = d[i] + (r * 255 - d[i]) * w;
+      d[i + 1] = d[i + 1] + (g * 255 - d[i + 1]) * w;
+      d[i + 2] = d[i + 2] + (b * 255 - d[i + 2]) * w;
     }
     ctx.putImageData(pixels, 0, 0);
 

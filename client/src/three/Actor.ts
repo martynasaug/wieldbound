@@ -1480,10 +1480,17 @@ export class Actor {
     //
     // `skin.ts` transforms the texture's pixels instead, which can go lighter
     // and can shift hue, and caches one variant per tone.
-    // Remembered, because at this moment `litMaterials` is exactly the body —
-    // gear and hair are added after — and a later tone change must not reach
-    // the hair, which lives in the same list by then.
-    this.bodyMaterials = this.litMaterials.map((e) => e.mat);
+    // THE SKINNED BODY ONLY. `litMaterials` at this moment also holds the rigid
+    // head piece the Monk's beard and brows are modelled in, and tinting that
+    // turned a white beard brown on every darker tone. Remembered, so a later
+    // tone change reaches exactly these and never gear added since.
+    const skinned = new Set<THREE.Material>();
+    this.instance.object.traverse((o) => {
+      const mesh = o as THREE.SkinnedMesh;
+      if (!mesh.isSkinnedMesh) return;
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) skinned.add(m);
+    });
+    this.bodyMaterials = this.litMaterials.map((e) => e.mat).filter((m) => skinned.has(m));
     this.applyTone();
   }
 
