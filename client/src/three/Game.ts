@@ -85,7 +85,7 @@ import {
   type SkillId,
 } from "../../../shared/protocol-types";
 import { SkillFx, fxFor } from "./skillfx";
-import { GatherFx } from "./gatherfx";
+import { GatherFx, GATHER_STROKE_MS } from "./gatherfx";
 import { CursorHint, publishCursorDebug } from "./cursors";
 
 /**
@@ -1104,13 +1104,18 @@ export class Game {
       // `gather` state is the same swing for every weapon, which is the point
       // of it — see `ActorAnim`.
       //
-      // Two statements rather than a ternary, because `animation.mjs` looks for
-      // a literal `play("state")` to prove a state is reachable at all, and a
-      // conditional expression hides both of them from it. That guard exists
-      // because `pickup` sat bound and uncalled for a dozen milestones, which
-      // is exactly the fault this line is fixing.
-      if (kind === "bush") this.localActor?.play("pickup");
-      else this.localActor?.play("gather");
+      // POSED, NOT PLAYED. Chopping, mining and picking are three different
+      // motions and the clip library has none of them — it is twenty-five
+      // animations harvested off five character rigs, and nobody in that pack
+      // ever swung an axe at a tree. `play("gather")` picked the least-wrong
+      // sword swing for all three, which is why a chop and a mine looked
+      // identical. `gatherStroke` drives the rig's own bones instead; see
+      // gatherpose.ts.
+      //
+      // The stroke length is the beat interval rather than the gather length,
+      // so each swing finishes and returns rather than one being stretched
+      // across five seconds.
+      this.localActor?.gatherStroke(kind, GATHER_STROKE_MS);
       // Quieter than the completion cue, and pitched per material, so three
       // beats and a payoff read as one action on a particular thing rather
       // than as four identical events. There is one `gather.wav`; see the note
@@ -1532,6 +1537,12 @@ export class Game {
           } else {
             this.gatherFx.end();
           }
+          // THE AXE GOES AWAY WITH THE GATHER. Every ending arrives here —
+          // paid, walked away from, or interrupted by something wandering into
+          // reach — so this is the one place that covers all three. Missing any
+          // of them leaves the character carrying a woodcutter's axe into a
+          // fight, with their actual weapon hidden underneath it.
+          this.localActor?.endGather();
           return;
         }
         this.lastGatherNode = { x: obj.position.x, y: obj.position.y, z: obj.position.z };

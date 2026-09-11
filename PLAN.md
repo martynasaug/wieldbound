@@ -24156,3 +24156,79 @@ the whole world for the closest tree-and-monster pairing and walks there.
 Suite 55/55. `clickwalk.mjs` failed one section on one run and passed the next
 two in full; it drives a live world and its INCONCLUSIVE paths are honest, but
 it is not yet reliable enough to be run unattended.
+
+**Phase 70 M70.259 — an axe for the tree, a pickaxe for the rock, and hands for
+the bush.** Asked for in those words, and the previous two attempts had earned
+it: M70.255 stopped gathering playing the equipped weapon's attack (a ranger
+shot arrows at trunks) and replaced it with one clip for everything, so chopping
+and mining became the same one-handed duelling cut. "Make ACTUALLY GOOD
+ANIMATIONS."
+
+THERE ARE NO CLIPS FOR THIS AND THERE WILL NOT BE. The pooled library is
+twenty-five animations harvested off five character rigs — attacks, casts, a
+roll, a pickup, locomotion, a death. Nobody in that pack ever swung an axe at a
+tree. Picking the least-wrong sword swing for a third time was the only other
+option, so the strokes are POSED: arcs through the rig's own 44 bones, layered
+on top of whatever the mixer is doing. The project already builds weapon
+geometry rather than shipping models for it; same argument, same reason.
+
+WHAT MAKES THEM DIFFERENT, which is the entire point. Chopping is two hands,
+over the shoulder, travelling DIAGONALLY across the body — a blade meets a trunk
+side-on. Mining is higher, comes down STRAIGHT, and rebounds off the stone with
+the knees dipping to take it; a pick bounces where an axe bites. Picking is not
+a swing at all: a crouch, a reach in, a close, and a draw back to the chest.
+Measured rather than asserted — the chop travels twice as far across the body as
+the mine, and the mine lifts half a radian higher.
+
+AND THE TOOLS. A felling axe off the pack's own `Axe.fbx`, and a pickaxe built
+here because no art pack ships one. The pickaxe's proportions are the whole job:
+the first version took 1.15 of the grip box for its haft and hung a small head
+on the end, which photographed as a SPEAR — indistinguishable from a polearm at
+the distance the camera sits. A pickaxe is a short tool with a big crosswise
+head, and the ratio between those two is the difference between reading as a
+pick and reading as a stick. They are not items: they cannot be equipped, sold
+or dropped, and they exist for the length of a gather.
+
+THE WEAPON GOES AWAY FOR ALL THREE, bush included, which the screenshots
+settled: a character folded over a shrub with a longbow still in its fist has
+the bow sticking a metre out of the foliage and it is the first thing the eye
+goes to.
+
+A GHOST THAT HAD BEEN WAITING FOR SOMEBODY TO HIDE A MESH. Hiding the weapon
+left a translucent wireframe bow trailing the character. Outlines and
+silhouettes are inverted hulls parented BESIDE their source rather than under
+it, so nothing about hiding a mesh reaches them — and until now nothing in the
+game had ever hidden one, so it had never come up. Both hull lists carry a link
+back to what they copy now, and follow the whole ancestor chain: a held weapon
+is a GROUP, and hiding the group leaves every child's own `visible` set to true.
+
+THE ARITHMETIC TEST FOUND A BUG NO SCREENSHOT COULD. `tools/test/gatherpose.mjs`
+checks that every stroke closes and that the three differ, and on its first run
+reported a shoulder offset of 7.78 radians — an arm rotating through more than a
+full turn — in the last fifth of every mining stroke. Smoothstep EXTRAPOLATES:
+the mine divides its strike phase by 0.32, so past t=0.78 the input runs beyond
+1 and the curve turns over and dives. Frames are a tenth of a second and the
+photographs had all caught earlier ones. Clamped.
+
+It also found that no pose returned to rest — every stroke snapped the body into
+a half-raised axe on its first frame and dropped it on its last, twice a second
+while gathering. There is an envelope inside `strokePose` now rather than a
+weight the caller applies, because gathering yourself before a swing and
+settling after one is part of the motion rather than something the animation
+system does to it.
+
+TWO OF ITS OWN THRESHOLDS WERE WRONG and are recorded as such. It capped joints
+at 2.4 rad on the reasoning that more folds a limb through the body, then failed
+a mining stroke at 2.95 that photographs correctly — these are OFFSETS from an
+idle pose where the arms hang at the sides, so lifting a pick overhead is most
+of a half-turn at the shoulder. And it asserted picking as a FRACTION of a
+chop's lift, which fails on a correct pose: reaching forward and lifting
+overhead are the same sign on this rig, so a picker's arm held out horizontally
+reads as 60% of a chop by ratio while looking nothing like it. A margin, not a
+ratio.
+
+`gatherlook.mjs`'s `pose` column stopped meaning anything the moment strokes
+became layered — `currentAnim` reads "idle" throughout a gather now, because the
+idle is exactly what plays underneath. It reports the stroke and the tool.
+
+Suite 56/56.

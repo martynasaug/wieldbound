@@ -1399,3 +1399,139 @@ function threeGroups(
   if (rest > 0) out.addGroup(at, rest, 2);
   return out;
 }
+
+// --- Gathering tools --------------------------------------------------------
+//
+// THE RIGHT TOOL FOR THE JOB, because chopping a tree with a dagger is what
+// gathering looked like until now: the character played its weapon's attack
+// with its weapon in hand, so a ranger harvested wood by shooting the trunk and
+// everybody else poked it with whatever they were carrying.
+//
+// These are not items. They cannot be equipped, sold, forged or dropped; they
+// exist for the length of a gather and go away again, which is why they live
+// here rather than in `ITEM_BASES`. A player owning a woodcutter's axe is a
+// design decision about the economy; a woodcutter's axe APPEARING IN THEIR
+// HANDS while they chop is a statement about what they are doing, and only the
+// second one is being made.
+//
+// A bush gets none. You pick berries with your fingers, and handing the
+// character a tool for it would be the same mistake in the other direction.
+export type GatherToolKind = "tree" | "rock";
+
+/**
+ * A felling axe, off the pack's own `Axe.fbx`.
+ *
+ * Harvested rather than built: the kit ships a broad single-bit axe that reads
+ * as a woodcutter's tool at a glance, and hand-building a worse one to avoid
+ * loading a file would be pride rather than engineering. Painted in plain steel
+ * and wood — a working tool, not a weapon, so it carries no rarity tint and
+ * none of the palette schools.
+ */
+const TOOL_MODEL: Record<GatherToolKind, string | null> = {
+  tree: "weapons/Axe",
+  rock: null, // built below; nothing in the pack is a pickaxe
+};
+
+/**
+ * A pickaxe, because no art pack ships one.
+ *
+ * The silhouette is the whole job here. An axe and a pickaxe are both "a haft
+ * with a metal head", and if the two read the same at gameplay distance then
+ * mining and chopping look identical however different the swing is — which is
+ * exactly the complaint this is answering. So the head is deliberately the
+ * opposite shape to the axe's broad blade: a long slim double point, one end
+ * tapering to a spike and the other flattened into a chisel, set CROSSWISE on
+ * the haft so it is unmistakable from the side, which is where the camera is.
+ */
+function buildPickaxe(b: THREE.Box3): THREE.BufferGeometry {
+  const z0 = b.min.z;
+  // SHORT. The grip box is sized for a SWORD, and the first version took 1.15
+  // of it for the haft and hung a small head on the end — which photographed as
+  // a spear: a two-metre pole with a point on it, indistinguishable from the
+  // polearm silhouette at any distance the camera actually sits. A pickaxe is a
+  // short tool with a big head, and the ratio between those two is the entire
+  // difference between reading as a pick and reading as a stick.
+  const len = (b.max.z - z0) * 0.62;
+  const metal: THREE.BufferGeometry[] = [];
+  const wood: THREE.BufferGeometry[] = [];
+  const accent: THREE.BufferGeometry[] = [];
+
+  const haft = new THREE.CylinderGeometry(0.040, 0.048, len * 0.94, 8);
+  haft.rotateX(Math.PI / 2);
+  haft.translate(0, 0, z0 + len * 0.47);
+  wood.push(haft);
+
+  // A leather-bound choke where the hand sits — the one piece of detail that
+  // separates a tool from a stick at this size.
+  const bind = new THREE.CylinderGeometry(0.054, 0.054, len * 0.18, 8);
+  bind.rotateX(Math.PI / 2);
+  bind.translate(0, 0, z0 + len * 0.18);
+  accent.push(bind);
+
+  const headZ = z0 + len * 0.92;
+  const collar = new THREE.CylinderGeometry(0.062, 0.068, 0.10, 8);
+  collar.rotateX(Math.PI / 2);
+  collar.translate(0, 0, headZ);
+  metal.push(collar);
+
+  // THE HEAD IS THE SILHOUETTE, so it is big: a span of nearly a third of the
+  // whole tool, set CROSSWISE, which is the shape no weapon in the game has.
+  // A long tapering spike on one side, a squared chisel on the other.
+  const spike = new THREE.ConeGeometry(0.058, 0.46, 6);
+  spike.rotateZ(-Math.PI / 2);
+  // Tilted down a few degrees: the points of a pick lead its swing, and a
+  // perfectly horizontal head reads as a hammer.
+  spike.rotateY(0.18);
+  spike.translate(0.27, -0.03, headZ);
+  metal.push(spike);
+
+  const chisel = new THREE.BoxGeometry(0.30, 0.075, 0.11);
+  chisel.rotateY(-0.14);
+  chisel.translate(-0.19, -0.02, headZ);
+  metal.push(chisel);
+  const tip = new THREE.BoxGeometry(0.06, 0.115, 0.13);
+  tip.rotateY(-0.14);
+  tip.translate(-0.35, -0.04, headZ);
+  accent.push(tip);
+
+  return threeGroups(merge(metal), merge(wood), merge(accent));
+}
+
+/**
+ * The mesh a character holds while working a node, ready to parent to `WeaponR`.
+ *
+ * Cached per kind like every other held geometry — there are two of these in
+ * the whole game and they are identical for every player.
+ */
+export async function buildGatherTool(kind: GatherToolKind): Promise<THREE.Object3D | null> {
+  const grip = await donorGrip();
+  if (!grip) return null;
+  // Plain working materials. `paletteMaterial` at "honed" is the catalogue's own
+  // baseline — no tint, no glow — which is what a tool should look like beside
+  // an enchanted weapon.
+  const palette = PALETTES.steel;
+  const model = TOOL_MODEL[kind];
+  let mesh: THREE.Mesh | null = null;
+  if (model) {
+    const proto = await loadModel(model);
+    const donor = findMesh(proto, "") ?? firstMesh(proto);
+    if (!donor) {
+      console.warn(`gear: ${model} has no mesh; the ${kind} tool will be invisible`);
+      return null;
+    }
+    const fitted = await cachedHeldGeometry(`tool:${kind}`, () =>
+      fitToGrip(donor.geometry, grip.box, "along"),
+    );
+    mesh = new THREE.Mesh(fitted, repaint(donor.material, palette, "honed"));
+  } else {
+    const built = await cachedHeldGeometry(`tool:${kind}`, () => buildPickaxe(grip.box));
+    mesh = new THREE.Mesh(built, [
+      paletteMaterial(palette, "metal", "honed"),
+      paletteMaterial(PALETTES.wood ?? palette, "wood", "honed"),
+      paletteMaterial(palette, "accent", "honed"),
+    ]);
+  }
+  mesh.name = `tool_${kind}`;
+  mesh.castShadow = true;
+  return mesh;
+}

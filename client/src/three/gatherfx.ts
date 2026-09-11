@@ -64,6 +64,16 @@ const KIND_LOOK: Record<
   bush: { debris: 0x74ad4c, arc: 0x8fc45f, count: 5, speed: 1.5, recoil: 0.075 },
 };
 
+/**
+ * How long one stroke of the gathering animation takes.
+ *
+ * Shared with `Game`, which hands it to `Actor.gatherStroke` so the body's
+ * swing and this module's debris and sound are the same event rather than two
+ * timings that drift apart. Exported from here because the beat count is
+ * derived from it and that derivation lives in this file.
+ */
+export const GATHER_STROKE_MS = 850;
+
 const SEGMENTS = 72;
 /** How long one flinch takes to play out and settle. */
 const RECOIL_MS = 340;
@@ -235,7 +245,7 @@ export class GatherFx {
    * still reads as work rather than as a delay, and never more than eight, so a
    * slow one is a steady chop rather than a flurry.
    */
-  private static readonly STROKE_MS = 850;
+  private static readonly STROKE_MS = GATHER_STROKE_MS;
   private static readonly MIN_BEATS = 3;
   private static readonly MAX_BEATS = 8;
 

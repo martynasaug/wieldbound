@@ -28,7 +28,8 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, PLAYER_BODY, buildArmour, buildHeldItem } from "./gear";
+import { BUILTIN_WEAPON_MESHES, PLAYER_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
+import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { pickClip, loadClipLibrary } from "./clips";
 import type { WeaponType } from "../../../shared/protocol-types";
 
@@ -642,6 +643,22 @@ export class Actor {
   /** How far each bound state has to be lifted. Filled by `measureLifts`. */
   private readonly clipLifts = new Map<ActorAnim, number>();
   private currentAnim: ActorAnim = "idle";
+
+  /**
+   * The gathering stroke in flight, if any — see `gatherpose.ts`.
+   *
+   * A stroke is POSED rather than played, so it does not go through `play` and
+   * does not take the one-shot lock: the body keeps its idle underneath and the
+   * arms are bent on top of it. That also means it survives the character
+   * turning to face the node, which a clip would have fought.
+   */
+  private stroke: { kind: GatherPoseKind; startedAt: number; durationMs: number } | null = null;
+  /** The axe or pickaxe in hand for the length of a gather. */
+  private toolObject: THREE.Object3D | null = null;
+  private toolKind: GatherPoseKind | null = null;
+  private toolToken = 0;
+  /** Whether a gather is in progress at all, tool or not — see showGatherTool. */
+  private gathering = false;
   /** While set, a one-shot (attack/hit) owns the pose and update() will not override it. */
   private oneShotUntil = 0;
   private baseAnim: ActorAnim = "idle";
@@ -1305,6 +1322,9 @@ export class Actor {
       ghost.position.copy(mesh.position);
       ghost.quaternion.copy(mesh.quaternion);
       ghost.scale.copy(mesh.scale);
+      // See `rimFor`: a hull is a sibling of its source and has to be told
+      // what to follow, or hiding a mesh leaves its silhouette behind.
+      ghost.userData.hullSource = mesh;
       mesh.parent?.add(ghost);
       this.silhouettes.push(ghost);
     }
@@ -1673,6 +1693,15 @@ export class Actor {
     out.position.copy(mesh.position);
     out.quaternion.copy(mesh.quaternion);
     out.scale.copy(mesh.scale);
+    // THE HULL REMEMBERS WHAT IT IS A COPY OF.
+    //
+    // A hull is a SIBLING of its source, parented to the same bone rather than
+    // to the mesh, so hiding the mesh leaves the outline drawing on its own —
+    // a translucent ghost of a thing that is not there. Photographed the first
+    // time a weapon was hidden for a gather: the character held a pickaxe and
+    // trailed the wireframe of a longbow. Without this link there is no way
+    // back from the hull to the thing whose visibility it should follow.
+    out.userData.hullSource = mesh;
     mesh.parent?.add(out);
     this.rims.push(out);
 }
@@ -1968,6 +1997,133 @@ export class Actor {
   }
 
   /**
+   * Swing an axe, a pick, or reach into a bush — one stroke, posed.
+   *
+   * `durationMs` is the stroke length rather than the gather length: GatherFx
+   * strikes a beat every 850ms however long the whole gather takes, and the
+   * body should finish each swing and come back rather than stretch one over
+   * five seconds.
+   */
+  gatherStroke(kind: GatherPoseKind, durationMs: number): void {
+    this.stroke = { kind, startedAt: performance.now(), durationMs: Math.max(120, durationMs) };
+    void this.showGatherTool(kind);
+  }
+
+  /**
+   * Outlines and silhouettes follow whatever they are copies of.
+   *
+   * Both are inverted hulls parented BESIDE their source rather than under it,
+   * so nothing about hiding a mesh reaches them. Walking the list once after a
+   * visibility change is cheaper and far more predictable than making every
+   * caller remember there are three copies of every weapon in the scene.
+   */
+  private syncHullVisibility(): void {
+    // THE WHOLE CHAIN, not the flag on the mesh itself. A held weapon is a
+    // GROUP with meshes under it, and hiding the group leaves every child's own
+    // `visible` set to true — three.js stops drawing them because it walks the
+    // tree, but nothing about the child's flag changes. A hull parented beside
+    // the child and copying that flag would go on drawing, which is the exact
+    // ghost this exists to stop.
+    const shown = (o: THREE.Object3D | undefined): boolean => {
+      for (let at = o; at; at = at.parent ?? undefined) {
+        if (!at.visible) return false;
+        if (at === this.root) break;
+      }
+      return !!o;
+    };
+    for (const hull of [...this.rims, ...this.silhouettes]) {
+      const src = hull.userData.hullSource as THREE.Object3D | undefined;
+      if (src) hull.visible = shown(src);
+    }
+  }
+
+  /** What is being swung and what is in hand, for harnesses to read. Nothing
+   *  in the game uses these: "is gathering actually animating" is not otherwise
+   *  answerable from outside, and `currentAnim` says "idle" throughout because
+   *  the idle is exactly what plays underneath a posed stroke. */
+  get strokeKind(): GatherPoseKind | null {
+    return this.stroke?.kind ?? null;
+  }
+  get heldToolKind(): GatherPoseKind | null {
+    return this.toolKind;
+  }
+
+  /** Drop the stroke and put the real weapon back. Called when a gather ends. */
+  endGather(): void {
+    this.stroke = null;
+    void this.showGatherTool(null);
+  }
+
+  /**
+   * The tool in hand for the length of a gather, and the weapon hidden while it
+   * is there.
+   *
+   * HIDDEN RATHER THAN UNEQUIPPED. The weapon meshes are parented, materialised
+   * and warmed once per dress; taking them off to put an axe on would mean
+   * rebuilding them at the end of every gather — a compile hitch on a node, in
+   * the exact spot M70.227 spent a milestone removing one. `visible = false`
+   * costs nothing and is exactly reversible.
+   */
+  private async showGatherTool(kind: GatherPoseKind | null): Promise<void> {
+    // A bush needs no tool; you pick with your hands. It still puts the WEAPON
+    // away, though, which is a separate question and the screenshots settled
+    // it: a character folded over a bush with a longbow still in its fist has
+    // the bow sticking a metre out of the shrub, and it is the first thing the
+    // eye goes to. You do not pick berries one-handed around a drawn weapon.
+    const want = kind === "tree" || kind === "rock" ? kind : null;
+    const gathering = kind !== null;
+    if (want === this.toolKind && gathering === this.gathering) return;
+    const token = ++this.toolToken;
+    this.toolKind = want;
+    this.gathering = gathering;
+
+    if (this.toolObject) {
+      this.toolObject.removeFromParent();
+      this.toolObject = null;
+    }
+    for (const held of this.held) held.visible = !gathering;
+    this.syncHullVisibility();
+    if (!want) return;
+
+    const tool = await buildGatherTool(want);
+    // Two gathers can start before the first tool resolves — the token says
+    // which answer is still wanted, the same guard `dressGeneration` gives the
+    // held weapon.
+    if (!tool || token !== this.toolToken) return;
+    await this.options.warmUp?.(tool);
+    if (token !== this.toolToken) return;
+    const socket = this.weaponSocket ?? this.bones.get("WeaponR") ?? null;
+    if (!socket) return;
+    socket.add(tool);
+    this.toolObject = tool;
+    this.trackMaterials(tool);
+  }
+
+  /**
+   * Lays the current stroke over the clip, and eases it out at both ends.
+   *
+   * The ramp matters more than it sounds: snapping a half-raised axe on and off
+   * between beats is the flicker that makes procedural animation look broken.
+   * Ten per cent at each end is enough to read as a body starting and stopping
+   * rather than a pose being switched.
+   */
+  private applyStroke(): void {
+    const s = this.stroke;
+    if (!s) return;
+    const t = (performance.now() - s.startedAt) / s.durationMs;
+    if (t >= 1) {
+      this.stroke = null;
+      return;
+    }
+    const weight = t < 0.1 ? t / 0.1 : t > 0.9 ? (1 - t) / 0.1 : 1;
+    applyPose(this.bones, strokePose(s.kind, t), weight);
+    // The bones moved after the mixer wrote them, so anything downstream that
+    // reads a world matrix this frame — the held tool, the gear riding the
+    // arms — has to be told.
+    this.root.updateMatrixWorld(true);
+  }
+
+  /**
    * Switches animation state. One-shots (attack/hit/die) hold the pose for their
    * clip duration and then hand control back to whatever the base state is.
    */
@@ -2245,6 +2401,10 @@ export class Actor {
       this.actions.get("run")?.setEffectiveTimeScale(this.runTimeScale * this.leapMultiplier);
     }
     this.mixer?.update(dtSeconds);
+    // AFTER THE MIXER AND BEFORE ANYTHING READS A BONE. The stroke is layered
+    // on the clip's own pose, so it has to be written once the mixer has
+    // finished writing — and `applyGroundLift` below reads what is there.
+    this.applyStroke();
     // After the mixer, because it reads the weights the mixer just advanced.
     this.applyGroundLift();
     this.applyEmissive();

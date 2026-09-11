@@ -69,7 +69,14 @@ for (const [kind, label] of [["tree", "wood"], ["rock", "ore"], ["bush", "herb"]
     const s = await gatherState();
     if (s.node) sawGather = true;
     await page.screenshot({ path: `${OUT}/${kind}-${shot}.png` });
-    console.log(`  +${((shot + 1) * 0.7).toFixed(1)}s  gathering=${s.node ?? "null"}  ${label}=${s[label]}  pose=${await page.evaluate(() => window.__wieldbound.localActor?.currentAnim ?? "?")}`);
+    console.log(`  +${((shot + 1) * 0.7).toFixed(1)}s  gathering=${s.node ?? "null"}  ${label}=${s[label]}  ${await page.evaluate(() => {
+      const a = window.__wieldbound.localActor;
+      // THE POSE FIELD STOPPED MEANING ANYTHING when strokes became layered
+      // rather than played: `currentAnim` reads "idle" throughout a gather now,
+      // because the idle IS what is playing underneath the posed arms. What
+      // says whether gathering is animating is the stroke and the tool.
+      return `stroke=${a?.strokeKind ?? "none"} tool=${a?.heldToolKind ?? "none"}`;
+    })}`);
   }
   const after = await gatherState();
   console.log(
