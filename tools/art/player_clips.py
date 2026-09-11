@@ -220,10 +220,16 @@ def all_actions(arm):
                             (17, -0.05), (21, -0.26), (25, -0.10), (29, -0.24), (32, -0.46)]},
         # Heel strike, flat, toe-off. Small numbers — a foot only has about
         # twenty-five degrees in it — and they carry a surprising amount.
-        "FootL": {"x": [(1, 0.18), (5, 0.02), (9, -0.04), (13, -0.24),
-                        (17, -0.12), (21, 0.07), (25, 0.14), (29, 0.19), (32, 0.18)]},
-        "FootR": {"x": [(1, -0.12), (5, 0.07), (9, 0.14), (13, 0.19),
-                        (17, 0.18), (21, 0.02), (25, -0.04), (29, -0.24), (32, -0.12)]},
+        # SIGNS REVERSED WITH THE BONE. Turning the foot bone round to point
+        # -Y — which is where the toes actually go — reversed what a rotation
+        # about its local X means, so every heel strike became a toe-point and
+        # the ankles read as inverted through the whole stride. Reported from
+        # play; not visible in a single frame, because one flexed ankle looks
+        # like a pose rather than a mistake.
+        "FootL": {"x": [(1, -0.18), (5, -0.02), (9, 0.04), (13, 0.24),
+                        (17, 0.12), (21, -0.07), (25, -0.14), (29, -0.19), (32, -0.18)]},
+        "FootR": {"x": [(1, 0.12), (5, -0.07), (9, -0.14), (13, -0.19),
+                        (17, -0.18), (21, -0.02), (25, 0.04), (29, 0.24), (32, 0.12)]},
         "UpperArmL": cycle_axis(0.30, -0.28, 32, 0.5),
         "UpperArmR": cycle_axis(0.30, -0.28, 32, 0.0),
         # The forearm lags the upper arm by a couple of frames, which is the
@@ -253,8 +259,8 @@ def all_actions(arm):
                             (13, -1.40), (16, -0.70), (20, -0.22)]},
         "LowerLegR": {"x": [(1, -1.05), (4, -1.40), (7, -0.70), (10, -0.22),
                             (13, -0.62), (16, -1.30), (20, -1.05)]},
-        "FootL": {"x": [(1, 0.10), (4, -0.30), (7, 0.25), (10, 0.30), (13, 0.20), (20, 0.10)]},
-        "FootR": {"x": [(1, 0.30), (4, 0.20), (7, 0.10), (10, 0.10), (13, -0.30), (20, 0.30)]},
+        "FootL": {"x": [(1, -0.10), (4, 0.30), (7, -0.25), (10, -0.30), (13, -0.20), (20, -0.10)]},
+        "FootR": {"x": [(1, -0.30), (4, -0.20), (7, -0.10), (10, -0.10), (13, 0.30), (20, -0.30)]},
         "UpperArmL": cycle_axis(0.80, -0.60, 20, 0.5),
         "UpperArmR": cycle_axis(0.80, -0.60, 20, 0.0),
         "LowerArmL": {"x": [(f + 1, v) for f, v in cycle(-0.95, -1.35, 20, 0.5)]},

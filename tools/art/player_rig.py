@@ -63,43 +63,48 @@ from player_clips import all_actions  # noqa: E402
 #     is built the other way: short legs, long torso, big head.
 #   * Everything was too thin. A limb thinner than the gap beside it disappears
 #     at the distance the camera actually sits.
+# MEASURED OFF THE MONK, NOT CHOSEN. `tools/art/measure_monk.py` reads the
+# game's existing character — which shares the bone names this rig copied — and
+# prints its skeleton and its mesh widths normalised to a 1.8 body. Everything
+# below comes from that, because five rounds of adjusting numbers by looking at
+# our body ALONE produced an artist's mannequin standing next to a character,
+# and every one of those adjustments was a guess dressed as a judgement.
+#
+# The two biggest differences, and they are not small:
+#
+#   * THE MONK'S HIP JOINT IS AT 0.626, NOT 0.90. Its legs are a THIRD of its
+#     height; ours were half, which is roughly human and completely wrong for
+#     this art style. Short legs and a long torso is most of what makes a
+#     stylised hero read as one.
+#   * ITS HEAD IS 0.38 TALL, 0.45 WIDE AND 0.50 DEEP. Ours was 0.34 by 0.30 by
+#     0.28 — barely two thirds of the volume, on a visible neck. A big head sunk
+#     between the shoulders is the other half of the look.
+#
+# Its chest is also half again as deep as ours was (0.33 against 0.20), which is
+# why ours read as a plank from the side.
 HEIGHT = 1.80
-# Head: a fifth of the whole figure, wider than tall.
-# LOWER AND BIGGER than the second attempt. A head perched above a visible
-# neck stalk reads as a robot, and this art style hides the neck almost
-# entirely: the skull sits down between the shoulders.
-# THESE ARE TRUE DIMENSIONS NOW. Three rounds of "the body looks too narrow"
-# went into inflating them while `blockish` was silently halving every block,
-# so when the halving was fixed the same numbers produced a fridge. Authored
-# sizes should describe the thing; compensating for a bug in the data is how a
-# fix turns into a second problem.
-HEAD_BOTTOM = 1.44
-HEAD_TOP = 1.78
-HEAD_HW = 0.150
-HEAD_HD = 0.140
-SHOULDER_Y = 1.34
-CHEST_BOTTOM = 1.06
-WAIST_Y = 0.96
-HIP_TOP = 0.98
-HIP_BOTTOM = 0.86
-# Legs start at 46% of the height rather than 51%, which is the single biggest
-# difference between "stylised hero" and "stick insect".
-HIP_Y = 0.90
-KNEE_Y = 0.50
-ANKLE_Y = 0.10
-# Arms hang just outside the ribcage, not out on brackets. The pair of
-# shoulder balls plus the arms is what sets the figure's widest point, and at
-# 0.208 with a 0.34-wide chest the character was narrower through the body than
-# across the shoulders by half again — a coat hanger with tubes on it.
-# THE ARM HAS TO CLEAR THE RIBCAGE. At 0.172 against a chest half-width of
-# 0.185 the arms hung INSIDE the torso and vanished from the silhouette — the
-# figure read as a slab with hands. The rule is simple and worth stating: the
-# shoulder sits far enough out that the arm's inner edge is at the chest's
-# surface, touching it rather than buried in it.
-SHOULDER_X = 0.213
-HIP_X = 0.090
-ELBOW_Y = 1.02
-WRIST_Y = 0.74
+# Overshot once at 0.48 tall and 0.43 wide, which reads as a helmet balanced
+# on a gap rather than a head. The Monk's skull bone spans 0.38; this is that
+# plus a little, sunk far enough into the chest that no neck shows.
+HEAD_BOTTOM = 1.26
+HEAD_TOP = 1.70
+HEAD_HW = 0.190
+HEAD_HD = 0.210
+# Short, and mostly buried. The Monk's neck bone is 0.08 long.
+NECK_TOP = 1.31
+SHOULDER_Y = 1.17
+CHEST_BOTTOM = 0.95
+WAIST_Y = 0.80
+HIP_TOP = 0.80
+HIP_BOTTOM = 0.58
+# The leg joints. 0.63 to the hip, and the knee proportionally higher with it.
+HIP_Y = 0.64
+KNEE_Y = 0.34
+ANKLE_Y = 0.075
+SHOULDER_X = 0.228
+HIP_X = 0.105
+ELBOW_Y = 0.90
+WRIST_Y = 0.65
 
 
 def clear():
@@ -227,60 +232,72 @@ def build_body():
     def add(obj, bone):
         parts.append((obj, bone))
 
-    # HEAD: a rounded block, wider than deep, heavily bevelled so it reads as a
-    # skull rather than a crate. The bevel is a fifth of the size here, which on
-    # anything else would be too much and on a head is the difference between a
-    # character and a dice.
-    add(blockish("head", (0, 0, (HEAD_BOTTOM + HEAD_TOP) / 2),
+    # HEAD: big, deep, and sitting almost on the shoulders. Bevelled hard so it
+    # is a skull rather than a crate.
+    add(blockish("head", (0, -0.012, (HEAD_BOTTOM + HEAD_TOP) / 2),
                  (HEAD_HW * 2, HEAD_HD * 2, HEAD_TOP - HEAD_BOTTOM),
-                 bevel=0.062, segments=4), "Head")
-    # Thicker and reaching further into both, because a thin neck between two
-    # heavily bevelled blocks shows daylight and the head reads as floating.
-    add(tube("neck", 0, SHOULDER_Y - 0.12, HEAD_BOTTOM + 0.05, 0.082, 0.074), "Neck")
+                 bevel=0.075, segments=4), "Head")
+    # A jaw block under the skull, which is what stops a head being a box: the
+    # Monk's face juts forward of its cranium and the shadow under it is most of
+    # what reads as a face at this distance.
+    add(blockish("jaw", (0, -0.070, HEAD_BOTTOM + 0.095),
+                 (0.275, 0.19, 0.16), bevel=0.048, segments=3), "Head")
+    add(tube("neck", 0, SHOULDER_Y - 0.10, HEAD_BOTTOM + 0.06, 0.105, 0.098), "Neck")
 
-    # THE TRUNK IS THREE PIECES THAT OVERLAP, which is the other half of the
-    # lesson above. Butt-jointed segments leave a seam wherever two bevelled
-    # blocks meet — and any segment thin enough to be a "waist" is thin enough
-    # for its own bevel to swallow it. Overlapping them means no seam can open
-    # and every piece is tall enough to survive being rounded.
-    add(taper_block("chest", (0, 0, 1.19), (0.30, 0.196, 0.36), top_scale=1.13,
-                    bevel=0.048), "Torso")
-    add(taper_block("abdomen", (0, 0, 1.00), (0.268, 0.178, 0.22), top_scale=1.06,
-                    bevel=0.04), "Abdomen")
-    add(taper_block("pelvis", (0, 0, 0.89), (0.30, 0.195, 0.21), top_scale=0.96,
-                    bevel=0.045), "Hips")
+    # CHEST: broad at the shoulders, deep, narrowing to the waist.
+    # THE CHEST NO LONGER CARRIES THE SHOULDER WIDTH. Tapering it WIDER at the
+    # top made a horizontal slab across the figure — a coat hanger — and the
+    # arms then hung inside its silhouette and vanished. The deltoid balls are
+    # the widest thing up there now, which is how the Monk is built.
+    add(taper_block("chest", (0, 0, (CHEST_BOTTOM + SHOULDER_Y) / 2),
+                    (0.315, 0.29, SHOULDER_Y - CHEST_BOTTOM + 0.10), top_scale=1.02,
+                    bevel=0.055), "Torso")
+    add(taper_block("abdomen", (0, 0, 0.875),
+                    (0.30, 0.255, 0.20), top_scale=1.10,
+                    bevel=0.045), "Abdomen")
+    add(taper_block("pelvis", (0, 0, 0.705),
+                    (0.345, 0.275, 0.24), top_scale=0.94,
+                    bevel=0.05), "Hips")
+
+    # A BELT. One block, and the single cheapest thing that separates a torso
+    # into a chest and hips instead of one continuous sausage.
+    add(blockish("belt", (0, 0, 0.805), (0.335, 0.285, 0.075), bevel=0.028, segments=2), "Abdomen")
 
     for side, sx in (("L", 1.0), ("R", -1.0)):
         x = sx * SHOULDER_X
-        # Shoulder: a ball rather than a slab. This is the join the eye reads
-        # first on a character with its arms down, and a flat cap there was what
-        # made the first attempt look like a coat hanger.
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.080,
+        # Shoulder: a ball, and a big one. This is the join the eye reads first
+        # on a character with its arms down.
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.098,
                                              location=(x, 0, SHOULDER_Y - 0.05))
         cap = bpy.context.object
         cap.name = f"shoulder{side}"
-        cap.scale = (1.0, 0.95, 0.85)
+        cap.scale = (1.0, 0.98, 0.88)
         bpy.ops.object.transform_apply(scale=True)
         _finish(cap)
         add(cap, f"Shoulder{side}")
 
-        add(tube(f"upperarm{side}", x, ELBOW_Y, SHOULDER_Y - 0.04, 0.058, 0.074, squash=1.05), f"UpperArm{side}")
-        add(tube(f"lowerarm{side}", x, WRIST_Y, ELBOW_Y + 0.02, 0.048, 0.060, squash=1.0), f"LowerArm{side}")
-        # A fist, slightly proud of the wrist and deeper than it is wide.
-        add(blockish(f"fist{side}", (x, 0.008, WRIST_Y - 0.062),
-                     (0.092, 0.104, 0.125), bevel=0.03, segments=3), f"Fist{side}")
+        add(tube(f"upperarm{side}", x, ELBOW_Y, SHOULDER_Y - 0.03, 0.070, 0.088, squash=1.05), f"UpperArm{side}")
+        add(tube(f"lowerarm{side}", x, WRIST_Y, ELBOW_Y + 0.02, 0.058, 0.074, squash=1.0), f"LowerArm{side}")
+        # A fist with some mass in it: the Monk's gauntlets are the widest part
+        # of its arm, and a small hand makes a thick arm look swollen.
+        add(blockish(f"fist{side}", (x, -0.012, WRIST_Y - 0.072),
+                     (0.115, 0.135, 0.155), bevel=0.038, segments=3), f"Fist{side}")
 
         lx = sx * HIP_X
-        add(tube(f"upperleg{side}", lx, KNEE_Y, HIP_Y + 0.02, 0.072, 0.090, squash=1.05), f"UpperLeg{side}")
-        add(tube(f"lowerleg{side}", lx, ANKLE_Y, KNEE_Y + 0.02, 0.056, 0.074, squash=1.0), f"LowerLeg{side}")
-        # FORWARD IS -Y, MEASURED OFF THE GAME'S OWN CHARACTER rather than
-        # assumed. The Monk's toes extend toward -Y and mine extended toward
-        # +Y, so the boots were on backwards. Spotted immediately by somebody
-        # looking at the renders, and invisible to me because a foot is the only
-        # part of this body that is not symmetric front-to-back — nothing else
-        # in the figure disagreed with it, so there was nothing to notice.
-        add(blockish(f"foot{side}", (lx, -0.048, 0.062),
-                     (0.135, 0.245, 0.145), bevel=0.035, segments=3), f"Foot{side}")
+        # A CUFF AT THE TOP OF THE THIGH and another at the boot. The Monk has
+        # both — armoured skirt plates and boot tops — and they are most of why
+        # its legs read as legs in armour rather than as two tubes. Three
+        # primitives against a shape nobody would model by hand.
+        add(tube(f"thighcuff{side}", lx, HIP_Y - 0.10, HIP_Y + 0.04, 0.125, 0.132, squash=1.05, bevel=0.03), f"UpperLeg{side}")
+        add(tube(f"bootcuff{side}", lx, ANKLE_Y + 0.03, ANKLE_Y + 0.16, 0.098, 0.104, squash=1.0, bevel=0.028), f"LowerLeg{side}")
+        add(tube(f"upperleg{side}", lx, KNEE_Y, HIP_Y + 0.03, 0.088, 0.115, squash=1.05), f"UpperLeg{side}")
+        add(tube(f"lowerleg{side}", lx, ANKLE_Y, KNEE_Y + 0.02, 0.068, 0.092, squash=1.0), f"LowerLeg{side}")
+        # FORWARD IS -Y, measured off the Monk rather than assumed: its toes
+        # extend toward -Y and ours extended toward +Y, so the boots were on
+        # backwards. Invisible in a static render because a foot is the only
+        # part of this body that is not symmetric front-to-back.
+        add(blockish(f"foot{side}", (lx, -0.055, 0.062),
+                     (0.165, 0.30, 0.155), bevel=0.04, segments=3), f"Foot{side}")
     return parts
 
 
@@ -293,8 +310,8 @@ BONES = [
     ("Hips", "Root", (0, HIP_BOTTOM, 0), (0, HIP_TOP, 0)),
     ("Abdomen", "Hips", (0, HIP_TOP, 0), (0, CHEST_BOTTOM, 0)),
     ("Torso", "Abdomen", (0, CHEST_BOTTOM, 0), (0, SHOULDER_Y, 0)),
-    ("Neck", "Torso", (0, SHOULDER_Y, 0), (0, HEAD_BOTTOM, 0)),
-    ("Head", "Neck", (0, HEAD_BOTTOM, 0), (0, HEAD_TOP, 0)),
+    ("Neck", "Torso", (0, SHOULDER_Y, 0), (0, NECK_TOP, 0)),
+    ("Head", "Neck", (0, NECK_TOP, 0), (0, HEAD_TOP, 0)),
 ]
 for _side, _sx in (("L", 1.0), ("R", -1.0)):
     BONES += [
