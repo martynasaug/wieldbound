@@ -23614,3 +23614,58 @@ affix count, so that is a balance change rather than a lighting one and it is
 not being smuggled in under this.
 
 Suite 49/49.
+
+**Phase 70 M70.251 — two guards for the catalogue and the wire, since both are
+going to keep growing.** Asked for directly: more systems and items are coming,
+so build for that. These are the two failures that arrive by themselves as a
+project gets bigger, and neither throws.
+
+FIRST: TWO ITEMS THAT ARE THE SAME OBJECT WITH TWO NAMES. A mesh, a palette and
+a scale are three small choices made separately, and at a hundred and thirty
+items the odds that two authors land on the same three stop being small. The
+result is the "everything is a recolour" complaint arriving one item at a time,
+by nobody's decision.
+
+Measured: 132 bases, 126 distinct looks. Four real collisions — and ONE OF THEM
+WAS ADDED BY THE MILESTONE BEFORE THIS ONE. Apprentice's Robe was the same style
+and palette as Traveller's Rags; Woodsman's Cap was a Leather Hood; Archmage's
+Robe was an Adept's Robe three bands down; the two quivers matched. Repainted to
+128, then to 130 after the first repaint moved a hood on top of the Ranger's
+Hood and the quiver fix missed because a quiver's real palette lives in its
+`art` override and the positional argument is dead.
+
+Rings are exempt from the check and that is not a fudge: a ring has no mesh and
+no layer — genuinely invisible when worn, which section 3 already allows for —
+so two rings sharing a palette share nothing anybody can see. 118 distinct looks
+across 118 visible bases now, guarded.
+
+SECOND: A MESSAGE NOBODY IS LISTENING FOR. The wire is two discriminated unions
+and two if/else chains, adding a message touches four places, and the one that
+gets forgotten fails in silence — the message arrives, no branch matches, it is
+dropped, nothing throws. TypeScript cannot help: a union is exhaustive only
+under a switch with a `never` check, and these are chains. Sixty-one types today
+and more coming.
+
+`tools/test/protocol.mjs` walks both unions out of source — they are types, so
+there is nothing to import — and checks each has a branch listening. It found
+four client-to-server messages the server does not handle: CRAFT_POTION,
+USE_POTION, CRAFT_TONIC, USE_TONIC, superseded by the generic consumable pair
+and referenced nowhere but their own declarations.
+
+NOT DELETED, because the note above them recorded a deliberate decision to keep
+them. But the REASON recorded was wrong and is now corrected: they were kept "so
+an older client cannot crash a newer server on an unknown message", and a type
+cannot do that — types are erased, and what actually makes a stale client safe
+is that the handler chain has no final `else throw`. Keeping them costs nothing
+and protects nothing; they are a signpost to a bricked-up door. They now carry
+an `@retired` marker AT THE DECLARATION, which the test reads, so the exemption
+lives beside the thing exempted rather than as a list of names in a test that
+would rot.
+
+The marker took three attempts and the last one is worth recording: the lookup
+searches for a blank line, the working tree is CRLF, and a two-newline search
+never matches a CRLF blank line — so every marker read as absent and the test
+failed about the one thing it had just been taught to allow. It normalises line
+endings on read now.
+
+Suite 50/50.

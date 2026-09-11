@@ -587,9 +587,9 @@ const OFFHAND_BASES: ItemBase[] = [
   g("wardingfocus", "Warding Focus", "offhand", 3, null, "offhand-focus", "arcane",
     "Not a shield. It simply occupies the same argument.",
     { art: { model: "weapons/Shield_Round_2", palette: "arcane", scale: 0.42, lay: "flat" }, guard: 1.4 }),
-  g("hunterquiver", "Hunter's Quiver", "offhand", 2, null, "offhand-quiver", "wood",
+  g("hunterquiver", "Hunter's Quiver", "offhand", 2, null, "offhand-quiver", "bone",
     "Twenty arrows and room for the ones you get back.",
-    { art: { build: "quiver", palette: "wood" }, power: 0.6, guard: 1.6 }),
+    { art: { build: "quiver", palette: "bone" }, power: 0.6, guard: 1.6 }),
   g("bulwark", "Bulwark", "offhand", 4, null, "offhand-shield", "iron",
     "Heavy enough that standing still becomes a tactic.",
     { art: { model: "weapons/Shield_Heater_2", palette: "iron", scale: 0.55, lay: "flat" }, power: 1.25, guard: 0.7,
@@ -641,7 +641,7 @@ const ARMOR_BASES: ItemBase[] = [
   // through the second ring wore the same thing — and it was scale, which is
   // the wrong shape for the mage line entirely. Breadth where a band had one
   // option is not new content for its own sake: one option is a uniform.
-  g("apprenticerobe", "Apprentice's Robe", "armor", 2, "robe", "armor-robe", "wood",
+  g("apprenticerobe", "Apprentice's Robe", "armor", 2, "robe", "armor-robe", "bronze",
     "Dyed once, badly, by its owner. Most of them are.",
     { power: 1.15, guard: 0.75 }),
   g("chainmail", "Chain Mail", "armor", 3, "chain", "armor-chain", "iron",
@@ -659,7 +659,7 @@ const ARMOR_BASES: ItemBase[] = [
     "Still warm in the middle, on cold days.",
     // The dragon's trophy opens the dragon's relic. See the relic block.
     { power: 1.25, guard: 0.8, teaches: "wyrmtooth" }),
-  g("archmagerobe", "Archmage's Robe", "armor", 5, "robe", "armor-robe", "arcane",
+  g("archmagerobe", "Archmage's Robe", "armor", 5, "robe", "armor-robe", "gold",
     "The hem does not quite touch the ground.",
     { power: 0.6, guard: 1.9 }),
 ];
@@ -846,7 +846,7 @@ const KIT_BASES: ItemBase[] = [
     "Glass, from sand a strike went through. Nobody made it."),
 
   // ------------------------------------------------------------------ wood
-  g("woodcap", "Woodsman's Cap", "helm", 2, "hood", "helm-hood", "wood",
+  g("woodcap", "Woodsman's Cap", "helm", 2, "hood", "helm-hood", "bronze",
     "Waxed canvas, and one repair too many.",
     { power: 0.8, guard: 1.4 }),
   g("woodring", "Carved Ring", "ring", 1, null, "ring-bone", "wood",

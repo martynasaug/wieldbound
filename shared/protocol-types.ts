@@ -3773,14 +3773,30 @@ export interface PotionCraftCost {
 export const POTION_CRAFT_COST: PotionCraftCost = { wood: 2, ore: 0, herb: 8 };
 export const POTION_HEAL_AMOUNT = 30;
 
-// Superseded by CRAFT_CONSUMABLE / USE_CONSUMABLE, which read the shared
-// CONSUMABLES table. Kept as types for one release so an older client cannot
-// crash a newer server on an unknown message — nothing sends them.
+// @retired — superseded by CRAFT_CONSUMABLE / USE_CONSUMABLE, which read the
+// shared CONSUMABLES table. Nothing sends these and nothing handles them.
+//
+// THE MARKER IS LOAD-BEARING. `tools/test/protocol.mjs` asserts that every
+// message a union declares has a branch listening for it, because the way that
+// fails is silent — the message arrives, no branch matches, it is dropped, and
+// nothing throws. These four would fail that check honestly, so they say why
+// rather than being exempted by a list in the test.
+//
+// AND THE REASON THEY WERE ORIGINALLY KEPT DOES NOT HOLD, which is worth
+// correcting rather than repeating: the note here used to say they were kept
+// "for one release so an older client cannot crash a newer server on an unknown
+// message". A type cannot do that. Types are erased; what actually makes a
+// stale client safe is that the server's handler is an if/else chain with no
+// final `else throw`, so an unrecognised message is ignored whether or not
+// anybody declared it. Keeping these costs nothing and protects nothing — they
+// are a signpost to a door that was bricked up, and the marker is what stops
+// the next person wiring a button to one and wondering why it does nothing.
 export interface CraftPotionMessage {
   type: "CRAFT_POTION";
   payload: { stationId: string };
 }
 
+// @retired — see the note above CraftPotionMessage.
 export interface UsePotionMessage {
   type: "USE_POTION";
 }
@@ -3801,11 +3817,13 @@ export interface TonicCraftCost {
 export const TONIC_CRAFT_COST: TonicCraftCost = { wood: 0, ore: 4, herb: 12 };
 export const TONIC_XP_AMOUNT = 25;
 
+// @retired — see the note above CraftPotionMessage.
 export interface CraftTonicMessage {
   type: "CRAFT_TONIC";
   payload: { stationId: string };
 }
 
+// @retired — see the note above CraftPotionMessage.
 export interface UseTonicMessage {
   type: "USE_TONIC";
 }

@@ -190,6 +190,51 @@ const missingIcons = [...new Set(bases.map((b) => b.icon))].filter(
 check("every icon the catalogue names is baked", missingIcons.length === 0, missingIcons.join(", "));
 console.log(`  ${new Set(bases.map((b) => b.icon)).size} distinct icons named`);
 
+// --- 3b. no two items are the same object with two names --------------------
+//
+// THE FAILURE THAT ARRIVES BY ITSELF AS A CATALOGUE GROWS. Nobody decides to
+// add a duplicate; it happens because a mesh, a palette and a scale are three
+// small choices made separately, and with a hundred and thirty items the odds
+// that two authors land on the same three stop being small. The result is two
+// names for one object — which is exactly the "everything is a recolour"
+// complaint, arriving one item at a time.
+//
+// Found four when this was first run, one of them added by the milestone
+// immediately before it: Apprentice's Robe was the same style and palette as
+// Traveller's Rags, a Woodsman's Cap was a Leather Hood, an Archmage's Robe was
+// an Adept's Robe three bands down, and the two quivers matched.
+//
+// RINGS ARE EXEMPT and that is not a fudge: a ring has no mesh and no layer —
+// it is genuinely invisible when worn, which `items.mjs` already allows for in
+// section 3 — so two rings sharing a palette share nothing a player can see.
+section("3b. distinct looks");
+{
+  const lookOf = (b) => {
+    const a = b.art;
+    const shape = a.build ? `build:${a.build}` : (a.model ?? `style:${b.style ?? ""}`);
+    return `${shape} | ${a.palette} | ${(a.scale ?? 1).toFixed(2)} | ${a.lay ?? "along"}`;
+  };
+  const byLook = new Map();
+  for (const b of bases) {
+    if (b.slot === "ring") continue;
+    const k = lookOf(b);
+    if (!byLook.has(k)) byLook.set(k, []);
+    byLook.get(k).push(b);
+  }
+  let shared = 0;
+  for (const [look, group] of byLook) {
+    if (group.length < 2) continue;
+    shared++;
+    check(
+      `${group.map((b) => b.name).join(" and ")} do not look identical`,
+      false,
+      `both are "${look}" — change a palette, a scale or the mesh`,
+    );
+  }
+  console.log(`  ${byLook.size} distinct looks across ${bases.length - bases.filter((b) => b.slot === "ring").length} visible bases`);
+  if (shared === 0) console.log("  no two visible items share a mesh, palette and scale");
+}
+
 // --- 4. the rarity ladder ---------------------------------------------------
 section("4. the ladder");
 let prev = -Infinity;
