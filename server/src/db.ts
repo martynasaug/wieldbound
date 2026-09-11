@@ -30,6 +30,7 @@ import {
   rollItem,
   isBasicRecipe,
   isTwoHanded,
+  itemBase,
   salvageYield,
   type Material,
   type MaterialCost,
@@ -726,7 +727,13 @@ export function salvageItem(
   // Taking it apart is how you learn to make one. This is the whole reason
   // salvage exists as a verb rather than as a delete button, and it is what
   // gives a duplicate an answer better than "throw it away".
-  const learned = !isBasicRecipe(item.baseId) && learnRecipe(characterId, item.baseId);
+  // A BOSS TROPHY TEACHES SOMETHING ELSE. `teaches` names a different base —
+  // the relic that creature is the key to — so breaking the Bulwark does not
+  // teach you to make another Bulwark, it teaches the Mantle. Everything else
+  // in the catalogue leaves it unset and learns itself, which is the ordinary
+  // rule and the one the whole recipe economy runs on.
+  const taught = itemBase(item.baseId).teaches ?? item.baseId;
+  const learned = !isBasicRecipe(taught) && learnRecipe(characterId, taught);
   deleteItemStmt.run(itemId);
   // Whatever `salvageYield` decided, paid generically — three named calls is
   // three places a new material would have to be remembered in, and it never
@@ -738,7 +745,7 @@ export function salvageItem(
 
   return {
     yielded,
-    learned: learned ? item.baseId : null,
+    learned: learned ? taught : null,
     items: listItems(characterId),
     materials: materialsOf(characterId),
   };

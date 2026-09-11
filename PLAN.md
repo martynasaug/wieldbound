@@ -23443,3 +23443,64 @@ describing a world the tables do not have is the exact fault this project has
 fixed three times in NPC dialogue.
 
 Suite 48/48.
+
+**Phase 70 M70.248 — relics, and the holes under them.** New content, aligned
+with what was already here rather than bolted beside it.
+
+THE CATALOGUE HAD GAPS NOTHING COULD NOTICE. Counted across slot and band:
+mace had nothing at band 2, staff nothing at band 3, wand nothing at band 2.
+Weapon IS class in this game, so a family with a hole is a BUILD with a hole —
+a mage reaching the third ring had nothing of their own to move to and either
+skipped a tier or stopped being a mage. Filled with the Quarry Maul, the
+Thornstave (nature, because band 3 is where the orc brute stands) and the
+Icicle Rod (frost, so a caster at the armabee ring does not have to pick up a
+bow to answer it).
+
+Four slots held exactly ONE option at some band, which is a uniform rather than
+a choice: Apprentice's Robe and Scout's Shoes at band 2, Stillward Glass at band
+5 — the off-hand slot's top tier was a shield and nothing else, so a caster had
+no end-game off-hand at all — and Pilgrim's Wrap for the last thin cape band.
+
+AND THE LADDER HAD NOTHING AT THE TOP. Band 5 is the last tier and a band-5 item
+is reached the way every other item is, so a player who owns the top rung is
+offered nothing the world does not already have a copy of.
+
+RELICS: three uniques, each built only out of parts the game already had.
+
+  * THE BOSSES ARE THE KEY. Each of the three carries a `signature` — a named
+    item weighted into its own drops — which was a trophy and nothing more. A
+    signature now `teaches` a RELIC rather than teaching itself, so the recipe
+    is behind a specific creature at the edge of the world and the trophy is
+    worth breaking rather than hoarding. That is a real decision: the Bulwark is
+    a good shield, and taking it apart is how you stop needing it.
+  * ESSENCE IS THE PRICE, via a new per-base `forge` cost override. Essence is
+    the one material that cannot be gathered, which is the rule that keeps the
+    top of the ladder from being a function of hours spent at a tree. A boss
+    pays six a kill; a relic wants thirty or more.
+  * AND THEY ARE LOPSIDED, not simply bigger. Wyrmtooth is a two-handed fire
+    sword that gives up guard for reach and damage; the Golem-Heart Signet is
+    almost all power; the Mantle of Long Patience is almost all guard. A top
+    tier of items that are the old ones with larger numbers has no decision in
+    it.
+
+Verified end to end against the live server, because four tables pointing at
+each other agreeing on paper is not the same as the server doing it:
+
+    1. forging it with no recipe: refused — "salvage one to learn it."
+    2. salvaging Bulwark: taught Mantle of Long Patience
+    3. forging it with the recipe: made — "Found Honed Keen Mantle of Long Patience."
+
+`tools/test/relics.mjs` guards both halves: every weapon family must have
+something at every band, every boss signature must name a real relic, a relic
+must not be a basic recipe, must price itself, must cost essence, and nothing
+that is NOT a boss signature may teach one — a second route around the boss
+would make the boss decoration.
+
+THE EXISTING SUITE CAUGHT THREE OF MY OWN MISTAKES before any of this ran:
+`stillwardglass` and `trollhide` had no model or style (an item that cannot be
+drawn), and `cape-fur` was an icon I invented that is not baked. A fourth —
+`weapons/Sword_big` for `Sword_Big.fbx` — would have been an invisible weapon,
+and `items.mjs` already checks every model against disk. That file was worth
+every line of it.
+
+Suite 49/49.

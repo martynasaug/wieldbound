@@ -228,6 +228,26 @@ export interface ItemBase {
    *  the band and the slot should do almost all of the work. */
   power?: number;
   guard?: number;
+  /**
+   * Salvaging this teaches a DIFFERENT recipe.
+   *
+   * Normally taking a thing apart teaches that thing, which is the whole of the
+   * recipe economy. A boss signature teaches a RELIC instead: the trophy is a
+   * key rather than a blueprint, so the only route to the late-game uniques
+   * runs through the three creatures worth walking to the edge of the world
+   * for. Nothing else in the catalogue sets it.
+   */
+  teaches?: string;
+  /**
+   * A forge cost of its own, instead of the one its band implies.
+   *
+   * `forgeCost` derives everything from band and slot, which is right for a
+   * catalogue where a tier means a price. A relic is not priced by its tier —
+   * it is priced in ESSENCE, the one material that cannot be gathered, so the
+   * top of the ladder stays a function of what you have killed rather than of
+   * hours spent standing at a tree.
+   */
+  forge?: MaterialCost;
   flavour: string;
 }
 
@@ -393,6 +413,15 @@ const WEAPON_BASES: ItemBase[] = [
   w("smithhammer", "Smith's Hammer", 1, "mace",
     { model: "weapons/Hammer_Small", palette: "iron" },
     "Off the bench at the world's centre, where everything starts."),
+  // A BAND-2 MACE, which the family did not have. Weapon IS class here, so a
+  // family with a hole in it is a BUILD with a hole in it: a mace user reaching
+  // the second ring had nothing of their own to move up to and had to either
+  // skip a tier or change what they were. Counted across the catalogue, mace
+  // band 2, staff band 3 and wand band 2 were the three gaps; all three are
+  // filled here.
+  w("quarrymaul", "Quarry Maul", 2, "mace",
+    { model: "weapons/Hammer_Small", palette: "bronze", scale: 1.08 },
+    "Made for splitting stone, and never told the difference."),
   w("warhammer", "Warhammer", 3, "mace",
     { model: "weapons/Hammer_Small", palette: "steel", scale: 1.15 },
     "Armour does not have to be cut to stop working."),
@@ -406,7 +435,8 @@ const WEAPON_BASES: ItemBase[] = [
   w("deepsledge", "Deepsledge", 4, "mace",
     { model: "weapons/Hammer_Double", palette: "steel" },
     "Slow enough to see coming. It does not help.",
-    { mods: { speed: 1.3, damage: 1.45 }, twoHanded: true }),
+    // The golem's trophy opens the golem's relic. See the relic block.
+    { mods: { speed: 1.3, damage: 1.45 }, twoHanded: true, teaches: "golemheart" }),
   w("dawnbreaker", "Dawnbreaker", 5, "mace",
     { model: "weapons/Hammer_Double", palette: "gold" },
     "Struck at the right angle it rings for a long time.",
@@ -465,6 +495,15 @@ const WEAPON_BASES: ItemBase[] = [
     { model: "Cleric_Staff", palette: "bone" },
     "Carried a long way before it was ever pointed at anything.",
     { twoHanded: true }),
+  // THE STAFF GAP, and it was the worst of the three. A staff user IS a Mage —
+  // the weapon decides the class — so a hole at band 3 meant the mage build had
+  // nothing of its own between the second ring and the fourth. Nature, because
+  // band 3 is where the orc brute stands and the catalogue answers a creature
+  // in the ring it lives in wherever it can.
+  w("thornstave", "Thornstave", 3, "staff",
+    { model: "Cleric_Staff", palette: "verdant" },
+    "Still putting out leaves, which the owner has stopped apologising for.",
+    { mods: { damage: 1.08 }, twoHanded: true }),
   w("runewood", "Runewood Staff", 4, "staff",
     { build: "crystalstave", palette: "arcane" },
     "The grain runs in shapes the tree did not grow.",
@@ -478,6 +517,13 @@ const WEAPON_BASES: ItemBase[] = [
   w("birchrod", "Birch Rod", 1, "wand",
     { model: "rig:Wizard/Wizard_Staff", palette: "wood", scale: 0.5 },
     "Short, light, and honest about what it is."),
+  // And the wand at band 2. Frost, because the frost answer in the catalogue
+  // sits at band 2 for the bow already (Hoarstring) and a caster reaching the
+  // armabee ring should not have to pick up a bow to have one.
+  w("iciclerod", "Icicle Rod", 2, "wand",
+    { model: "rig:Wizard/Wizard_Staff", palette: "frost", scale: 0.5 },
+    "Beads of meltwater run down it indoors and never quite reach the grip.",
+    { mods: { speed: 0.92 } }),
   w("emberwand", "Ember Wand", 3, "wand",
     { model: "Cleric_Staff", palette: "crimson", scale: 0.52 },
     "Warm at the tip whether or not you are casting.",
@@ -523,7 +569,12 @@ const OFFHAND_BASES: ItemBase[] = [
     { art: { build: "quiver", palette: "wood" }, power: 0.6, guard: 1.6 }),
   g("bulwark", "Bulwark", "offhand", 4, null, "offhand-shield", "iron",
     "Heavy enough that standing still becomes a tactic.",
-    { art: { model: "weapons/Shield_Heater_2", palette: "iron", scale: 0.55, lay: "flat" }, power: 1.25, guard: 0.7 }),
+    { art: { model: "weapons/Shield_Heater_2", palette: "iron", scale: 0.55, lay: "flat" }, power: 1.25, guard: 0.7,
+      // The troll's trophy is the key to the troll's relic. See the relic block.
+      teaches: "trollhide" }),
+  g("stillwardglass", "Stillward Glass", "offhand", 5, null, "offhand-focus", "frost",
+    "Whatever it is showing you, it is not this room.",
+    { art: { model: "weapons/Shield_Round_2", palette: "frost", scale: 0.42, lay: "flat" }, power: 1.25, guard: 0.6 }),
   g("verdantaegis", "Verdant Aegis", "offhand", 5, null, "offhand-shield", "gold",
     "The green stone in the boss is warm, and nobody will say why.",
     { art: { model: "weapons/Shield_Celtic_Golden", palette: "gold", scale: 0.55, lay: "flat" } }),
@@ -563,6 +614,13 @@ const ARMOR_BASES: ItemBase[] = [
     "Boiled hard. Smells like it, too."),
   g("scalemail", "Scale Mail", "armor", 2, "scale", "armor-scale", "bronze",
     "Overlapping plates on a backing that will outlast them."),
+  // A SECOND BAND-2 CHEST. Band 2 held exactly one, so every character passing
+  // through the second ring wore the same thing — and it was scale, which is
+  // the wrong shape for the mage line entirely. Breadth where a band had one
+  // option is not new content for its own sake: one option is a uniform.
+  g("apprenticerobe", "Apprentice's Robe", "armor", 2, "robe", "armor-robe", "wood",
+    "Dyed once, badly, by its owner. Most of them are.",
+    { power: 1.15, guard: 0.75 }),
   g("chainmail", "Chain Mail", "armor", 3, "chain", "armor-chain", "iron",
     "Four thousand rings, and every one of them somebody's afternoon."),
   g("brigandine", "Brigandine", "armor", 3, "brigandine", "armor-brigandine", "steel",
@@ -576,7 +634,8 @@ const ARMOR_BASES: ItemBase[] = [
     { power: 1.3, guard: 0.6 }),
   g("dragonscale", "Dragonscale Plate", "armor", 5, "scale", "armor-scale", "crimson",
     "Still warm in the middle, on cold days.",
-    { power: 1.25, guard: 0.8 }),
+    // The dragon's trophy opens the dragon's relic. See the relic block.
+    { power: 1.25, guard: 0.8, teaches: "wyrmtooth" }),
   g("archmagerobe", "Archmage's Robe", "armor", 5, "robe", "armor-robe", "arcane",
     "The hem does not quite touch the ground.",
     { power: 0.6, guard: 1.9 }),
@@ -592,6 +651,9 @@ const BOOTS_BASES: ItemBase[] = [
   g("travelboots", "Traveller's Boots", "boots", 2, "tall", "boots-tall", "wood",
     "Tall enough for the mud, which is most of the road.",
     { guard: 1.3 }),
+  g("scoutshoes", "Scout's Shoes", "boots", 2, "low", "boots-low", "verdant",
+    "Thin soles. You will feel the ground, which is the entire idea.",
+    { power: 1.2, guard: 0.7 }),
   g("wrappedsabatons", "Wrapped Sabatons", "boots", 3, "wrapped", "boots-wrapped", "iron",
     "Cloth over steel, so they only sound like one man."),
   g("platedgreaves", "Plated Greaves", "boots", 4, "plated", "boots-plated", "steel",
@@ -608,6 +670,12 @@ const CAPE_BASES: ItemBase[] = [
     "It was somebody's, and then it was weather's."),
   g("woolcloak", "Wool Cloak", "cape", 2, "cloak", "cape-cloak", "bronze",
     "Heavy, warm, and it holds the rain for hours."),
+  // The last single-option band in the catalogue. A cape is the slot a player
+  // fills last and notices least, which is exactly why having one choice at a
+  // tier went unremarked for so long.
+  g("pilgrimwrap", "Pilgrim's Wrap", "cape", 2, "cape", "cape-cape", "bone",
+    "Somebody walked a very long way in this, and mended it twice on the road.",
+    { power: 1.2, guard: 0.8 }),
   g("guardtabard", "Guard's Tabard", "cape", 3, "tabard", "cape-tabard", "crimson",
     "The colours of a garrison that stopped mustering.",
     { power: 1.3, guard: 0.7 }),
@@ -766,6 +834,54 @@ const KIT_BASES: ItemBase[] = [
     // a stat that cannot get worse — which makes Broken indistinguishable from
     // Honed on it, and the bottom of the ladder meaningless for that one item.
     { art: { build: "quiver", palette: "wood" }, power: 0.9, guard: 1.4 }),
+
+  // --- Relics: the three things you cannot find, only make -------------------
+  //
+  // THE END OF THE LADDER HAD NOTHING AT THE TOP OF IT. Band 5 is the last
+  // tier, and a band-5 item is reached the same way every other item is: forge
+  // it, or find it, then reforge it upward. That is a fine ladder and it stops
+  // being interesting the moment a player owns the top rung, because there is
+  // nothing the world can offer that is not another copy of what they have.
+  //
+  // A relic is the answer, and it is built entirely out of parts this game
+  // already had:
+  //
+  //   * THE BOSSES ARE THE KEY. Each of the three has a `signature` — a named
+  //     item it is known for, weighted into its own drops — and those were a
+  //     trophy and nothing else. A signature now `teaches` a relic instead of
+  //     teaching itself, so the recipe for one of these is behind a specific
+  //     creature at the edge of the world, and the trophy is worth breaking
+  //     rather than hoarding. That is a real decision: the Bulwark is a good
+  //     shield, and taking it apart is how you stop needing it.
+  //   * ESSENCE IS THE PRICE. It is the one material that cannot be gathered —
+  //     it comes off kills and nothing else, which is the rule that keeps the
+  //     top of the reforge ladder from being a function of time spent at a
+  //     tree. Relics are priced in it deliberately and steeply: a boss pays six
+  //     a kill, so each of these is several trips out and back.
+  //   * AND THEY ARE NOT STRICTLY BETTER. Each one is lopsided — a great deal
+  //     of one number bought with a real loss somewhere else — because a top
+  //     tier of items that are simply the old ones with bigger figures is a
+  //     tier with no decision in it. `power` and `guard` pull against each
+  //     other here on purpose.
+  //
+  // Nothing about them is a new system. They are three rows in this table, one
+  // field on the three signatures, and a cost override.
+  w("wyrmtooth", "Wyrmtooth", 5, "sword",
+    { model: "weapons/Sword_Big", palette: "crimson", scale: 1.2 },
+    "Not forged so much as fitted. The edge was already there.",
+    {
+      mods: { speed: 1.2, damage: 1.55, range: 1.1 },
+      twoHanded: true,
+      power: 1.3,
+      guard: 0.6,
+      forge: { wood: 120, ore: 260, essence: 36, ingot: 6 },
+    }),
+  g("golemheart", "Golem-Heart Signet", "ring", 5, null, "ring-rune", "storm",
+    "Warm, and it keeps a slow beat you stop noticing after a week.",
+    { power: 1.45, guard: 0.55, forge: { wood: 90, ore: 300, essence: 32, ingot: 8 } }),
+  g("trollhide", "Mantle of Long Patience", "cape", 5, "mantle", "cape-mantle", "bone",
+    "Whatever opens on you under it closes again, slowly, and itches for days.",
+    { power: 0.6, guard: 1.9, forge: { wood: 200, ore: 80, herb: 90, essence: 30, weave: 8 } }),
 ];
 
 /** Every base item in the game, by id. */
@@ -2307,6 +2423,8 @@ export function consumableSummary(def: ConsumableDef): string {
  * material being a decoration on the potion recipe.
  */
 export function forgeCost(base: ItemBase): MaterialCost {
+  // A base may price itself. See `ItemBase.forge`.
+  if (base.forge) return { ...base.forge };
   const scale = base.band * base.band; // 1, 4, 9, 16, 25
   const metalish = base.slot === "weapon" || base.slot === "armor" || base.slot === "helm" ||
     base.slot === "offhand" || base.slot === "boots";
