@@ -31,6 +31,7 @@ import { instantiate, findNode, findClip, type Instance } from "./assets";
 import { BUILTIN_WEAPON_MESHES, removeBakedBeads, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
+import { HAIR_ANCHOR_MESH, hairGeometry, hairMaterial } from "./hair";
 import type { CharacterLook } from "../../../shared/look";
 import { applySkin } from "./skin";
 import { pickClip, loadClipLibrary } from "./clips";
@@ -789,6 +790,12 @@ export class Actor {
   private appliedBuild = 1;
   /** The body's own materials, the only ones a skin tone may touch — hair and gear are tracked in `litMaterials` too. */
   private bodyMaterials: THREE.MeshStandardMaterial[] = [];
+  /** The modelled hairstyle hung beside the head piece, if one is worn. See `applyHair`. */
+  private hairMesh: THREE.Mesh | null = null;
+  /** Style and colour the current hair was built for, so snapshots do not rebuild it. */
+  private hairKey = "";
+  /** Bumped per request, so a slow load for a style since changed is dropped. */
+  private hairToken = 0;
   private flashUntil = 0;
   private flashColor = 0xffffff;
   private chilled = false;
@@ -1055,8 +1062,11 @@ export class Actor {
       this.restBoneMatrices.set(name, bone.matrixWorld.clone());
     }
 
-    // A fresh rig carries no build yet, whatever the previous one had.
+    // A fresh rig carries no build yet, whatever the previous one had — and no
+    // hair: the old mesh hung off the old rig's bones and went with it.
     this.appliedBuild = 1;
+    this.hairMesh = null;
+    this.hairKey = "";
     this.tintBody();
     this.applyLook();
     this.measureLifts(model);
@@ -1138,6 +1148,7 @@ export class Actor {
   }
 
   private applyAppearance(appearance: Appearance): void {
+    this.syncHairVisibility();
     // THE RIG IS NOT REBUILT HERE ANY MORE. It used to be: `CLASS_BODIES` was
     // read from the weapon, and a different answer tore the whole model down
     // and started again. What a weapon change does now is rebind six animation
@@ -1461,6 +1472,68 @@ export class Actor {
     const { build } = this.resolvedLook();
     this.instance.object.scale.multiplyScalar(build / this.appliedBuild);
     this.appliedBuild = build;
+    this.applyHair();
+  }
+
+  /**
+   * Hang the chosen hairstyle beside the Monk's head piece.
+   *
+   * The file is modelled in that piece's local space (`tools/art/hair.py`), so it
+   * takes the piece's parent — the Head bone — and the piece's own transform,
+   * and nothing is fitted here. It is part of the rig from then on, so
+   * `refreshOutlines` gives it its outline and through-walls ghost the way it
+   * does the body, and rebuilding outlines is all that removing it needs.
+   */
+  private applyHair(): void {
+    if (!this.identity || !this.instance) return;
+    const { hair, hairColor } = this.resolvedLook();
+    const key = `${hair}|${hairColor.getHexString()}`;
+    if (key === this.hairKey) return;
+    this.hairKey = key;
+    const token = ++this.hairToken;
+    const instance = this.instance;
+    void hairGeometry(hair).then((geometry) => {
+      // A later choice, or a new rig, has overtaken this one.
+      if (token !== this.hairToken || instance !== this.instance) return;
+      this.removeHair();
+      let anchor: THREE.Object3D | null = null;
+      instance.object.traverse((o) => {
+        if (!anchor && o.name === HAIR_ANCHOR_MESH && (o as THREE.Mesh).isMesh) anchor = o;
+      });
+      const parent = (anchor as THREE.Object3D | null)?.parent;
+      if (geometry && anchor && parent) {
+        const from = anchor as THREE.Object3D;
+        const mesh = new THREE.Mesh(geometry, hairMaterial(hairColor));
+        mesh.name = "look_hair";
+        mesh.position.copy(from.position);
+        mesh.quaternion.copy(from.quaternion);
+        mesh.scale.copy(from.scale);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        parent.add(mesh);
+        this.hairMesh = mesh;
+        this.trackMesh(mesh);
+        this.syncHairVisibility();
+      }
+      this.refreshOutlines();
+    });
+  }
+
+  private removeHair(): void {
+    const mesh = this.hairMesh;
+    if (!mesh) return;
+    mesh.removeFromParent();
+    // The geometry is shared by everyone wearing the style; the material is ours.
+    const material = mesh.material as THREE.Material;
+    this.litMaterials = this.litMaterials.filter((e) => e.mat !== material);
+    this.ownedMaterials.delete(material);
+    material.dispose();
+    this.hairMesh = null;
+  }
+
+  /** Hair under a helm would poke through it, so a worn helm hides it. */
+  private syncHairVisibility(): void {
+    if (this.hairMesh) this.hairMesh.visible = !this.appearance?.layers.helm;
   }
 
   private tintBody(): void {
@@ -1750,6 +1823,11 @@ export class Actor {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       if (mesh.material === this.silhouetteMaterial || mesh.material === this.outlineMaterial) return;
+      // NO OUTLINE ROUND HAIR. A hairstyle is dozens of overlapping locks in one
+      // mesh, and the hull outlines every one of them: photographed in the game,
+      // white lines laced through every fringe and fall and the hair read as
+      // plastic pieces. The body's own outline still rings the figure.
+      if (mesh.name === "look_hair") return;
       sources.push(mesh);
     });
 

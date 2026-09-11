@@ -2,16 +2,19 @@
 //
 // WHAT A LOOK IS lives in `shared/look.ts`: the ids a player chose in the
 // creator, stored on the server and sent with every snapshot. This file only
-// turns those ids into things a renderer can use — a skin transform and a scale.
+// turns those ids into things a renderer can use — a skin transform, a scale,
+// a hairstyle file and its colour.
 //
-// The face is the Monk's own. Procedural hair and facial features were built
-// for the creator and removed after review (see the note in `shared/look.ts`).
+// The face is the Monk's own. Procedural facial features were built for the
+// creator and removed after review (see the note in `shared/look.ts`); hair
+// came back as modelled art from `tools/art/hair.py`.
 //
-// THE BODY IS ONE MESH WITH ONE TEXTURE. Skin and clothing share it, so a skin
-// tone recolours the robe too. That is a real limit of this model and worth
-// stating rather than working around badly.
+// THE BODY IS ONE MESH WITH ONE TEXTURE. Skin and clothing share it, which is
+// why a skin tone recolours only the texels `skinWeight` calls skin.
 
-import { BUILD_SCALE, defaultLookFor, type CharacterLook } from "../../../shared/look";
+import * as THREE from "three";
+
+import { BUILD_SCALE, defaultLookFor, lookColorHex, type CharacterLook, type HairStyleId } from "../../../shared/look";
 import { toneById, type SkinTone } from "./skin";
 
 export interface ResolvedLook {
@@ -27,10 +30,19 @@ export interface ResolvedLook {
   skin: SkinTone;
   /** Height and build, as a multiplier on the whole body. */
   build: number;
+  /** Which modelled hairstyle, or "none". */
+  hair: HairStyleId;
+  hairColor: THREE.Color;
 }
 
 export function resolveLook(look: CharacterLook): ResolvedLook {
-  return { look, skin: toneById(look.skin), build: BUILD_SCALE[look.build] };
+  return {
+    look,
+    skin: toneById(look.skin),
+    build: BUILD_SCALE[look.build],
+    hair: look.hair,
+    hairColor: new THREE.Color(lookColorHex("hairColor", look.hairColor)),
+  };
 }
 
 /** The look a name produces before its owner has chosen one. Same name, same person, on every client. */

@@ -24520,3 +24520,59 @@ nothing shows at creator zoom, and it is recorded rather than tuned away. On the
 tone sheets the vest, sash, shorts, wraps, beard and brows now hold one colour
 across all eight tones while the skin steps from porcelain to ebony. Equipped
 armour and weapons were never in the tinted set and still are not.
+
+**Phase 70 M70.276 — hairstyles as modelled art.** Asked for: "start making
+actual arts for different hairstyles that actually suits our character" — after
+the primitive hair of M70.274 was rejected. Blender 5.2.1 is installed on this
+machine for it (`winget`, on PATH for both shells).
+
+`tools/art/hair.py` models six styles on the Monk's own head — short, long,
+ponytail, topknot, mohawk, spiky — and the creator offers them with shaved and a
+fourteen-colour palette. THE SCALP IS RAY-CAST, NOT ASSUMED: a grid of
+directions is cast inward onto the skull (and the rigid head piece), each vertex
+sits a thickness above it, and the rows follow a hairline that is high at the
+brow, above the ear at the side and low at the nape. Locks are faceted wedges and
+clumps swept along curves, the vocabulary of the Monk's own beard.
+
+SPACE WITHOUT FITTING. The game's `Monk001` is Blender's `Monk.001`, a rigid head
+piece on the Head bone whose local vertex coordinates match three.js exactly. So
+each style is exported IN THAT LOCAL SPACE without the Y-up flip, and
+`Actor.applyHair` hangs the mesh beside it with its transform. Every style landed
+on the in-game head first time; nothing is offset by hand. One geometry per style
+is shared (`client/src/three/hair.ts`), each wearer gets its own coloured
+material, and a worn helm hides the hair.
+
+THE PICTURES, AGAIN, IN ORDER — each fault invisible to everything that passed:
+
+  - The first renders had the hair floating behind and above the head. The FBX
+    imports posed; `mesh.vertices` are the bind pose. Rest pose fixed it.
+  - Every cap read as a knitted beanie: full thickness to a smooth rim. Hair
+    thins where it grows from skin and its edge is strands, so the cap now fades
+    and its hairline is jagged.
+  - A tab of skull stood up through the ponytail's hairline, and specks ran down
+    the back of the short cut. Two guesses were wrong — thickness, then the head
+    piece. MEASURED: the skull has a ridge exactly on x = 0, cap columns
+    straddled it, and normal-weighted pushes drove them apart. Columns now sit on
+    the centre line and the push is mostly radial.
+  - The first mohawk was separate spikes on bare skull — a dinosaur's back. It is
+    a continuous strip with overlapping back-swept clumps now. The first spiky
+    was a crown of thorns, then of quartz; it is flat root-heavy blades on the
+    top of the head now.
+  - IN THE GAME, the rim hull outlined every lock and laced white lines through
+    all of it: hair is excluded from the outline pass. Long hair hung as
+    tentacles with bare neck between them from the game's raised camera, then
+    rolled out from the cheeks like earmuffs: it has a curtain under the falls
+    and hangs close.
+
+`tools/soak/hairstyles.mjs` photographs every style on the in-game character from
+four sides onto one sheet, and that sheet — not the Blender renders — is what
+each was finally judged on. `creator.mjs` now also holds that a look saved
+before hair existed keeps its choices and fills the rest, rather than sending
+every player back to the creator; the wire gets no such allowance.
+
+A SERVING NOTE worth keeping: Vite ignores `public/models`, and a NEW file there
+serves the HTML fallback until the dev server restarts — but an overwritten one
+serves fresh. And stopping a background `npm run dev` task leaves its node
+children holding 5173 and 8080; they have to be found and closed by PID.
+
+Weakest of the six: spiky, which is still a little crown-like dead on.

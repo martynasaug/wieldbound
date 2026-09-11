@@ -37,9 +37,19 @@ console.log("1. the server accepts exactly the looks the tables describe");
   check("an unknown tone is refused", sanitizeLook({ ...good, skin: "green" }) === null);
   check("a number where an id belongs is refused", sanitizeLook({ ...good, build: 3 }) === null);
   check("a non-object is refused", sanitizeLook("tan") === null && sanitizeLook(null) === null);
-  const extra = sanitizeLook({ ...good, admin: true, hair: "crest" });
-  check("unknown fields are dropped, not stored", !!extra && !("admin" in extra) && !("hair" in extra));
-  check("stored garbage parses as never chosen", parseStoredLook("{not json") === null && parseStoredLook(null) === null);
+  const extra = sanitizeLook({ ...good, admin: true, wings: "big" });
+  check("unknown fields are dropped, not stored", !!extra && !("admin" in extra) && !("wings" in extra));
+  check("a retired style is refused", sanitizeLook({ ...good, hair: "crest" }) === null);
+  check("stored garbage parses as never chosen", parseStoredLook("{not json", "Alder") === null && parseStoredLook(null, "Alder") === null);
+  // A look saved before hair existed still loads, with the name's default filled
+  // in — rather than sending every player who had chosen back to the creator.
+  const old = parseStoredLook(JSON.stringify({ skin: "umber", build: "slight" }), "Alder");
+  check(
+    "a look stored before a field existed keeps its choices and fills the rest",
+    !!old && old.skin === "umber" && old.build === "slight" && old.hair === good.hair && old.hairColor === good.hairColor,
+    JSON.stringify(old),
+  );
+  check("the wire gets no such allowance", sanitizeLook({ skin: "umber", build: "slight" }) === null);
   for (const option of LOOK_OPTIONS) {
     const ids = option.choices.map((c) => c.id);
     check(`${option.key} has no duplicate ids`, new Set(ids).size === ids.length, ids.join(","));
@@ -75,7 +85,7 @@ console.log("3. nobody's colouring changed on the day the creator shipped");
 console.log("4. a new character is sent into the creator, and what they pick stays");
 {
   const name = `Creator${Date.now() % 100000}`;
-  const chosen = { skin: "umber", build: "slight" };
+  const chosen = { skin: "umber", build: "slight", hair: "ponytail", hairColor: "ginger" };
   const { browser, page } = await open({ headless: true, width: 1280, height: 800 });
   try {
     await login(page, name, { creator: true });

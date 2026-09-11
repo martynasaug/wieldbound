@@ -2902,7 +2902,7 @@ wss.on("connection", (socket) => {
       // A stored look that no longer parses — a style since retired — counts as
       // never chosen, so the player is sent back through the creator rather
       // than silently given a look they did not pick.
-      const storedLook = parseStoredLook(character.look);
+      const storedLook = parseStoredLook(character.look, character.name);
       const look = storedLook ?? defaultLookFor(character.name);
 
       // No offline progress: nothing accrues while logged out, because
