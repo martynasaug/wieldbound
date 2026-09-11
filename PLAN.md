@@ -23669,3 +23669,43 @@ failed about the one thing it had just been taught to allow. It normalises line
 endings on read now.
 
 Suite 50/50.
+
+**Phase 70 M70.252 — the potion the game gives you could not be drunk.** Found
+by chasing an instrument reading rather than a bug report: every guided-opening
+run this session reported "0 potion(s) drunk" while the character owned one from
+the daily bonus. I had been reading that as the bot failing to ask.
+
+There are TWO POTION STORES. `characters.potions` is the original column, and it
+is what `claimDailyBonus` wrote. The `consumables` table is what
+`spendConsumable` reads, and therefore what USE_CONSUMABLE — the only message
+that still drinks anything — spends. The message that used to spend the column,
+USE_POTION, was retired when the generic consumable system arrived; the GRANT
+was never moved across with it. So a new character was told "Daily bonus: +1
+potion", saw none in the bag, and got silence on drinking: `spendConsumable`
+returned null and the handler treats null as nothing-to-do. Nothing threw, and
+the previous milestone marked USE_POTION `@retired` without noticing that the
+other half of the pair was still feeding it.
+
+The fix is one call — `addConsumable(id, "potion", DAILY_BONUS_REWARD.potions)`
+— so the thing granted is the thing spendable. Verified end to end on a fresh
+character: healed 24, count 1 -> 0.
+
+A CORRECTION ON THE WAY THERE. The probe reported "healed 27, potions 1 -> 1"
+and I went looking for a display bug, because a count that does not move after a
+successful drink is a display bug. It was the probe: it read
+`InventoryPanel.potions`, which is assigned at line 164 and never read anywhere
+— the footer renders from `this.consumables`. The display was never wrong. The
+player simply saw zero potions while the log announced one, which is exactly
+what the bug was.
+
+Promoted to `tools/test/dailypotion.mjs` rather than left as a probe, because
+the rule outlives the bug: what the daily bonus advertises, a character can
+spend. No browser and no combat — the grant and the store are the whole subject.
+It was run against the fix removed and reports the fault, which is the only
+evidence that a passing guard means anything.
+
+STILL UNEXPLAINED: the regression run after the catalogue work showed 6 deaths
+where previous runs showed 0-1. One sample, not investigated, not a conclusion —
+recorded here so it is not quietly forgotten.
+
+Suite 51/51.

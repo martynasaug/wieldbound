@@ -1154,6 +1154,26 @@ export function claimDailyBonus(id: string): DailyBonusResult | null {
   const now = Date.now();
   if (row.lastDailyAt !== null && now - row.lastDailyAt < DAILY_BONUS_COOLDOWN_MS) return null;
 
+  // THE POTION GOES IN THE TABLE DRINKING READS, NOT THE OLD COLUMN.
+  //
+  // There are two potion stores in this database. `characters.potions` is the
+  // original one, written by the daily bonus and displayed by the client; the
+  // `consumables` table is what `spendConsumable` — and therefore
+  // USE_CONSUMABLE, the only path that still drinks anything — actually reads.
+  // The USE_POTION message that spent the column was retired when the generic
+  // consumable system arrived, but the GRANT was never moved across.
+  //
+  // So every new character was handed a potion they could see and could not
+  // drink: the panel said 1, the server found 0, and `spendConsumable` returned
+  // null, which the handler treats as "nothing to do" and answers with silence.
+  // Measured at 40/70 health with one potion in the bag — asked, and nothing
+  // happened at all. Five guided-opening runs reported "0 potions drunk" and I
+  // read it as the bot failing to ask.
+  //
+  // The column is left alone rather than dropped: other code still reads it for
+  // the POTIONS_UPDATE display, and a migration is a separate job from making
+  // the reward work. What matters is that the thing granted is the thing
+  // spendable.
   applyDailyBonusStmt.run(
     DAILY_BONUS_REWARD.wood,
     DAILY_BONUS_REWARD.ore,
@@ -1162,6 +1182,9 @@ export function claimDailyBonus(id: string): DailyBonusResult | null {
     now,
     id,
   );
+  if (DAILY_BONUS_REWARD.potions > 0) {
+    addConsumable(id, "potion", DAILY_BONUS_REWARD.potions);
+  }
   return {
     wood: row.wood + DAILY_BONUS_REWARD.wood,
     ore: row.ore + DAILY_BONUS_REWARD.ore,
