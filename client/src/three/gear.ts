@@ -838,9 +838,16 @@ async function makeHeldItem(
   if (base.art.build) {
     // `grip.box` comes from `donorGrip()`, which is itself cached, so the only
     // input to either builder is the build name.
-    const built = await cachedHeldGeometry(`build:${base.art.build}`, () =>
-      base.art.build === "crystalstave" ? buildCrystalStave(grip.box) : buildQuiver(grip.box),
-    );
+    // A REGISTRY RATHER THAN A TERNARY. Two builders fitted in a conditional;
+    // five do not, and the failure mode of the conditional was silent — an
+    // unknown build name fell through to the quiver, so a mistyped weapon would
+    // have been drawn as a bag of arrows rather than reported.
+    const builder = HELD_BUILDERS[base.art.build];
+    if (!builder) {
+      console.warn(`gear: no builder named "${base.art.build}"; ${baseId} will be invisible`);
+      return null;
+    }
+    const built = await cachedHeldGeometry(`build:${base.art.build}`, () => builder(grip.box));
     mesh = new THREE.Mesh(
       built,
       [
@@ -1143,6 +1150,204 @@ function buildCrystalStave(b: THREE.Box3): THREE.BufferGeometry {
   stone.translate(0, 0, headZ + 0.1);
 
   return threeGroups(merge(claw), merge([shaft, collar]), stone);
+}
+
+/**
+ * WHY THERE ARE PROCEDURAL WEAPONS AT ALL, and why more of them is the right
+ * way to make the late game look like something.
+ *
+ * The imported pack is twenty-three meshes with NO TEXTURES — flat material
+ * colour in a small vocabulary — and that is the whole reason a palette can
+ * repaint one and a quality can tint it. It is what turns twenty-three models
+ * into a hundred and twenty items. The cost of that bargain is that two items
+ * sharing a mesh are the same object in two colours, and at the top of the
+ * catalogue that starts to show: a relic somebody crossed the world for should
+ * not be the recruit's sword in red.
+ *
+ * Importing a better-looking model is the obvious fix and the wrong one. Every
+ * good-looking pack is textured, a textured mesh cannot be repainted, and the
+ * item would become the only thing in the game outside the palette system —
+ * which is also the only thing an artist would have to redo for every future
+ * variant of it.
+ *
+ * Geometry written HERE has neither problem. It is new silhouette, it costs no
+ * download, and it comes out of `threeGroups` already divided into metal, wood
+ * and accent — so it is repainted and tinted by exactly the same rules as
+ * everything else. The three below are shapes the pack does not contain at all.
+ */
+const HELD_BUILDERS: Record<string, (b: THREE.Box3) => THREE.BufferGeometry> = {
+  crystalstave: (b) => buildCrystalStave(b),
+  quiver: (b) => buildQuiver(b),
+  fangblade: (b) => buildFangblade(b),
+  flail: (b) => buildFlail(b),
+  glaive: (b) => buildGlaive(b),
+};
+
+/**
+ * A single-edged blade with a torn back and a tooth at the tip.
+ *
+ * Deliberately ASYMMETRIC, which is the thing none of the imported swords are:
+ * five of them are a mirrored taper and read as the same object at a glance.
+ * The spine steps down twice toward the point so the silhouette has notches in
+ * it, and the guard is a pair of forward-swept horns rather than a crossbar.
+ */
+function buildFangblade(b: THREE.Box3): THREE.BufferGeometry {
+  const z0 = b.min.z;
+  // SHORTER AND MUCH WIDER THAN THE FIRST ATTEMPT, which was 1.28 of the donor
+  // box at a tenth of a unit across and photographed as a NEEDLE — a red spike
+  // with no blade to it. At this camera a weapon is read almost entirely by its
+  // width against the character's shoulders, and the stepped spine that is the
+  // whole idea of this shape cannot be seen at all unless the steps are a
+  // visible fraction of that width.
+  const len = (b.max.z - z0) * 1.0;
+  const metal: THREE.BufferGeometry[] = [];
+  const wood: THREE.BufferGeometry[] = [];
+  const accent: THREE.BufferGeometry[] = [];
+
+  // Blade: three stacked slabs, each shorter and narrower, so the back edge
+  // steps down toward the point rather than tapering smoothly.
+  const seg = [
+    { z: 0.34, w: 0.23, h: 0.045, l: 0.46 },
+    { z: 0.72, w: 0.175, h: 0.038, l: 0.34 },
+    { z: 0.97, w: 0.115, h: 0.030, l: 0.22 },
+  ];
+  for (const s of seg) {
+    const slab = new THREE.BoxGeometry(s.w, s.h, len * s.l);
+    // Shifted off-centre so the cutting edge is one side only and the notches
+    // all fall on the other.
+    slab.translate(s.w * 0.22, 0, z0 + len * s.z);
+    metal.push(slab);
+  }
+  // The tooth: a broad four-sided pyramid past the last slab.
+  const tip = new THREE.ConeGeometry(0.1, len * 0.2, 4);
+  tip.rotateX(Math.PI / 2);
+  tip.translate(0.02, 0, z0 + len * 1.13);
+  metal.push(tip);
+
+  // Two horns sweeping forward from the guard.
+  for (const side of [-1, 1]) {
+    const horn = new THREE.ConeGeometry(0.042, 0.26, 5);
+    horn.rotateZ(side * Math.PI * 0.42);
+    horn.rotateX(-0.25);
+    horn.translate(side * 0.13, 0, z0 + len * 0.14);
+    accent.push(horn);
+  }
+  const collar = new THREE.CylinderGeometry(0.055, 0.07, 0.05, 6);
+  collar.rotateX(Math.PI / 2);
+  collar.translate(0, 0, z0 + len * 0.13);
+  accent.push(collar);
+
+  const grip = new THREE.CylinderGeometry(0.036, 0.042, len * 0.2, 6);
+  grip.rotateX(Math.PI / 2);
+  grip.translate(0, 0, z0 + len * 0.04);
+  wood.push(grip);
+  const pommel = new THREE.OctahedronGeometry(0.05, 0);
+  pommel.translate(0, 0, z0 - len * 0.05);
+  accent.push(pommel);
+
+  return threeGroups(merge(metal), merge(wood), merge(accent));
+}
+
+/**
+ * A haft, a length of chain, and a spiked head that hangs off the end.
+ *
+ * The pack has two hammers and nothing articulated, so this is the one mace
+ * silhouette that is not a block on a stick. The chain is four small torus
+ * links rather than a cylinder, because the gaps are what make it read as
+ * chain at the distance this camera sits at.
+ */
+function buildFlail(b: THREE.Box3): THREE.BufferGeometry {
+  const z0 = b.min.z;
+  const len = (b.max.z - z0) * 1.05;
+  const metal: THREE.BufferGeometry[] = [];
+  const wood: THREE.BufferGeometry[] = [];
+  const accent: THREE.BufferGeometry[] = [];
+
+  const haft = new THREE.CylinderGeometry(0.036, 0.044, len * 0.6, 7);
+  haft.rotateX(Math.PI / 2);
+  haft.translate(0, 0, z0 + len * 0.3);
+  wood.push(haft);
+
+  const cap = new THREE.CylinderGeometry(0.05, 0.05, 0.05, 7);
+  cap.rotateX(Math.PI / 2);
+  cap.translate(0, 0, z0 + len * 0.61);
+  accent.push(cap);
+
+  // Links, drooping slightly so it does not read as a rigid pole.
+  for (let i = 0; i < 4; i++) {
+    const link = new THREE.TorusGeometry(0.032, 0.011, 4, 8);
+    if (i % 2 === 1) link.rotateX(Math.PI / 2);
+    link.translate(0, -i * 0.012, z0 + len * (0.66 + i * 0.055));
+    metal.push(link);
+  }
+
+  const head = new THREE.IcosahedronGeometry(0.125, 0);
+  head.translate(0, -0.062, z0 + len * 0.96);
+  metal.push(head);
+  // Six spikes off the ball, on the axes, so the silhouette is spiky from
+  // every angle the camera can take.
+  for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+    const spike = new THREE.ConeGeometry(0.026, 0.09, 4);
+    if (dx) spike.rotateZ(dx * -Math.PI / 2);
+    if (dz) spike.rotateX(dz * Math.PI / 2);
+    if (dy < 0) spike.rotateZ(Math.PI);
+    spike.translate(dx * 0.12, -0.062 + dy * 0.12, z0 + len * 0.96 + dz * 0.12);
+    accent.push(spike);
+  }
+
+  return threeGroups(merge(metal), merge(wood), merge(accent));
+}
+
+/**
+ * A polearm: a long shaft with a broad curved blade and a rear hook.
+ *
+ * The pack's one long weapon is a spear, which is a point on a pole. This is
+ * the other half of that family — something with a cutting edge out at the end,
+ * and a counterweight behind it so the silhouette is not symmetrical.
+ */
+function buildGlaive(b: THREE.Box3): THREE.BufferGeometry {
+  const z0 = b.min.z;
+  const len = (b.max.z - z0) * 1.55;
+  const metal: THREE.BufferGeometry[] = [];
+  const wood: THREE.BufferGeometry[] = [];
+  const accent: THREE.BufferGeometry[] = [];
+
+  const shaft = new THREE.CylinderGeometry(0.03, 0.038, len * 0.78, 7);
+  shaft.rotateX(Math.PI / 2);
+  shaft.translate(0, 0, z0 + len * 0.36);
+  wood.push(shaft);
+
+  // The blade: two slabs at a slight angle to each other, so the edge reads as
+  // curved without needing a lathe.
+  const lower = new THREE.BoxGeometry(0.115, 0.022, len * 0.22);
+  lower.rotateY(0.12);
+  lower.translate(0.035, 0, z0 + len * 0.84);
+  const upper = new THREE.BoxGeometry(0.085, 0.02, len * 0.16);
+  upper.rotateY(0.3);
+  upper.translate(0.075, 0, z0 + len * 1.0);
+  metal.push(lower, upper);
+  const point = new THREE.ConeGeometry(0.045, len * 0.1, 4);
+  point.rotateX(Math.PI / 2);
+  point.rotateY(0.3);
+  point.translate(0.1, 0, z0 + len * 1.1);
+  metal.push(point);
+
+  // Rear hook, opposite the edge.
+  const hook = new THREE.ConeGeometry(0.03, 0.14, 4);
+  hook.rotateZ(Math.PI * 0.62);
+  hook.translate(-0.075, 0, z0 + len * 0.8);
+  accent.push(hook);
+
+  const ferrule = new THREE.CylinderGeometry(0.045, 0.045, 0.06, 7);
+  ferrule.rotateX(Math.PI / 2);
+  ferrule.translate(0, 0, z0 + len * 0.76);
+  accent.push(ferrule);
+  const butt = new THREE.CylinderGeometry(0.04, 0.028, 0.1, 6);
+  butt.rotateX(Math.PI / 2);
+  butt.translate(0, 0, z0 - len * 0.03);
+  accent.push(butt);
+
+  return threeGroups(merge(metal), merge(wood), merge(accent));
 }
 
 /** A quiver of arrows, for the ranger's off-hand. */

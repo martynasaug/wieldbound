@@ -23555,3 +23555,62 @@ relic model from another pack would be the one item in the game that cannot be
 repainted, and it would look like an import. The relics reuse existing meshes in
 palettes nothing else uses, which is the pipeline working rather than a
 shortcut around it.
+
+**Phase 70 M70.250 — weapons that are shapes rather than colours.** Asked for
+directly: good-looking gear, not recolours. Three new silhouettes, none of them
+imported.
+
+WHY NOT IMPORT. `ASSET_CREDITS.txt` records that the weapons pack was chosen
+over better-looking ones BECAUSE it has no textures — every mesh is flat
+material colour in a small vocabulary, which is the only reason a palette can
+repaint one and a quality can tint it. That is what turns 23 meshes into 120
+items. A textured mesh from another pack would be the single item in the game
+outside that system, and the only one an artist has to redo for every future
+variant. The cost of the bargain is real, though, and it shows at the top of the
+catalogue: a relic somebody crossed the world for should not be the recruit's
+sword in red.
+
+Geometry written in `gear.ts` has neither problem. It is new silhouette, no
+download, and it comes out of `threeGroups` already divided into metal, wood and
+accent — repainted and tinted by exactly the same rules as everything else. Two
+builders existed and nothing had been added to them since; there are five now.
+
+  * FANGBLADE — a single-edged blade whose spine steps down twice toward a
+    tooth, with forward-swept horns instead of a crossbar. Deliberately
+    asymmetric, which is the thing none of the imported swords are: five of them
+    are a mirrored taper and read as the same object at a glance. Wyrmtooth
+    wields it, so the dragon's relic stops being a recoloured Sword_Big.
+  * FLAIL — haft, four torus links, spiked ball. The pack's two maces are both a
+    block on a stick; nothing in it is articulated. Carried by Chainfall, new at
+    band 4.
+  * GLAIVE — a long shaft with a broad angled blade and a rear hook. The pack's
+    one long weapon is a spear, which is a point on a pole; this is the other
+    half of that family. Carried by the Moon Glaive, new at band 5.
+
+THE FIRST FANGBLADE WAS A NEEDLE and only the screenshot said so. At 1.28 of the
+donor box and a tenth of a unit across it photographed as a red spike with no
+blade to it — and the stepped spine, which is the entire idea of the shape,
+was invisible. At this camera a weapon is read almost entirely by its WIDTH
+against the character's shoulders. Rebuilt shorter and twice as wide, the steps
+show. The flail and the glaive were right first time and were only enlarged.
+
+Two smaller repairs on the way. The build dispatch was a ternary whose fallback
+was the quiver, so an unknown build name would have drawn a weapon as a bag of
+arrows rather than reporting anything; it is a registry now that warns and
+returns null. And `items.mjs` held a hardcoded `["crystalstave", "quiver"]`,
+which made three places that had to agree about a builder's name — the registry,
+the union type in `ItemArt`, and the test. The compiler checks two of them
+against each other; the third now READS the registry out of gear.ts, so adding a
+builder is two edits and the test follows.
+
+NO RELIC AURA, having looked at it and decided against. The wisp aura is driven
+by rarity PER SLOT, and `Appearance` carries `weaponBaseId` but delivers capes
+and rings as style-and-rarity only — so a relic-specific glow would light
+Wyrmtooth and silently skip the Signet and the Mantle. A visual rule that holds
+for one of three items is worse than none. The clean version is a per-base forge
+RARITY override, so a relic arrives at a quality that already glows and the
+existing system does the rest for every slot — but rarity also drives power and
+affix count, so that is a balance change rather than a lighting one and it is
+not being smuggled in under this.
+
+Suite 49/49.

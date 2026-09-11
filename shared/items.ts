@@ -173,7 +173,16 @@ export const PALETTES: Record<PaletteId, PaletteDef> = {
  */
 export interface ItemArt {
   model?: string;
-  build?: "crystalstave" | "quiver";
+  /**
+   * Geometry written in code rather than imported, named here and authored in
+   * `HELD_BUILDERS` over in gear.ts.
+   *
+   * Kept as a UNION rather than a loose string on purpose: the two halves live
+   * in different files, and a typo would otherwise be an invisible weapon found
+   * by a player. Adding a builder means adding its name here, and the compiler
+   * then insists the other half exists.
+   */
+  build?: "crystalstave" | "quiver" | "fangblade" | "flail" | "glaive";
   palette: PaletteId;
   /** Multiplies the fitted length. A wand is a staff cut down. */
   scale?: number;
@@ -404,6 +413,13 @@ const WEAPON_BASES: ItemBase[] = [
     { model: "weapons/Axe_Double", palette: "steel" },
     "Two heads, so the swing back is still a swing.",
     { mods: { speed: 1.15, damage: 1.25 }, twoHanded: true }),
+  // A POLEARM. The pack's one long weapon is a spear — a point on a pole — and
+  // this is the other half of that family, an edge out at the end with a hook
+  // behind it.
+  w("moonglaive", "Moon Glaive", 5, "axe",
+    { build: "glaive", palette: "silver" },
+    "Reach enough that the first thing most people learn about it is the sound.",
+    { mods: { range: 1.35, speed: 1.2, damage: 1.3 }, twoHanded: true }),
   w("reaperscythe", "Reaper's Scythe", 5, "axe",
     { model: "weapons/Scythe", palette: "obsidian" },
     "A farm tool that stopped pretending.",
@@ -437,6 +453,13 @@ const WEAPON_BASES: ItemBase[] = [
     "Slow enough to see coming. It does not help.",
     // The golem's trophy opens the golem's relic. See the relic block.
     { mods: { speed: 1.3, damage: 1.45 }, twoHanded: true, teaches: "golemheart" }),
+  // A FLAIL, which the pack has no mesh for at all — its two maces are both a
+  // block on a stick. Procedural, so it is still repainted by palette and
+  // tinted by quality like everything else. See HELD_BUILDERS in gear.ts.
+  w("chainfall", "Chainfall", 4, "mace",
+    { build: "flail", palette: "iron" },
+    "The head arrives a moment after you think it will. That is the trick of it.",
+    { mods: { speed: 1.15, damage: 1.3 } }),
   w("dawnbreaker", "Dawnbreaker", 5, "mace",
     { model: "weapons/Hammer_Double", palette: "gold" },
     "Struck at the right angle it rings for a long time.",
@@ -867,7 +890,7 @@ const KIT_BASES: ItemBase[] = [
   // Nothing about them is a new system. They are three rows in this table, one
   // field on the three signatures, and a cost override.
   w("wyrmtooth", "Wyrmtooth", 5, "sword",
-    { model: "weapons/Sword_Big", palette: "crimson", scale: 1.2 },
+    { build: "fangblade", palette: "crimson" },
     "Not forged so much as fitted. The edge was already there.",
     {
       mods: { speed: 1.2, damage: 1.55, range: 1.1 },

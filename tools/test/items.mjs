@@ -13,7 +13,7 @@
 //
 //   node tools/test/items.mjs
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   ITEM_SLOTS,
@@ -125,6 +125,25 @@ console.log(`  ${ids.size} unique ids, ${names.size} unique names`);
 // --- 3. every model the catalogue names actually exists ---------------------
 // The one failure that is completely invisible at runtime: a missing model
 // leaves an empty hand and logs nothing the player will ever see.
+// WHICH BUILDERS EXIST, READ OUT OF gear.ts RATHER THAN LISTED HERE.
+//
+// This was a hardcoded `["crystalstave", "quiver"]`, which made three places
+// that had to agree about a builder's name: the registry that implements it,
+// the union type in `ItemArt`, and this. Two of those are checked by the
+// compiler against each other; this one was not, so adding a builder failed the
+// suite for the wrong reason and the fix was to edit a list rather than to
+// notice anything. Reading the registry means a new builder is two edits and
+// this file follows.
+const GEAR_SRC = readFileSync(
+  path.resolve(import.meta.dirname, "../../client/src/three/gear.ts"),
+  "utf8",
+);
+const registry = GEAR_SRC.slice(
+  GEAR_SRC.indexOf("const HELD_BUILDERS"),
+  GEAR_SRC.indexOf("};", GEAR_SRC.indexOf("const HELD_BUILDERS")),
+);
+const KNOWN_BUILDERS = new Set([...registry.matchAll(/^\s*([a-z][a-zA-Z0-9]*):/gm)].map((m) => m[1]));
+
 section("3. art");
 let checkedModels = 0;
 let builders = 0;
@@ -132,7 +151,11 @@ for (const b of bases) {
   const { model, build } = b.art;
   if (build) {
     builders++;
-    check(`${b.id} names a known builder`, ["crystalstave", "quiver"].includes(build), build);
+    check(
+      `${b.id} names a known builder`,
+      KNOWN_BUILDERS.has(build),
+      `${build} — gear.ts knows ${[...KNOWN_BUILDERS].join(", ")}`,
+    );
     continue;
   }
   if (!model) {
