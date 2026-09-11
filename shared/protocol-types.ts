@@ -508,9 +508,37 @@ export function manaRegenAmount(intelligence = 0): number {
  *
  * The clamp in `resolveAttack` is the one that matters and it stays: nothing
  * here can ever produce a guaranteed hit.
+ *
+ * THE BASE WAS 50 AND THE FIRST FIGHT IN THE GAME WAS A COIN TOSS.
+ *
+ * A character starts at Agility 1, so the agility term contributes two points
+ * and the base is essentially the whole number: 52 accuracy, less a slime's 5
+ * evasion, is a 47% hit chance. The weakest creature in the game dodged more
+ * than half of what a new player threw at it, and a goblin dodged 63%.
+ *
+ * Measured, not guessed: `tools/test/earlycombat.mjs` prints the arithmetic,
+ * and a guided-opening run spent 363 attack presses on 6 kills.
+ *
+ * A SLOW OPENING IS A CHOICE; AN ILLEGIBLE ONE IS NOT. The early game is meant
+ * to be slow and that has not changed — what it cannot be is a fight where most
+ * swings do nothing, because a player with no numbers in front of them cannot
+ * tell a miss from a broken weapon, and three whiffs in a row reads as the game
+ * failing rather than as the dice. 68 puts a new character at 65% on a slime
+ * and 55% on a goblin: still missing often enough to notice, never often enough
+ * to look broken.
+ *
+ * WHERE THIS LANDS AND WHERE IT DOES NOT. `resolveAttack` clamps hit chance to
+ * 5-95, and Agility 23 already reached 95 on its own before this, so every
+ * character past the early game was pinned at the cap against ordinary evasion
+ * and is entirely unaffected. The change is felt where it was asked for: the
+ * levels where the agility term is still small.
+ *
+ * The exception is the ghost, the one monster built around accuracy, whose
+ * evasion moved with this so that it keeps asking exactly the question it was
+ * written to ask. See its entry in MONSTER_STATS.
  */
 export function playerAccuracy(agility: number, accuracyBonus = 0): number {
-  return 50 + agility * 2 + accuracyBonus;
+  return 68 + agility * 2 + accuracyBonus;
 }
 
 export function playerCritChance(agility: number): number {
@@ -750,10 +778,54 @@ export function gatherYieldFor(band: 1 | 2 | 3 | 4 | 5, gatherLevel = 0): number
   return base + Math.floor((gatherLevel * band) / 2);
 }
 
-export const BATTLE_DURATION_MS = 1500;
+/**
+ * The unhurried swing a character starts with, before anything speeds it up.
+ *
+ * 1500 BECAME 2000 ALONGSIDE THE ACCURACY FIX, and the two belong together.
+ * Landing 65% of swings instead of 47% takes a slime from 12.4 swings to about
+ * 9, and left at the old cadence that is simply a faster kill — which is not
+ * what was asked for. The opening is meant to be SLOW; what it was not meant to
+ * be is a blur of swings that mostly miss. So the blows land more often and
+ * come further apart, each one means more, and a slime still takes about the
+ * same sixteen seconds it always did.
+ *
+ * IT IS AN OPENING CHANGE, not a global one, and the arithmetic below is why.
+ * Battle power takes 120ms off per level and Agility 25ms per point, against a
+ * floor of 450 — so a mid-game character is already subtracting more than this
+ * adds, and anyone past about Agility 40 sits on the floor either way. The
+ * extra half second is felt at level 1 and has faded by the time it would
+ * become a tax.
+ */
+export const BATTLE_DURATION_MS = 2000;
 export const BATTLE_DURATION_FLOOR_MS = 450;
-export const BATTLE_POWER_STEP_MS = 120;
-export const AGILITY_ATTACK_SPEED_STEP_MS = 25;
+/**
+ * What battle power and Agility take off the swing, re-anchored when
+ * BATTLE_DURATION_MS went from 1500 to 2000.
+ *
+ * THE SLOWDOWN IS AN OPENING CHANGE, AND WITHOUT THESE IT WAS NOT ONE. The note
+ * above claimed a mid-game character already subtracts more than the extra half
+ * second adds, so the change would fade on its own. That was wrong, and
+ * `tools/test/weaponbalance.mjs` said so within the hour: at Agility 26 with no
+ * battle power the OLD formula came out at 290ms and was held at the 450ms
+ * floor, so the floor was hiding the rest of the curve. Adding 500 lifted that
+ * same character clear of the floor to 790 — a 75% longer swing in the middle
+ * of the game, where the accuracy fix gives nothing back because those
+ * characters were already pinned at the 95% hit cap.
+ *
+ * That is a straight nerf to every weapon that lives on its basic swing, and it
+ * lands hardest next to casters, whose damage comes from cooldowns this number
+ * does not touch. The test caught it as the staff and wand out-damaging axe and
+ * mace while also striking from 250px — reach and damage at once, which is the
+ * one thing that file exists to forbid.
+ *
+ * 38 and 160 are chosen so the curve meets the floor where it used to: at
+ * Agility 26 and a forged weapon, 2000 - 988 - 560 is 452 against the old 450.
+ * A new character at Agility 1 still swings about half a second slower, which
+ * is the whole point, and by the time that character has stats the number is
+ * where it always was.
+ */
+export const BATTLE_POWER_STEP_MS = 160;
+export const AGILITY_ATTACK_SPEED_STEP_MS = 38;
 
 // Combat is proximity-driven rather than something you click to start:
 // walk into a monster's reach and you trade blows until one of you leaves
@@ -1648,15 +1720,24 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
   },
 
   // ---------------------------------------------------------------- band 4
-  // Answers accuracy rather than damage: 38 evasion means a low-Agility build
-  // simply cannot land on it, whatever its gear says.
+  // Answers accuracy rather than damage: evasion this high means a low-Agility
+  // build simply cannot land on it, whatever its gear says.
+  //
+  // 38 BECAME 56 WHEN THE ACCURACY BASE MOVED, and the number it is defending
+  // is the one in `playerAccuracy`'s note: a Strength build meeting this at
+  // about a third of its swings. That was 32% at base 50 (Agility 10 → 70
+  // accuracy, less 38). Base 68 alone would have made it 50% and quietly
+  // retired the only monster in the game built around the stat — a fix to the
+  // first five minutes flattening something at band 4, which is exactly the
+  // kind of change that gets made by accident and noticed a month later.
+  // 88 less 56 is 32%, so this is not a rebalance; it is the same fight.
   ghost: {
     band: 4,
     maxHp: 45,
     minHit: 6,
     maxHit: 10,
     accuracy: 66,
-    evasion: 38,
+    evasion: 56,
     armor: 0,
     critChance: 10,
     critMultiplier: 1.5,

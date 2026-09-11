@@ -4366,10 +4366,26 @@ setInterval(() => {
       continue;
     }
 
-    if (nextAttackAt.has(playerId)) {
-      nextAttackAt.delete(playerId);
-      sendAttackState(playerId);
-    }
+    // THE RECOVERY CLOCK IS NOT CANCELLED BY STEPPING BACK.
+    //
+    // This deleted `nextAttackAt` the moment nothing was in reach, which sounds
+    // like tidying up after a fight and was a hole in the swing rate. Pressing
+    // the attack button deliberately skips the wind-up — see the note in the
+    // branch above — and it does that by swinging immediately whenever no
+    // recovery is pending. Clearing the clock out of reach meant a player could
+    // swing, step out for a single tick, step back in, press, and swing again
+    // with the recovery thrown away. In and out at the edge of melee beat the
+    // cadence by as much as the footwork allowed, and the faster the weapon the
+    // better it paid.
+    //
+    // So the clock is left to run. The order still lapses after
+    // ATTACK_ORDER_LAPSE_MS with nothing reachable, and THAT clears the
+    // recovery — so walking away from a finished fight and coming back to a new
+    // one still opens with an immediate blow, which is the responsiveness the
+    // skip exists for. What is gone is getting that blow once per step.
+    //
+    // Asked for directly: "the player definitely shouldn't be able to spam the
+    // attack button to kill faster."
 
     // THE NODE THE PLAYER ASKED FOR, and only that one.
     //

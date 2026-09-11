@@ -23778,3 +23778,83 @@ Both of those are now measurements of the GAME rather than of the bot, which is
 the first time that sentence has been true of this harness.
 
 Suite 51/51.
+
+**Phase 70 M70.254 — the first fight in the game was a coin toss.** Asked for
+directly: "The game should be pretty slow at the start. The combat is too fast
+right now, it's just that low level players miss too much when hitting monsters,
+that shouldn't be the case." And, separately: "the player definitely shouldn't
+be able to spam the attack button to kill faster."
+
+THE NUMBER. A character starts at Agility 1, so `playerAccuracy` contributed two
+points on top of a base of 50: 52 accuracy, less a slime's 5 evasion, is a 47%
+hit chance. The weakest creature in the game dodged more than half of what a new
+player threw at it and a goblin dodged 63%. A slow fight is a design choice; a
+fight where most swings do nothing is not, because a player with no numbers in
+front of them cannot tell a miss from a broken weapon.
+
+The base is 68. A new character now hits a slime 65% of the time and a goblin
+55%. `resolveAttack` clamps hit chance to 5-95 and Agility 23 already reached 95
+on its own, so every character past the early game was pinned at the cap and is
+untouched — the change lands exactly where it was asked for.
+
+THE GHOST MOVED WITH IT, 38 evasion to 56. It is the one monster built around
+accuracy — its own note says so — and base 68 alone would have taken a Strength
+build from the documented 32% to 50%, quietly retiring a band-4 design as a side
+effect of fixing the first five minutes. 88 less 56 is 32%: the same fight.
+
+AND THE SWINGS ARE SLOWER, which was the other half of the request: landing 65%
+instead of 47% is otherwise just a faster kill. `BATTLE_DURATION_MS` 1500 ->
+2000 puts a slime back at 15.8 seconds against the 16.5 it took before, with
+blows that land and a rhythm you can follow.
+
+THAT SECOND CHANGE WAS WRONG FOR AN HOUR AND THE SUITE CAUGHT IT. The note I
+wrote claimed a mid-game character already subtracts more than half a second, so
+the slowdown would fade on its own. `weaponbalance.mjs` failed within the hour:
+at Agility 26 with no battle power the OLD formula came out at 290ms and was
+held at the 450ms floor — the floor was hiding the rest of the curve — so adding
+500 lifted that character clear of it, to 790ms. A 75% longer swing in the
+middle of the game, where the accuracy fix gives nothing back because those
+characters are already at the hit cap. A straight nerf to every weapon that
+lives on its basic swing, landing hardest beside casters whose damage comes from
+cooldowns this number does not touch, and the test named it exactly: staff and
+wand out-damaging axe and mace while also striking from 250px.
+
+Re-anchored instead: `AGILITY_ATTACK_SPEED_STEP_MS` 25 -> 38 and
+`BATTLE_POWER_STEP_MS` 120 -> 160, chosen so the curve meets the floor where it
+used to. At Agility 26 with a forged weapon it is 452ms against the old 450, and
+the balance table comes back to within a point of where it was (fist 113 against
+114, bow 183 against 184). A new character still swings half a second slower.
+
+SPAMMING. `useDefaultAttack` already refused a swing while a recovery was
+pending, and `attackspam.mjs` confirms it: pressing as fast as a socket allows
+produces swings 1262ms apart against a cadence the server itself reports as
+1257. So the button was already honest.
+
+The tick did delete the recovery clock whenever nothing was in reach, and a
+press with no clock set swings immediately in order to skip the melee wind-up —
+so on paper, stepping out of reach for one tick and back should have paid a free
+blow per step. That deletion is gone. BUT THREE PROBE DESIGNS FAILED TO
+DEMONSTRATE IT against a build with the hole deliberately restored: stepping
+150px away spends longer walking than the cooldown lasts, and stepping just past
+the edge fails too because the slime is chasing and closes the gap itself. The
+hole is closed on the reasoning that the clock should be the clock, NOT on a
+measurement that a player could use it, and both the test and the code comment
+say so.
+
+TWO PROBES LEARNED THE SAME LESSON AS THE HARNESSES BEFORE THEM. `attackspam`
+first rebuilt the swing interval out of `BATTLE_DURATION_MS` and the Agility
+step, got 1975ms, and failed a run whose real cadence was 1257 — the starting
+weapon's own speed and rarity are in that number too. It reads `intervalMs` off
+ATTACK_STATE now, because a test that recomputes its subject is a second
+implementation to get wrong, and it fails loudest when someone retunes the thing
+on purpose. `earlycombat` had the same copy and now calls
+`playerAttackIntervalMs`. Before that, `attackspam` reported "0 swings" from six
+seconds of pressing while the character was still walking to the monster — zero
+is what both a perfect fix and a broken test look like, so it proves it is in
+reach before it counts anything.
+
+STILL TRUE AND NOT FIXED HERE: a goblin takes a new character 61 landed swings,
+because its 2 armour cuts an average 3-damage blow to 1. That is a damage
+question rather than an accuracy one and it is reported, not smuggled in.
+
+Suite 53/53.
