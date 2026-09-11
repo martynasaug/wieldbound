@@ -23960,3 +23960,69 @@ nodes are new obstacles for a bot that moves in eight directions and sidesteps
 when it snags, so the harness is the first suspect rather than the game — but
 that is a suspicion and the number is recorded here as an open question, not as
 variance.
+
+**Phase 70 M70.256 — click a thing and your character goes and does it.** Two
+reports, both about the game refusing to do the obvious thing.
+
+CLICKING SOMETHING OUT OF REACH WAS A REFUSAL. The whole interaction was a range
+check and a toast — "Too far from the workbench" — and then the player closed
+the gap on the keyboard themselves. There was no click-to-move in this game at
+all; movement was WASD and nothing else. Asked for directly, and correctly:
+"when left clicking on an interactable object you should start moving towards
+that object and begin doing the action (that's pretty normal for games)".
+
+An `errand` is the click held until the feet catch up: a destination, a range,
+and the SAME call an in-range click makes, so there is one path into gathering
+and one into a station panel however either is reached. `openStation` was lifted
+out of the click handler for that reason — three of its four lines are setup the
+panel cannot open correctly without, which is exactly what a second call site
+omits quietly.
+
+IT IS ALWAYS THE PLAYER'S TO CANCEL, which is what separates a convenience from
+a possession: any movement key drops it, a click on bare ground drops it, dying
+drops it, and a derived deadline drops it when nobody is watching — a target
+behind a wall would otherwise have the character leaning into that wall forever.
+
+NAMEPLATES VANISHING WHEN YOU GET CLOSE. Reported as "especially when coming
+close to something", and that was the whole diagnosis: the plate's anchor sits
+ABOVE the body, so the nearer you stand the higher it climbs, and it left
+through the top of the viewport at exactly the moment the object filled the
+screen. Two separate culls did it — `World.project` rejecting anything outside
+the viewport, and `Hud.plate` dropping anything inside its top margin.
+
+`floaters.ts` already documented this asymmetry and DEFENDED it: floaters clamp,
+"where a nameplate would instead be suppressed... a plate must stay attached to
+the thing it names or it is lying, so it hides". That argument is right and is
+not overturned. It simply does not cover the reported case, and the distance
+test is what keeps both true: a label clamps only when its subject is inside
+fourteen units — close enough to fill much of the screen, where nobody can
+mistake which object a plate at the top edge belongs to — and still hides beyond
+that. Plates carry a `data-id` now so a harness can ask whether a particular
+thing has a visible plate, which is not answerable from outside without it.
+
+`tools/soak/clickwalk.mjs` clicks a tree and watches, and it took four attempts
+to become evidence:
+  - it clicked a tree 1001px away and reported four failures. Twenty-five world
+    units is far outside the camera and `project` correctly returned null. You
+    can only click what is drawn.
+  - it then walked toward that tree and STUCK, pinned at 1186px for fifty legs,
+    because leaving town means leaving through a gate and that bearing has none.
+    Four identical failures again, and the errand system still untouched.
+  - its plate query used the bare node id where plates are keyed `node-<id>`, so
+    it found nothing and reported the plate as never drawn — the exact reading
+    the real bug produces.
+  - and the cancel test ran against a second, off-screen node, so the click
+    landed on nothing and it PASSED: a character that had never moved was
+    reported as having successfully stopped. It now tests the cancel first, on
+    the one target known to be clickable, and refuses to conclude from a walk
+    that never started.
+Verified against the plate fix removed, where it fails.
+
+AND THE OPEN QUESTION FROM M70.255 IS NARROWED, not closed. Solid nodes were the
+obvious suspect for the drop to 2 kills. `tools/soak/navcheck.mjs` walks 1800px
+straight out through the bush, tree and rock rings and covered 1634px in 21 legs
+with one stalled leg — so travel is not being blocked, and whatever that run
+measured is still unexplained.
+
+Suite 55/55 (`throwers.mjs` failed once and passed alone; it is a live-world
+positioning measurement and has flaked before).

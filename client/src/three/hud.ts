@@ -869,15 +869,34 @@ export class Hud {
     if (screen.x > this.railLeft && screen.y > this.railTop && screen.y < this.railBottom) return;
     if (screen.x > this.minimapLeft && screen.y < this.minimapBottom) return;
     // A label whose top is off the screen is a truncated word, which is worse
-    // than nothing: the same argument as suppressing rather than repositioning.
-    // Plates are anchored bottom-centre, so `screen.y` is their BASE.
-    if (screen.y < PLATE_TOP_MARGIN_PX) return;
+    // than nothing — so it is PUSHED DOWN rather than dropped. Plates are
+    // anchored bottom-centre, so `screen.y` is their BASE and this margin is
+    // the room the plate needs above it.
+    //
+    // This used to `return`, and between it and `World.project`'s vertical cull
+    // the effect was that walking up to anything tall deleted its nameplate:
+    // the anchor sits above the body, so the closer you get the higher it
+    // climbs, and the plate went out through the top of the screen at exactly
+    // the moment the thing filled it. Reported from play. `project` now clamps
+    // instead of culling for anything close, and dropping it here would have
+    // put the whole fault straight back.
+    //
+    // A pixel of clamping is not the "label yanked away from the thing it
+    // names" the note above warns about: at this range the subject is most of
+    // the screen and there is nothing to confuse it with.
+    const y = Math.max(PLATE_TOP_MARGIN_PX, screen.y);
     this.seenThisFrame.add(id);
 
     let st = this.plates.get(id);
     if (!st) {
       const el = document.createElement("div");
       el.className = "plate";
+      // The id it was drawn for, so a harness can ask whether a particular
+      // thing has a visible plate right now. Nothing in the game reads it —
+      // "does this monster still have a nameplate as I close on it" is not a
+      // question answerable from outside without it, and that is the exact
+      // question this attribute was added to settle.
+      el.dataset.id = id;
       el.innerHTML =
         '<div class="pn"></div>' +
         '<div class="ph"><i class="ghost"></i><i class="fill"></i></div>' +
@@ -906,7 +925,7 @@ export class Hud {
     const t = Math.max(0, Math.min(1, (distance - PLATE_FULL_SIZE_UNTIL) / (PLATE_FADE_END - PLATE_FULL_SIZE_UNTIL)));
     const scale = 1 - (1 - PLATE_MIN_SCALE) * t;
     st.el.style.left = `${screen.x}px`;
-    st.el.style.top = `${screen.y}px`;
+    st.el.style.top = `${y}px`;
     st.el.style.fontSize = `${(11 * scale).toFixed(2)}px`;
     st.el.style.opacity = String(t > 0.92 ? Math.max(0, (1 - t) / 0.08) : 1);
     // Nearer plates draw over farther ones, which is the other half of the

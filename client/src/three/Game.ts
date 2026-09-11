@@ -917,6 +917,34 @@ export class Game {
   /** Where that node stood. Kept after the gather ends because finishing one
    *  DEPLETES it — see `burstAtGatheredNode`. */
   private lastGatherNode: { x: number; y: number; z: number } | null = null;
+
+  /**
+   * "Go there and do that" — an errand set by clicking something out of reach.
+   *
+   * CLICKING A DISTANT THING USED TO BE A REFUSAL. The whole interaction was a
+   * range check and a toast: "Too far from the workbench." The player was told
+   * what was wrong and left to fix it with the keyboard, which is not how any
+   * game with a mouse behaves — you click the tree and your character goes and
+   * chops it.
+   *
+   * The errand is the click, held until the feet catch up. `act` runs once, on
+   * arrival, and is the SAME call the in-range click makes, so there is exactly
+   * one path into gathering and one into a station panel however it was reached.
+   *
+   * IT IS ALWAYS THE PLAYER'S TO CANCEL, which is the part that makes an
+   * auto-walk tolerable rather than a possession: any movement key drops it
+   * instantly, so does a click on bare ground, and so does dying. `expiresAt`
+   * covers the case nobody can cancel because nobody is watching — a target
+   * behind a wall, or a node on the far side of the river — where the character
+   * would otherwise lean into an obstacle until the end of time.
+   */
+  private errand: {
+    x: number;
+    y: number;
+    withinPx: number;
+    act: () => void;
+    expiresAt: number;
+  } | null = null;
   private readonly minimap: Minimap;
   private readonly shakeScratch = new THREE.Vector3();
   private running = false;
@@ -2692,6 +2720,11 @@ export class Game {
       //
       // So the fall plays here, in place, and `finishRespawn` does the moving
       // once it is over. See `DEATH_HOLD_MS`.
+      // A corpse runs no errands. `stepMovement` returns early while dying, so
+      // this is about what happens on the far side of the respawn: the errand
+      // would resume from the arrival point and walk the body back to whatever
+      // killed it.
+      this.errand = null;
       this.localActor?.play("die");
       this.pendingRespawn =
         p.x !== undefined && p.y !== undefined ? { x: p.x, y: p.y } : null;
@@ -4087,7 +4120,10 @@ export class Game {
       // client refuses a gather the server would have allowed — the player
       // standing against a solid trunk being told they are too far from it.
       if (dist > gatherRangeToNode(s.kind)) {
-        this.hud.toast(`Too far from the ${NODE_LABELS[s.kind].toLowerCase()}.`, "#c98d5e");
+        // Go and chop it. 0.8 of the range so the errand finishes comfortably
+        // inside what the server will accept rather than on the exact edge of
+        // it — the node is solid, so the walk ends against its side anyway.
+        this.setErrand(s.x, s.y, gatherRangeToNode(s.kind) * 0.8, () => this.socket.sendGather(id));
       } else if (s.status !== "available") {
         // Clicking a stump is a reasonable thing to do and deserves an answer
         // rather than silence — it is regrowing, not broken.
@@ -4103,18 +4139,10 @@ export class Game {
         const s = this.stationStates.get(id);
         if (!s) return;
         const dist = Math.hypot(this.playerX - s.x, this.playerY - s.y);
-        if (dist <= INTERACTION_RANGE_PX) {
-          // The bench needs three things the moment it opens: what you can
-          // spend, what you own (Reforge and Salvage both list the bag), and
-          // what level you are (which recipes are learned).
-          this.syncMaterials();
-          this.craftPanel.setItems(this.items);
-          this.craftPanel.setRecipes(this.recipes);
-          this.craftPanel.setRunes(this.runes);
-          this.craftPanel.open(id);
-        } else {
-          this.hud.toast("Too far from the workbench.", "#c98d5e");
-        }
+        if (dist <= INTERACTION_RANGE_PX) this.openStation(id);
+        // Walk over and open it. Same call either way, so the panel cannot
+        // acquire a second way of being opened that skips half its setup.
+        else this.setErrand(s.x, s.y, INTERACTION_RANGE_PX * 0.8, () => this.openStation(id));
         return;
       }
     }
@@ -4122,6 +4150,11 @@ export class Game {
     // are "never mind", and leaving a gather running after the player has
     // explicitly clicked away from it is the auto-gather behaviour coming back
     // in through the one gesture that means the opposite.
+    // And it cancels an errand, for the same reason: clicking bare ground is
+    // the gesture for "never mind", and an auto-walk that outlived it would be
+    // the one thing the player cannot call off with the mouse they started it
+    // with.
+    this.errand = null;
     if (this.gatherNodeId) this.socket.sendGather(null);
     this.setTarget(null);
   }
@@ -5919,6 +5952,30 @@ export class Game {
     const actor = this.localActor;
     if (!actor) return;
 
+    // THE KEYBOARD ALWAYS WINS. Touching a movement key is the player saying
+    // they have somewhere else to be, and an errand that argued with that would
+    // be the character walking back to the tree you just walked away from.
+    if (dx !== 0 || dy !== 0) this.errand = null;
+
+    if (this.errand) {
+      const ex = this.errand.x - this.playerX;
+      const ey = this.errand.y - this.playerY;
+      const d = Math.hypot(ex, ey);
+      if (d <= this.errand.withinPx) {
+        // Cleared BEFORE the call, so an `act` that sets another errand — or
+        // throws — cannot leave this one standing and fire again next frame.
+        const { act } = this.errand;
+        this.errand = null;
+        act();
+      } else if (performance.now() > this.errand.expiresAt) {
+        this.errand = null;
+        this.hud.toast("Could not get there.", "#c98d5e");
+      } else {
+        dx = ex / d;
+        dy = ey / d;
+      }
+    }
+
     if (dx !== 0 || dy !== 0) {
       this.moveInputX = dx;
       this.moveInputY = dy;
@@ -6041,6 +6098,43 @@ export class Game {
   /** Living monster bodies near enough to matter, as plain circles. Only the
    *  ones with models exist here, which is exactly right: everything beyond the
    *  cull radius is far too distant to be standing on. */
+  /**
+   * Open a crafting station's panel, with everything it needs to draw itself.
+   *
+   * Lifted out of the click handler so the in-range click and the arrival of an
+   * errand are the same call. Three of these four lines are setup the panel
+   * cannot open correctly without — what you can spend, what you own, and what
+   * you have learned — which is exactly the kind of thing a second call site
+   * quietly omits.
+   */
+  private openStation(id: string): void {
+    this.syncMaterials();
+    this.craftPanel.setItems(this.items);
+    this.craftPanel.setRecipes(this.recipes);
+    this.craftPanel.setRunes(this.runes);
+    this.craftPanel.open(id);
+  }
+
+  /**
+   * Walk there, then do that. See `errand`.
+   *
+   * The deadline is generous and derived rather than fixed: how long the walk
+   * would take at the character's own speed, plus half again for going round
+   * whatever is in the way. A flat number would expire early for a slow
+   * character crossing the map and hang around for a fast one.
+   */
+  private setErrand(x: number, y: number, withinPx: number, act: () => void): void {
+    const distance = Math.hypot(x - this.playerX, y - this.playerY);
+    const travelMs = (distance / Math.max(1, this.moveSpeed())) * 1000;
+    this.errand = {
+      x,
+      y,
+      withinPx,
+      act,
+      expiresAt: performance.now() + Math.min(30000, travelMs * 1.5 + 2000),
+    };
+  }
+
   private monsterBodies(): { x: number; y: number; radiusPx: number }[] {
     const out: { x: number; y: number; radiusPx: number }[] = [];
     for (const vis of this.monsters.values()) {

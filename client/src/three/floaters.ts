@@ -293,7 +293,10 @@ export class Floaters {
       // point, which is the exact frame a cleave into a pack most needs to be
       // readable — the separation has to exist before the motion does.
       const x = screen.x + f.driftX * (0.55 + 0.45 * t);
-      // CLAMPED AT THE TOP, where a nameplate would instead be suppressed.
+      // CLAMPED AT THE TOP, where a nameplate is suppressed unless its subject
+      // is close — see `World.project`, which now clamps inside fourteen units
+      // for the reason below, and keeps hiding beyond it for the reason below
+      // that.
       //
       // These rise as they live, so anything thrown off a body near the top of
       // the screen climbs straight out of it — a dragon fight photographed by

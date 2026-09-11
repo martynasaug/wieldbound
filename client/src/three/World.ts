@@ -1083,11 +1083,49 @@ export class World {
 
     v.applyMatrix4(this.camera.projectionMatrix);
     // A little slack past the edge so labels ease out rather than pop.
-    if (v.x < -1.15 || v.x > 1.15 || v.y < -1.15 || v.y > 1.15) return null;
+    //
+    // SIDEWAYS IS A CULL, UP AND DOWN IS A CLAMP, and they are different
+    // questions. Something off the left of the screen is genuinely not being
+    // looked at and its label belongs nowhere. Something whose label has gone
+    // off the TOP is usually a thing you are standing right next to: the anchor
+    // sits above the body, plates are drawn upwards from it
+    // (`translate(-50%, -100%)`), and the closer you get the higher that anchor
+    // climbs until it leaves the viewport — so the nameplate vanished exactly
+    // when the object filled the screen. Reported as "nameplates sometimes
+    // disappear, especially when coming close to something", which is precisely
+    // the shape of it.
+    //
+    // `floaters.ts` records the old asymmetry and DEFENDS it: floaters clamp,
+    // "where a nameplate would instead be suppressed... a plate must stay
+    // attached to the thing it names or it is lying, so it hides." That
+    // argument is right and is not being overturned. A plate pinned to the top
+    // edge for something forty units up a hillside genuinely does lie about
+    // where that thing is.
+    //
+    // It just does not apply to the case being fixed. The distance test below
+    // is what keeps the two compatible: a label only clamps when its subject is
+    // within fourteen units — close enough that it fills a good part of the
+    // screen and no player can mistake which object the plate at the top edge
+    // belongs to. Everything further away still hides, exactly as that note
+    // says it should.
+    if (v.x < -1.15 || v.x > 1.15) return null;
+    if (v.y < -1.15 || v.y > 1.15) {
+      // Still cull the genuinely-elsewhere case: a point far above or below
+      // that is also far away is something up a hill or down a ravine, not the
+      // tree you are leaning on. Close means it is the thing in front of you.
+      if (-v.z > 14) return null;
+    }
 
+    const px = (v.x * 0.5 + 0.5) * window.innerWidth;
+    const py = (-v.y * 0.5 + 0.5) * window.innerHeight;
+    // Enough room for a plate's own height, since it is drawn upwards from this
+    // point — clamping to zero would pin it just off the top of the screen and
+    // look identical to the bug being fixed.
+    const TOP_INSET = 54;
+    const BOTTOM_INSET = 8;
     return {
-      x: (v.x * 0.5 + 0.5) * window.innerWidth,
-      y: (-v.y * 0.5 + 0.5) * window.innerHeight,
+      x: px,
+      y: Math.max(TOP_INSET, Math.min(window.innerHeight - BOTTOM_INSET, py)),
     };
   }
 
