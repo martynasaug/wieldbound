@@ -2082,9 +2082,16 @@ export class Actor {
     // also where `Monk_Gather.glb` puts Chop, Mine and Pick. Asking only the
     // instance worked for our own rig and silently fell through to the posed
     // arc for the body almost everybody is actually wearing.
+    // THE LIBRARY FIRST, AND THE ORDER IS A BUG FIX. `findClip` tries every
+    // exact name and then falls back to a LOOSE match, so asking the Monk's own
+    // animations for "Pick" returned its "PickUp" — a crouch to floor level for
+    // something lying on the ground, which is the wrong motion and was exactly
+    // the clip this work exists to stop using. The library is keyed exactly, so
+    // consulting it first means our authored Pick wins and the loose match is
+    // only ever a last resort.
     const action =
-      (this.instance ? findClip(this.instance.animations, clip) : null) ??
-      (this.usesClipLibrary ? pickClip(clip) : null);
+      (this.usesClipLibrary ? pickClip(clip) : null) ??
+      (this.instance ? findClip(this.instance.animations, clip) : null);
     if (action) {
       const bound = this.mixer?.clipAction(action);
       if (bound) {
