@@ -27,3 +27,6 @@ tools/art/.icon-cache/
 # them, they are large, and a run started from the repo root used to scatter
 # them beside package.json.
 tools/soak/shots/
+
+# Python bytecode from the Blender art scripts importing one another
+__pycache__/
