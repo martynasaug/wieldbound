@@ -23287,3 +23287,46 @@ aim was being deflected 18 degrees or more while the character was already next
 to its target.
 
 Suite 48/48.
+
+**Phase 70 M70.245 — Oswyn's gear cannot be worth buying, and that is a design
+question rather than a bug to fix quietly.** Found while following the forge
+thread from M70.244: the anvil makes a band-1 weapon for 4 wood and 8 ore, and
+`guidedopening` had been buying the Recruit's Blade for 14 and 28.
+
+EVERY DIMENSION FAVOURS THE ANVIL:
+
+  * All six of his gear lines are BAND 1, which `isBasicRecipe` makes forgeable
+    from the first login with no recipe to learn.
+  * Both routes hand back the same quality. `FORGE_OUTPUT_RARITY` and
+    `SHOP_OUTPUT_RARITY` are both the fixed string "honed" — it is not even a
+    gamble that buying protects you from.
+  * Both are in town, a few seconds apart.
+  * His headline prices are 2.3x to 3.5x the forge cost.
+
+THE ONE DEFENCE WAS WORTH TESTING AND FAILED. His prices are in DIFFERENT
+CURRENCIES — the Apprentice's Staff costs wood and herb where forging it costs
+wood and ore — so a player rich in herb and short of ore might reasonably buy
+rather than convert at his own 4:1 exchange. Priced through that exchange, the
+staff costs 120 herb-equivalent to buy and 48 to forge. Forging wins all
+eighteen comparisons: six items against three currencies. There is no mix of
+materials, no level and no recipe state in which buying is correct.
+
+NOT CHANGED, AND DELIBERATELY. The price gap is not an oversight — the band-1
+rule in `tools/test/shop.mjs` states the intent outright: "his whole pitch is
+that buying is the expensive way to get band-1 gear". The gap was designed. What
+is missing is the thing being bought WITH it, and supplying that is a content
+decision with several defensible answers: stock what the anvil cannot make
+(band 2, which the salvage-teaches-recipes loop is built for), or drop the gear
+and leave Oswyn his exchange — which is a genuine service nothing else offers
+and which his own dialogue leads with — or price below the anvil and accept that
+crafting starter gear stops mattering. Those are different games. The same
+standard the `isRetreating` asymmetry was held to in M70.136 applies: a design
+call about feel is not made on an argument alone, and not by me.
+
+`tools/soak/shopvalue.mjs` reproduces the whole comparison in one run, so
+whoever takes the decision has the numbers rather than the summary. No test was
+added: the only assertion worth making — that a shop line offers something the
+anvil does not — fails today, and a test written to pass around that would be
+the fault dressed as coverage.
+
+Suite 48/48, unchanged; this milestone touches no game code.
