@@ -431,7 +431,7 @@ node tools/test/rng.mjs
 ### player_rig.py — our own player body
 
 ```powershell
-blender --background --python tools/art/player_rig.py -- client/public/models/player/Player_Base.glb preview.png
+blender --background --python tools/art/player_rig.py -- client/public/models/Player_Base.glb preview.png
 ```
 
 Builds the player's skeleton, mesh and idle animation and exports a GLB, plus
@@ -455,3 +455,13 @@ Weights are RIGID: every part is bound wholly to one bone. Automatic weights
 need a clean watertight mesh and a human eye on the result, and this runs
 headless — rigid binding is predictable, reproducible from the script, and on a
 faceted low-poly body it is also what the art style wants.
+
+Look at the result at **http://localhost:5173/preview/rig.html** — the rig on
+its own in the game's renderer, playing its idle, with `b` for bones and `w` for
+wireframe. Stills out of Blender answer some questions; whether an idle reads as
+breathing or as twitching is not one of them.
+
+> **Restart the dev server after generating a model.** Vite's watcher ignores
+> `public/models` (see `client/vite.config.ts` for why), so a file created while
+> it is running is not served — the request returns the HTML fallback with a
+> 200, and the loader fails on `Unexpected token '<'`.

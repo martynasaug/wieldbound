@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WieldBound — player rig</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #14100a; color: #f2e2bd; font-family: Georgia, serif; overflow: hidden; }
+      canvas { display: block; }
+      #hud {
+        position: fixed; left: 14px; top: 12px; font-size: 13px; line-height: 1.5;
+        text-shadow: 0 1px 3px #000; pointer-events: none;
+      }
+      #hud b { color: #ffd873; }
+      #hud .dim { color: #b9a06e; }
+      #help { position: fixed; left: 14px; bottom: 12px; font-size: 12px; color: #9a875c; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">loading…</div>
+    <div id="help">drag to turn · scroll to zoom · <b>space</b> pause the idle · <b>b</b> bones · <b>w</b> wireframe</div>
+    <script type="module" src="./rig.ts"></script>
+  </body>
+</html>
