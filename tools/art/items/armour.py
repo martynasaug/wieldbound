@@ -206,6 +206,21 @@ class Armour:
             # the one with the most lobes. So: more folds, at the depth that
             # already half-worked, and one column per fold face so each has a
             # facet to shade.
+            # THE PINCH IN THE MIDDLE WAS NEVER THE PLEATS. The bench reports a
+            # fall in three bands by height, and the cape's middle band read 0.154
+            # against a collar of 0.372 — which looked like folds eating width, so
+            # I scaled every column out by a "path length" factor to compensate.
+            # It was wrong twice over: the factor came to a flat 1.69 whatever the
+            # width, so the falls grew by two thirds until they covered the arm
+            # and the bench could not find bare skin to measure against; and the
+            # pinch survived it (0.299 against a collar of 0.625), because a
+            # uniform scale cannot change a ratio.
+            #
+            # The real cause is the PROFILE. `cape_back` runs 30, 25, 34, 46 — it
+            # narrows at the waist before it flares, deliberately, and the middle
+            # band lands exactly on that 25. Older runs said `middle null` only
+            # because nothing had vertices there; pleats populated the band and
+            # revealed a shape that was always this. Nothing to correct.
             LOBES = pleats
             COLUMNS = max(2, LOBES * 2)
             rings = []
