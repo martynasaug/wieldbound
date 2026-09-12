@@ -272,9 +272,27 @@ function swapHeadPiece(root: THREE.Object3D, rule: string, keep: (island: HeadIs
 
 /** A cuff vertex is one further than this times the bare forearm's radius from the bone. */
 const CUFF_PROUD = 1.2;
+/**
+ * How wide a bare hand is against the forearm above it.
+ *
+ * REPORTED, TWICE, AND THE SECOND TIME EXACTLY: "Look how the whole arm width
+ * goes and then at the gloves place". The forearm measures about 21 units
+ * across and the hand block 37 across and 50 tall — very nearly double — which
+ * is a gauntlet, not a hand, whatever colour it is painted. Removing the cuff
+ * shell took off the flap and left the mitten. A hand is a little wider than
+ * the wrist it sits on and no more.
+ */
+const HAND_PROUD = 1.35;
+/** And the fingers taper in from the knuckles rather than staying square. */
+const FINGER_TAPER = 0.82;
 /** Where the bare forearm is along its bone (0 elbow, 1 wrist): measured 0.42-0.47. */
 const BARE_FOREARM_UNTIL = 0.6;
 const FOREARMS: [string, string][] = [["LowerArmL", "FistL"], ["LowerArmR", "FistR"]];
+/** Everything that follows the hand, per side, for the slimming below. */
+const HAND_BONES: [string, string[]][] = [
+  ["L", ["FistL", "Fist1L", "Fist2L", "Thumb1L", "Thumb2L"]],
+  ["R", ["FistR", "Fist1R", "Fist2R", "Thumb1R", "Thumb2R"]],
+];
 const cufflessGeometry = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
 
 /**
@@ -326,38 +344,103 @@ function pullInCuffs(mesh: THREE.SkinnedMesh): THREE.BufferGeometry {
   const moved = out.attributes.position as THREE.BufferAttribute;
   const v = new THREE.Vector3();
   let pulled = 0;
-  for (const [armName, fistName] of FOREARMS) {
-    const arm = bones.indexOf(armName);
-    const fist = bones.indexOf(fistName);
-    if (arm < 0 || fist < 0) continue;
-    const head = bindPosition(mesh, arm);
-    const axis = bindPosition(mesh, fist).sub(head);
+  const armReference: { side: string; radius: number; hands: number }[] = [];
+  // ONE SPACE, AND IT IS THE VERTICES'. This measured its axis with
+  // `bindPosition`, which reads the SKELETON's space — a hundred times larger
+  // than the positions being clamped against it. The forearm's radius came out
+  // 302 where the arm is 0.12 across, so every vertex compared as "already
+  // thinner than that" and NOTHING was ever moved: not the cuffs, not the hand.
+  // That is why the gloves survived being removed three times, and it is the
+  // same space-mixing that made a separate tool report a seventy-metre forearm.
+  // The axis now comes from the centroids of the vertices themselves.
+  const dominantBone = (i: number): string => {
+    let best = 0;
+    for (let k = 1; k < 4; k++) if (weight.getComponent(i, k) > weight.getComponent(i, best)) best = k;
+    return bones[index.getComponent(i, best)];
+  };
+  const centroidOf = (want: Set<string>): THREE.Vector3 | null => {
+    const sum = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    let n = 0;
+    for (let i = 0; i < pos.count; i++) {
+      if (!want.has(dominantBone(i))) continue;
+      sum.add(p.fromBufferAttribute(pos, i));
+      n++;
+    }
+    return n ? sum.divideScalar(n) : null;
+  };
+
+  for (const [side, handBones] of HAND_BONES) {
+    const armName = `LowerArm${side}`;
+    const elbow = centroidOf(new Set([`UpperArm${side}`]));
+    const tip = centroidOf(new Set([`Fist2${side}`]));
+    if (!elbow || !tip) continue;
+    const head = elbow;
+    const axis = tip.clone().sub(head);
     const lengthSq = axis.lengthSq();
     if (lengthSq === 0) continue;
 
     // The vertices that follow the forearm most, placed along and around it.
     const placed: { i: number; t: number; radial: THREE.Vector3 }[] = [];
     for (let i = 0; i < pos.count; i++) {
-      let best = 0;
-      for (let k = 1; k < 4; k++) if (weight.getComponent(i, k) > weight.getComponent(i, best)) best = k;
-      if (index.getComponent(i, best) !== arm) continue;
+      if (dominantBone(i) !== armName) continue;
       v.fromBufferAttribute(pos, i).sub(head);
       const t = v.dot(axis) / lengthSq;
       placed.push({ i, t, radial: v.clone().sub(axis.clone().multiplyScalar(t)) });
     }
-    const bare = placed.filter((p) => p.t < BARE_FOREARM_UNTIL).map((p) => p.radial.length()).sort((a, b) => a - b);
-    if (!bare.length) continue;
-    const radius = bare[Math.floor(bare.length / 2)];
+    // THE SLIMMEST PART OF THE FOREARM, not the median of its elbow half. The
+    // median picked up the elbow's own bulge: it reported 0.195 on the left and
+    // 0.156 on the right for a body that is symmetric, and the arm measures
+    // 0.123 where it is actually bare. Clamping a hand to 1.35x an inflated
+    // reference leaves the step it was meant to remove. The low quartile of the
+    // whole forearm is the honest reading — thin enough to exclude the elbow,
+    // broad enough not to hang on one stray vertex.
+    const alongArm = placed.map((p) => p.t).sort((a, b) => a - b);
+    const midway = alongArm[Math.floor(alongArm.length / 2)] ?? BARE_FOREARM_UNTIL;
+    const bare = placed.map((p) => p.radial.length()).sort((a, b) => a - b);
+    if (bare.length < 4) continue;
+    const radius = bare[Math.floor(bare.length * 0.25)];
     for (const p of placed) {
       const r = p.radial.length();
       if (r <= radius * CUFF_PROUD) continue;
       // Onto the forearm, tapering a little towards the wrist the way an arm does.
-      const taper = 1 - 0.12 * THREE.MathUtils.clamp((p.t - BARE_FOREARM_UNTIL) / (1 - BARE_FOREARM_UNTIL), 0, 1);
+      const taper = 1 - 0.12 * THREE.MathUtils.clamp((p.t - midway) / Math.max(1 - midway, 1e-6), 0, 1);
       v.copy(head).addScaledVector(axis, p.t).addScaledVector(p.radial, (radius * taper) / r);
       moved.setXYZ(p.i, v.x, v.y, v.z);
       pulled++;
     }
+
+    // AND THE HAND ITSELF, on the same axis. The forearm's own radius is the
+    // only honest reference for how wide a hand should be, and it is measured
+    // right here — so the fist is pulled in to a little over it, with the
+    // fingers drawing in further, and the arm runs at one width from elbow to
+    // fingertip instead of ending in a block.
+    const handNames = new Set(handBones);
+    let handVerts = 0;
+    for (let i = 0; i < pos.count; i++) {
+      if (!handNames.has(dominantBone(i))) continue;
+      handVerts++;
+      v.fromBufferAttribute(moved, i).sub(head);
+      const t = v.dot(axis) / lengthSq;
+      const radial = v.clone().sub(axis.clone().multiplyScalar(t));
+      const r = radial.length();
+      // Past the wrist the taper closes toward the fingertips. The axis runs to
+      // the fingers' own centroid, so t = 1 is the hand's middle.
+      const reach = THREE.MathUtils.clamp((t - 0.85) / 0.3, 0, 1);
+      const want = radius * HAND_PROUD * (1 - (1 - FINGER_TAPER) * reach);
+      if (r <= want) continue;
+      v.copy(head).addScaledVector(axis, t).addScaledVector(radial, want / r);
+      moved.setXYZ(i, v.x, v.y, v.z);
+      pulled++;
+    }
+    armReference.push({ side, radius: +radius.toFixed(4), hands: handVerts });
   }
+  // WHAT THIS ACTUALLY DID, where an instrument can read it. The arm measured
+  // 2.15x wider at the hand than at the forearm AFTER this was written, and
+  // there was no way to tell from outside whether the clamp had run, clamped
+  // against the wrong reference, or never matched a vertex. A silent geometry
+  // pass is exactly how the gloves survived three rounds.
+  out.userData.armWork = { pulled, reference: armReference };
   if (!pulled) {
     cufflessGeometry.set(source, source);
     return source;

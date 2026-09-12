@@ -166,7 +166,14 @@ def main():
 
     print(f"CUFF texels {cuff.sum()}, HAND texels {hands.sum()}")
 
-    target = grow(hands | cuff, BLEED) & ~others
+    # WHOLE ISLANDS, NOT JUST THE FACES I CLASSIFIED. The mask was built from the
+    # faces whose vertices follow a hand bone, grown by a few texels — and the
+    # glove's painted decoration (a flower on the back of each hand, a bright
+    # seam at the wrist) sits on texels just outside those faces, so it survived
+    # every repaint and showed up on the bare hand. Growing the mask much
+    # further, still clipped against everything that is NOT hand, covers the
+    # island the hand actually occupies.
+    target = grow(hands | cuff, BLEED * 6) & ~grow(others, 1)
     ys, xs = np.nonzero(target)
     region = px[ys, xs, :3]
     region_hls = np.array([colorsys.rgb_to_hls(*c) for c in region])

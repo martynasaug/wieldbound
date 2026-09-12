@@ -111,9 +111,44 @@ for (const id of IDS) {
         worldScale: +body.getWorldScale(new V()).x.toFixed(4),
       };
     }
+    // IS IT STILL A GLOVE? As a number, not as a squint at a screenshot.
+    // The forearm's width against the hand's: a bare hand runs a little wider
+    // than the wrist above it, and a gauntlet runs at twice.
+    let widths = null;
+    if (body) {
+      const names = body.skeleton.bones.map((b) => b.name);
+      const pos = body.geometry.attributes.position;
+      const index = body.geometry.attributes.skinIndex;
+      const weight = body.geometry.attributes.skinWeight;
+      const spread = (want) => {
+        const wanted = new Set(want);
+        const lo = new V(+1e9, +1e9, +1e9);
+        const hi = new V(-1e9, -1e9, -1e9);
+        const v = new V();
+        for (let i = 0; i < pos.count; i++) {
+          let best = 0;
+          for (let k = 1; k < 4; k++) if (weight.getComponent(i, k) > weight.getComponent(i, best)) best = k;
+          if (!wanted.has(names[index.getComponent(i, best)])) continue;
+          v.fromBufferAttribute(pos, i);
+          lo.min(v);
+          hi.max(v);
+        }
+        // Across the arm, not along it: the arm runs on x, so y and z are width.
+        return { across: +(hi.y - lo.y).toFixed(3), tall: +(hi.z - lo.z).toFixed(3) };
+      };
+      const arm = spread(["LowerArmR"]);
+      const fist = spread(["FistR", "Fist1R", "Fist2R", "Thumb1R", "Thumb2R"]);
+      widths = {
+        forearm: arm,
+        hand: fist,
+        ratioAcross: +(fist.across / Math.max(arm.across, 1e-6)).toFixed(2),
+        ratioTall: +(fist.tall / Math.max(arm.tall, 1e-6)).toFixed(2),
+      };
+    }
     return {
       id,
       bodySpace,
+      widths,
       pieces,
       handR: hand.R ? [hand.R.x, hand.R.y, hand.R.z].map((n) => +n.toFixed(3)) : null,
       bonesSeen: ["FistR", "Fist1R", "Fist2R", "LowerArmR"].filter((n) => bones.has(n)),
