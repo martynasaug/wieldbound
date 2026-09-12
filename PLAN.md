@@ -25074,3 +25074,38 @@ the empty gap between .0099 and .044.
 It will pass a piece with one crease on it. "Does this look good" is not
 measurable here and this file does not claim otherwise. NEXT ART: cape, mantle
 and tabard falls — the three both the bench and the plates agree are bare sheets.
+
+### The two dark capes, measured as items rather than guessed from a plate
+
+The catalogue plate showed Torn Cloak and Shadowveil as near-black and
+unreadable, and the obvious move was to brighten them. Measured on the pinned
+body instead, they are two different problems and only one is a fault:
+
+* TORN CLOAK is `cape` on WOOD, and reads deltaE 13.3 against bare skin — under
+  the colour floor of 15 — passing contrast only on lightness, at exactly 0.25.
+  A wood cape beside skin is the same hue collision this file chased for three
+  passes earlier, except that one turned out to be a randomised reference. This
+  one is real: the body is pinned now. Wool Cloak on bronze reads 31.5 for
+  comparison. That is a palette assignment worth questioning in `items.ts`.
+* SHADOWVEIL is `cloak` on OBSIDIAN: luma 0.039, chroma 0.8, and it fails the
+  black-hole rule correctly. Obsidian is a deliberately near-black palette and a
+  cloak called Shadowveil is meant to read as one. The rule and the design
+  genuinely disagree here, and the honest record is to say so rather than
+  brighten obsidian or quietly exempt the item.
+
+Torn Cloak also fails detail at 0.0091 where `cape:cape` — identical pleat
+geometry, crimson — passes at 0.0241. Dark, low-chroma cloth makes folds hard to
+register even in CIELAB. Noted, not rewritten.
+
+### Two rules that were overriding the design
+
+* A TABARD IS A STRAIGHT BELTED PANEL. Stations 15, 16, 17: it measures x1.14 and
+  always will. The taper rule exists to catch "capes look like squares on the
+  back", which is true of a cloak and false of a tabard, so the rule no longer
+  judges that style. Failing it was asking for a tabard flared into something
+  that is not a tabard.
+* AND IT IS WORN ON THE FRONT. Its panel is draped at `chest_front_z + 2`, so
+  measuring from yaw 0 put the whole torso between camera and cloth — "45% clear"
+  for three runs, a correct refusal on a window that was never on the piece.
+  Subjects declare their side now (`WORN_FACING`). Deliberately NOT the automatic
+  side-picking tried earlier, which chose the shaded face of every piece.

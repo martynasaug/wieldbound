@@ -389,6 +389,19 @@ async function measurementCamera(yaw) {
  */
 const SIDES = [{ name: "lit side", yaw: 0 }];
 
+/**
+ * WHERE A PIECE IS WORN, for the few that are not on the back.
+ *
+ * Yaw 0 is the lit side and the side a fall hangs on, which is right for every
+ * cape here but one. A tabard's front panel is `drape`d at `chest_front_z + 2`,
+ * so measuring it from behind puts the whole torso between the camera and the
+ * cloth: the bench reported "45% clear" and refused to judge it, correctly,
+ * three runs running. The subject says which side it lives on rather than the
+ * bench guessing — an earlier version tried picking a side automatically and
+ * chose the shaded face of every piece in the catalogue.
+ */
+const WORN_FACING = { tabard: Math.PI };
+
 /** Pixels, from the same frame the shots come from, taken from ONE side. */
 async function sampleFrom(meshFilter, side) {
   const cameraAt = await measurementCamera(side.yaw);
@@ -714,9 +727,12 @@ async function sampleFrom(meshFilter, side) {
  * Both windows still come from a single frame, so the piece and the bare-body
  * reference are lit alike whichever side wins.
  */
-async function sampleAround(meshFilter) {
+async function sampleAround(meshFilter, facing) {
   let best = null;
-  for (const side of SIDES) {
+  const sides = facing === undefined
+    ? SIDES
+    : [{ name: facing === 0 ? "lit side" : "worn side", yaw: facing }];
+  for (const side of sides) {
     const seen = await sampleFrom(meshFilter, side);
     if (!seen) continue;
     if (!best || seen.visible > best.visible) best = seen;
@@ -824,7 +840,7 @@ for (const subject of SUBJECTS) {
     }, { slot, style, palette });
     await page.waitForTimeout(1100);
 
-    const seen = await sampleAround(`gear_${slot}_${style}`);
+    const seen = await sampleAround(`gear_${slot}_${style}`, WORN_FACING[style]);
     if (!seen) {
       verdict("drawn at all", false, "no mesh with that name is in the scene");
       continue;
@@ -959,7 +975,15 @@ for (const subject of SUBJECTS) {
       });
       if (shape) {
         say(`   fall ${shape.drop} tall: collar ${shape.collar}, middle ${shape.middle}, hem ${shape.hem}`);
-        if (shape.hem === null || shape.collar === null) {
+        // A TABARD IS SUPPOSED TO BE A STRAIGHT PANEL. This rule exists to catch
+        // "capes just look like squares on the back", and it is right about a
+        // cloak. A tabard is a belted panel hanging straight down — stations
+        // 15, 16, 17 — so it measures x1.14 and always will. Failing it here asks
+        // for a tabard flared into something that is not a tabard, which is the
+        // rule overriding the design rather than checking it.
+        if (style === "tabard") {
+          say("   (taper not judged: a tabard is a straight belted panel by design)");
+        } else if (shape.hem === null || shape.collar === null) {
           verdict("is a garment, not a sheet", false,
             "the fall has a band with no geometry in it — shape cannot be measured");
         } else {
