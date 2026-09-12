@@ -112,7 +112,7 @@ class Armour:
         self.shell(bone, [(half_width, y - tube), (half_width + tube * 0.4, y), (half_width, y + tube)],
                    mat, squash=depth, sides=sides, cap=False, z=z, x=x)
 
-    def hanging(self, stations, mat, lining=None, thickness=4.0, segments=3, pleats=6):
+    def hanging(self, stations, mat, lining=None, thickness=4.0, segments=3, pleats=6, fold=0.18):
         """
         A cape, cut into segments that hang from one another.
 
@@ -225,7 +225,7 @@ class Armour:
             COLUMNS = max(2, LOBES * 2)
             rings = []
             for w, y, z in (top, bottom):
-                fold_depth = w * 0.18 if LOBES else 0.0
+                fold_depth = w * fold if LOBES else 0.0
                 ring_front, ring_back = [], []
                 for c in range(COLUMNS + 1):
                     t = c / COLUMNS
@@ -875,17 +875,21 @@ def mantle_back(a):
     # the shoulder and drew back in at the bottom, which is a yoke, not a cape.
     # It is short by design, so the flare has to happen over that short drop:
     # narrow at the neck, widest at the hem.
-    # AND A MANTLE IS NOT A LAMPSHADE. Pleating this one turned it into a rigid
-    # corrugated cone standing off the shoulders — photographed, it reads as
-    # ribbed plastic, not cloth, because the fall is SHORT (0.35 tall) and folds
-    # sized as a fraction of its width cover it end to end with nothing flat left
-    # between them. The taper still measured x1.82 and the piece still passed
-    # every other rule, which is exactly why the picture has to be looked at.
-    # Folds belong on a long fall; this one keeps its plain drape.
+    # A MANTLE IS NEITHER A LAMPSHADE NOR A BOARD, and I have now had it both
+    # ways. Six pleats on a fall only 0.35 tall turned it into a rigid corrugated
+    # cone — ribbed plastic, not cloth — so I set it to none; and photographed
+    # beside the other mantles on the catalogue plate, all three then read as flat
+    # trapezoids hanging off the shoulders like signboards. Zero was a correction
+    # to six, not an answer.
+    #
+    # A short fall wants FEW and SHALLOW: two folds at half the usual depth give
+    # it the break of light that says cloth, without the corrugation that comes
+    # of packing six across a piece with no room for them.
     a.hanging([(24.0, BODY["chest_y1"] + 5.0, -26.0),
                (30.0, BODY["chest_y1"] - 10.0, -29.0),
                (38.0, BODY["chest_y0"] + 14.0, -33.0),
-               (44.0, BODY["chest_y0"] - 2.0, -36.0)], CLOTH, thickness=5.0, segments=2, pleats=0)
+               (44.0, BODY["chest_y0"] - 2.0, -36.0)], CLOTH, thickness=5.0, segments=2,
+              pleats=2, fold=0.09)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(15.0, BODY["shoulder_y"] + 7.0), (17.0, BODY["shoulder_y"] - 6.0)],
