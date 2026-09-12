@@ -633,19 +633,47 @@ async function sampleFrom(meshFilter, side) {
       }
       let edges = 0;
       let pairs = 0;
-      const STEP = 0.045; // a luma step a viewer would read as a line, not shading
+      // AN EDGE IS A CHANGE IN COLOUR, NOT IN LIGHTNESS — and this is the THIRD
+      // rule in this file to have to learn it, after contrast and the black-hole
+      // floor. A fixed luma step of 0.045 was asked to find folds on a crimson
+      // cape sitting at luma 0.066; making it relative did not save it either,
+      // because at 6% lightness the absolute differences between facets are
+      // vanishingly small however deep the fold. The proof is in one pair of
+      // runs: the cloak and the cape are built by the SAME function with the
+      // same pleat count and depth, and read 0.0781 and 0.0024. The only
+      // difference between them is that one is tan and one is dark red.
+      //
+      // Neighbours are compared in CIELAB now, the same space the contrast rule
+      // uses, so a fold that turns a saturated surface registers on the axis
+      // where its information actually lives. 2.3 is the classic
+      // just-noticeable difference; 3 keeps single-bit dither from counting.
+      const labOf = (i) => {
+        const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+        const R = lin(d[i] / 255), G = lin(d[i + 1] / 255), B = lin(d[i + 2] / 255);
+        const x = (0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047;
+        const y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+        const z = (0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883;
+        const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+        const fx = f(x), fy = f(y), fz = f(z);
+        return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+      };
+      const STEP_DE = 3.0;
+      const steps = (i, j) => {
+        const [l1, a1, b1] = labOf(i);
+        const [l2, a2, b2] = labOf(j);
+        return Math.hypot(l1 - l2, a1 - a2, b1 - b2) > STEP_DE;
+      };
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
           const i = (y * w + x) * 4;
           if (isSky(i)) continue;
-          const here = lumaAt(i);
           if (x + 1 < w) {
             const j = i + 4;
-            if (!isSky(j)) { pairs++; if (Math.abs(lumaAt(j) - here) > STEP) edges++; }
+            if (!isSky(j)) { pairs++; if (steps(i, j)) edges++; }
           }
           if (y + 1 < h) {
             const j = i + w * 4;
-            if (!isSky(j)) { pairs++; if (Math.abs(lumaAt(j) - here) > STEP) edges++; }
+            if (!isSky(j)) { pairs++; if (steps(i, j)) edges++; }
           }
         }
       }

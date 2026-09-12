@@ -112,7 +112,7 @@ class Armour:
         self.shell(bone, [(half_width, y - tube), (half_width + tube * 0.4, y), (half_width, y + tube)],
                    mat, squash=depth, sides=sides, cap=False, z=z, x=x)
 
-    def hanging(self, stations, mat, lining=None, thickness=4.0, segments=3):
+    def hanging(self, stations, mat, lining=None, thickness=4.0, segments=3, pleats=6):
         """
         A cape, cut into segments that hang from one another.
 
@@ -152,11 +152,87 @@ class Armour:
             # at this scale is a sheet; what stops it reading as a signboard is
             # the TAPER and the swing, not extra geometry. Each segment starts
             # exactly where the one above ended, so no cut is visible.
+            # PLEATS, BECAUSE A SHEET HAS NOTHING ON IT TO CATCH LIGHT. Each
+            # segment used to be two four-point rings: a whole cape was eight
+            # quads with no interior edges at all. Measured on the bench, cape,
+            # mantle and tabard came out at edge density 0.000 where every
+            # modelled piece reads 0.038 or more — and the catalogue plates show
+            # them, independently, as flat trapezoids. Two different instruments
+            # naming the same three items is the only evidence here worth acting
+            # on.
+            #
+            # The fall is lofted through columns across its width now, with z
+            # stepping in and out between them, so the cloth has folds that shade
+            # against each other. Cloth is what this needs, not decoration.
+            #
+            # GENTLY, AND THIS IS THE PART THE FILE ALREADY LEARNED ONCE. The
+            # curled eight-point section that came before lit up as bright rails
+            # down both edges with a hard seam at every link (see `wrapped_ring`,
+            # which is that abandoned idea). So: the fold depth is a fraction of
+            # the thickness rather than of the width, the OUTER points stay
+            # exactly where they were so the silhouette and its taper are
+            # untouched, and every segment still starts precisely where the one
+            # above ended — no cut is visible.
+            # AMPLITUDE IS MEASURED AGAINST THE WIDTH, NOT THE THICKNESS. The
+            # first pleats were `half * 1.6` — four units of ripple across a fall
+            # eighty units wide. Geometrically present, visually nothing: cape and
+            # mantle came back at edge density 0.000, EXACTLY as before, from a
+            # rebuild that did raise their triangle counts. A fold has to be a
+            # fraction of the cloth's own width to shade against its neighbour.
+            #
+            # And the phase has to close. `sin(t * pi * COLUMNS / 2)` is only zero
+            # at t=1 for even COLUMNS; at 5 it ended on a full lobe, which walked
+            # the tabard's outer edge forward until the body occluded it (footing
+            # 49%) and flattened its taper to x1.14. `sin(pi * t * lobes)` is zero
+            # at both ends for any whole number of lobes, so the silhouette and
+            # the taper are untouched by construction rather than by luck.
+            # AND THE SAME TWO CORRECTIONS HERE. Both rings took `+ fold`, which
+            # shoves the fall rather than pleating it; they move apart now, so the
+            # cloth thickens at each fold and its centreline stays where the taper
+            # put it.
+            #
+            # COUNT THE LOBES BEFORE TRUSTING THE NAME. `abs(sin(pi * t * LOBES))`
+            # gives LOBES humps across the width — so LOBES = 2 is TWO folds, and
+            # the "steeper, not bigger" edit that set it there made the surface
+            # SMOOTHER than the four-lobe version it replaced. Edge density went
+            # 0.0196 back to 0.000 on a change I had argued would raise it, which
+            # is the tell: a broad hump has almost no normal change across it, and
+            # a cape seen from behind shades only by that change.
+            #
+            # THREE AMPLITUDE GUESSES IS ALREADY TOO MANY (`half*1.6` -> 0.000,
+            # `w*0.16` at 4 lobes -> 0.0196, `w*0.26` at 2 lobes -> 0.000). What
+            # the measurements actually say is that FOLD COUNT drives this and
+            # depth barely does: the only configuration that ever registered was
+            # the one with the most lobes. So: more folds, at the depth that
+            # already half-worked, and one column per fold face so each has a
+            # facet to shade.
+            LOBES = pleats
+            COLUMNS = max(2, LOBES * 2)
             rings = []
             for w, y, z in (top, bottom):
-                rings.append([mesh(-w, y, z - half), mesh(w, y, z - half),
-                              mesh(w, y, z + half), mesh(-w, y, z + half)])
+                fold_depth = w * 0.18 if LOBES else 0.0
+                ring_front, ring_back = [], []
+                for c in range(COLUMNS + 1):
+                    t = c / COLUMNS
+                    x = -w + 2 * w * t
+                    fold = abs(math.sin(math.pi * t * LOBES)) * fold_depth
+                    ring_back.append(mesh(x, y, z - half - fold))
+                    ring_front.append(mesh(x, y, z + half + fold))
+                # One closed loop: across the back, down the far edge, back along
+                # the front. Reversed on the return so the ring does not cross.
+                rings.append(ring_back + list(reversed(ring_front)))
             model.loft(rings, mat, cap_start=False, cap_end=False)
+            # AND A HEM. The bottom edge of the lowest segment is where a real
+            # garment is thickest, and it is the edge a player sees against the
+            # ground when the cape swings.
+            if i == segments - 1:
+                w, y, z = bottom
+                model.loft([
+                    [mesh(-w, y, z - half), mesh(w, y, z - half),
+                     mesh(w, y, z + half), mesh(-w, y, z + half)],
+                    [mesh(-w * 0.99, y - 2.5, z - half * 2.2), mesh(w * 0.99, y - 2.5, z - half * 2.2),
+                     mesh(w * 0.99, y - 2.5, z + half * 2.2), mesh(-w * 0.99, y - 2.5, z + half * 2.2)],
+                ], mat, cap_start=False, cap_end=True)
             # NO LINING, and the parameter is ignored rather than removed so the
             # recipes keep reading as they did. It was a second sheet a
             # millimetre inside the first, and at this size the two never read as
@@ -176,10 +252,34 @@ class Armour:
         shoulders and swing out as it falls.
         """
         half = thickness / 2
+        # PLEATED, FOR THE REASON `hanging` IS. This is the other flat-sheet
+        # builder in the file, and leaving it alone would have fixed the tabard's
+        # back and left its FRONT panel a bare quad — measured at edge density
+        # 0.0004, the flattest thing in the catalogue. Same construction as the
+        # fall: folds across the width, outer points untouched so the silhouette
+        # and the belt line do not move.
+        # A PLEAT IS A THICKNESS, NOT A SHOVE. Both the back ring and the front
+        # ring took `+ fold`, so a lobe moved the whole panel forward instead of
+        # rippling it: the tabard's front panel walked off the chest until the
+        # body occluded it, and the bench refused to measure it twice (49% then
+        # 45% clear). I blamed the phase, corrected the phase, and it got worse —
+        # the phase was never the fault. The two surfaces have to move APART.
+        #
+        # Back goes back, front comes forward, so the cloth thickens at each fold
+        # and stays put on average. The panel's centreline does not move at all.
+        COLUMNS = 6
+        LOBES = 3
         rings = []
         for w, y, z in stations:
-            rings.append([mesh(-w, y, z - half), mesh(w, y, z - half),
-                          mesh(w, y, z + half), mesh(-w, y, z + half)])
+            fold_depth = w * 0.16
+            ring_front, ring_back = [], []
+            for c in range(COLUMNS + 1):
+                t = c / COLUMNS
+                x = -w + 2 * w * t
+                fold = abs(math.sin(math.pi * t * LOBES)) * fold_depth
+                ring_back.append(mesh(x, y, z - half - fold))
+                ring_front.append(mesh(x, y, z + half + fold))
+            rings.append(ring_back + list(reversed(ring_front)))
         self.part(bone).loft(rings, mat)
 
     def wrapped_ring(self, w, y, z, half, curl=0.42):
@@ -760,10 +860,17 @@ def mantle_back(a):
     # the shoulder and drew back in at the bottom, which is a yoke, not a cape.
     # It is short by design, so the flare has to happen over that short drop:
     # narrow at the neck, widest at the hem.
+    # AND A MANTLE IS NOT A LAMPSHADE. Pleating this one turned it into a rigid
+    # corrugated cone standing off the shoulders — photographed, it reads as
+    # ribbed plastic, not cloth, because the fall is SHORT (0.35 tall) and folds
+    # sized as a fraction of its width cover it end to end with nothing flat left
+    # between them. The taper still measured x1.82 and the piece still passed
+    # every other rule, which is exactly why the picture has to be looked at.
+    # Folds belong on a long fall; this one keeps its plain drape.
     a.hanging([(24.0, BODY["chest_y1"] + 5.0, -26.0),
                (30.0, BODY["chest_y1"] - 10.0, -29.0),
                (38.0, BODY["chest_y0"] + 14.0, -33.0),
-               (44.0, BODY["chest_y0"] - 2.0, -36.0)], CLOTH, thickness=5.0, segments=2)
+               (44.0, BODY["chest_y0"] - 2.0, -36.0)], CLOTH, thickness=5.0, segments=2, pleats=0)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(15.0, BODY["shoulder_y"] + 7.0), (17.0, BODY["shoulder_y"] - 6.0)],
