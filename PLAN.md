@@ -25017,3 +25017,30 @@ EVERY THRESHOLD CAME FROM MEASURED SUBJECTS, and where one did not, it says so i
 the file. The colour floor of 15 was read off ten pieces that read clearly on the
 character (weakest 18.8) — and it has a negative control only because the pinned
 body finally made one possible.
+
+### What M70.288 did NOT fix, read off the catalogue plates
+
+Ten subjects passed every rule and the plates still show work to do, which means
+the RULES are short, not that the table lied. Every rule the bench has asks one
+question — does this piece separate from the body? — as lightness, colour,
+standing proud, or taper. None asks whether it has any INTERNAL DETAIL. A flat
+slab of one colour passes all six.
+
+* CAPES ARE A TAPERED SLAB. The taper rule was written against "they just look
+  like squares on the back" and it tests WIDTH RATIO, so cape/cloak/shadowveil/
+  ironweave/squallcloak/charnel now measure x1.54 to x1.85 and still read as one
+  untextured fill with a straight hem: no fold lines, no lining, no hem, no edge.
+  The complaint was about surface and the rule measured outline.
+* CAPES ARE STILL A COLLAR FROM THE FRONT. Listed as open in M70.287 and still
+  open; a passing table let it look finished.
+* FIVE CHEST PIECES ARE A ROUNDED RECTANGLE on the torso — Traveller's Rags,
+  Apprentice's Robe, Archmage's Robe, Rimeward Robe, Warden's Jerkin. Deltas of
+  23 to 36 against skin, and still a panel rather than a garment.
+* WHAT WORKS, for the same reason in every case — internal structure: chain,
+  silvered mail, plate, gilded plate, brigandine, dragonscale, bone cuirass,
+  scale, and both mantles. Banding, plackets, collars, pauldrons, scales.
+
+NEXT RULE BEFORE NEXT ART: something that measures detail WITHIN a piece — edge
+density or luminance variance across the piece's own window, against the modelled
+styles above as the positive examples and the flat robes as the negative ones.
+Both sets exist in one build, so for once the calibration has both ends.
