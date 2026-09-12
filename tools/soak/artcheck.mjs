@@ -231,9 +231,16 @@ async function geometry(spec) {
  * by putting the camera back.
  */
 async function measurementCamera() {
-  await page.evaluate(() => {
+  return page.evaluate(() => {
     const g = window.__wieldbound;
     const a = g.localActor;
+    // THE POSE, TOO, NOT JUST THE CAMERA. With the camera pinned the piece
+    // readings became identical across runs — plate 0.410 both times — while the
+    // bare-forearm reference still moved, 0.220 without sheets against 0.186
+    // with. The piece window comes from the piece's own vertices and does not
+    // care how the body stands; the reference is taken from POSED BONES, and the
+    // shots path had played a pose in between. Same frame means same pose.
+    window.__art.pose("idle", 0.25);
     g.__artHold = () => {
       const target = a.position.clone();
       target.y += 0.95;
@@ -247,13 +254,21 @@ async function measurementCamera() {
       g.world.camera.position.set(target.x + Math.sin(f) * 3.0, target.y + 0.3, target.z + Math.cos(f) * 3.0);
       g.world.camera.lookAt(target);
     };
+    // WHERE THIS WAS MEASURED FROM, reported with the numbers. The robe read
+    // 0.205 and failed in one run, then 0.121 and passed seconds later on the
+    // same build — because the with-shots and no-shots paths were not looking
+    // from the same place, and nothing in the output said so. A measurement
+    // that cannot name its own viewpoint cannot be compared with another.
+    g.__artHold();
+    const c = g.world.camera.position;
+    return [+c.x.toFixed(2), +c.y.toFixed(2), +c.z.toFixed(2)];
   });
-  await page.waitForTimeout(260);
 }
 
 /** Pixels, from the same frame the shots come from. */
 async function sampleAround(meshFilter) {
-  await measurementCamera();
+  const cameraAt = await measurementCamera();
+  await page.waitForTimeout(280);
   const boxes = await page.evaluate((meshFilter) => {
     const g = window.__wieldbound;
     const a = g.localActor;
@@ -395,7 +410,7 @@ async function sampleAround(meshFilter) {
   };
   const piece = await read(boxes.piece);
   const body = await read(boxes.body);
-  return { piece, body, proud: boxes.proud };
+  return { piece, body, proud: boxes.proud, referenceCovered: boxes.referenceCovered, cameraAt };
 }
 
 const report = [];
@@ -485,6 +500,7 @@ for (const subject of SUBJECTS) {
     say(`   palette ${palette}; piece luma ${seen.piece.luma.toFixed(3)}, body ${seen.body.luma.toFixed(3)},` +
       ` coverage ${(seen.piece.covered * 100).toFixed(0)}%/${(seen.body.covered * 100).toFixed(0)}%` +
       (seen.referenceCovered ? "; REFERENCE IS UNDER GEAR" : ""));
+    say(`   measured from ${JSON.stringify(seen.cameraAt)}`);
     if (!verdict("measurement footing", footing,
       seen.referenceCovered
         ? "the bare-body reference is covered by gear — contrast cannot be measured here"
@@ -560,15 +576,24 @@ for (const subject of SUBJECTS) {
             x0 = Math.min(x0, p.x);
             x1 = Math.max(x1, p.x);
           }
-          bands.push(x1 > x0 ? +(x1 - x0).toFixed(3) : 0);
+          // AN EMPTY BAND IS NOT A WIDTH OF ZERO. A short fall can leave a third
+          // with no vertices in it — `cape:cape` reported `middle 0` — and a
+          // zero silently entering a ratio is how a rule passes by luck. Null
+          // says "not measured" and the verdict below refuses it.
+          bands.push(x1 > x0 ? +(x1 - x0).toFixed(3) : null);
         }
         return { drop: +drop.toFixed(3), hem: bands[0], middle: bands[1], collar: bands[2] };
       });
       if (shape) {
-        const taper = shape.hem / Math.max(shape.collar, 1e-6);
         say(`   fall ${shape.drop} tall: collar ${shape.collar}, middle ${shape.middle}, hem ${shape.hem}`);
-        verdict("is a garment, not a sheet", taper >= RULES.taper.min,
-          `hem is x${taper.toFixed(2)} the collar, need x${RULES.taper.min} — ${RULES.taper.why}`);
+        if (shape.hem === null || shape.collar === null) {
+          verdict("is a garment, not a sheet", false,
+            "the fall has a band with no geometry in it — shape cannot be measured");
+        } else {
+          const taper = shape.hem / Math.max(shape.collar, 1e-6);
+          verdict("is a garment, not a sheet", taper >= RULES.taper.min,
+            `hem is x${taper.toFixed(2)} the collar, need x${RULES.taper.min} — ${RULES.taper.why}`);
+        }
       }
     }
   }

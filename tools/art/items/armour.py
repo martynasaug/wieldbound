@@ -423,15 +423,22 @@ def leather_chest(a):
 
 def robe_chest(a):
     """A robe: a long fall of cloth from the shoulders, a sash, and soft shoulder folds."""
+    # THE ROBE IS THE ACCENT, NOT THE METAL. Every other style separated from
+    # the body once its bright accent carried real area, but a robe is one
+    # continuous surface with nowhere to put a panel — and wood's metal (0.438)
+    # sits almost exactly on the skin's value, so it measured 0.200 against a
+    # body at 0.220 however wide the placket got. The garment itself is cut from
+    # the palette's accent (0.672) and the darker metal becomes its trim, which
+    # is the same relationship the other five have, the other way up.
     a.shell(BONE_CHEST, [(17.0 + PROUD * 0.3, BODY["chest_y0"] - 3.0),
                          (19.0 + PROUD * 0.6, BODY["chest_y0"] + 16.0),
                          (19.0 + PROUD * 0.6, BODY["chest_y1"] - 10.0),
                          (15.0 + PROUD * 0.3, BODY["chest_y1"] + 8.0)],
-            CLOTH, squash=(1.0, 1.15), z=-3.0)
+            BRIGHT, squash=(1.0, 1.15), z=-3.0)
     # The skirt falls from the waist and widens to the knee: the robe's whole shape.
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"] + 2.0), (25.0, BODY["waist_y1"] - 20.0),
                          (29.0, BODY["waist_y1"] - 58.0), (27.0, BODY["waist_y1"] - 76.0)],
-            CLOTH, squash=(1.0, 1.0), z=-6.0)
+            BRIGHT, squash=(1.0, 1.0), z=-6.0)
     # A ROBE IS ONE UNBROKEN SURFACE, and measured against the body it sat
     # within a hundredth of it: 0.138 against 0.127. Shape cannot fix that —
     # a placket down the front and a collar in the accent can, and they are what
@@ -441,13 +448,15 @@ def robe_chest(a):
     # the complaint exactly. The palette's accent runs the full height of the
     # chest and over both shoulders, which is what a robe of office looks like
     # and what makes it read at a distance.
+    # And the placket and stoles invert with it: the darker metal over the
+    # accent body, so the robe still reads as two materials rather than one.
     a.plate(BONE_CHEST, [(-11.0, BODY["chest_y0"] + 2.0), (11.0, BODY["chest_y0"] + 2.0),
                          (12.0, BODY["chest_y1"] - 2.0), (-12.0, BODY["chest_y1"] - 2.0)],
-            BRIGHT, z=BODY["chest_front_z"] + PROUD * 0.3, thickness=5.0)
+            CLOTH, z=BODY["chest_front_z"] + PROUD * 0.3, thickness=5.0)
     for side in (1, -1):
         a.plate(BONE_CHEST, [(side * 8.0, BODY["chest_y1"] + 2.0), (side * 20.0, BODY["chest_y1"] - 2.0),
                              (side * 18.0, BODY["chest_y0"] + 10.0), (side * 7.0, BODY["chest_y0"] + 12.0)],
-                BRIGHT, z=BODY["chest_front_z"] + PROUD * 0.25, thickness=4.0)
+                CLOTH, z=BODY["chest_front_z"] + PROUD * 0.25, thickness=4.0)
     a.shell(BONE_CHEST, [(17.0, BODY["chest_y1"] - 2.0), (19.0, BODY["chest_y1"] + 9.0)],
             CLOTH_TRIM, squash=(1.0, 1.15), sides=10, z=-3.0)
     a.band(BONE_WAIST, BODY["waist_y1"] - 4.0, 23.0, CLOTH_TRIM, tube=4.0, squash=(1.0, 1.0), z=-6.0)
@@ -717,10 +726,14 @@ def mantle_back(a):
     """A mantle: a short cape over the shoulders and nothing below them."""
     # Two links, not three: a mantle is short, and a hem that swings a long way
     # on a piece that ends at the ribs reads as a bug rather than as cloth.
-    a.hanging([(28.0, BODY["chest_y1"] + 5.0, -26.0),
-               (33.0, BODY["chest_y1"] - 10.0, -28.0),
-               (34.0, BODY["chest_y0"] + 14.0, -31.0),
-               (30.0, BODY["chest_y0"] + 4.0, -34.0)], CLOTH, thickness=5.0, segments=2)
+    # A MANTLE STILL HAS TO OPEN. Measured x1.08 hem to collar — it bulged at
+    # the shoulder and drew back in at the bottom, which is a yoke, not a cape.
+    # It is short by design, so the flare has to happen over that short drop:
+    # narrow at the neck, widest at the hem.
+    a.hanging([(24.0, BODY["chest_y1"] + 5.0, -26.0),
+               (30.0, BODY["chest_y1"] - 10.0, -29.0),
+               (38.0, BODY["chest_y0"] + 14.0, -33.0),
+               (44.0, BODY["chest_y0"] - 2.0, -36.0)], CLOTH, thickness=5.0, segments=2)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(15.0, BODY["shoulder_y"] + 7.0), (17.0, BODY["shoulder_y"] - 6.0)],
