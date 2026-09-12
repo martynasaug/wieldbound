@@ -648,6 +648,14 @@ export interface GearAttachment {
    * looks like a coordinate bug.
    */
   boneLocal?: boolean;
+  /**
+   * Authored in the BODY's own space and attached rigidly to the bone with the
+   * skeleton's bind transform — see `boneAttachMatrix`. What modelled armour and
+   * fist weapons use: `boneLocal` hangs a piece off a bone carrying whatever
+   * offset it already had, and the rest-pose holder is wrong for anything on a
+   * limb, but this rides the bone the way the body's own triangles do.
+   */
+  bindLocal?: boolean;
 }
 
 /** A part before it becomes a mesh: geometry plus what it is made of. */
@@ -977,6 +985,65 @@ function partsFor(slot: ItemSlot, style: GearStyle, rarity: ItemRarity): Part[] 
  * Returns an empty list for slots with no look (ring), which is a real answer:
  * a ring is invisible at this camera and pretending otherwise would be noise.
  */
+/**
+ * Armour styles that are MODELLED rather than assembled from primitives.
+ *
+ * The review that started this (`tools/soak/armourstyles.mjs`, one style at a
+ * time on the character) found nineteen declared styles drawing about eight
+ * shapes: `scale` and `brigandine` were the same mesh as `plate`, and all four
+ * capes were one drape. A style in here has its own model in
+ * `tools/art/items/armour.py`; anything not in here still takes the old
+ * procedural path, so the wardrobe keeps working while it is replaced piece by
+ * piece.
+ */
+const MODELLED_ARMOUR = new Set<string>([
+  "armor:plate", "armor:scale", "armor:brigandine", "armor:chain", "armor:leather", "armor:robe",
+  "helm:cap", "helm:full", "helm:horned", "helm:circlet", "helm:hood",
+  "boots:low", "boots:tall", "boots:plated", "boots:wrapped",
+  "cape:cape", "cape:cloak", "cape:mantle", "cape:tabard",
+]);
+
+export function hasArmourModel(slot: ItemSlot, style: GearStyle): boolean {
+  return MODELLED_ARMOUR.has(`${slot}:${style}`);
+}
+
+/** The kit's material names, in the wardrobe's own vocabulary of roles. */
+const ARMOUR_MATERIAL_ROLE: Record<string, MaterialRole> = {
+  Steel: "metal", LightSteel: "metal", DarkSteel: "dark", Gold: "metal",
+  Wood: "leather", DarkWood: "leather", DarkBrown: "leather",
+  White: "cloth", Red: "cloth", Green: "cloth", LightBlue: "cloth", Black: "dark",
+};
+
+/**
+ * One modelled armour style, as a piece per bone.
+ *
+ * Rarity still only TINTS: the model decides the shape and the role decides what
+ * it is made of, exactly as the generated pieces do, so a Runed cuirass is the
+ * same cuirass in the same steel with the same tint over it.
+ */
+export async function buildArmourModel(
+  slot: ItemSlot,
+  style: GearStyle,
+  rarity: ItemRarity,
+): Promise<GearAttachment[]> {
+  const proto = await loadModel(`armour/${slot}_${style}.glb`);
+  const out: GearAttachment[] = [];
+  for (const child of proto.children) {
+    const piece = wholeModel(child);
+    if (!piece) continue;
+    const materials = (Array.isArray(piece.material) ? piece.material : [piece.material]).map((m) =>
+      roleMaterial(ARMOUR_MATERIAL_ROLE[(m as THREE.Material).name] ?? "metal", rarity),
+    );
+    const mesh = new THREE.Mesh(piece.geometry, materials.length === 1 ? materials[0] : materials);
+    mesh.name = `gear_${slot}_${style}_${child.name}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    out.push({ bone: child.name.replace(/\.\d+$/, ""), object: mesh, bindLocal: true });
+  }
+  if (!out.length) console.warn(`gear: armour/${slot}_${style}.glb has no named pieces`);
+  return out;
+}
+
 export function buildArmour(slot: ItemSlot, style: GearStyle, rarity: ItemRarity): GearAttachment[] {
   return partsFor(slot, style, rarity).map((part) => {
     const mesh = new THREE.Mesh(part.geometry, roleMaterial(part.role, rarity));

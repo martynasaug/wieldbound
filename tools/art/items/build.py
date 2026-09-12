@@ -16,6 +16,7 @@ import bpy
 from mathutils import Vector
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import armour  # noqa: E402
 import gloves  # noqa: E402
 import weapons  # noqa: E402
 
@@ -41,7 +42,11 @@ def parse():
             ids.extend(weapons.FAMILIES[token].keys())
         elif token == "gloves":
             ids.extend(gloves.RECIPES.keys())
-        elif token in weapons.RECIPES or token in gloves.RECIPES:
+        elif token == "armour":
+            ids.extend(armour.RECIPES.keys())
+        elif token in armour.FAMILIES:
+            ids.extend(armour.FAMILIES[token])
+        elif token in weapons.RECIPES or token in gloves.RECIPES or token in armour.RECIPES:
             ids.append(token)
         else:
             print(f"UNKNOWN {token}")
@@ -162,8 +167,21 @@ def main():
         for _, obj in pieces:
             bpy.data.objects.remove(obj, do_unlink=True)
 
+    # Armour is the same shape of thing as a fist weapon — a piece per bone,
+    # named for the bone — and built one style at a time for the same reason.
+    for style in [i for i in ids if i in armour.RECIPES]:
+        name, pieces = armour.build(style)
+        tris = sum(sum(len(p.vertices) - 2 for p in obj.data.polygons) for _, obj in pieces)
+        print(f"ITEM {name}: {tris} triangles over {len(pieces)} pieces {[n for n, _ in pieces]}")
+        if export_dir:
+            os.makedirs(export_dir, exist_ok=True)
+            export([obj for _, obj in pieces],
+                   os.path.join(export_dir, f"{armour.SLOT_OF[style]}_{style}.glb"))
+        for _, obj in pieces:
+            bpy.data.objects.remove(obj, do_unlink=True)
+
     for item_id in ids:
-        if item_id in gloves.RECIPES:
+        if item_id in gloves.RECIPES or item_id in armour.RECIPES:
             continue
         name, obj = weapons.build(item_id)
         tris = sum(len(p.vertices) - 2 for p in obj.data.polygons)

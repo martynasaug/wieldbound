@@ -28,7 +28,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildHandPieces, fistCentre, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
+import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildHandPieces, fistCentre, hasArmourModel, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
 import { HAIR_ANCHOR_MESH, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
@@ -434,6 +434,28 @@ const RIM_GLSL = {
  * load-bearing and cannot be traded for alpha. `soft` fades it instead, for the
  * highlight, which is additive and may blend.
  */
+/**
+ * Put a hull exactly where its source is.
+ *
+ * A hull — the through-walls silhouette or the outline — is a SIBLING of the
+ * mesh it copies rather than a child, so it has to be placed by hand. There are
+ * two ways a piece holds its placement: the usual position/rotation/scale, or a
+ * matrix it sets itself with `matrixAutoUpdate` off, which is how anything
+ * attached with the skeleton's bind transform works (modelled armour, fist
+ * weapons). Copying only the first loses the second entirely and drops the hull
+ * on the bone's origin.
+ */
+function copyTransform(target: THREE.Object3D, source: THREE.Object3D): void {
+  if (source.matrixAutoUpdate) {
+    target.position.copy(source.position);
+    target.quaternion.copy(source.quaternion);
+    target.scale.copy(source.scale);
+    return;
+  }
+  target.matrixAutoUpdate = false;
+  target.matrix.copy(source.matrix);
+}
+
 function makeRim(
   material: THREE.MeshBasicMaterial,
   mode: "hard" | "soft",
@@ -1261,6 +1283,31 @@ export class Actor {
     const built: { object: THREE.Object3D; holder: THREE.Object3D }[] = [];
     for (const [slot, layer] of layers) {
       if (!layer) continue;
+      // MODELLED STYLES TAKE THE SAME ROUTE AS A FIST WEAPON: a piece per bone,
+      // seated with the skeleton's bind transform. See `buildArmourModel`.
+      if (hasArmourModel(slot, layer.style)) {
+        void buildArmourModel(slot, layer.style, layer.rarity).then(async (pieces) => {
+          if (!pieces.length || generation !== this.dressGeneration) return;
+          for (const piece of pieces) {
+            const bone = this.bones.get(piece.bone);
+            const onBone = this.instance ? boneAttachMatrix(this.instance.object, piece.bone) : null;
+            if (!bone || !onBone) {
+              console.warn(`gear: ${slot} ${layer.style} piece for bone "${piece.bone}" has ${bone ? "no bind matrix" : "no such bone"}`);
+              continue;
+            }
+            await this.options.warmUp?.(piece.object);
+            if (generation !== this.dressGeneration) return; // swapped mid-compile
+            piece.object.matrixAutoUpdate = false;
+            piece.object.matrix.copy(onBone);
+            bone.add(piece.object);
+            this.worn.push(piece.object);
+            this.trackMaterials(piece.object);
+          }
+          this.refreshOutlines();
+          this.options.warmDraw?.(this.root);
+        });
+        continue;
+      }
       for (const piece of buildArmour(slot, layer.style, layer.rarity)) {
         // Two spaces, and the piece says which it is in. See the note on
         // `GearAttachment.boneLocal`: a generated part is authored on a
@@ -1461,9 +1508,14 @@ export class Actor {
       // Parented to the SOURCE's parent and given its transform, so anything
       // the original inherits — the armature's scale, most of all — comes with
       // it without being recomputed here.
-      ghost.position.copy(mesh.position);
-      ghost.quaternion.copy(mesh.quaternion);
-      ghost.scale.copy(mesh.scale);
+      // THE SOURCE'S TRANSFORM, WHICHEVER WAY THE SOURCE KEEPS IT. Copying
+      // position, rotation and scale loses everything a piece that sets its own
+      // `matrix` knows — and bind-attached gear (modelled armour, fist weapons)
+      // is exactly that, so its hulls collapsed onto the BONE'S ORIGIN. For the
+      // torso bone that is the pelvis, which is where a warm pale copy of the
+      // cuirass was photographed, in every chest style including the ones with
+      // no hip piece at all.
+      copyTransform(ghost, mesh);
       // See `rimFor`: a hull is a sibling of its source and has to be told
       // what to follow, or hiding a mesh leaves its silhouette behind.
       ghost.userData.hullSource = mesh;
@@ -1942,9 +1994,9 @@ export class Actor {
     // note there. A hull that survives a frame the body was culled on is a
     // second copy of the figure drawn on its own.
     out.frustumCulled = mesh.frustumCulled;
-    out.position.copy(mesh.position);
-    out.quaternion.copy(mesh.quaternion);
-    out.scale.copy(mesh.scale);
+    // See `ghostFor`: a piece that carries its own matrix has nothing in its
+    // position, rotation or scale to copy.
+    copyTransform(out, mesh);
     // THE HULL REMEMBERS WHAT IT IS A COPY OF.
     //
     // A hull is a SIBLING of its source, parented to the same bone rather than

@@ -24831,3 +24831,56 @@ buried their own studs, so every glove is cut closer to the hand now.
 Tests: `items.mjs` asserts the opposite of what it used to (fists exist, reach
 every band, are worn rather than held, and nothing else is worn on the hands),
 and `schools.mjs` counts fists as a family, since a Stormfist is made of storm.
+
+**Phase 70 M70.282 — nineteen armour styles that are nineteen shapes.**
+Continuing the remake, and the last of the open threads from the weapons work:
+"most chest pieces invisible, sunk into the body or a slab behind it; helms a
+bucket and a pair of sticks; boots coloured boxes; every cape the same drape".
+
+PHOTOGRAPHED FIRST, one style at a time on the character, front, side and back
+(`tools/soak/armourstyles.mjs`). Nineteen declared styles were drawing about
+eight shapes: `scale` and `brigandine` were the SAME MESH as `plate`, all four
+capes were one drape because `capeParts` ignored its style argument, all four
+boots were the same dark block, the `full` helm was a featureless bucket, and
+`cap` and `circlet` were invisible under the hair.
+
+Every style is its own model now, in `tools/art/items/armour.py`, built from the
+same kit the weapons use and authored as a piece PER BONE — chest on the torso,
+skirt on the abdomen, pauldrons on the upper arms, greaves on the shins, a cowl
+on the head — so each piece moves with the part of the body it belongs to. Six
+chests (a keeled cuirass, rows of scales, a rivetted brigandine, a mail shirt
+with a standing collar, an open jerkin, a sashed robe), five helms (skullcap,
+cowl, great helm with a comb and a sight, horns, a circlet worn above the brow),
+four boots (ankle cuff, turned-over riding boot, steel greaves with knee cops,
+cloth wraps) and four backs (cape, long cloak with a clasp, shoulder mantle,
+belted tabard with front and back panels).
+
+FITTED TO MEASURED NUMBERS. `tools/art/body_frame.py` reports every bone's
+vertex extents in the units `gear.ts` authors armour in, and checks the two
+candidate axis mappings against the dozen constants already in that file —
+the head reads z -48..+33 against HEAD_BACK_Z -46 and HEAD_FRONT_Z +32, which
+settles it. `tools/soak/armourprobe.mjs` then reports where each piece actually
+landed, as a fraction of the figure's height, and how big it is.
+
+THREE FAULTS, EACH FOUND BY A DIFFERENT INSTRUMENT:
+
+1. THE HULLS LANDED ON THE PELVIS. `ghostFor` and `rimFor` copy a source mesh's
+   position, rotation and scale — and a bind-attached piece keeps its placement
+   in `matrix` with `matrixAutoUpdate` off, so every outline and silhouette copy
+   of the new armour collapsed onto its bone's origin. Photographed as a warm
+   pale translucent cuirass sitting at the hips in EVERY chest style, including
+   the ones with no hip piece at all. `copyTransform` copies whichever the
+   source actually uses.
+2. THE FIRST FIT WAS A BARREL. The probe read the cuirass at 0.60m wide and
+   0.62m deep against ribs that are 0.34m by 0.47m, and each pauldron at half a
+   metre across. Slimmed, then slimmed too far — skin-tight reads as paint —
+   and settled about three units proud of the body.
+3. EVERY HELM WORE A BLINDFOLD. A band at the brow line crosses the EYES on a
+   face this flat, whatever the number says, so cap, horned and circlet all read
+   as a dark bar across the face. The bands ride up on the dome now, where a
+   helmet's rim is. (And the dark bar that remains in the photographs is the
+   Monk's own painted face, which I spent one pass mistaking for my own
+   geometry.)
+
+`hasArmourModel` keys on slot AND style, so a style with no model yet still
+takes the old procedural path and the wardrobe keeps working piece by piece.
