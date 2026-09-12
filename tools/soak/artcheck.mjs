@@ -220,8 +220,40 @@ async function geometry(spec) {
   }, spec);
 }
 
+/**
+ * THE MEASUREMENT CAMERA, PINNED.
+ *
+ * The same forearm patch read 0.270 on every subject in one run and 0.131 in
+ * the next, minutes apart, with the same rig and the same pose — because the
+ * tile loop leaves the camera wherever the last shot put it, and the next
+ * subject was measured from there. A contrast figure is only comparable if the
+ * view it was taken from is identical every time, so every measurement starts
+ * by putting the camera back.
+ */
+async function measurementCamera() {
+  await page.evaluate(() => {
+    const g = window.__wieldbound;
+    const a = g.localActor;
+    g.__artHold = () => {
+      const target = a.position.clone();
+      target.y += 0.95;
+      // THE LIT SIDE, which is the front: the rig turns the character to face
+      // the sun, and cameras here are placed at `heading + yaw`, so yaw = PI is
+      // the view that sees the sunlit face of a piece. Pinned behind the
+      // character instead, this sampled every piece's shadowed back against a
+      // forearm in full light, and passed all four styles for the wrong reason
+      // — the mirror image of the run that failed them all.
+      const f = a.heading;
+      g.world.camera.position.set(target.x + Math.sin(f) * 3.0, target.y + 0.3, target.z + Math.cos(f) * 3.0);
+      g.world.camera.lookAt(target);
+    };
+  });
+  await page.waitForTimeout(260);
+}
+
 /** Pixels, from the same frame the shots come from. */
 async function sampleAround(meshFilter) {
+  await measurementCamera();
   const boxes = await page.evaluate((meshFilter) => {
     const g = window.__wieldbound;
     const a = g.localActor;

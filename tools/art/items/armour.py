@@ -330,6 +330,13 @@ def scale_chest(a):
             # as the coat under them measured as one flat surface at 0.229.
             a.stud(BONE_CHEST, (x, y, z), (math.sin(angle), -0.35, math.cos(angle)), 6.0, 6.5, BRIGHT, sides=4)
     a.band(BONE_CHEST, BODY["chest_y0"] - 1.0, 19.0, "DarkSteel", tube=2.5, squash=(1.0, 1.15), z=-3.0)
+    # A BAND OF THE BRIGHT ACCENT ACROSS THE CHEST. Bronze scale measured 0.206
+    # against a body at 0.186 — the same "just above the skin" value that reads
+    # as merged — and a field of studs alone did not move it. The coat under the
+    # scales carries the accent over real area instead.
+    a.shell(BONE_CHEST, [(18.0 + PROUD * 0.5, BODY["chest_y0"] + 6.0),
+                         (20.0 + PROUD * 0.8, BODY["chest_y1"] - 12.0)],
+            BRIGHT, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"]), (25.0, BODY["waist_y1"] - 28.0)],
             LEATHER, squash=(1.0, 1.0), z=-6.0)
     for k in range(8):
@@ -429,9 +436,18 @@ def robe_chest(a):
     # within a hundredth of it: 0.138 against 0.127. Shape cannot fix that —
     # a placket down the front and a collar in the accent can, and they are what
     # a robe has anyway.
-    a.plate(BONE_CHEST, [(-5.0, BODY["chest_y0"] + 2.0), (5.0, BODY["chest_y0"] + 2.0),
-                         (6.0, BODY["chest_y1"] - 2.0), (-6.0, BODY["chest_y1"] - 2.0)],
-            CLOTH_TRIM, z=BODY["chest_front_z"] + 1.0, thickness=4.0)
+    # A WIDE PLACKET AND A STOLE, not a ribbon. The robe measured 0.206 against
+    # a body at 0.186: one unbroken surface at very nearly skin value, which is
+    # the complaint exactly. The palette's accent runs the full height of the
+    # chest and over both shoulders, which is what a robe of office looks like
+    # and what makes it read at a distance.
+    a.plate(BONE_CHEST, [(-11.0, BODY["chest_y0"] + 2.0), (11.0, BODY["chest_y0"] + 2.0),
+                         (12.0, BODY["chest_y1"] - 2.0), (-12.0, BODY["chest_y1"] - 2.0)],
+            BRIGHT, z=BODY["chest_front_z"] + PROUD * 0.3, thickness=5.0)
+    for side in (1, -1):
+        a.plate(BONE_CHEST, [(side * 8.0, BODY["chest_y1"] + 2.0), (side * 20.0, BODY["chest_y1"] - 2.0),
+                             (side * 18.0, BODY["chest_y0"] + 10.0), (side * 7.0, BODY["chest_y0"] + 12.0)],
+                BRIGHT, z=BODY["chest_front_z"] + PROUD * 0.25, thickness=4.0)
     a.shell(BONE_CHEST, [(17.0, BODY["chest_y1"] - 2.0), (19.0, BODY["chest_y1"] + 9.0)],
             CLOTH_TRIM, squash=(1.0, 1.15), sides=10, z=-3.0)
     a.band(BONE_WAIST, BODY["waist_y1"] - 4.0, 23.0, CLOTH_TRIM, tube=4.0, squash=(1.0, 1.0), z=-6.0)
