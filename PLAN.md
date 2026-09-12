@@ -25044,3 +25044,33 @@ NEXT RULE BEFORE NEXT ART: something that measures detail WITHIN a piece — edg
 density or luminance variance across the piece's own window, against the modelled
 styles above as the positive examples and the flat robes as the negative ones.
 Both sets exist in one build, so for once the calibration has both ends.
+
+### The detail rule, and what it honestly cannot do
+
+Built the measure the plates called for — variation WITHIN a piece, not the piece
+against the body — as luminance variance and edge density over the piece's full
+projected extent. Two findings, one useful and one negative.
+
+THE FIRST WINDOW WAS SAMPLING ONE FACET. Detail reused the contrast window: the
+nearest quarter of the piece, inset 18%, which is right for colour and wrong for
+this. On a large fall it sits entirely inside a single flat polygon, and both
+`cape:cape` and `cape:mantle` returned variance 0.0000 and edges 0.0000 — a
+reading no lit surface can produce. Detail has its own full-extent window now;
+contrast keeps the tight one, because the two questions want opposite things.
+
+AND THE METRIC CANNOT RANK DETAIL. Measured at 100% coverage: chain .112, robe
+.062, brigandine .055, scale .054, cloak .054, leather .044, plate .038, tabard
+.0004, cape 0, mantle 0. The robe I judged flat on the plate outranks brigandine,
+scale and plate; the flat cloak ties scale. Edge density cannot tell plackets and
+banding from lit gradient and polygon facets on a big smooth panel, so no
+threshold in that range means anything. I did not pick one.
+
+What it CAN do is find a piece with no features whatever — cape, mantle and
+tabard sit an order of magnitude below the rest, and they are precisely the three
+the plates condemned. A measurement and a picture arriving at the same three
+items independently is the only reason the rule exists at all. Floor at 0.02, in
+the empty gap between .0099 and .044.
+
+It will pass a piece with one crease on it. "Does this look good" is not
+measurable here and this file does not claim otherwise. NEXT ART: cape, mantle
+and tabard falls — the three both the bench and the plates agree are bare sheets.

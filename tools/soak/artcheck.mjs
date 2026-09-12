@@ -123,6 +123,32 @@ const RULES = {
   // cloth cut square has the same width all the way down and an aspect close to
   // one. Measured on the piece's own vertices, in its own space.
   taper: { min: 1.15, why: "a hanging piece is the same width top to bottom — a square" },
+  // A PIECE MUST NOT BE A FEATURELESS SHEET — and this rule is deliberately much
+  // narrower than the question I wanted to answer, so read what it does NOT say.
+  //
+  // Every other rule here asks whether a piece separates from the BODY. None
+  // asked whether it has anything ON it, so ten subjects passed everything while
+  // the catalogue plates showed capes as one untextured trapezoid and five robes
+  // as a rounded rectangle. Measured over each piece's full projected extent, at
+  // 100% non-sky coverage, edge density came out:
+  //
+  //   chain .112   robe .062   brigandine .055   scale .054   cloak .054
+  //   leather .044   plate .038   tabard .0004   cape 0   mantle 0
+  //
+  // THE MODELLED AND THE FLAT INTERLEAVE. The robe I judged flat on the plate
+  // outranks brigandine, scale and plate; the flat cloak ties scale exactly. So
+  // this CANNOT rank how much art a piece has, and no threshold in that range
+  // would mean anything — a cut anywhere passes a slab or fails a garment.
+  //
+  // What it can do is find a piece with NO features at all: cape, mantle and
+  // tabard sit an order of magnitude below everything else, and they are exactly
+  // the three the plates condemned. A measurement and a picture agreeing
+  // independently is the only reason this rule exists. The floor sits in the
+  // empty gap between .0099 and .044.
+  //
+  // It will pass a piece with one crease on it. "Does this look good" is still
+  // not measurable here, and nothing in this file should be read as claiming it.
+  detail: { min: 0.02, why: "a piece has no features on it at all — a flat sheet" },
 };
 
 const { browser, page } = await open({ headless: true, width: 1280, height: 800 });
@@ -492,6 +518,23 @@ async function sampleFrom(meshFilter, side) {
     const visible = core
       ? +(facing.filter((v) => depth(v) < coreDepth).length / facing.length).toFixed(2)
       : null;
+    // AND A SECOND WINDOW, FOR A SECOND QUESTION. The window above is the nearest
+    // quarter of the piece inset hard, which is exactly right for colour: it has
+    // to be uncontaminated piece pixels or the mean is the body's. It is exactly
+    // wrong for detail. Banding, plackets, scales, hems and folds are spread
+    // across a whole garment, and a small patch cut from the middle of a large
+    // fall can sit entirely inside ONE flat facet — which is how `cape:cape` and
+    // `cape:mantle` both reported variance 0.0000 and edges 0.0000, a reading no
+    // lit surface can honestly produce.
+    //
+    // So detail is measured over the piece's FULL projected extent. This does
+    // admit background at the silhouette's edges, and that matters: the bare
+    // body scores the highest edge density of anything here (0.152) almost
+    // entirely from its arm outline against the street. Edge density rewards
+    // OUTLINE unless you know how much of the window is piece, so the non-sky
+    // coverage of this window is reported beside the figures rather than folded
+    // into them.
+    const detailRect = inset(project(front), 0.10);
     const r = armSpan * 0.22;
     const bodyRect = inset(project([
       armAt.clone().add(new V(-r, r, -r)),
@@ -525,6 +568,7 @@ async function sampleFrom(meshFilter, side) {
 
     return {
       piece: pieceRect,
+      detail: detailRect,
       body: bodyRect,
       referenceCovered: covered,
       visible,
@@ -550,30 +594,82 @@ async function sampleFrom(meshFilter, side) {
       c.height = img.height;
       const ctx = c.getContext("2d");
       ctx.drawImage(img, 0, 0);
-      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      const w = c.width;
+      const h = c.height;
+      const d = ctx.getImageData(0, 0, w, h).data;
+      // Walked as a grid rather than a flat run, because the detail figures below
+      // are about a pixel's NEIGHBOURS and a flat index cannot name them.
+      const isSky = (i) => d[i + 2] > 150 && d[i + 2] > d[i] + 20;
+      const lumaAt = (i) => (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255;
       let r = 0, g = 0, b = 0, n = 0, sky = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        if (d[i + 2] > 150 && d[i + 2] > d[i] + 20) { sky++; continue; }
-        r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+      const lumas = [];
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          if (isSky(i)) { sky++; continue; }
+          r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+          lumas.push(lumaAt(i));
+        }
       }
-      const total = d.length / 4;
+      const total = w * h;
+      const mean = n ? (0.2126 * r + 0.7152 * g + 0.0722 * b) / n / 255 : 0;
+
+      // DOES THE PIECE HAVE ANYTHING ON IT? Every other rule here asks whether a
+      // piece separates from the BODY — lightness, colour, standing proud, taper.
+      // None asks whether it has any internal detail, so a flat slab of one
+      // colour passes all of them: ten subjects passed while the plates showed
+      // capes as one untextured trapezoid and five robes as a rounded rectangle.
+      //
+      // TWO MEASURES, BECAUSE THEY FAIL DIFFERENTLY. A smoothly lit slab carries
+      // real variance across it with no features at all, so variance alone would
+      // call a gradient "detail". Edge density is the one that separates banding,
+      // plackets, scales and folds from a smooth panel: neighbouring pixels that
+      // actually step. Both ignore sky, as the mean does.
+      let variance = 0;
+      if (n > 1) {
+        let acc = 0;
+        for (const l of lumas) acc += (l - mean) ** 2;
+        variance = Math.sqrt(acc / n);
+      }
+      let edges = 0;
+      let pairs = 0;
+      const STEP = 0.045; // a luma step a viewer would read as a line, not shading
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          if (isSky(i)) continue;
+          const here = lumaAt(i);
+          if (x + 1 < w) {
+            const j = i + 4;
+            if (!isSky(j)) { pairs++; if (Math.abs(lumaAt(j) - here) > STEP) edges++; }
+          }
+          if (y + 1 < h) {
+            const j = i + w * 4;
+            if (!isSky(j)) { pairs++; if (Math.abs(lumaAt(j) - here) > STEP) edges++; }
+          }
+        }
+      }
+
       // THE MEAN COLOUR, NOT ONLY ITS LIGHTNESS. Luma weights red at 0.2126, so
       // a saturated crimson cape and brown skin come out within a hundredth of
       // each other in luma while being obviously different colours — `cape:cape`
       // was scored 0.04 from a frame showing a vivid red drape. A rule about
       // whether a piece reads against the body has to be able to see hue.
       return {
-        luma: n ? (0.2126 * r + 0.7152 * g + 0.0722 * b) / n / 255 : 0,
+        luma: mean,
         rgb: n ? [r / n / 255, g / n / 255, b / n / 255] : [0, 0, 0],
         covered: n / total,
         sky: sky / total,
+        variance: +variance.toFixed(4),
+        edges: pairs ? +(edges / pairs).toFixed(4) : null,
       };
     }, shot.toString("base64"));
   };
   const piece = await read(boxes.piece);
   const body = await read(boxes.body);
+  const detail = await read(boxes.detail);
   return {
-    piece, body, proud: boxes.proud, referenceCovered: boxes.referenceCovered,
+    piece, body, detail, proud: boxes.proud, referenceCovered: boxes.referenceCovered,
     visible: boxes.visible, side: side.name, cameraAt,
   };
 }
@@ -738,6 +834,17 @@ for (const subject of SUBJECTS) {
         ` (need ${RULES.colour.min})` +
         (byLuma && byColour ? " — separates by both" : byLuma ? " — separates by lightness" : byColour ? " — separates by colour alone" : "") +
         ` — ${RULES.contrast.why}`);
+      // CALIBRATION ONLY, no rule yet. The positives and the negatives both exist
+      // in this one build — chain, plate, brigandine, dragonscale, bone, scale and
+      // both mantles are modelled; the robes, the jerkin and the plain cloaks are
+      // flat — so for once a threshold can be set with evidence at both ends.
+      // Printed before any rule is written, because choosing the number first and
+      // finding support for it afterwards is the mistake this bench keeps making.
+      say(`   detail over the whole piece: variance ${seen.detail.variance}, edges ${seen.detail.edges},` +
+        ` ${(seen.detail.covered * 100).toFixed(0)}% of that window is not sky` +
+        ` (bare body: variance ${seen.body.variance}, edges ${seen.body.edges})`);
+      verdict("has features on it", (seen.detail.edges ?? 0) >= RULES.detail.min,
+        `edge density ${seen.detail.edges}, need ${RULES.detail.min} — ${RULES.detail.why}`);
       const chroma = Math.hypot(...lab(seen.piece.rgb).slice(1));
       verdict("not a black hole",
         seen.piece.luma >= RULES.minLuma.min || chroma >= RULES.chroma.min,
