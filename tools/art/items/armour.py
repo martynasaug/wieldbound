@@ -106,6 +106,20 @@ class Armour:
         w, h, d = size
         self.part(bone).box((x * U, -z * U, y * U), (w * U, d * U, h * U), mat, taper=taper)
 
+    def sleeve(self, bone, side, out0, out1, r0, r1, mat, sides=8):
+        """
+        A tube round a HORIZONTAL limb — a bracer, a mail sleeve, a cloth cuff.
+
+        `shell` lathes about the body's vertical axis, which is right for a torso
+        and wrong for an arm: an arm runs out sideways, so its rings have to turn
+        about x. Same construction `gloves.py` uses for a gauntlet's forearm, so a
+        bracer and a gauntlet occupy the same space.
+        """
+        self.part(bone).lathe(
+            [(r0 * U, side * out0 * U), (r1 * U, side * out1 * U)], mat, sides=sides,
+            centre=(-4.0 * U, 186.0 * U), axis="x",
+        )
+
     def band(self, bone, y, half_width, mat, tube=3.0, squash=None, sides=10, z=0.0, x=0.0):
         """A belt, a rivet line, the lip of a cuff."""
         depth = (1.0, 0.82) if squash is None else squash
@@ -599,6 +613,65 @@ def robe_chest(a):
                 CLOTH, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
 
 
+# --- limbs -----------------------------------------------------------------------------------
+#
+# REPORTED: "armor looks like its covering some parts of the body, the rest of
+# the body looks naked, honestly just poor armor." That is structurally true and
+# not a matter of shading. `ITEM_SLOTS` has four visible entries — helm, armor,
+# cape, boots — so between the head and the feet there is exactly ONE piece of
+# gear, and every chest recipe here dresses the torso and stops. Arms and legs
+# are bare skin in plate mail.
+#
+# No new slot is needed to fix it. A style already emits a piece PER BONE, so the
+# chest piece can legitimately carry bracers on the forearms, cuisses on the
+# thighs and greaves on the shins — the boots do exactly this with `BONE_SHIN`.
+# They are added in `build` rather than in six recipes, so a style cannot forget.
+BONE_FOREARM = (("LowerArmL", 1), ("LowerArmR", -1))
+BONE_THIGH = (("UpperLegL", 1), ("UpperLegR", -1))
+BONE_CALF = (("LowerLegL", 1), ("LowerLegR", -1))
+# The forearm runs out 71 to 116 along the arm, at the arm's own axis.
+FOREARM_OUT0, FOREARM_OUT1 = 78.0, 112.0
+THIGH_X, CALF_X = 22.0, 23.6
+
+# What each style wears on its limbs: the main material, and whether it plates
+# the legs. A robe has sleeves and no greaves; plate has both.
+LIMB_KIT = {
+    "plate":      {"arm": ("Steel", 12.5, 13.5), "leg": "Steel", "trim": "DarkSteel"},
+    "scale":      {"arm": (BRIGHT, 12.0, 13.0), "leg": "Steel", "trim": "DarkSteel"},
+    "brigandine": {"arm": (LEATHER_TRIM, 12.0, 13.0), "leg": "Steel", "trim": "DarkSteel"},
+    "chain":      {"arm": (GARMENT, 12.0, 13.0), "leg": GARMENT, "trim": "DarkSteel"},
+    "leather":    {"arm": (LEATHER_TRIM, 11.5, 12.5), "leg": None, "trim": "Wood"},
+    "robe":       {"arm": (CLOTH, 12.0, 14.0), "leg": None, "trim": CLOTH_TRIM},
+}
+
+
+def dress_limbs(a, style):
+    """Bracers, cuisses and greaves, so a suit of armour covers a body."""
+    kit = LIMB_KIT.get(style)
+    if not kit:
+        return
+    mat, r0, r1 = kit["arm"]
+    for bone, side in BONE_FOREARM:
+        # A bracer: a tube round the forearm, flaring a little at the wrist.
+        a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT1, r0, r1, mat)
+        a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, r1 + 1.2, r1 + 0.6, kit["trim"])
+    if not kit["leg"]:
+        return
+    leg = kit["leg"]
+    for bone, side in BONE_THIGH:
+        # A cuisse over the front of the thigh, from the hip to just above the knee.
+        a.shell(bone, [(12.5, BODY["hip_y"] - 4.0), (13.5, BODY["hip_y"] - 24.0),
+                       (12.5, BODY["knee_y"] + 8.0)],
+                leg, squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
+    for bone, side in BONE_CALF:
+        # And a greave over the shin, stopping above the boot.
+        a.shell(bone, [(12.5, BODY["knee_y"] + 2.0), (13.0, BODY["knee_y"] - 14.0),
+                       (11.5, BODY["ankle_y"] + 16.0)],
+                leg, squash=(1.0, 0.9), sides=8, x=side * CALF_X)
+        a.band(bone, BODY["knee_y"] - 1.0, 13.4, kit["trim"], tube=2.6,
+               squash=(1.0, 0.9), sides=8, x=side * CALF_X)
+
+
 CHEST = {
     "plate": plate_chest,
     "scale": scale_chest,
@@ -933,4 +1006,6 @@ def build(style):
     """Every piece of one style, as (mesh name, object) pairs. The name is the bone."""
     a = Armour(style)
     RECIPES[style](a)
+    if SLOT_OF[style] == "armor":
+        dress_limbs(a, style)
     return f"{SLOT_OF[style]}:{style}", a.finish()

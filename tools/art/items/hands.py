@@ -181,24 +181,33 @@ def bare_hand(h):
     #
     # So the palm takes the first two thirds of that span and the fingers the
     # rest, and the hand ends where the authored fist ends.
-    palm_end = HAND["knuckles_out"] - 12.0          # 138: the knuckle line
-    finger_len = HAND["finger_out"] - palm_end - 6.0  # ~20: what is left to the tip
+    # THE FINGERS HAVE TO CLEAR THE PALM, or the hand is a slab with a fringe.
+    # Photographed from the lit side with a palm 34 wide, it still read as one
+    # dark wedge: the fingers ran to 158 against a palm ending at 138, so only
+    # twenty units of them showed past a block 22 long and 13 deep, and they sat
+    # flush along its underside with no air between. `Fist2R` — the curl bone the
+    # fingers ride — measures out 139.5, and the authored fist reaches 164, so
+    # there is room for fingers half as long again as the palm they hang off.
+    palm_end = 134.0                                  # the knuckle line, just shy of Fist2R
+    finger_len = HAND["finger_out"] - palm_end        # ~30: fingers clear of the block
 
-    # THE PALM, on the back-of-hand bone: smaller than the block it replaces, and
-    # genuinely flat — a hand seen edge-on is thin, and that thinness is most of
-    # what stops it reading as a mitten.
-    h.part(BONE_HAND).lathe(
-        [
-            (9.0 * U, h.side * HAND["wrist_out"] * U),
-            (10.5 * U, h.side * (HAND["wrist_out"] + 7.0) * U),
-            (10.0 * U, h.side * (palm_end - 4.0) * U),
-            (8.6 * U, h.side * palm_end * U),
-        ],
+    # THE PALM IS WIDE AND THIN, AND MINE WAS NEITHER. Photographed from the lit
+    # side it read as a dark wedge with grooves in it — a mitten again — and the
+    # measurements say why: lathed at radius 9-10.5 with a 0.62 squash, it came
+    # out about 20 units across and 12 deep, a fat little cylinder. The landmark
+    # `half_z` 19 says this hand is THIRTY-EIGHT across, and a hand is thin front
+    # to back. Nearly twice as wide as I built, and shallower.
+    #
+    # Built as a box rather than a lathe, because a lathe around the arm axis can
+    # only make a tube: the two dimensions that matter here are across (wide) and
+    # up (thin), and a box states them directly. Tapered so the knuckle end is a
+    # little narrower than the wrist end, which is what a palm does.
+    palm_mid = (HAND["wrist_out"] + palm_end) * 0.5
+    h.part(BONE_HAND).box(
+        h.at(palm_mid, mid_y, mid_z),
+        ((palm_end - HAND["wrist_out"]) * U, 34.0 * U, 13.0 * U),
         SKIN,
-        sides=8,
-        centre=(mid_z * U, mid_y * U),
-        axis="x",
-        squash=(1.0, 0.62),   # flat across the back, not round
+        taper=0.92,
     )
 
     # FOUR FINGERS, off the knuckle line, on the CURL bone so a fist actually
@@ -209,12 +218,17 @@ def bare_hand(h):
     # THICKER AGAINST THEIR LENGTH than the first attempt, which hung 30-unit
     # fingers of radius 3.4 off the palm and photographed as wires. A finger is
     # stubby at this scale: about five times as long as it is wide, not ten.
+    # SPREAD ACROSS THE REAL WIDTH. These sat within +-9 of the centre line, which
+    # is half the hand: four fingers crowded into the middle of a palm 34 wide,
+    # touching each other, reading as one block with scratches on it. The hand is
+    # 34 across, so the four fingers occupy nearly all of it and the gaps between
+    # them are what the eye reads as fingers.
     fingers = [
         # across, length,             radius, curl
-        (-9.0, finger_len * 1.00, 3.1, 0.55),   # index
-        (-3.0, finger_len * 1.08, 3.2, 0.50),   # middle
-        (3.0, finger_len * 0.98, 3.0, 0.55),    # ring
-        (8.6, finger_len * 0.82, 2.7, 0.65),    # little
+        (-13.0, finger_len * 1.00, 3.6, 0.55),  # index
+        (-4.4, finger_len * 1.08, 3.7, 0.50),   # middle
+        (4.4, finger_len * 0.98, 3.5, 0.55),    # ring
+        (12.6, finger_len * 0.82, 3.1, 0.65),   # little
     ]
     for across, length, radius, curl in fingers:
         (tip_out, tip_up, tip_across), r = h.finger(
@@ -235,9 +249,13 @@ def bare_hand(h):
     # radius 4.6 it reached past a palm that now ends at 138 and was fatter than
     # the fingers beside it — a thumb has to be the shortest digit here, not the
     # longest thing on the hand.
-    base = h.at(HAND["wrist_out"] + 6.0, mid_y - 2.0, mid_z - 9.5)
-    knuckle = h.at(HAND["wrist_out"] + 15.0, mid_y - 5.0, mid_z - 13.0)
-    tip = h.at(HAND["wrist_out"] + 24.0, mid_y - 9.0, mid_z - 12.0)
+    # ON THE SIDE THE SKELETON PUTS IT. `Thumb2R` measures out 122.1, across
+    # +3.3 — and I had built the thumb at across -13.5, on the opposite face of
+    # the hand. It was not a thumb at a wrong angle; it was a thumb on the wrong
+    # side, which is most of why nothing here read as a hand.
+    base = h.at(HAND["wrist_out"] + 4.0, mid_y - 1.0, mid_z + 12.0)
+    knuckle = h.at(HAND["wrist_out"] + 12.0, mid_y - 4.0, mid_z + 16.0)
+    tip = h.at(HAND["wrist_out"] + 20.0, mid_y - 7.0, mid_z + 15.0)
     h.part(BONE_HAND).tube([base, knuckle, tip], [3.4 * U, 3.0 * U, 2.5 * U], SKIN, sides=5, cap=True)
     # The same unit bug lived here: `tip` is a converted point, so offsetting it
     # by raw hand units put the thumb's nail metres away too.
@@ -253,16 +271,22 @@ def bare_hand(h):
     # It has to MEET the palm, not step out past it: the palm now starts at 9.0,
     # so a wrist closing at 11.5 would flare outward into it — a cuff again, by
     # accident, which is the one shape this whole exercise exists to remove.
+    # IT HAS TO REACH BACK OVER THE STUMP. Measured, the body's forearm still runs
+    # out to x -1.137 (out 113.7) after the strip, and this cap began at 106 — so
+    # it did overlap, but only just, and the junction showed as a facet break in
+    # every close-up. It starts further in now and widens to meet the palm, so the
+    # arm runs into the hand instead of butting against it.
     h.part(BONE_WRIST).lathe(
         [
-            (HAND["arm_radius"] * U, h.side * (HAND["wrist_out"] - 10.0) * U),
-            (9.4 * U, h.side * HAND["wrist_out"] * U),
+            (HAND["arm_radius"] * U, h.side * (HAND["wrist_out"] - 16.0) * U),
+            (11.0 * U, h.side * (HAND["wrist_out"] - 6.0) * U),
+            (12.0 * U, h.side * HAND["wrist_out"] * U),
         ],
         SKIN,
         sides=8,
         centre=(mid_z * U, mid_y * U),
         axis="x",
-        squash=(1.0, 0.78),
+        squash=(1.0, 0.80),
     )
 
 
