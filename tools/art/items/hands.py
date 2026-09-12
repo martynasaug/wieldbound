@@ -106,33 +106,56 @@ class Hand:
         size is that it BENDS: each segment turns a little further down and the
         radius steps in, so the silhouette has knuckles in it.
         """
-        # THE AXIS WAS RIGHT AND THE AMOUNT WAS NOT. Photographed twice, these
-        # came out as a rake: four straight prongs fanning outward instead of
-        # closing. The direction is not the fault — `back_y` 209 against
-        # `palm_y` 158 puts the palm 51 units BELOW the back of the hand in this
-        # frame, so bending in -y is exactly right. The magnitude was: `drop`
-        # accumulated `curl * (i + 1)`, which sums to six times `curl` over three
-        # segments, and on a finger only twenty units long that is a fan rather
-        # than a curl.
+        # NOT A SWEPT TUBE, AND THIS IS A MEASURED FAULT RATHER THAN A PREFERENCE.
+        # Exported and read straight out of Blender, the fingers piece spanned
+        # y -1.334..1.173 and z 1.731..3.050: two and a half metres tall, reaching
+        # past the character's head, while the palm and wrist sat correctly inside
+        # a quarter-metre box. Every close-up I judged had simply cropped that
+        # damage out of frame.
         #
-        # It advances by a FIXED step per segment now, and the step is a fraction
-        # of the finger's own length, so a short finger curls as far as a long one
-        # in proportion and neither splays.
-        pts = []
-        radii = []
+        # `Model.tube` frames each ring from the path direction: `helper` is
+        # (0,1,0) unless the direction is mostly y, then `s = t.cross(helper)`.
+        # `at()` maps `up` to Z and `across` to Y — so a finger that runs out in x
+        # and drops in "up" is turning in the X-Z plane, and as the tip segment's
+        # direction approaches the helper axis that cross product collapses toward
+        # zero and `.normalized()` on it throws the ring vertices across the whole
+        # axis. A near-degenerate frame, silently.
+        #
+        # Two boxes per finger instead: a proximal running out from the knuckle
+        # and a shorter one angled down off it. `box()` takes an explicit centre
+        # and size in the model's own axes, so there is no swept frame to collapse
+        # and the bounds are what the numbers say they are.
         up = HAND["mid_y"]
-        out = out0
-        step = length / 3.0
-        bend = curl * length * 0.22
-        drop = 0.0
-        for i in range(4):
-            pts.append(self.at(out, up - drop, across))
-            # The tip draws in hard; the base barely at all.
-            radii.append(radius * (1.0 - 0.16 * i))
-            out += step
-            drop += bend
-        self.part(bone).tube(pts, [r * U for r in radii], mat, sides=sides, cap=True)
-        return pts[-1], radii[-1]
+        knuckle = length * 0.46
+        hang = length - knuckle
+        d = radius * 2.0
+
+        # The proximal phalanx: straight out from the knuckle, level.
+        self.part(bone).box(
+            self.at(out0 + knuckle * 0.5, up, across),
+            (knuckle * U, d * U, d * 0.92 * U),
+            mat,
+        )
+        # And the rest, dropped toward the palm and drawn in — the break between
+        # the two is the knuckle, and that break is the whole silhouette.
+        drop = hang * curl
+        tip_out = out0 + knuckle + hang * 0.5
+        tip_up = up - drop
+        self.part(bone).box(
+            self.at(tip_out, tip_up, across),
+            (hang * U, d * 0.88 * U, d * 0.8 * U),
+            mat,
+            taper=0.82,
+        )
+        # RETURNED IN HAND UNITS, NOT METRES, and that distinction is the whole
+        # reason this piece was two and a half metres tall. This used to hand back
+        # `self.at(...)` — already multiplied by U — and the caller then offset the
+        # nail by `r * 0.55` with `r` in hand units, about 2.3. So every nail was
+        # placed a couple of METRES off its fingertip, and four of them scattered
+        # that far gave `Fist2R` a span of 2.508 by 1.300 while the fingers inside
+        # it were correct all along. Bisected by building with the nails
+        # suppressed: the piece collapsed to 0.216 x 0.234 x 0.114.
+        return (out0 + knuckle + hang, up - drop * 1.6, across), radius * 0.74
 
 
 def bare_hand(h):
@@ -194,11 +217,14 @@ def bare_hand(h):
         (8.6, finger_len * 0.82, 2.7, 0.65),    # little
     ]
     for across, length, radius, curl in fingers:
-        tip, r = h.finger(BONE_FINGERS, mid_z + across, palm_end - 1.0, length, radius, curl)
+        (tip_out, tip_up, tip_across), r = h.finger(
+            BONE_FINGERS, mid_z + across, palm_end - 1.0, length, radius, curl,
+        )
         # A nail: a small chip on the back of the last segment, lighter than skin.
+        # Placed in HAND UNITS and converted once, by `at`, like everything else.
         h.part(BONE_FINGERS).box(
-            (tip.x + h.side * 1.4 * U, tip.y, tip.z + r * 0.55),
-            (4.0 * U, r * 1.05, 1.3 * U),
+            h.at(tip_out + 1.4, tip_up + r * 0.55, tip_across),
+            (4.0 * U, r * 1.05 * U, 1.3 * U),
             NAIL,
         )
 
@@ -213,8 +239,10 @@ def bare_hand(h):
     knuckle = h.at(HAND["wrist_out"] + 15.0, mid_y - 5.0, mid_z - 13.0)
     tip = h.at(HAND["wrist_out"] + 24.0, mid_y - 9.0, mid_z - 12.0)
     h.part(BONE_HAND).tube([base, knuckle, tip], [3.4 * U, 3.0 * U, 2.5 * U], SKIN, sides=5, cap=True)
+    # The same unit bug lived here: `tip` is a converted point, so offsetting it
+    # by raw hand units put the thumb's nail metres away too.
     h.part(BONE_HAND).box(
-        (tip.x + h.side * 1.2 * U, tip.y, tip.z + 1.5 * U),
+        h.at(HAND["wrist_out"] + 25.2, mid_y - 7.5, mid_z - 12.0),
         (4.0 * U, 2.8 * U, 1.3 * U),
         NAIL,
     )

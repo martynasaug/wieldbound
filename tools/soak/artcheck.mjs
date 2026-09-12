@@ -247,6 +247,20 @@ async function geometry(spec) {
     const a = window.__wieldbound.localActor;
     const body = window.__art.body();
     if (!body) return { ok: false, why: "no skinned body" };
+    // THE HAND IS NOT PART OF THIS MESH ANY MORE, and this subject measures
+    // slices of the body's own skinned vertices — so the moment the Monk's
+    // mitten was cut out and replaced with modelled pieces, the arm profile
+    // started failing with "no vertices for Fist2R". The rule did not stop being
+    // true; the geometry moved out from under it. The attached `bare_*` pieces
+    // are rigid children of their bones, so their vertices are gathered here and
+    // folded in beside the body's, tagged with the bone they hang from.
+    const attached = [];
+    a.root.traverse((o) => {
+      if (!o.isMesh || !o.name.startsWith("bare_")) return;
+      // `bare_Fist2R` -> `Fist2R`: the bone it rides, which is exactly the name
+      // the slice spec below asks for.
+      attached.push({ bone: o.name.replace(/^bare_/, "").replace(/\.\d+$/, ""), mesh: o });
+    });
     const V = a.position.constructor;
     const names = body.skeleton.bones.map((b) => b.name);
     const pos = body.geometry.attributes.position;
@@ -257,6 +271,36 @@ async function geometry(spec) {
       for (let k = 1; k < 4; k++) if (weight.getComponent(i, k) > weight.getComponent(i, best)) best = k;
       return names[index.getComponent(i, best)];
     };
+    // EVERY ATTACHED PIECE'S VERTICES, IN THE BODY MESH'S OWN SPACE. A `bare_*`
+    // piece is a rigid child of a bone, so its vertices reach the world through
+    // the bone; the body's skinned vertices live in the mesh's bind space. The
+    // conversion back is `bindMatrixInverse * worldMatrix`, and mixing those two
+    // spaces up is precisely what once had this project reporting a seventy-metre
+    // forearm — so the units check further down is left to catch it if this is
+    // wrong, rather than trusting it.
+    // AND THE CONVERSION IS NO CONVERSION AT ALL. The first attempt multiplied
+    // these by `bindMatrixInverse * matrixWorld` and reported slices 1.53 wide —
+    // a hand half a metre across on a body 2.9 tall. Probed against a known
+    // anchor: the `LowerArmR` bone sits at (-71.1, 186.8, -3.5) in bind space,
+    // which is the rest frame times a hundred (`gloves.py` calls that same place
+    // mid_y 186, mid_z -4), and `bindMatrix` carries exactly that 100.
+    //
+    // So `boneAttachMatrix` — `boneInverse * bindMatrix` — maps MESH SPACE into
+    // a bone, which means every piece attached through it is authored in the
+    // body's own mesh space to begin with. Its local matrix is what puts it on
+    // the bone; the stored vertices are already where this pass wants them, in
+    // the same bind-pose space the body's own `position` attribute is in.
+    const extra = new Map();
+    for (const piece of attached) {
+      const p = piece.mesh.geometry.attributes.position;
+      const pts = extra.get(piece.bone) ?? [];
+      const q = new V();
+      for (let i = 0; i < p.count; i++) pts.push(q.fromBufferAttribute(p, i).clone());
+      extra.set(piece.bone, pts);
+    }
+    /** Every point following `bone`, body and attached alike. */
+    const pointsFor = (bone) => extra.get(bone) ?? [];
+
     const centroid = (want) => {
       const wanted = new Set(want);
       const sum = new V();
@@ -266,6 +310,12 @@ async function geometry(spec) {
         if (!wanted.has(dominant(i))) continue;
         sum.add(v.fromBufferAttribute(pos, i));
         n++;
+      }
+      for (const bone of wanted) {
+        for (const p of pointsFor(bone)) {
+          sum.add(p);
+          n++;
+        }
       }
       return n ? { at: sum.divideScalar(n), n } : null;
     };
@@ -295,6 +345,30 @@ async function geometry(spec) {
       return { ok: false, why: `axis span ${span.toFixed(2)} is not a limb on a body ${height.toFixed(2)} tall` };
     }
 
+    // AND THE RADII, NOT ONLY THE AXIS. This check tested the elbow-to-fingertip
+    // SPAN and nothing else, so when attached pieces were first folded in with a
+    // bad space conversion it passed happily while reporting slices 1.53 wide —
+    // a hand half a metre across on a body 2.9 tall. A limb is thin: nothing on
+    // this arm is a fifth of the body's height away from its own axis, and a
+    // figure that says otherwise is a space error, not a fat character.
+    const farthest = (points) => {
+      let worst = 0;
+      for (const p of points) {
+        const d = p.clone().sub(from.at);
+        worst = Math.max(worst, d.sub(axis.clone().multiplyScalar(d.dot(axis))).length());
+      }
+      return worst;
+    };
+    let widest = 0;
+    for (const bone of new Set(spec.of)) widest = Math.max(widest, farthest(pointsFor(bone)));
+    if (widest > height * 0.2) {
+      return {
+        ok: false,
+        why: `an attached piece sits ${widest.toFixed(2)} from the limb axis on a body ${height.toFixed(2)} tall` +
+          " — its vertices are not in the body's space",
+      };
+    }
+
     const wanted = new Set(spec.of);
     const slices = [];
     const reach = spec.reach ?? 1.6;
@@ -304,16 +378,22 @@ async function geometry(spec) {
       let n = 0;
       let max = 0;
       let sum = 0;
-      for (let i = 0; i < pos.count; i++) {
-        if (!wanted.has(dominant(i))) continue;
-        v.fromBufferAttribute(pos, i).sub(from.at);
+      const bin = (point) => {
+        v.copy(point).sub(from.at);
         const t = v.dot(axis) / span;
-        if (t < t0 || t >= t1) continue;
+        if (t < t0 || t >= t1) return;
         const r = v.sub(axis.clone().multiplyScalar(t * span)).length();
         max = Math.max(max, r);
         sum += r;
         n++;
+      };
+      const at = new V();
+      for (let i = 0; i < pos.count; i++) {
+        if (!wanted.has(dominant(i))) continue;
+        bin(at.fromBufferAttribute(pos, i));
       }
+      // And the modelled hand, which is not in that mesh at all.
+      for (const bone of wanted) for (const p of pointsFor(bone)) bin(p);
       if (n >= 3) slices.push({ t: +((t0 + t1) / 2).toFixed(2), n, max: +max.toFixed(3), mean: +(sum / n).toFixed(3) });
     }
     return { ok: true, height: +height.toFixed(3), span: +span.toFixed(3), slices };
