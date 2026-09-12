@@ -64,7 +64,12 @@ import { loadModel, clipName, trackLoad } from "./assets";
  * posture. Monk leads because Monk is the body, so the shared locomotion is the
  * body's own and only the weapon-specific clips are borrowed.
  */
-const SOURCES = ["Monk", "Warrior", "Ranger", "Wizard", "Rogue", "Monk_Gather.glb"] as const;
+// THE BODY LEADS, and the body is the Wizard now. First wins, so whichever rig
+// is listed first donates the shared locomotion — Idle, Walk, Run, Death,
+// RecieveHit, Roll, PickUp exist on all five and are not identical, each
+// carrying its own posture. With the Monk leading, a Wizard-bodied player would
+// walk with the Monk's stance and only borrow the weapon-specific clips.
+const SOURCES = ["Wizard", "Monk", "Warrior", "Ranger", "Rogue", "Monk_Gather.glb"] as const;
 
 /**
  * Bones that exist on the source rigs and are not to be driven.

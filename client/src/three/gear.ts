@@ -95,16 +95,37 @@ import { PALETTES, itemBase, type PaletteDef } from "../../../shared/items";
  */
 const WANT_NEW_BODY =
   typeof location !== "undefined" && new URLSearchParams(location.search).get("body") === "new";
-export const PLAYER_BODY = WANT_NEW_BODY ? "Player_Base.glb" : "Monk";
+// THE PLAYER IS THE WIZARD NOW, and the reason is worth recording because it
+// undoes a lot of work rather than adding to it.
+//
+// The Monk was the player body since the rig landed, and it is the one model in
+// this pack that is a single welded lump: hands included, which is why "remove
+// the gloves" took four sessions and ended in a modelled hand of my own that
+// still read as a paddle. Every other body in the pack — Warrior, Ranger, Rogue,
+// Wizard — is an OUTFIT: separable garment meshes on the same 44-bone armature,
+// with plain bare hands. Rendered side by side, the Monk is the odd one out.
+//
+// The Wizard is Elsbet Vane's model (`shared/town.ts`, `body: "mage"`), which is
+// the robe that prompted this: a hooded gown with layered shoulder capes, a sash
+// and a skirted hem, all authored, all rigged to the skeleton we already use.
+export const PLAYER_BODY = WANT_NEW_BODY ? "Player_Base.glb" : "Wizard";
 
 /**
  * The body whose clips come from the pooled library rather than from itself.
  *
- * Only the Monk. `clips.ts` exists to unweld twenty-five animations off five
- * rigs that share a skeleton; a body that ships its own does not want any of
- * that, and `Actor.buildActions` reads its `instance.animations` instead.
+ * THE PLAYER BODY, whichever it is — it was the Monk because the Monk was the
+ * player. `clips.ts` exists to unweld twenty-five animations off five rigs that
+ * share a skeleton, and the body that needs that is the one that picks up every
+ * kind of weapon in the game.
+ *
+ * The Wizard ships Idle, Walk, Run, Roll, PickUp, Death, RecieveHit, Punch,
+ * Spell1/2 and Staff_Attack — and nothing else. Left to its own clips a player
+ * would swing a greatsword with a staff animation, and would have no gather
+ * stroke at all: Chop, Mine and Pick live in `Monk_Gather.glb`, which only the
+ * pool reaches. All five pack rigs are the same 44-bone `CharacterArmature`, so
+ * the pool retargets onto this body exactly as it did onto the Monk.
  */
-export const POOLED_CLIP_BODY = "Monk";
+export const POOLED_CLIP_BODY = PLAYER_BODY;
 
 // Every body carries its own weapon baked into the scene graph, so they all
 // have to go: otherwise a ranger who picks up a sword walks around holding both

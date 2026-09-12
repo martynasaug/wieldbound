@@ -1050,49 +1050,59 @@ export class Actor {
       if (BUILTIN_WEAPON_MESHES.has(o.name)) builtIn.push(o);
     });
     for (const o of builtIn) o.removeFromParent();
-    // And the Monk's prayer beads, which are welded into its head mesh rather
-    // than being a node of their own — see `removeBakedBeads`. A player keeps only
-    // its nose: brows and facial hair come from `applyLookPieces`, in their own
-    // hair colour, so the one piece of the face they chose is theirs.
-    if (this.identity) keepBakedNose(instance.object);
-    else removeBakedBeads(instance.object);
-    // And the gloves: bare hands are the body now, and fists are a weapon
-    // family that puts gloves back on. The leather shell over each hand comes
-    // OFF (`removeGloves`); the flared cuff on each forearm is pulled in to the
-    // arm (`bareForearms`). Repainting alone left a leather mitten behind.
-    // ORDER MATTERS HERE, and getting it wrong is silent. `bareForearms` finds
-    // the arm's axis from the centroid of the `Fist2` vertices; strip the hand
-    // first and that centroid is null, so the cuff pull quietly stops running —
-    // the same class of no-op that let the gloves survive three removals.
-    bareForearms(instance.object);
-    // THE MONK'S HANDS COME OFF AS GEOMETRY, because they were never removable
-    // any other way: the forearm and hand are one welded island, so there is no
-    // shell to strip, and a radial clamp can only make a mitten narrower.
-    // `removeGloves` hunted for a 37-face shell that does not exist in this body
-    // and returned silently every time it was called; it is gone from this path.
-    removeHandGeometry(instance.object);
-    // And modelled hands go in the hole (`tools/art/items/hands.py`), rigidly on
-    // the skeleton's own bind data — a rest-pose holder leaves them out at
-    // shoulder height in the T-pose the body was bound in. See `boneAttachMatrix`.
-    void buildBareHands(instance.object).then((pieces) => {
-      for (const piece of pieces) {
-        let bone: THREE.Object3D | null = null;
-        instance.object.traverse((o) => {
-          if (!bone && (o as THREE.Bone).isBone && o.name === piece.bone) bone = o;
-        });
-        const onBone = boneAttachMatrix(instance.object, piece.bone);
-        if (!bone || !onBone) {
-          // Loud: a hand that finds no bone draws nothing, and a character with
-          // no hands reads as a rendering glitch rather than a missing asset.
-          console.warn(`gear: bare hand piece for bone "${piece.bone}" has ${bone ? "no bind matrix" : "no such bone"}`);
-          continue;
+    // EVERYTHING BELOW BELONGS TO THE MONK, AND ONLY TO THE MONK.
+    //
+    // All of it exists because that one body is a single welded lump: prayer
+    // beads baked into its head mesh, a leather mitten welded to each forearm,
+    // a flared cuff that had to be clamped back to the arm. Four sessions went
+    // into taking the gloves off it and the result still read as a paddle.
+    //
+    // The player is the Wizard now (see `PLAYER_BODY`), and every other body in
+    // this pack is an OUTFIT with plain bare hands — so on any of them this
+    // surgery is not merely unnecessary, it is destructive. `removeHandGeometry`
+    // drops every triangle weighted to a hand bone: run it on the Wizard and it
+    // amputates hands that were authored correctly. `bareForearms` would clamp
+    // the robe's sleeves into the arm. `keepBakedNose` and `removeBakedBeads`
+    // hunt `Monk001`, which no other body has.
+    //
+    // Gated rather than deleted, because the Monk is still in the project: the
+    // clip pool is built from it, and it remains a body an actor can be given.
+    if (this.bodyModel === "Monk") {
+      // The Monk's prayer beads are welded into its head mesh rather than being
+      // a node of their own — see `removeBakedBeads`. A player keeps only its
+      // nose: brows and facial hair come from `applyLookPieces`, in their own
+      // hair colour, so the one piece of the face they chose is theirs.
+      if (this.identity) keepBakedNose(instance.object);
+      else removeBakedBeads(instance.object);
+      // ORDER MATTERS HERE, and getting it wrong is silent. `bareForearms` finds
+      // the arm's axis from the centroid of the `Fist2` vertices; strip the hand
+      // first and that centroid is null, so the cuff pull quietly stops running —
+      // the same class of no-op that let the gloves survive three removals.
+      bareForearms(instance.object);
+      removeHandGeometry(instance.object);
+      // And modelled hands go in the hole (`tools/art/items/hands.py`), rigidly
+      // on the skeleton's own bind data — a rest-pose holder leaves them out at
+      // shoulder height in the T-pose the body was bound in.
+      void buildBareHands(instance.object).then((pieces) => {
+        for (const piece of pieces) {
+          let bone: THREE.Object3D | null = null;
+          instance.object.traverse((o) => {
+            if (!bone && (o as THREE.Bone).isBone && o.name === piece.bone) bone = o;
+          });
+          const onBone = boneAttachMatrix(instance.object, piece.bone);
+          if (!bone || !onBone) {
+            // Loud: a hand that finds no bone draws nothing, and a character with
+            // no hands reads as a rendering glitch rather than a missing asset.
+            console.warn(`gear: bare hand piece for bone "${piece.bone}" has ${bone ? "no bind matrix" : "no such bone"}`);
+            continue;
+          }
+          piece.object.matrixAutoUpdate = false;
+          piece.object.matrix.copy(onBone);
+          (bone as THREE.Object3D).add(piece.object);
+          this.trackMaterials(piece.object);
         }
-        piece.object.matrixAutoUpdate = false;
-        piece.object.matrix.copy(onBone);
-        (bone as THREE.Object3D).add(piece.object);
-        this.trackMaterials(piece.object);
-      }
-    });
+      });
+    }
 
     this.mixer = new THREE.AnimationMixer(instance.object);
     this.buildActions();
