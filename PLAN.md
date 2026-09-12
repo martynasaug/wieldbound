@@ -25109,3 +25109,40 @@ register even in CIELAB. Noted, not rewritten.
   for three runs, a correct refusal on a window that was never on the piece.
   Subjects declare their side now (`WORN_FACING`). Deliberately NOT the automatic
   side-picking tried earlier, which chose the shaded face of every piece.
+
+### The gloves: why three removals changed nothing
+
+Reported a fourth time — "you told me you removed the glove MULTIPLE times, are
+you even looking at the arm" — and the arm was photographed close up. There is a
+squared cuff at the wrist with its own edge highlight and a segmented mitten
+below it. Enumerating the live body settles why:
+
+THE RIGHT FOREARM AND HAND ARE ONE ISLAND of 296 triangles, extent 0.976, arm and
+wrist and fingers welded into a single surface of the `Monk` mesh. `isGlove` looks
+for an island of 37-74 triangles under 0.48 across — the shell measured from an
+older export — so it matches NOTHING, `filterIslands` hands back the source, and
+`removeGloves` returns on `filtered === source` without a word. It has never
+changed a triangle on this body. Every "gloves removed" report rested on a
+function that did nothing, plus a texture repaint that recoloured a mitten.
+
+It now warns when no island matches, rather than passing for success.
+
+AND THE CLAMP WAS TUNED AROUND THE GLOVE. `HAND_PROUD` 1.35 x a forearm of 0.1127
+permits 0.152; the arm's widest slice measured 0.155. The hand was sitting exactly
+at the ceiling I had given it, running 1.30-1.37x the forearm from wrist to
+fingertip with no taper — so the bench passed it at x1.26 against a x1.3 limit.
+Tightened to 1.15 with a 0.7 finger taper: 1060 vertices move now, the widest
+slice is 0.133, the worst jump x1.07, and the profile finally narrows past the
+wrist (0.133, 0.124, 0.112).
+
+AND IT STILL LOOKS THE SAME. Photographed again, it is a slightly narrower
+mitten. A radial clamp scales distance from an axis; it cannot delete a squared
+cuff band or a knuckle seam, and those are authored into the 296 triangles. There
+is no value of `HAND_PROUD` that yields a bare hand, and a fourth guess at one is
+not a method.
+
+TWO REAL OPTIONS, and this is a scope decision rather than a bug:
+  a) model hands in Blender against this skeleton, as the hair, beards and
+     armour already are, and swap the arm's hand geometry for them;
+  b) keep the Monk's hands and cover them with the fist weapon family, which
+     already exists and already puts gloves ON deliberately.

@@ -282,9 +282,22 @@ const CUFF_PROUD = 1.2;
  * shell took off the flap and left the mitten. A hand is a little wider than
  * the wrist it sits on and no more.
  */
-const HAND_PROUD = 1.35;
+// AND 1.35 IS THE NUMBER THE MITTEN FITS INSIDE. Measured on the loaded body:
+// the forearm reference is 0.1127, so this clamp permits 0.152 — and the arm's
+// widest slice comes out 0.155 at t 0.84, with 0.147 and 0.140 beyond it. The
+// hand is therefore sitting exactly at the ceiling I gave it, running 1.30-1.37x
+// the forearm from wrist to fingertip with no taper at all. That is the block in
+// the photograph, and it passed every check because I had written the rule
+// around it.
+//
+// It also cannot be deleted: the arm and hand are ONE island of 296 triangles
+// (see `removeGloves`), so there is no shell to strip and this clamp is the only
+// lever there is. A hand is a little wider than the wrist and then narrows; 1.15
+// with a firmer taper is that, and the bench's slice profile is where to read
+// whether it worked.
+const HAND_PROUD = 1.15;
 /** And the fingers taper in from the knuckles rather than staying square. */
-const FINGER_TAPER = 0.82;
+const FINGER_TAPER = 0.7;
 /** Where the bare forearm is along its bone (0 elbow, 1 wrist): measured 0.42-0.47. */
 const BARE_FOREARM_UNTIL = 0.6;
 const FOREARMS: [string, string][] = [["LowerArmL", "FistL"], ["LowerArmR", "FistR"]];
@@ -496,10 +509,32 @@ export function removeGloves(root: THREE.Object3D): void {
     // The body, not the head piece: the glove follows a hand bone.
     if (mesh.skeleton?.bones.some((b) => b.name === "Fist1R")) host = mesh;
   });
-  if (!host) return;
+  if (!host) {
+    console.warn("removeGloves: no skinned body with a Fist1R bone — nothing examined");
+    return;
+  }
   const source = (host as THREE.Mesh).geometry;
   const filtered = filterIslands(source, "gloves", (island) => !isGlove(island));
-  if (filtered === source) return;
+  if (filtered === source) {
+    // THIS HAS NEVER ONCE MATCHED, AND IT SAID NOTHING ABOUT IT. Measured on the
+    // live body: the right forearm and hand are ONE island of 296 triangles with
+    // an extent of 0.976 — arm, wrist and fingers welded into a single surface of
+    // the `Monk` mesh. The 37-face shell this rule was built around is not in
+    // this body, so `isGlove` matches nothing, the filter returns the source
+    // untouched, and this returned silently. Three times I reported the gloves
+    // removed on the strength of a function that had never changed a triangle.
+    //
+    // Which also means the glove is NOT REMOVABLE. It is the hand's own
+    // geometry, shaped as a blocky mitten and painted as skin; there is no shell
+    // to delete. Reshaping is the only way, and a rule that cannot find its
+    // target now says so out loud rather than passing for success.
+    console.warn(
+      "removeGloves: no island matched the glove rule " +
+      `(tris ${GLOVE_FACES}-${GLOVE_FACES * 2}, extent < ${GLOVE_MAX_EXTENT}) — ` +
+      "the body was left exactly as it loaded, and any hand shape you can see is its own geometry",
+    );
+    return;
+  }
   root.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (mesh.isMesh && mesh.geometry === source) mesh.geometry = filtered;
