@@ -29,6 +29,17 @@ const SLOT_OF = {
   cape: "cape", cloak: "cape", mantle: "cape", tabard: "cape",
 };
 
+// A style is a SHAPE and a palette is what it is made of, so a style sheet has
+// to pick one to photograph. These are the palette each style's most
+// representative catalogue item uses, so the plate looks like something a
+// player would actually find.
+const PALETTE_OF = {
+  leather: "wood", chain: "steel", plate: "steel", robe: "bone", scale: "bronze", brigandine: "crimson",
+  cap: "iron", hood: "wood", full: "steel", horned: "bone", circlet: "gold",
+  low: "wood", tall: "wood", plated: "steel", wrapped: "bone",
+  cape: "crimson", cloak: "wood", mantle: "silver", tabard: "verdant",
+};
+
 const styles = GEAR_STYLES.filter(
   (s) => !FILTER.length || FILTER.includes(s) || FILTER.includes(SLOT_OF[s]),
 );
@@ -66,10 +77,15 @@ const VIEWS = [
 const rows = [];
 for (const style of styles) {
   const slot = SLOT_OF[style];
-  await page.evaluate(({ slot, style }) => {
+  await page.evaluate(({ slot, style, palette }) => {
     const a = window.__wieldbound.localActor;
     // One piece, nothing else: no weapon, no other layer.
-    a.setAppearance({ layers: { [slot]: { style, rarity: "honed" } } });
+    //
+    // WITH A PALETTE, or every plate is a lie. Worn gear is painted from the
+    // item's palette now, and a layer with none falls back to steel — so this
+    // harness cheerfully photographed seventeen items as grey and I read the
+    // greyness as the palette change having failed.
+    a.setAppearance({ layers: { [slot]: { style, rarity: "honed", palette } } });
     if (!a.__realPlay) {
       a.__realPlay = a.play.bind(a);
       a.play = () => {};
@@ -85,7 +101,7 @@ for (const style of styles) {
     }
     a.mixer.update(0.0001);
     a.mixer.timeScale = 0;
-  }, { slot, style });
+  }, { slot, style, palette: PALETTE_OF[style] ?? "steel" });
   await page.waitForTimeout(1100);
 
   const tiles = [];

@@ -32,9 +32,9 @@ await login(page, `Arm${Date.now() % 100000}`);
 await page.waitForTimeout(1500);
 
 for (const style of STYLES) {
-  const out = await page.evaluate(async ({ style, slot }) => {
+  const out = await page.evaluate(async ({ style, slot, palette }) => {
     const a = window.__wieldbound.localActor;
-    a.setAppearance({ layers: { [slot]: { style, rarity: "honed" } } });
+    a.setAppearance({ layers: { [slot]: { style, rarity: "honed", palette } } });
     await new Promise((r) => setTimeout(r, 1300));
     a.root.updateMatrixWorld(true);
     const V = a.position.constructor;
@@ -91,7 +91,7 @@ for (const style of STYLES) {
       feet: +bodyBox.min.y.toFixed(3),
       crown: +bodyBox.max.y.toFixed(3),
     };
-  }, { style, slot: SLOT_OF[style] });
+  }, { style, slot: SLOT_OF[style], palette: process.env.ARMOUR_PALETTE ?? "steel" });
 
   const height = out.crown - out.feet;
   console.log(`${out.style}: body ${height.toFixed(2)}m tall, ${out.pieces.length} pieces`);

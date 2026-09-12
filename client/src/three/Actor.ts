@@ -28,7 +28,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildHandPieces, fistCentre, hasArmourModel, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool } from "./gear";
+import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildHandPieces, fistCentre, hasArmourModel, removeGloves, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
 import { HAIR_ANCHOR_MESH, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
@@ -688,6 +688,20 @@ export class Actor {
   private mixer: THREE.AnimationMixer | null = null;
   /** The left fist's centre in `FistL` space, measured off this body once. See `fistCentre`. */
   private leftFist: THREE.Vector3 | null = null;
+  /** The joints of the cape currently worn, top of the fall first. See `swingCapes`. */
+  private capeLinks: THREE.Object3D[] = [];
+  /** How far the cape is leaning back, eased toward the speed rather than snapped. */
+  private capeSwing = 0;
+  /**
+   * How fast this actor is moving, in world units per second, MEASURED.
+   *
+   * An Actor has no velocity to ask for: the local player is moved by the game
+   * loop and everyone else by interpolation toward a server position. The cape
+   * only needs the number, so it is taken from how far the root travelled since
+   * the last frame.
+   */
+  private lastSpeed = 0;
+  private readonly lastPosition = new THREE.Vector3();
   private actions = new Map<ActorAnim, THREE.AnimationAction>();
   /** Where `instantiate` seated the model, before any lift. See `NO_LIFT`. */
   private seatY = 0;
@@ -1043,7 +1057,10 @@ export class Actor {
     if (this.identity) keepBakedNose(instance.object);
     else removeBakedBeads(instance.object);
     // And the gloves: bare hands are the body now, and fists are a weapon
-    // family that puts gloves back on. See `bareForearms`.
+    // family that puts gloves back on. The leather shell over each hand comes
+    // OFF (`removeGloves`); the flared cuff on each forearm is pulled in to the
+    // arm (`bareForearms`). Repainting alone left a leather mitten behind.
+    removeGloves(instance.object);
     bareForearms(instance.object);
 
     this.mixer = new THREE.AnimationMixer(instance.object);
@@ -1274,7 +1291,7 @@ export class Actor {
 
     const layers = Object.entries(appearance.layers) as [
       ItemSlot,
-      { style: GearStyle; rarity: ItemRarity } | undefined,
+      { style: GearStyle; rarity: ItemRarity; palette?: string } | undefined,
     ][];
     // Built synchronously (armour pieces are generated meshes, not loaded
     // models) but PARENTED only after warming — same reasoning as the held
@@ -1286,9 +1303,20 @@ export class Actor {
       // MODELLED STYLES TAKE THE SAME ROUTE AS A FIST WEAPON: a piece per bone,
       // seated with the skeleton's bind transform. See `buildArmourModel`.
       if (hasArmourModel(slot, layer.style)) {
-        void buildArmourModel(slot, layer.style, layer.rarity).then(async (pieces) => {
+        void buildArmourModel(slot, layer.style, layer.rarity, layer.palette).then(async (pieces) => {
           if (!pieces.length || generation !== this.dressGeneration) return;
+          // A CAPE HANGS, IT IS NOT BOLTED ON. Its links arrive as `Cape0/1/2`,
+          // each carrying the point it hinges at, and they are threaded into a
+          // chain: link 0 from the torso, link 1 from link 0. `swingCapes`
+          // then moves them with the character. See `GearAttachment.pivot`.
+          const links = pieces
+            .filter((p) => p.link !== undefined)
+            .sort((a, b) => (a.link ?? 0) - (b.link ?? 0));
+          if (links.length) {
+            this.hangCape(links, generation);
+          }
           for (const piece of pieces) {
+            if (piece.link !== undefined) continue;
             const bone = this.bones.get(piece.bone);
             const onBone = this.instance ? boneAttachMatrix(this.instance.object, piece.bone) : null;
             if (!bone || !onBone) {
@@ -1405,6 +1433,76 @@ export class Actor {
    * both builders already clear their own list first, so this is idempotent and
    * safe to call whenever gear lands.
    */
+  /**
+   * Thread a cape's links into a chain under the torso.
+   *
+   * Each link is authored in the body's own space and carries the point it
+   * hinges at, so the joint is built by moving the link's geometry so that its
+   * hinge sits at its parent's origin, and hanging the joint itself where the
+   * hinge belongs. After that, rotating a joint swings everything below it —
+   * which is what `swingCapes` does every frame.
+   */
+  private hangCape(links: GearAttachment[], generation: number): void {
+    const bone = this.bones.get(links[0].bone);
+    const onBone = this.instance ? boneAttachMatrix(this.instance.object, links[0].bone) : null;
+    if (!bone || !onBone) return;
+
+    // The chain's root undoes the bone, so everything inside it is in body space.
+    const root = new THREE.Group();
+    root.name = "cape_chain";
+    root.matrixAutoUpdate = false;
+    root.matrix.copy(onBone);
+    bone.add(root);
+    this.worn.push(root);
+
+    let parent: THREE.Object3D = root;
+    let parentPivot = new THREE.Vector3();
+    this.capeLinks = [];
+    for (const link of links) {
+      if (generation !== this.dressGeneration) return;
+      const pivot = new THREE.Vector3(...(link.pivot ?? [0, 0, 0]));
+      const joint = new THREE.Group();
+      joint.position.copy(pivot).sub(parentPivot);
+      // The geometry is authored in body space; shift it so its hinge is the
+      // joint's origin, or the link orbits a point off in the middle of the body.
+      link.object.position.copy(pivot).negate();
+      joint.add(link.object);
+      parent.add(joint);
+      this.trackMaterials(link.object);
+      this.capeLinks.push(joint);
+      parent = joint;
+      parentPivot = pivot;
+    }
+  }
+
+  /**
+   * Swing the cape.
+   *
+   * Reported: capes "don't even have the cape animation when walking". There is
+   * no cloth simulation here and one would be far more than this needs: a cape
+   * is a hinged chain, and what a viewer reads is that it lags behind the body
+   * and settles when you stop. So each link leans back by how fast the
+   * character is moving, each one a little further than the one above it, and
+   * eases toward that angle rather than snapping — plus a slow idle drift so it
+   * is never perfectly still.
+   */
+  private swingCapes(dtSeconds: number): void {
+    if (!this.capeLinks.length) return;
+    // In WORLD units per second, not the catalogue's pixels: a character is
+    // about 1.8 units tall here and runs at roughly three units a second, which
+    // this maps to a lean of about twenty-five degrees.
+    const target = Math.min(this.lastSpeed / 3, 1.5) * 0.44;
+    const ease = Math.min(1, dtSeconds * 6);
+    this.capeSwing += (target - this.capeSwing) * ease;
+    const drift = Math.sin(performance.now() / 900) * 0.02;
+    for (const [i, joint] of this.capeLinks.entries()) {
+      // Further down the fall swings further, which is what makes it cloth
+      // rather than a plank on a hinge.
+      const share = 0.6 + i * 0.5;
+      joint.rotation.x = -(this.capeSwing * share + drift * (i + 1));
+    }
+  }
+
   private refreshOutlines(): void {
     if (!this.instance) return;
     this.buildSilhouette(this.instance.object);
@@ -2026,6 +2124,11 @@ export class Actor {
   }
 
   private clearGear(): void {
+    // The cape's joints go with the gear they belong to — they are inside
+    // `worn`, and keeping the array would leave the next frame swinging objects
+    // that are no longer in the scene.
+    this.capeLinks = [];
+    this.capeSwing = 0;
     for (const object of [...this.held, ...this.worn]) {
       if (!object) continue;
       const mats = new Set<THREE.Material>();
@@ -2774,6 +2877,11 @@ export class Actor {
   }
 
   update(dtSeconds: number): void {
+    // Before anything else moves it. See `lastSpeed`.
+    if (dtSeconds > 0) {
+      this.lastSpeed = this.root.position.distanceTo(this.lastPosition) / dtSeconds;
+      this.lastPosition.copy(this.root.position);
+    }
     // The leap multiplier has to be re-applied every frame rather than only on
     // entry into "run": `play` no-ops on a state that is already current, which
     // is exactly the case for a chasing monster whose leap starts and ends
@@ -2791,6 +2899,7 @@ export class Actor {
     this.applyStroke();
     // After the mixer, because it reads the weights the mixer just advanced.
     this.applyGroundLift();
+    this.swingCapes(dtSeconds);
     this.applyEmissive();
     this.updateGlance();
 
@@ -2935,7 +3044,10 @@ function sameAppearance(a: Appearance, b: Appearance): boolean {
     const x = a.layers[slot as ItemSlot];
     const y = b.layers[slot as ItemSlot];
     if (!x || !y) return false;
-    if (x.style !== y.style || x.rarity !== y.rarity) return false;
+    // PALETTE TOO, or swapping one chest piece for another of the same shape
+    // leaves the old colour on the body: the two appearances compare equal and
+    // nothing is rebuilt. Same reason `weaponBaseId` is compared above.
+    if (x.style !== y.style || x.rarity !== y.rarity || x.palette !== y.palette) return false;
   }
   return true;
 }

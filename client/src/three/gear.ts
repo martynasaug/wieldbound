@@ -369,6 +369,60 @@ function pullInCuffs(mesh: THREE.SkinnedMesh): THREE.BufferGeometry {
   return out;
 }
 
+// --- The gloves --------------------------------------------------------------------
+//
+// ASKED FOR TWICE, AND I GOT IT WRONG THE FIRST TIME. "Remove the gloves from
+// player character model" — I repainted the fists' texture islands as skin,
+// photographed the result, and reported bare hands. They were not: the fists
+// still rendered as brown leather mittens with a stitched cuff and a flap over
+// the knuckles, and the second report was blunt about it.
+//
+// The repaint was aimed at the wrong thing. Measured off the mesh, each hand is
+// TWO surfaces: the hand itself, 115 faces, dominated by the finger bone — and a
+// 37-face shell lying over its back and wrist whose every vertex follows
+// `Fist1` alone. That shell is the glove. Painting it skin-coloured would at
+// best produce a skin-coloured gauntlet; it has to go, the way the Monk's
+// prayer beads go.
+//
+// The rule is shape, not a face list, so it survives the model being
+// re-exported: a shell on the hand that follows only the back-of-hand bone,
+// about a third the size of the hand under it. Both hands measure identically.
+const GLOVE_FACES = 37;
+/** The glove is 0.42 x 0.226 x 0.183; the hand under it is 0.568 x 0.378 x 0.399. */
+const GLOVE_MAX_EXTENT = 0.48;
+
+function isGlove(island: HeadIsland): boolean {
+  const size = island.box.getSize(new THREE.Vector3());
+  const hi = Math.max(size.x, size.y, size.z);
+  // Triangles, not faces: the loader has already split every quad.
+  return island.tris <= GLOVE_FACES * 2 && island.tris >= GLOVE_FACES && hi < GLOVE_MAX_EXTENT;
+}
+
+/**
+ * Take the gloves off a body, on every mesh that shares its geometry.
+ *
+ * The hand beneath keeps the skin the texture repaint gave it
+ * (`tools/art/bare_hands.py`), so what is left is a bare fist rather than a
+ * hole. Nothing happens on a body that has no such shell.
+ */
+export function removeGloves(root: THREE.Object3D): void {
+  let host: THREE.Mesh | null = null;
+  root.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh;
+    if (host || !mesh.isSkinnedMesh) return;
+    // The body, not the head piece: the glove follows a hand bone.
+    if (mesh.skeleton?.bones.some((b) => b.name === "Fist1R")) host = mesh;
+  });
+  if (!host) return;
+  const source = (host as THREE.Mesh).geometry;
+  const filtered = filterIslands(source, "gloves", (island) => !isGlove(island));
+  if (filtered === source) return;
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh && mesh.geometry === source) mesh.geometry = filtered;
+  });
+}
+
 /**
  * The middle of a closed fist, in that fist bone's own space: the centroid of
  * the body's vertices that follow the hand and its fingers.
@@ -656,6 +710,18 @@ export interface GearAttachment {
    * limb, but this rides the bone the way the body's own triangles do.
    */
   bindLocal?: boolean;
+  /**
+   * WHERE THIS PIECE HINGES, in the body's own space — set only on the segments
+   * of something that hangs. Reported: "Capes are too simple… they don't even
+   * have the cape animation when walking." A cape welded to the torso is a
+   * board, because there is nothing to swing. `armour.py` cuts each fall into
+   * `Cape0`, `Cape1`, `Cape2`, each carrying the middle of its own top edge;
+   * the Actor hangs them in a chain and swings them from the character's
+   * movement.
+   */
+  pivot?: [number, number, number];
+  /** Its place in that chain: 0 hangs from the body, 1 from 0, and so on. */
+  link?: number;
 }
 
 /** A part before it becomes a mesh: geometry plus what it is made of. */
@@ -1007,38 +1073,81 @@ export function hasArmourModel(slot: ItemSlot, style: GearStyle): boolean {
   return MODELLED_ARMOUR.has(`${slot}:${style}`);
 }
 
-/** The kit's material names, in the wardrobe's own vocabulary of roles. */
-const ARMOUR_MATERIAL_ROLE: Record<string, MaterialRole> = {
-  Steel: "metal", LightSteel: "metal", DarkSteel: "dark", Gold: "metal",
-  Wood: "leather", DarkWood: "leather", DarkBrown: "leather",
-  White: "cloth", Red: "cloth", Green: "cloth", LightBlue: "cloth", Black: "dark",
-};
-
 /**
  * One modelled armour style, as a piece per bone.
  *
- * Rarity still only TINTS: the model decides the shape and the role decides what
- * it is made of, exactly as the generated pieces do, so a Runed cuirass is the
- * same cuirass in the same steel with the same tint over it.
+ * PAINTED BY THE SAME RULE AS A WEAPON, which is the whole point of this
+ * signature taking a palette. Worn gear used to be drawn from four hard-coded
+ * colours — metal, leather, cloth, dark — with the quality tint multiplied over
+ * them, and the result was mud: every piece pulled towards the browns the BODY
+ * is painted in, so a Leather Jerkin was invisible on the character wearing it
+ * and seventeen chest items were six shapes in one colour. `repaint` is the
+ * function that has always given a Frostbrand its ice and a Gilded Blade its
+ * gold; armour goes through it now, so Blackglass Mail is black glass and a
+ * Rimeward Robe is frost. Quality still only tints, on top.
  */
+/**
+ * A weapon's finish, made wearable.
+ *
+ * METAL WITHOUT A SKY IS BLACK. `paletteMaterial` sets metalness 0.5, which is
+ * right for a blade: there is no environment map in this scene, so a metallic
+ * surface has almost no diffuse response and lives on highlights — and a sword
+ * is small, edged, and catches them. A cuirass is a broad slab facing the
+ * camera, so the same finish swallowed the palette whole: measured against the
+ * body, bronze scale rendered at 0.065 luma where the skin beside it read 0.19,
+ * and every piece in the catalogue came out near-black whatever it was made of.
+ *
+ * Worn pieces keep the palette's COLOUR and take a cloth-and-forged finish
+ * instead: mostly diffuse, with enough metalness left that steel still reads as
+ * steel beside leather.
+ */
+function wornFinish(material: THREE.Material | THREE.Material[]): THREE.Material | THREE.Material[] {
+  for (const m of Array.isArray(material) ? material : [material]) {
+    const mat = m as THREE.MeshStandardMaterial;
+    mat.metalness = Math.min(mat.metalness, 0.18);
+    mat.roughness = Math.max(mat.roughness, 0.62);
+  }
+  return material;
+}
+
 export async function buildArmourModel(
   slot: ItemSlot,
   style: GearStyle,
   rarity: ItemRarity,
+  paletteId?: string,
 ): Promise<GearAttachment[]> {
   const proto = await loadModel(`armour/${slot}_${style}.glb`);
+  // Indexed loosely on purpose: the palette arrives off the wire as a string
+  // (see `GearLayer.palette`), and an id the catalogue no longer has should
+  // fall back to steel rather than throw a body away.
+  const palette = (PALETTES as Record<string, PaletteDef>)[paletteId ?? ""] ?? PALETTES.steel;
   const out: GearAttachment[] = [];
   for (const child of proto.children) {
     const piece = wholeModel(child);
     if (!piece) continue;
-    const materials = (Array.isArray(piece.material) ? piece.material : [piece.material]).map((m) =>
-      roleMaterial(ARMOUR_MATERIAL_ROLE[(m as THREE.Material).name] ?? "metal", rarity),
-    );
-    const mesh = new THREE.Mesh(piece.geometry, materials.length === 1 ? materials[0] : materials);
+    const mesh = new THREE.Mesh(piece.geometry, wornFinish(repaint(piece.material, palette, rarity)));
     mesh.name = `gear_${slot}_${style}_${child.name}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    out.push({ bone: child.name.replace(/\.\d+$/, ""), object: mesh, bindLocal: true });
+    // A `Cape0/1/2` piece is a LINK IN A CHAIN, not a piece bolted to a bone:
+    // it hangs from the torso and carries its own hinge. Everything else is
+    // named for the bone it rides.
+    const name = child.name.replace(/\.\d+$/, "");
+    const link = /^Cape(\d+)$/.exec(name);
+    const pivot = child.userData?.pivot;
+    out.push(
+      link
+        ? {
+            bone: "Torso",
+            object: mesh,
+            bindLocal: true,
+            link: Number(link[1]),
+            pivot: Array.isArray(pivot) && pivot.length === 3
+              ? [pivot[0], pivot[1], pivot[2]]
+              : undefined,
+          }
+        : { bone: name, object: mesh, bindLocal: true },
+    );
   }
   if (!out.length) console.warn(`gear: armour/${slot}_${style}.glb has no named pieces`);
   return out;
@@ -1297,7 +1406,9 @@ export async function buildHandPieces(baseId: string, rarity: ItemRarity): Promi
   for (const child of proto.children) {
     const piece = wholeModel(child);
     if (!piece) continue;
-    const mesh = new THREE.Mesh(piece.geometry, repaint(piece.material, palette, rarity));
+    // The same cloth-and-forged finish worn armour takes: a knuckle plate is as
+    // flat-facing as a cuirass, and full metalness turns it black. See `wornFinish`.
+    const mesh = new THREE.Mesh(piece.geometry, wornFinish(repaint(piece.material, palette, rarity)));
     mesh.name = `hand_${baseId}_${child.name}`;
     mesh.castShadow = true;
     // `Fist1R.002` is `Fist1R` that shared a Blender session with five other

@@ -44,6 +44,10 @@ await page.waitForTimeout(1500);
 const VIEWS = [
   { label: "fist, mid-punch", bone: "FistR", yaw: -0.7, dist: 1.1, lift: 0.3, anim: "attack", frac: 0.45 },
   { label: "fist from outside", bone: "FistR", yaw: -1.5, dist: 1.1, lift: 0.15, anim: "attack", frac: 0.45 },
+  // Straight down the back of the hand, where a cuff seam and a knuckle flap
+  // are unmistakable — the two side-on views let me talk myself into "that is
+  // just a fist" twice.
+  { label: "back of hand", bone: "FistR", yaw: -0.7, dist: 0.95, lift: 0.75, anim: "attack", frac: 0.45 },
   { label: "figure", bone: null, yaw: 0.35, dist: 2.8, lift: 0.3, anim: "idle", frac: 0.2 },
 ];
 

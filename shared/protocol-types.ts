@@ -4082,6 +4082,12 @@ export interface ItemInstance {
   // rather than rolled; carried on the instance so the client never has to
   // reach into the catalogue to draw a body.
   style?: GearStyle;
+  /**
+   * What the piece is made of — a `PaletteId` from `shared/items.ts`, carried
+   * here for the same reason `style` is: so the client can draw a body without
+   * reaching into the catalogue. Loosely typed to avoid a circular import.
+   */
+  palette?: string;
 }
 
 // --- Aggregated gear stats
@@ -4174,6 +4180,25 @@ export interface HelloMessage {
 export interface GearLayer {
   style: GearStyle;
   rarity: ItemRarity;
+  /**
+   * WHAT THE PIECE IS MADE OF, and the reason armour looked like mud.
+   *
+   * A weapon has been drawn from its item's `palette` since the catalogue
+   * existed — that is why a Frostbrand is ice and a Gilded Blade is gold. Worn
+   * gear was not: it took four hard-coded colours (metal, leather, cloth, dark)
+   * with the quality tint multiplied over them, which pulled every piece
+   * towards the browns the BODY is already painted in. Seventeen chest items
+   * came out as six shapes in one colour, and a Leather Jerkin was invisible
+   * against the character wearing it.
+   *
+   * Optional because the wire carries it and older snapshots will not;
+   * `buildArmourModel` falls back to steel.
+   *
+   * Typed as a string rather than as `PaletteId`: the palette table lives in
+   * `shared/items.ts`, and THAT file imports this one. Naming the type here
+   * would close the circle.
+   */
+  palette?: string;
 }
 
 export interface Appearance {
@@ -4207,7 +4232,12 @@ export function appearanceFromItems(items: ItemInstance[]): Appearance {
   const layers: Appearance["layers"] = {};
   for (const slot of VISIBLE_GEAR_SLOTS) {
     const item = equipped.find((i) => i.slot === slot);
-    if (item?.style) layers[slot] = { style: item.style, rarity: item.rarity };
+    // The palette rides the INSTANCE, exactly as the style does, so what a
+    // piece is made of travels with what shape it is and this file never has
+    // to reach into the catalogue. See `GearLayer.palette`.
+    if (item?.style) {
+      layers[slot] = { style: item.style, rarity: item.rarity, palette: item.palette };
+    }
   }
   return {
     weaponType: weapon?.weaponType,

@@ -24884,3 +24884,81 @@ THREE FAULTS, EACH FOUND BY A DIFFERENT INSTRUMENT:
 
 `hasArmourModel` keys on slot AND style, so a style with no model yet still
 takes the old procedural path and the wardrobe keeps working piece by piece.
+
+**Phase 70 M70.283 — worn gear is made of something, the gloves come off for
+real, and capes move.** Reported, bluntly: "All the armors are barely visible,
+they're basically blended in with the body. Capes are too simple, some are
+barely visible, they dont even have the cape animation when walking." And,
+separately: "Also I asked you to remove those gloves from player character. Look
+at it again."
+
+THE GLOVES WERE STILL ON, and the previous entry claiming otherwise was wrong.
+M70.280 repainted the fists' TEXTURE islands and reported bare hands; the fists
+still rendered as leather mittens with a stitched cuff and a knuckle flap.
+Measured rather than squinted at this time: each hand is TWO surfaces — the hand
+itself, 115 faces, dominated by the finger bone, and a 37-face shell over its
+back and wrist whose every vertex follows `Fist1` alone. That shell is the
+glove. No amount of repainting removes it; `removeGloves` strips it by the same
+island filter that takes the Monk's prayer beads off, keyed on shape (a hand
+shell a third the size of the hand under it) so it survives a re-export. Both
+hands measure identically. The texture repaint stays — it is what leaves a bare
+hand behind rather than a hole — and its brushwork is flattened now, because at
+full strength it preserved the glove's own decoration as a skin-coloured petal
+motif and a bright seam along the wrist.
+
+ARMOUR WAS NEVER MADE OF ANYTHING. A weapon has been painted from its item's
+`palette` since the catalogue existed — that is why a Frostbrand is ice and a
+Gilded Blade gold. Worn gear was drawn from four hard-coded colours (metal,
+leather, cloth, dark) with the quality tint multiplied over them, which pulled
+every piece towards the browns the BODY is painted in. Seventeen chest items
+were six shapes in one colour. The palette now rides `ItemInstance` and
+`GearLayer` the way `style` always has — the catalogue cannot be imported into
+`protocol-types.ts`, which is why it is carried rather than looked up — and
+`buildArmourModel` goes through `repaint`, the weapons' own function. Plate Mail
+resolves to steel greys, Gilded Plate to golds, Blackglass Mail to near-black,
+Bone Cuirass to cream. `sameAppearance` compares the palette, or swapping two
+items of one shape leaves the old colour on the body.
+
+THREE MORE FAULTS UNDER THAT ONE, each found by measuring:
+
+1. METAL WITHOUT A SKY IS BLACK. `paletteMaterial` sets metalness 0.5, right for
+   a blade that lives on highlights and wrong for a broad slab facing the
+   camera: there is no environment map, so bronze scale rendered at 0.065 luma
+   against skin at 0.19. Worn pieces take a mostly-diffuse finish.
+2. `wood` IS NOT A COLOUR. The first fix sent garment surfaces to the palette's
+   wood channel — which is a dark brown in EVERY palette — so a verdant jerkin
+   went from one near-black to another, 0.039 to 0.042. What carries a palette
+   is `metal` and `accent`. Garments are cut from those.
+3. ONE FLAT TONE IS STILL INVISIBLE. Robes, mail and the dark palettes sat
+   within a hundredth of the body. Shape cannot fix that; contrast inside the
+   piece can — an accent placket and collar on robes, accent banding on mail,
+   scales in the accent rather than in the same metal as the coat under them.
+
+CAPES HANG IN A CHAIN NOW. `capeParts` ignored its style argument, so all four
+were one static sheet welded to the torso — there was nothing to swing.
+`armour.py` cuts each fall into `Cape0/1/2`, each carrying the point it hinges
+at; `hangCape` threads them under the torso and `swingCapes` leans each link
+back by the character's own speed, further down the fall than up it, eased
+rather than snapped. Speed is MEASURED from the root's movement, because an
+Actor has no velocity to ask for. Photographed running, five frames apart, the
+hem visibly trails and settles.
+
+WHAT THE PICTURES COST, and all of it was avoidable: the cape went from a flat
+slab, to a curled eight-point section whose extra side faces lit up as bright
+rails with a hard seam at every link, back to a flat sheet that is tapered and
+seamless. The collar became a full ring with shoulder straps only after a
+standing shot showed the front view was bare — a cape visible only from behind
+is half an item — and the cloak, the one style building its own collar, kept
+that fault one pass longer than the others.
+
+AND THE INSTRUMENTS LIED THREE TIMES, which is why this took so many rounds.
+`armourstyles.mjs` equipped styles with no palette, so every plate rendered as
+fallback steel and I read the greyness as the palette change having failed.
+`contrast.mjs` sampled fixed screen rectangles that sat on the street behind the
+character, reporting the same three numbers for every item in the catalogue;
+then, once it followed the piece's own mesh, it compared against a body strip
+whose lightness moved from 0.24 to 0.125 between runs because the arm was in its
+own shade. It measures scale-free contrast against a lit reference now. New
+tools: `palettecheck.mjs` (same shape, different material, different colours),
+`capeprobe.mjs` (where each link hangs), `capewalk.mjs` (successive frames of a
+run), `armourprobe.mjs` and `contrast.mjs`.

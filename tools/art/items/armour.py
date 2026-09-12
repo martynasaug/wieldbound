@@ -112,6 +112,59 @@ class Armour:
         self.shell(bone, [(half_width, y - tube), (half_width + tube * 0.4, y), (half_width, y + tube)],
                    mat, squash=depth, sides=sides, cap=False, z=z, x=x)
 
+    def hanging(self, stations, mat, lining=None, thickness=4.0, segments=3):
+        """
+        A cape, cut into segments that hang from one another.
+
+        REPORTED: "Capes are too simple, some are barely visible, they don't even
+        have the cape animation when walking." A cape modelled as one sheet
+        welded to the torso can only ever be a board: there is nothing for the
+        game to swing. So the fall is cut across into `segments` pieces, each
+        named `Cape0`, `Cape1`… and each carrying the point it HINGES at — the
+        middle of its top edge. `gear.ts` hangs them in a chain off the torso and
+        `Actor` swings them with the character's own movement.
+
+        `lining` is a second surface just inside the first, in another colour,
+        so the inside of a cape is not the same flat sheet as the outside.
+        """
+        half = thickness / 2
+        # One extra station per cut, interpolated, so a segment boundary never
+        # lands between two shapes and pinches the fall.
+        cuts = []
+        for i in range(segments + 1):
+            t = i / segments
+            at = t * (len(stations) - 1)
+            lo = min(int(at), len(stations) - 2)
+            f = at - lo
+            a, b = stations[lo], stations[lo + 1]
+            cuts.append(tuple(a[k] + (b[k] - a[k]) * f for k in range(3)))
+
+        for i in range(segments):
+            top, bottom = cuts[i], cuts[i + 1]
+            name = f"Cape{i}"
+            model = self.part(name)
+            # The hinge: the middle of this segment's top edge.
+            model.pivot = mesh(0.0, top[1], top[2])
+            # FLAT, AND SEAMLESS ACROSS THE CUTS. The curled eight-point section
+            # this replaces gave the fall its own side faces, and photographed
+            # running they lit up as bright rails down both edges with a hard
+            # seam at every link — a stack of panels rather than a cape. A cape
+            # at this scale is a sheet; what stops it reading as a signboard is
+            # the TAPER and the swing, not extra geometry. Each segment starts
+            # exactly where the one above ended, so no cut is visible.
+            rings = []
+            for w, y, z in (top, bottom):
+                rings.append([mesh(-w, y, z - half), mesh(w, y, z - half),
+                              mesh(w, y, z + half), mesh(-w, y, z + half)])
+            model.loft(rings, mat, cap_start=False, cap_end=False)
+            # NO LINING, and the parameter is ignored rather than removed so the
+            # recipes keep reading as they did. It was a second sheet a
+            # millimetre inside the first, and at this size the two never read as
+            # inside and outside — they read as a bright fringe wherever the
+            # edges disagreed, which is half of what made the fall look like a
+            # plank with trim. A cape is one colour; the palette already tells it
+            # apart from the body.
+
     def drape(self, bone, stations, mat, thickness=4.0):
         """
         A hanging sheet: (half_width, y, z) stations lofted from the shoulders down.
@@ -129,6 +182,28 @@ class Armour:
                           mesh(w, y, z + half), mesh(-w, y, z + half)])
         self.part(bone).loft(rings, mat)
 
+    def wrapped_ring(self, w, y, z, half, curl=0.42):
+        """
+        One cross-section of a hanging cloth: wide across the back, curling
+        FORWARD at both edges so it sits round a body instead of behind one.
+
+        A flat quad photographed from behind is a signboard on a hinge — square
+        corners, a hard vertical edge standing clear of the shoulder, and no
+        amount of swinging fixes it. Six points instead of four: the outer pair
+        are pulled in and forward, which is what makes the silhouette read as
+        cloth.
+        """
+        return [
+            mesh(-w * 0.62, y, z - half - w * curl * 0.45),
+            mesh(-w, y, z - half),
+            mesh(w, y, z - half),
+            mesh(w * 0.62, y, z - half - w * curl * 0.45),
+            mesh(w * 0.62, y, z + half - w * curl * 0.45),
+            mesh(w, y, z + half),
+            mesh(-w, y, z + half),
+            mesh(-w * 0.62, y, z + half - w * curl * 0.45),
+        ]
+
     def stud(self, bone, at, direction, length, width, mat, sides=4):
         """A rivet, a spike, a scale's point."""
         x, y, z = at
@@ -137,6 +212,33 @@ class Armour:
 
     def finish(self):
         return [(name, m.finish()) for name, m in self.models.items()]
+
+
+# --- what a worn surface may be made of -------------------------------------------------------
+#
+# THE PALETTE HAS TO REACH THE BIG SURFACES. `MATERIAL_LOOK` in gear.ts gives
+# each kit material name a role, and three of them ignore the palette on
+# purpose: `DarkBrown` is a fixed 0x3a281b, `White` a fixed 0xd9d0b8, `Black` a
+# fixed 0x1d1c22. That is right for a sword — the grip wrap should stay leather
+# whatever the blade is made of — and wrong for a garment, because the garment
+# IS the item. Built from those names, a Warden's Jerkin in verdant measured
+# 0.039 luma against a body at 0.21, and a Rimeward Robe could never be frost.
+#
+# So: the broad surfaces take palette-driven names, and the fixed ones are kept
+# for small trim where a constant colour is the point.
+# AND `wood` IS NOT A COLOUR EITHER. The first attempt at this sent garment
+# surfaces to the palette's `wood` channel, which sounds right for leather and
+# measured almost unchanged: every palette's wood is a dark brown — verdant
+# 0x46351f, bronze 0x4e3520, obsidian 0x241d1a — so a Warden's Jerkin went from
+# one near-black to another (0.039 to 0.042 luma). What carries a palette's
+# identity is `metal` and `accent`: bronze's metal is a warm tan, verdant's a
+# real green, bone's accent nearly white. Garments are cut from those, and the
+# darker variant is the same colour at half strength rather than a different
+# one.
+CLOTH = "Steel"           # the palette's metal: its brightest, most identifying tone
+CLOTH_TRIM = "Red"        # its accent
+LEATHER = "Steel"         # a jerkin is the same palette, told apart by its SHAPE
+LEATHER_TRIM = "DarkSteel"  # that colour at half strength, for straps and belts
 
 
 # --- chest ----------------------------------------------------------------------------------
@@ -189,7 +291,7 @@ def plate_chest(a):
 def scale_chest(a):
     """Scale: overlapping rows of small plates, each row a little wider than the last."""
     a.shell(BONE_CHEST, [(17.0, BODY["chest_y0"] - 2.0), (20.0, BODY["chest_y1"] - 8.0),
-                         (17.0, BODY["chest_y1"] + 2.0)], "DarkBrown", squash=(1.0, 1.15), z=-3.0)
+                         (17.0, BODY["chest_y1"] + 2.0)], LEATHER, squash=(1.0, 1.15), z=-3.0)
     rows = 5
     for i in range(rows):
         y = BODY["chest_y0"] + 2.0 + i * (BODY["chest_y1"] - BODY["chest_y0"] - 6.0) / rows
@@ -197,14 +299,17 @@ def scale_chest(a):
             angle = -math.pi * 0.62 + k * (math.pi * 1.24 / 8)
             x = math.sin(angle) * 19.0
             z = -3.0 + math.cos(angle) * 22.0
-            a.stud(BONE_CHEST, (x, y, z), (math.sin(angle), -0.35, math.cos(angle)), 4.0, 4.0, "Steel", sides=4)
+            # The scales in the ACCENT, not in the same metal as the coat under
+            # them: drawn in one colour, a field of scales measures and reads as
+            # one flat surface.
+            a.stud(BONE_CHEST, (x, y, z), (math.sin(angle), -0.35, math.cos(angle)), 4.0, 4.0, CLOTH_TRIM, sides=4)
     a.band(BONE_CHEST, BODY["chest_y0"] - 1.0, 19.0, "DarkSteel", tube=2.5, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"]), (25.0, BODY["waist_y1"] - 28.0)],
-            "DarkBrown", squash=(1.0, 1.0), z=-6.0)
+            LEATHER, squash=(1.0, 1.0), z=-6.0)
     for k in range(8):
         angle = -math.pi * 0.6 + k * (math.pi * 1.2 / 7)
         a.stud(BONE_WAIST, (math.sin(angle) * 23.0, BODY["waist_y1"] - 14.0, -6.0 + math.cos(angle) * 23.0),
-               (math.sin(angle), -0.4, math.cos(angle)), 4.0, 4.0, "Steel", sides=4)
+               (math.sin(angle), -0.4, math.cos(angle)), 4.0, 4.0, CLOTH_TRIM, sides=4)
     pauldrons(a, "Steel", span=12.0, drop=9.0)
 
 
@@ -221,11 +326,11 @@ def brigandine_chest(a):
     for side in (1, -1):
         a.plate(BONE_CHEST, [(side * 5.0, BODY["chest_y1"] + 1.0), (side * 14.0, BODY["chest_y1"] - 3.0),
                              (side * 11.0, BODY["chest_y0"] + 4.0), (side * 3.0, BODY["chest_y0"] + 6.0)],
-                "DarkBrown", z=BODY["chest_front_z"] + 1.0, thickness=3.5)
-    a.band(BONE_CHEST, BODY["chest_y0"] - 2.0, 19.0, "DarkBrown", tube=3.5, squash=(1.0, 1.15), z=-3.0)
+                LEATHER, z=BODY["chest_front_z"] + 1.0, thickness=3.5)
+    a.band(BONE_CHEST, BODY["chest_y0"] - 2.0, 19.0, LEATHER_TRIM, tube=3.5, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"]), (23.0, BODY["waist_y1"] - 20.0)],
             "Red", squash=(1.0, 1.0), z=-6.0)
-    pauldrons(a, "DarkBrown", span=12.0, drop=8.0, lip=False)
+    pauldrons(a, LEATHER_TRIM, span=12.0, drop=8.0, lip=False)
 
 
 def chain_chest(a):
@@ -236,9 +341,10 @@ def chain_chest(a):
     # A standing collar, the piece that separates mail from a tabard at a glance.
     a.shell(BONE_CHEST, [(13.0, BODY["chest_y1"] + 3.0), (14.0, BODY["chest_y1"] + 12.0)],
             "Steel", squash=(1.0, 1.1), sides=8, z=-3.0)
-    # Banding across the shirt reads as rings at this size.
+    # Banding across the shirt reads as rings at this size — in the accent, so
+    # the rings are visible against the mail rather than a darker shade of it.
     for y in (BODY["chest_y0"] + 4.0, BODY["chest_y0"] + 17.0, BODY["chest_y0"] + 30.0):
-        a.band(BONE_CHEST, y, 20.0, "DarkSteel", tube=1.6, squash=(1.0, 1.15), z=-3.0)
+        a.band(BONE_CHEST, y, 20.0, CLOTH_TRIM, tube=1.6, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"] + 2.0), (26.0, BODY["waist_y1"] - 32.0)],
             "Steel", squash=(1.0, 1.0), z=-6.0)
     a.band(BONE_WAIST, BODY["waist_y1"] - 32.0, 26.0, "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0)
@@ -254,7 +360,7 @@ def leather_chest(a):
     # same torso in another shade.
     a.shell(BONE_CHEST, [(18.5, BODY["chest_y0"] - 4.0), (21.0, BODY["chest_y0"] + 14.0),
                          (21.0, BODY["chest_y1"] - 12.0), (17.0, BODY["chest_y1"] + 4.0)],
-            "DarkBrown", squash=(1.0, 1.15), z=-3.0)
+            LEATHER, squash=(1.0, 1.15), z=-3.0)
     # The coat is open down the front, which is what makes it a jerkin.
     a.plate(BONE_CHEST, [(-2.5, BODY["chest_y0"] + 2.0), (2.5, BODY["chest_y0"] + 2.0),
                          (2.5, BODY["chest_y1"] - 7.0), (-2.5, BODY["chest_y1"] - 7.0)],
@@ -266,26 +372,35 @@ def leather_chest(a):
     a.box(BONE_CHEST, (0.0, BODY["chest_y0"] - 1.0, BODY["chest_front_z"] + 2.0), (8.0, 8.0, 4.0), "Gold")
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(11.0, BODY["shoulder_y"] + 4.0), (10.0, BODY["shoulder_y"] - 8.0)],
-                "DarkBrown", squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+                LEATHER_TRIM, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
 
 
 def robe_chest(a):
     """A robe: a long fall of cloth from the shoulders, a sash, and soft shoulder folds."""
     a.shell(BONE_CHEST, [(17.0, BODY["chest_y0"] - 2.0), (19.0, BODY["chest_y0"] + 16.0),
                          (19.0, BODY["chest_y1"] - 10.0), (15.0, BODY["chest_y1"] + 7.0)],
-            "White", squash=(1.0, 1.15), z=-3.0)
+            CLOTH, squash=(1.0, 1.15), z=-3.0)
     # The skirt falls from the waist and widens to the knee: the robe's whole shape.
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"] + 2.0), (25.0, BODY["waist_y1"] - 20.0),
                          (29.0, BODY["waist_y1"] - 58.0), (27.0, BODY["waist_y1"] - 76.0)],
-            "White", squash=(1.0, 1.0), z=-6.0)
-    a.band(BONE_WAIST, BODY["waist_y1"] - 4.0, 23.0, "Red", tube=4.0, squash=(1.0, 1.0), z=-6.0)
+            CLOTH, squash=(1.0, 1.0), z=-6.0)
+    # A ROBE IS ONE UNBROKEN SURFACE, and measured against the body it sat
+    # within a hundredth of it: 0.138 against 0.127. Shape cannot fix that —
+    # a placket down the front and a collar in the accent can, and they are what
+    # a robe has anyway.
+    a.plate(BONE_CHEST, [(-5.0, BODY["chest_y0"] + 2.0), (5.0, BODY["chest_y0"] + 2.0),
+                         (6.0, BODY["chest_y1"] - 2.0), (-6.0, BODY["chest_y1"] - 2.0)],
+            CLOTH_TRIM, z=BODY["chest_front_z"] + 1.0, thickness=4.0)
+    a.shell(BONE_CHEST, [(17.0, BODY["chest_y1"] - 2.0), (19.0, BODY["chest_y1"] + 9.0)],
+            CLOTH_TRIM, squash=(1.0, 1.15), sides=10, z=-3.0)
+    a.band(BONE_WAIST, BODY["waist_y1"] - 4.0, 23.0, CLOTH_TRIM, tube=4.0, squash=(1.0, 1.0), z=-6.0)
     # A knot and two hanging ends, so the sash reads as tied.
-    a.box(BONE_WAIST, (11.0, BODY["waist_y1"] - 6.0, BODY["waist_front_z"] + 2.0), (8.0, 8.0, 5.0), "Red")
-    a.box(BONE_WAIST, (11.0, BODY["waist_y1"] - 21.0, BODY["waist_front_z"] + 1.0), (5.0, 22.0, 3.5), "Red")
+    a.box(BONE_WAIST, (11.0, BODY["waist_y1"] - 6.0, BODY["waist_front_z"] + 2.0), (8.0, 8.0, 5.0), CLOTH_TRIM)
+    a.box(BONE_WAIST, (11.0, BODY["waist_y1"] - 21.0, BODY["waist_front_z"] + 1.0), (5.0, 22.0, 3.5), CLOTH_TRIM)
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(12.0, BODY["shoulder_y"] + 6.0), (13.0, BODY["shoulder_y"] - 10.0),
                        (11.0, BODY["shoulder_y"] - 19.0)],
-                "White", squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+                CLOTH, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
 
 
 CHEST = {
@@ -359,7 +474,7 @@ def horned_helm(a):
     # Up on the dome — see `cap_helm`: a ring at the brow line reads as a blindfold.
     a.band(BONE_HEAD, BROW_Y + 9.0, 35.0, "Steel", tube=3.0, squash=(1.0, 1.16), z=SKULL_Z)
     for side in (1, -1):
-        a.stud(BONE_HEAD, (side * 31.0, BROW_Y + 12.0, SKULL_Z), (side * 0.85, 0.5, -0.1), 30.0, 8.5, "White", sides=6)
+        a.stud(BONE_HEAD, (side * 31.0, BROW_Y + 12.0, SKULL_Z), (side * 0.85, 0.5, -0.1), 30.0, 8.5, CLOTH, sides=6)
         a.stud(BONE_HEAD, (side * 31.0, BROW_Y + 10.0, SKULL_Z), (side * 0.5, -0.2, 0.0), 9.0, 6.0, "DarkSteel", sides=6)
 
 
@@ -381,13 +496,13 @@ def hood_helm(a):
     # The shell is pulled back off the face and the opening is framed by two
     # cheek folds instead.
     a.shell(BONE_HEAD, [(33.0, 224.0), (38.0, 244.0), (39.0, 272.0), (32.0, 292.0), (19.0, 300.0)],
-            "White", squash=(1.0, 1.16), z=SKULL_Z - 8.0)
+            CLOTH, squash=(1.0, 1.16), z=SKULL_Z - 8.0)
     for side in (1, -1):
         a.plate(BONE_HEAD, [(side * 16.0, 228.0), (side * 30.0, 236.0), (side * 30.0, 276.0), (side * 18.0, 272.0)],
-                "White", z=BODY["head_front_z"] - 6.0, thickness=9.0, chamfer=3.0)
+                CLOTH, z=BODY["head_front_z"] - 6.0, thickness=9.0, chamfer=3.0)
     # And the fall down the back, which is what a cowl is from behind.
     a.plate(BONE_HEAD, [(-26.0, 206.0), (26.0, 206.0), (30.0, 250.0), (-30.0, 250.0)],
-            "White", z=BODY["head_back_z"] + 4.0, thickness=7.0)
+            CLOTH, z=BODY["head_back_z"] + 4.0, thickness=7.0)
 
 
 HELM = {
@@ -432,15 +547,15 @@ def shin_band(a, mat, y, r, tube=2.5):
 
 def low_boots(a):
     """A shoe and a turned-down ankle cuff. The one that gets out of the way."""
-    shoe(a, "DarkBrown", toe="Wood")
-    shin(a, "DarkBrown", 11.0, 21.0, 14.0, 13.0)
+    shoe(a, LEATHER, toe="Wood")
+    shin(a, LEATHER, 11.0, 21.0, 14.0, 13.0)
     shin_band(a, "Wood", 21.0, 14.0, tube=2.5)
 
 
 def tall_boots(a):
     """To the knee, with the top turned over — the silhouette that says riding boot."""
-    shoe(a, "DarkBrown", toe="DarkWood")
-    shin(a, "DarkBrown", 11.0, 46.0, 14.5, 12.5)
+    shoe(a, LEATHER, toe="DarkWood")
+    shin(a, LEATHER, 11.0, 46.0, 14.5, 12.5)
     shin_band(a, "Wood", 46.0, 14.0, tube=3.5)
     shin_band(a, "Wood", 24.0, 13.6, tube=2.0)
 
@@ -458,10 +573,10 @@ def plated_boots(a):
 
 def wrapped_boots(a):
     """Cloth wound from ankle to knee over a soft sole: the lightest thing to wear."""
-    shoe(a, "DarkBrown", height=11.0)
-    shin(a, "White", 11.0, 44.0, 13.5, 12.0)
+    shoe(a, LEATHER, height=11.0)
+    shin(a, CLOTH, 11.0, 44.0, 13.5, 12.0)
     for y in (16.0, 25.0, 34.0, 42.0):
-        shin_band(a, "White", y, 13.6, tube=2.2)
+        shin_band(a, CLOTH, y, 13.6, tube=2.2)
 
 
 BOOTS = {
@@ -481,53 +596,87 @@ BACK_Z = -30.0
 
 
 def collar(a, mat, y=None, r=21.0, tube=3.5):
-    a.band(BONE_CHEST, BODY["chest_y1"] - 4.0 if y is None else y, r, mat,
-           tube=tube, squash=(1.0, 1.15), z=-3.0)
+    """
+    The band that carries a cape at the neck — and the only part of it a player
+    sees from the FRONT.
+
+    Photographed standing, the back view read correctly and the front view was
+    bare: no collar, no shoulder line, nothing. A cape that only exists from
+    behind is half an item. The band is a full ring round the neck, so it shows
+    from any angle, and two short straps run out over the shoulders to say what
+    is holding the weight.
+    """
+    at = BODY["chest_y1"] - 4.0 if y is None else y
+    a.band(BONE_CHEST, at, r, mat, tube=tube, squash=(1.0, 1.15), z=-3.0)
+    for side in (1, -1):
+        a.plate(BONE_CHEST,
+                [(side * 6.0, at + 6.0), (side * 20.0, at + 1.0),
+                 (side * 20.0, at - 6.0), (side * 6.0, at - 3.0)],
+                mat, z=BODY["chest_front_z"] - 2.0, thickness=4.0, chamfer=1.0)
 
 
 def cape_back(a):
-    """A cape: pinned at the shoulders, falling to mid-thigh, swinging out as it goes."""
-    a.drape(BONE_CHEST, [(19.0, BODY["chest_y1"] + 2.0, -22.0),
-                         (25.0, BODY["chest_y0"] + 12.0, -26.0),
-                         (30.0, BODY["waist_y0"] + 4.0, -32.0),
-                         (28.0, BODY["waist_y0"] - 22.0, -38.0)], "Red")
+    """A cape: pinned at the shoulders, falling to mid-thigh, swinging as it goes."""
+    # SHOULDER WIDTH AT THE TOP, NARROWING AND THEN FLARING. A fall that starts
+    # 19 wide on a body whose shoulders are 33 leaves daylight at the collar; one
+    # that stays 30 all the way down is a rectangle. This one sits on the
+    # shoulders, draws in at the waist and opens again at the hem, which is the
+    # shape that reads as cloth from behind.
+    # AGAINST THE BACK AT THE TOP. In profile the fall hung clear of the body
+    # with daylight between the cloth and the shoulder blade; the torso's own
+    # back is at -26, so the cape starts just outside it and swings away as it
+    # drops rather than starting away and staying there.
+    a.hanging([(31.0, BODY["chest_y1"] + 4.0, -27.0),
+               (26.0, BODY["chest_y0"] + 12.0, -29.0),
+               (29.0, BODY["waist_y0"] + 4.0, -34.0),
+               (33.0, BODY["waist_y0"] - 22.0, -40.0)], CLOTH)
     collar(a, "Gold")
 
 
 def cloak_back(a):
     """A cloak: longer, wider, with a rolled collar and a clasp at the throat."""
-    a.drape(BONE_CHEST, [(21.0, BODY["chest_y1"] + 3.0, -22.0),
-                         (28.0, BODY["chest_y0"] + 10.0, -27.0),
-                         (35.0, BODY["waist_y0"] - 16.0, -34.0),
-                         (36.0, BODY["waist_y0"] - 50.0, -42.0),
-                         (31.0, BODY["waist_y0"] - 68.0, -46.0)], "DarkBrown", thickness=5.0)
+    a.hanging([(33.0, BODY["chest_y1"] + 5.0, -27.0),
+               (28.0, BODY["chest_y0"] + 10.0, -29.0),
+               (34.0, BODY["waist_y0"] - 16.0, -35.0),
+               (38.0, BODY["waist_y0"] - 50.0, -43.0),
+               (35.0, BODY["waist_y0"] - 68.0, -47.0)], LEATHER, thickness=5.0)
     a.shell(BONE_CHEST, [(20.0, BODY["chest_y1"] - 2.0), (23.0, BODY["chest_y1"] + 8.0),
                          (20.0, BODY["chest_y1"] + 14.0)],
-            "DarkBrown", squash=(1.0, 1.15), sides=10, z=-3.0)
+            LEATHER, squash=(1.0, 1.15), sides=10, z=-3.0)
+    # AND THE SHOULDER STRAPS. This was the one cape building its own collar, so
+    # it was also the one still invisible from the front — its triangle count
+    # never moved when the others gained theirs.
+    collar(a, LEATHER, r=20.0, tube=2.5)
     a.stud(BONE_CHEST, (0.0, BODY["chest_y1"] - 2.0, BODY["chest_front_z"] + 1.0),
            (0.0, 0.0, 1.0), 6.0, 5.0, "Gold", sides=6)
 
 
 def mantle_back(a):
     """A mantle: a short cape over the shoulders and nothing below them."""
-    a.drape(BONE_CHEST, [(24.0, BODY["chest_y1"] + 5.0, -20.0),
-                         (32.0, BODY["chest_y1"] - 10.0, -26.0),
-                         (34.0, BODY["chest_y0"] + 14.0, -31.0),
-                         (30.0, BODY["chest_y0"] + 4.0, -34.0)], "White", thickness=5.0)
+    # Two links, not three: a mantle is short, and a hem that swings a long way
+    # on a piece that ends at the ribs reads as a bug rather than as cloth.
+    a.hanging([(28.0, BODY["chest_y1"] + 5.0, -26.0),
+               (33.0, BODY["chest_y1"] - 10.0, -28.0),
+               (34.0, BODY["chest_y0"] + 14.0, -31.0),
+               (30.0, BODY["chest_y0"] + 4.0, -34.0)], CLOTH, thickness=5.0, segments=2)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(15.0, BODY["shoulder_y"] + 7.0), (17.0, BODY["shoulder_y"] - 6.0)],
-                "White", squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
-    collar(a, "DarkBrown", r=20.0, tube=3.0)
+                CLOTH, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+    collar(a, LEATHER, r=20.0, tube=3.0)
 
 
 def tabard_back(a):
     """A tabard: one panel down the front and one down the back, belted at the waist."""
-    for z0, z1 in ((-24.0, -28.0), (BODY["chest_front_z"] - 1.0, BODY["chest_front_z"] + 2.0)):
-        a.drape(BONE_CHEST, [(15.0, BODY["chest_y1"] + 2.0, z0),
-                             (16.0, BODY["chest_y0"] + 6.0, z1),
-                             (17.0, BODY["waist_y0"] - 22.0, z1)], "Green")
-    a.band(BONE_WAIST, BODY["waist_y1"] - 2.0, 23.0, "DarkBrown", tube=4.0, squash=(1.0, 1.0), z=-6.0)
+    # The BACK panel hangs and swings; the front one is belted flat to the body,
+    # so it stays a drape. A tabard that flapped at the chest would be wrong.
+    a.hanging([(15.0, BODY["chest_y1"] + 2.0, -24.0),
+               (16.0, BODY["chest_y0"] + 6.0, -28.0),
+               (17.0, BODY["waist_y0"] - 22.0, -30.0)], CLOTH, segments=2)
+    a.drape(BONE_CHEST, [(15.0, BODY["chest_y1"] + 2.0, BODY["chest_front_z"] - 1.0),
+                         (16.0, BODY["chest_y0"] + 6.0, BODY["chest_front_z"] + 2.0),
+                         (17.0, BODY["waist_y0"] - 22.0, BODY["chest_front_z"] + 2.0)], CLOTH)
+    a.band(BONE_WAIST, BODY["waist_y1"] - 2.0, 23.0, LEATHER, tube=4.0, squash=(1.0, 1.0), z=-6.0)
     collar(a, "Gold", r=20.0, tube=2.5)
 
 

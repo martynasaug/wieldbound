@@ -171,10 +171,16 @@ def main():
     region = px[ys, xs, :3]
     region_hls = np.array([colorsys.rgb_to_hls(*c) for c in region])
     mean_l = float(region_hls[:, 1].mean())
-    # Keep the brushwork as lightness around the skin's own, a little flattened:
-    # leather was painted with more contrast than skin is.
-    new = np.array([colorsys.hls_to_rgb(skin_h, min(max(skin_l + (l - mean_l) * 0.55, 0.0), 1.0), skin_s)
-                    for l in region_hls[:, 1]])
+    # KEEP THE BRUSHWORK, BUT ONLY THE BRUSHWORK. At 0.55 this preserved the
+    # glove's own decoration along with its shading: a pale petal motif on the
+    # back of each hand and a bright seam along the wrist survived as skin-
+    # coloured versions of themselves, which is worse than either a glove or a
+    # hand. Skin on this body is painted almost flat, so the variation is
+    # clamped to a narrow band around the median and the outliers — which are
+    # the motif and the seam, not shading — are pulled in with it.
+    spread = np.clip((region_hls[:, 1] - mean_l) * 0.28, -0.05, 0.05)
+    new = np.array([colorsys.hls_to_rgb(skin_h, min(max(skin_l + d, 0.0), 1.0), skin_s)
+                    for d in spread])
     px[ys, xs, :3] = new
     print(f"REPAINTED {len(ys)} texels (was mean lightness {mean_l:.3f})")
 

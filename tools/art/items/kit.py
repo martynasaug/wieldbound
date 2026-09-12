@@ -81,6 +81,11 @@ class Model:
         # butt — right for anything lathed round the origin. A bow's handle is on
         # its back, not at the origin, so it says so.
         self.grip = None
+        # WHERE THIS PIECE HINGES, as (x, y, z) in the model's own space, for a
+        # piece meant to SWING rather than sit still: each segment of a cape
+        # hangs from the one above it. Exported as a glTF extra beside `grip`
+        # and read by `gear.ts`, which builds the chain.
+        self.pivot = None
 
     # --- plumbing ---------------------------------------------------------------
 
@@ -323,6 +328,8 @@ class Model:
         obj = bpy.data.objects.new(self.name, mesh)
         if self.grip is not None:
             obj["grip"] = [float(v) for v in self.grip]
+        if self.pivot is not None:
+            obj["pivot"] = [float(v) for v in self.pivot]
         bpy.context.collection.objects.link(obj)
         for name in self.slots:
             obj.data.materials.append(material(name))

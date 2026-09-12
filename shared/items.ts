@@ -1641,6 +1641,8 @@ export function rollItem(
     affixes: rollAffixes(base, rarity, random, chosenAffix, keepAffixes),
     weaponType: base.weaponType,
     style: base.style,
+    // Worn gear is drawn from this, the same way a weapon always has been.
+    palette: base.art.palette,
   };
 }
 
