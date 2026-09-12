@@ -240,11 +240,20 @@ CLOTH_TRIM = "Red"        # its accent
 LEATHER = "Steel"         # a jerkin is the same palette, told apart by its SHAPE
 LEATHER_TRIM = "DarkSteel"  # that colour at half strength, for straps and belts
 
+# AND THE WORST PLACE TO SIT IS JUST BELOW THE SKIN. Measured against a stable
+# reference at last, the three failures are all garments whose main surface
+# lands a hair under the body's own value — iron 0.209, bronze 0.229 and 0.251
+# against a body at 0.270 — which is precisely "merged with the body". The
+# palette's ACCENT is the bright half of every palette (iron 0.559 against its
+# metal 0.445, bronze 0.685 against 0.506), so the darker garments carry it over
+# real area — panels and bands, not piping — instead of a few studs.
+BRIGHT = "Red"            # the accent, used as a surface rather than as trim
+
 
 # --- chest ----------------------------------------------------------------------------------
 # Six, and no two share a silhouette: the whole reason this file exists.
 
-def pauldrons(a, mat, span=18.0, drop=13.0, lip=True):
+def pauldrons(a, mat, span=23.0, drop=15.0, lip=True):
     """
     A plate over each shoulder, on the arm bone so it swings with the arm.
 
@@ -264,6 +273,17 @@ def pauldrons(a, mat, span=18.0, drop=13.0, lip=True):
                    tube=2.0, squash=(1.0, 0.95), sides=8, x=x, z=-2.0)
 
 
+# HOW FAR A PLATE STANDS OFF THE BODY.
+#
+# Reported: armour "is still barely visible, its merged with the body". The
+# shells were cut to hug the ribs — 19 to 22 where the torso is 17 — which reads
+# as a painted panel rather than a worn object, because at gameplay distance a
+# garment is its SILHOUETTE before it is its colour. Real armour sits on
+# padding: a cuirass stands off the chest, a pauldron stands off the shoulder,
+# and both break the body's outline where they meet the arm.
+PROUD = 5.0
+
+
 def plate_chest(a):
     """Plate: a shaped cuirass with a keel down the breast, a gorget, and tassets."""
     # The ribs are 17 wide and 23 deep, centred a little behind the middle: a
@@ -271,8 +291,10 @@ def plate_chest(a):
     # barrel with a character inside it; the second hugged so close it read as
     # paint. This one stands about three units off the body and carries the
     # shoulder line, which is what makes a cuirass a garment rather than a skin.
-    a.shell(BONE_CHEST, [(19.0, BODY["chest_y0"] - 5.0), (22.0, BODY["chest_y0"] + 14.0),
-                         (22.5, BODY["chest_y1"] - 14.0), (20.0, BODY["chest_y1"] + 6.0)],
+    a.shell(BONE_CHEST, [(19.0 + PROUD * 0.4, BODY["chest_y0"] - 6.0),
+                         (22.0 + PROUD, BODY["chest_y0"] + 14.0),
+                         (22.5 + PROUD, BODY["chest_y1"] - 14.0),
+                         (20.0 + PROUD * 0.5, BODY["chest_y1"] + 7.0)],
             "Steel", squash=(1.0, 1.15), z=-3.0)
     # The keel: a raised ridge down the front, which is what makes a breastplate
     # read as forged rather than as a barrel.
@@ -290,8 +312,10 @@ def plate_chest(a):
 
 def scale_chest(a):
     """Scale: overlapping rows of small plates, each row a little wider than the last."""
-    a.shell(BONE_CHEST, [(17.0, BODY["chest_y0"] - 2.0), (20.0, BODY["chest_y1"] - 8.0),
-                         (17.0, BODY["chest_y1"] + 2.0)], LEATHER, squash=(1.0, 1.15), z=-3.0)
+    a.shell(BONE_CHEST, [(17.0 + PROUD * 0.5, BODY["chest_y0"] - 3.0),
+                         (20.0 + PROUD * 0.8, BODY["chest_y1"] - 8.0),
+                         (17.0 + PROUD * 0.4, BODY["chest_y1"] + 3.0)],
+            LEATHER, squash=(1.0, 1.15), z=-3.0)
     rows = 5
     for i in range(rows):
         y = BODY["chest_y0"] + 2.0 + i * (BODY["chest_y1"] - BODY["chest_y0"] - 6.0) / rows
@@ -302,7 +326,9 @@ def scale_chest(a):
             # The scales in the ACCENT, not in the same metal as the coat under
             # them: drawn in one colour, a field of scales measures and reads as
             # one flat surface.
-            a.stud(BONE_CHEST, (x, y, z), (math.sin(angle), -0.35, math.cos(angle)), 4.0, 4.0, CLOTH_TRIM, sides=4)
+            # Bigger scales in the accent: a field of small studs the same value
+            # as the coat under them measured as one flat surface at 0.229.
+            a.stud(BONE_CHEST, (x, y, z), (math.sin(angle), -0.35, math.cos(angle)), 6.0, 6.5, BRIGHT, sides=4)
     a.band(BONE_CHEST, BODY["chest_y0"] - 1.0, 19.0, "DarkSteel", tube=2.5, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"]), (25.0, BODY["waist_y1"] - 28.0)],
             LEATHER, squash=(1.0, 1.0), z=-6.0)
@@ -315,8 +341,10 @@ def scale_chest(a):
 
 def brigandine_chest(a):
     """Brigandine: quilted cloth over plates, held by rows of rivets and two straps."""
-    a.shell(BONE_CHEST, [(18.0, BODY["chest_y0"] - 3.0), (20.0, BODY["chest_y0"] + 14.0),
-                         (20.0, BODY["chest_y1"] - 10.0), (17.0, BODY["chest_y1"] + 3.0)],
+    a.shell(BONE_CHEST, [(18.0 + PROUD * 0.4, BODY["chest_y0"] - 4.0),
+                         (20.0 + PROUD * 0.9, BODY["chest_y0"] + 14.0),
+                         (20.0 + PROUD * 0.9, BODY["chest_y1"] - 10.0),
+                         (17.0 + PROUD * 0.4, BODY["chest_y1"] + 4.0)],
             "Red", squash=(1.0, 1.15), z=-3.0)
     for y in (BODY["chest_y0"] + 6.0, BODY["chest_y0"] + 22.0, BODY["chest_y1"] - 9.0):
         for k in range(7):
@@ -335,16 +363,20 @@ def brigandine_chest(a):
 
 def chain_chest(a):
     """Mail: a shirt that hangs, a collar that stands, and a skirt to the thigh."""
-    a.shell(BONE_CHEST, [(17.0, BODY["chest_y0"] - 5.0), (20.0, BODY["chest_y0"] + 12.0),
-                         (20.0, BODY["chest_y1"] - 10.0), (16.0, BODY["chest_y1"] + 5.0)],
+    a.shell(BONE_CHEST, [(17.0 + PROUD * 0.4, BODY["chest_y0"] - 6.0),
+                         (20.0 + PROUD * 0.8, BODY["chest_y0"] + 12.0),
+                         (20.0 + PROUD * 0.8, BODY["chest_y1"] - 10.0),
+                         (16.0 + PROUD * 0.4, BODY["chest_y1"] + 6.0)],
             "Steel", squash=(1.0, 1.15), z=-3.0)
     # A standing collar, the piece that separates mail from a tabard at a glance.
     a.shell(BONE_CHEST, [(13.0, BODY["chest_y1"] + 3.0), (14.0, BODY["chest_y1"] + 12.0)],
             "Steel", squash=(1.0, 1.1), sides=8, z=-3.0)
     # Banding across the shirt reads as rings at this size — in the accent, so
     # the rings are visible against the mail rather than a darker shade of it.
+    # Wide bands, not piping: iron's mail sits at 0.21 against a body at 0.27,
+    # and a hairline of brighter metal does not change that.
     for y in (BODY["chest_y0"] + 4.0, BODY["chest_y0"] + 17.0, BODY["chest_y0"] + 30.0):
-        a.band(BONE_CHEST, y, 20.0, CLOTH_TRIM, tube=1.6, squash=(1.0, 1.15), z=-3.0)
+        a.band(BONE_CHEST, y, 20.0 + PROUD * 0.8, BRIGHT, tube=4.5, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"] + 2.0), (26.0, BODY["waist_y1"] - 32.0)],
             "Steel", squash=(1.0, 1.0), z=-6.0)
     a.band(BONE_WAIST, BODY["waist_y1"] - 32.0, 26.0, "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0)
@@ -358,9 +390,16 @@ def leather_chest(a):
     """A jerkin: a short sleeveless coat, a wide belt, and a strap across the chest."""
     # Proud of the body and darker than its tunic: hugged at 17 it read as the
     # same torso in another shade.
-    a.shell(BONE_CHEST, [(18.5, BODY["chest_y0"] - 4.0), (21.0, BODY["chest_y0"] + 14.0),
-                         (21.0, BODY["chest_y1"] - 12.0), (17.0, BODY["chest_y1"] + 4.0)],
+    a.shell(BONE_CHEST, [(18.5 + PROUD * 0.35, BODY["chest_y0"] - 5.0),
+                         (21.0 + PROUD * 0.7, BODY["chest_y0"] + 14.0),
+                         (21.0 + PROUD * 0.7, BODY["chest_y1"] - 12.0),
+                         (17.0 + PROUD * 0.35, BODY["chest_y1"] + 5.0)],
             LEATHER, squash=(1.0, 1.15), z=-3.0)
+    # A broad panel of the palette's bright accent down the chest, so a jerkin
+    # is not one mid-tone surface at the body's own value.
+    a.plate(BONE_CHEST, [(-13.0, BODY["chest_y0"] - 2.0), (13.0, BODY["chest_y0"] - 2.0),
+                         (11.0, BODY["chest_y1"] - 6.0), (-11.0, BODY["chest_y1"] - 6.0)],
+            BRIGHT, z=BODY["chest_front_z"] + PROUD * 0.35, thickness=5.0)
     # The coat is open down the front, which is what makes it a jerkin.
     a.plate(BONE_CHEST, [(-2.5, BODY["chest_y0"] + 2.0), (2.5, BODY["chest_y0"] + 2.0),
                          (2.5, BODY["chest_y1"] - 7.0), (-2.5, BODY["chest_y1"] - 7.0)],
@@ -377,8 +416,10 @@ def leather_chest(a):
 
 def robe_chest(a):
     """A robe: a long fall of cloth from the shoulders, a sash, and soft shoulder folds."""
-    a.shell(BONE_CHEST, [(17.0, BODY["chest_y0"] - 2.0), (19.0, BODY["chest_y0"] + 16.0),
-                         (19.0, BODY["chest_y1"] - 10.0), (15.0, BODY["chest_y1"] + 7.0)],
+    a.shell(BONE_CHEST, [(17.0 + PROUD * 0.3, BODY["chest_y0"] - 3.0),
+                         (19.0 + PROUD * 0.6, BODY["chest_y0"] + 16.0),
+                         (19.0 + PROUD * 0.6, BODY["chest_y1"] - 10.0),
+                         (15.0 + PROUD * 0.3, BODY["chest_y1"] + 8.0)],
             CLOTH, squash=(1.0, 1.15), z=-3.0)
     # The skirt falls from the waist and widens to the knee: the robe's whole shape.
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"] + 2.0), (25.0, BODY["waist_y1"] - 20.0),
@@ -626,20 +667,25 @@ def cape_back(a):
     # with daylight between the cloth and the shoulder blade; the torso's own
     # back is at -26, so the cape starts just outside it and swings away as it
     # drops rather than starting away and staying there.
-    a.hanging([(31.0, BODY["chest_y1"] + 4.0, -27.0),
-               (26.0, BODY["chest_y0"] + 12.0, -29.0),
-               (29.0, BODY["waist_y0"] + 4.0, -34.0),
-               (33.0, BODY["waist_y0"] - 22.0, -40.0)], CLOTH)
+    # A REAL FLARE, not a parallel fall. Measured on the bench, the hem came out
+    # x1.12 the collar's width — which is a sheet, and reads as "a square on the
+    # back". A cape gathers at the shoulders and opens as it drops; the hem is
+    # half as wide again as the collar now, and the fall lengthens to the knee
+    # so there is room for it to open.
+    a.hanging([(30.0, BODY["chest_y1"] + 4.0, -27.0),
+               (25.0, BODY["chest_y0"] + 10.0, -29.0),
+               (34.0, BODY["waist_y0"] - 6.0, -35.0),
+               (46.0, BODY["waist_y0"] - 40.0, -43.0)], CLOTH)
     collar(a, "Gold")
 
 
 def cloak_back(a):
     """A cloak: longer, wider, with a rolled collar and a clasp at the throat."""
-    a.hanging([(33.0, BODY["chest_y1"] + 5.0, -27.0),
-               (28.0, BODY["chest_y0"] + 10.0, -29.0),
-               (34.0, BODY["waist_y0"] - 16.0, -35.0),
-               (38.0, BODY["waist_y0"] - 50.0, -43.0),
-               (35.0, BODY["waist_y0"] - 68.0, -47.0)], LEATHER, thickness=5.0)
+    a.hanging([(31.0, BODY["chest_y1"] + 5.0, -27.0),
+               (27.0, BODY["chest_y0"] + 10.0, -29.0),
+               (38.0, BODY["waist_y0"] - 16.0, -36.0),
+               (48.0, BODY["waist_y0"] - 50.0, -44.0),
+               (52.0, BODY["waist_y0"] - 72.0, -48.0)], LEATHER, thickness=5.0)
     a.shell(BONE_CHEST, [(20.0, BODY["chest_y1"] - 2.0), (23.0, BODY["chest_y1"] + 8.0),
                          (20.0, BODY["chest_y1"] + 14.0)],
             LEATHER, squash=(1.0, 1.15), sides=10, z=-3.0)

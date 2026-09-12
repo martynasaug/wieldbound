@@ -259,21 +259,76 @@ async function sampleAround(meshFilter) {
       if (!piece || o.name.includes("Torso")) piece = o;
     });
     if (!piece) return null;
-    // A strip of bare upper arm, which no chest piece covers, from the body's
-    // own vertices rather than a guessed rectangle.
-    let arm = null;
-    a.root.traverse((o) => { if (o.isBone && o.name === "UpperArmL") arm = o; });
-    const armAt = new V();
-    arm?.getWorldPosition(armAt);
+    // THE PIECE'S OWN SURFACE, NOT ITS BOUNDING BOX. A cuirass that stands proud
+    // of the chest has shadowed body and background inside its box — between the
+    // pauldrons, under the arms — so sampling the box measured the gaps as if
+    // they were the armour and scored a plainly visible steel plate at 0.11
+    // against a sunlit arm. The window is taken from the piece's own vertices
+    // instead: the middle of the front face, where the plate actually is.
+    const front = [];
+    {
+      const p = piece.geometry.attributes.position;
+      const v = new V();
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(piece.matrixWorld);
+        front.push(v.clone());
+      }
+      front.sort((m, n) => n.z - m.z);
+    }
+    // A PATCH OF BARE BODY THE GEAR CANNOT REACH, and proved so rather than
+    // assumed. The reference was a strip of UPPER arm — which the pauldrons
+    // then grew over, so the piece and the "bare body" were the same pixels and
+    // three styles in a row scored contrast 0.01. It sits on the FOREARM now,
+    // between elbow and wrist, and every gear mesh on the character is checked
+    // against it: if anything covers it, the bench refuses to judge contrast.
+    //
+    // Taken from the BONES, not from vertex positions: this mesh is skinned, so
+    // its stored vertices are the bind pose and projecting them would put the
+    // window where the arm is not.
+    const boneAt = (name) => {
+      let found = null;
+      a.root.traverse((o) => { if (o.isBone && o.name === name) found = o; });
+      if (!found) return null;
+      const p = new V();
+      found.getWorldPosition(p);
+      return p;
+    };
+    const elbow = boneAt("LowerArmL");
+    const wrist = boneAt("FistL");
+    if (!elbow || !wrist) return null;
+    // Two thirds along the forearm: past anything a sleeve or a pauldron reaches.
+    const armAt = elbow.clone().lerp(wrist, 0.66);
+    const armSpan = elbow.distanceTo(wrist);
     const inset = (r, k) => ({
       x: Math.round(r.x0 + (r.x1 - r.x0) * k),
       y: Math.round(r.y0 + (r.y1 - r.y0) * k),
       width: Math.max(6, Math.round((r.x1 - r.x0) * (1 - 2 * k))),
       height: Math.max(6, Math.round((r.y1 - r.y0) * (1 - 2 * k))),
     });
+    // The nearest quarter of the piece's vertices to the camera: its facing
+    // surface, which is what a player sees and what "does it read" is about.
+    const facing = front.slice(0, Math.max(8, Math.round(front.length * 0.25)));
+    const pieceRect = inset(project(facing), 0.18);
+    const r = armSpan * 0.22;
+    const bodyRect = inset(project([
+      armAt.clone().add(new V(-r, r, -r)),
+      armAt.clone().add(new V(r, -r, r)),
+    ]), 0.12);
+
+    // Does any gear sit on the reference? Rectangles, in screen space.
+    const overlaps = (p, q) =>
+      p.x < q.x + q.width && q.x < p.x + p.width && p.y < q.y + q.height && q.y < p.y + p.height;
+    let covered = false;
+    a.root.traverse((o) => {
+      if (covered || !o.isMesh) return;
+      if (!o.name.startsWith("gear_") && !o.name.startsWith("hand_") && !o.name.startsWith("held_")) return;
+      if (overlaps(bodyRect, inset(project(corners(o)), 0.05))) covered = true;
+    });
+
     return {
-      piece: inset(project(corners(piece)), 0.3),
-      body: inset(project([armAt.clone().add(new V(0.05, 0.09, 0)), armAt.clone().add(new V(0.13, -0.05, 0))]), 0.1),
+      piece: pieceRect,
+      body: bodyRect,
+      referenceCovered: covered,
       proud: (() => {
         // How far the piece stands off the body, in world units: the piece's own
         // half-depth against the torso's.
@@ -393,10 +448,15 @@ for (const subject of SUBJECTS) {
     }
     // FOOTING FIRST. If the windows are not on the character, or the reference
     // is in shadow, nothing below this line is worth printing.
-    const footing = seen.piece.covered > 0.5 && seen.body.covered > 0.5 && seen.body.luma > 0.08;
+    const footing = seen.piece.covered > 0.5 && seen.body.covered > 0.5 && seen.body.luma > 0.08
+      && !seen.referenceCovered;
     say(`   palette ${palette}; piece luma ${seen.piece.luma.toFixed(3)}, body ${seen.body.luma.toFixed(3)},` +
-      ` coverage ${(seen.piece.covered * 100).toFixed(0)}%/${(seen.body.covered * 100).toFixed(0)}%`);
-    if (!verdict("measurement footing", footing, "windows on the character and a lit reference")) {
+      ` coverage ${(seen.piece.covered * 100).toFixed(0)}%/${(seen.body.covered * 100).toFixed(0)}%` +
+      (seen.referenceCovered ? "; REFERENCE IS UNDER GEAR" : ""));
+    if (!verdict("measurement footing", footing,
+      seen.referenceCovered
+        ? "the bare-body reference is covered by gear — contrast cannot be measured here"
+        : "windows on the character and a lit reference")) {
       say("   refusing to judge contrast on this frame");
     } else {
       const contrast = Math.abs(seen.piece.luma - seen.body.luma) / Math.max(seen.body.luma, 0.01);
