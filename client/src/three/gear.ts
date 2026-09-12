@@ -541,6 +541,150 @@ export function removeGloves(root: THREE.Object3D): void {
   });
 }
 
+// --- The hands, replaced rather than repaired --------------------------------------
+//
+// The Monk's hand cannot be taken off and cannot be fixed in place: it is not a
+// shell (the forearm and hand are ONE island of 296 triangles), and a radial
+// clamp can only make a mitten narrower, never give it fingers. So the mitten is
+// cut out of the body by the bone its triangles follow, and modelled hands from
+// `tools/art/items/hands.py` are attached in the hole — the same road the fist
+// weapons already travel.
+
+/** Everything from the wrist out, both sides: what gets cut away. */
+const HAND_GEOMETRY_BONES = new Set([
+  "FistR", "Fist1R", "Fist2R", "Thumb1R", "Thumb2R",
+  "FistL", "Fist1L", "Fist2L", "Thumb1L", "Thumb2L",
+]);
+const handlessGeometry = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+
+/**
+ * The body's geometry with every hand triangle removed.
+ *
+ * A triangle goes if ANY of its three vertices follows a hand bone, not all
+ * three: the seam ring where the wrist meets the palm is mixed, and keeping it
+ * would leave a collar of mitten standing on the stump. The modelled wrist piece
+ * closes the opening that leaves.
+ */
+function stripHands(mesh: THREE.SkinnedMesh): THREE.BufferGeometry {
+  const source = mesh.geometry;
+  const cached = handlessGeometry.get(source);
+  if (cached) return cached;
+  const geo = source.index ? source.toNonIndexed() : source;
+  const pos = geo.attributes.position as THREE.BufferAttribute | undefined;
+  const index = geo.attributes.skinIndex as THREE.BufferAttribute | undefined;
+  const weight = geo.attributes.skinWeight as THREE.BufferAttribute | undefined;
+  if (!pos || !index || !weight) {
+    handlessGeometry.set(source, source);
+    return source;
+  }
+  const bones = mesh.skeleton.bones.map((b) => b.name);
+  const dominant = (i: number): string => {
+    let best = 0;
+    for (let k = 1; k < 4; k++) if (weight.getComponent(i, k) > weight.getComponent(i, best)) best = k;
+    return bones[index.getComponent(i, best)];
+  };
+
+  const triangles = pos.count / 3;
+  const keep: number[] = [];
+  for (let t = 0; t < triangles; t++) {
+    let hand = false;
+    for (let k = 0; k < 3 && !hand; k++) hand = HAND_GEOMETRY_BONES.has(dominant(t * 3 + k));
+    if (!hand) keep.push(t);
+  }
+  // NOTHING MATCHED IS A FAULT, NOT A PASS — the lesson `removeGloves` taught by
+  // failing silently three times. And everything matching would take the body.
+  if (!keep.length || keep.length === triangles) {
+    console.warn(
+      `stripHands: ${triangles - keep.length} of ${triangles} triangles follow a hand bone — ` +
+      "refusing to cut, the body is unchanged",
+    );
+    handlessGeometry.set(source, source);
+    return source;
+  }
+
+  const out = new THREE.BufferGeometry();
+  for (const [name, attribute] of Object.entries(geo.attributes)) {
+    const a = attribute as THREE.BufferAttribute;
+    const items = a.itemSize;
+    const src = a.array as unknown as { [i: number]: number };
+    const Ctor = a.array.constructor as new (n: number) => ArrayLike<number> & { [i: number]: number };
+    const dst = new Ctor(keep.length * 3 * items);
+    let w = 0;
+    for (const t of keep) {
+      for (let k = 0; k < 3; k++) {
+        const from = (t * 3 + k) * items;
+        for (let c = 0; c < items; c++) dst[w++] = src[from + c];
+      }
+    }
+    out.setAttribute(name, new THREE.BufferAttribute(dst as unknown as ArrayLike<number> & ArrayBufferView, items, a.normalized));
+  }
+  out.userData = { ...geo.userData, handsStripped: triangles - keep.length };
+  out.computeBoundingBox();
+  out.computeBoundingSphere();
+  handlessGeometry.set(source, out);
+  return out;
+}
+
+/**
+ * The modelled bare hands, one piece per hand bone.
+ *
+ * THEY WEAR THE BODY'S OWN MATERIAL, deliberately and not as a shortcut. A
+ * player's skin tone reaches the face through `applySkin`, which recolours the
+ * materials `Actor.bodyMaterials` collects — and that list is built from
+ * materials belonging to SKINNED meshes. These pieces are rigid, so a material
+ * of their own would never be in it, and the hands would sit at the default tone
+ * while the face changed colour around them. Sharing the body's instance means
+ * there is nothing to keep in step: it is the same material.
+ *
+ * The pieces are named for their bones, so the palm and thumb ride `Fist1` and
+ * the fingers ride `Fist2` — the curl bone — and a clip that closes the fist
+ * closes these fingers. That is the whole reason for modelling them per bone
+ * rather than as one rigid hand.
+ */
+export async function buildBareHands(root: THREE.Object3D): Promise<GearAttachment[]> {
+  let body: THREE.SkinnedMesh | null = null;
+  root.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh;
+    if (body || !mesh.isSkinnedMesh) return;
+    if (mesh.skeleton?.bones.some((b) => b.name === "Fist1R")) body = mesh;
+  });
+  if (!body) return [];
+  const skin = Array.isArray((body as THREE.SkinnedMesh).material)
+    ? ((body as THREE.SkinnedMesh).material as THREE.Material[])[0]
+    : ((body as THREE.SkinnedMesh).material as THREE.Material);
+  const proto = await loadModel("hands.glb");
+  const out: GearAttachment[] = [];
+  for (const child of proto.children) {
+    const piece = wholeModel(child);
+    if (!piece) continue;
+    const mesh = new THREE.Mesh(piece.geometry, skin);
+    mesh.name = `bare_${child.name}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    out.push({ bone: child.name.replace(/\.\d+$/, ""), object: mesh, boneLocal: true });
+  }
+  if (!out.length) console.warn("gear: hands.glb has no named pieces — the character will have no hands at all");
+  return out;
+}
+
+/** Cut the Monk's hands out of a body, on every mesh that shares its geometry. */
+export function removeHandGeometry(root: THREE.Object3D): void {
+  const swaps = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
+  root.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh;
+    if (!mesh.isSkinnedMesh || swaps.has(mesh.geometry)) return;
+    if (!mesh.skeleton?.bones.some((b) => b.name === "Fist1R")) return;
+    const cut = stripHands(mesh);
+    if (cut !== mesh.geometry) swaps.set(mesh.geometry, cut);
+  });
+  if (!swaps.size) return;
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    const cut = mesh.isMesh ? swaps.get(mesh.geometry) : undefined;
+    if (cut) mesh.geometry = cut;
+  });
+}
+
 /**
  * The middle of a closed fist, in that fist bone's own space: the centroid of
  * the body's vertices that follow the hand and its fingers.

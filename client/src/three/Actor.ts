@@ -28,7 +28,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildHandPieces, fistCentre, hasArmourModel, removeGloves, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
+import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildBareHands, buildHandPieces, fistCentre, hasArmourModel, removeHandGeometry, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
 import { HAIR_ANCHOR_MESH, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
@@ -1060,8 +1060,39 @@ export class Actor {
     // family that puts gloves back on. The leather shell over each hand comes
     // OFF (`removeGloves`); the flared cuff on each forearm is pulled in to the
     // arm (`bareForearms`). Repainting alone left a leather mitten behind.
-    removeGloves(instance.object);
+    // ORDER MATTERS HERE, and getting it wrong is silent. `bareForearms` finds
+    // the arm's axis from the centroid of the `Fist2` vertices; strip the hand
+    // first and that centroid is null, so the cuff pull quietly stops running —
+    // the same class of no-op that let the gloves survive three removals.
     bareForearms(instance.object);
+    // THE MONK'S HANDS COME OFF AS GEOMETRY, because they were never removable
+    // any other way: the forearm and hand are one welded island, so there is no
+    // shell to strip, and a radial clamp can only make a mitten narrower.
+    // `removeGloves` hunted for a 37-face shell that does not exist in this body
+    // and returned silently every time it was called; it is gone from this path.
+    removeHandGeometry(instance.object);
+    // And modelled hands go in the hole (`tools/art/items/hands.py`), rigidly on
+    // the skeleton's own bind data — a rest-pose holder leaves them out at
+    // shoulder height in the T-pose the body was bound in. See `boneAttachMatrix`.
+    void buildBareHands(instance.object).then((pieces) => {
+      for (const piece of pieces) {
+        let bone: THREE.Object3D | null = null;
+        instance.object.traverse((o) => {
+          if (!bone && (o as THREE.Bone).isBone && o.name === piece.bone) bone = o;
+        });
+        const onBone = boneAttachMatrix(instance.object, piece.bone);
+        if (!bone || !onBone) {
+          // Loud: a hand that finds no bone draws nothing, and a character with
+          // no hands reads as a rendering glitch rather than a missing asset.
+          console.warn(`gear: bare hand piece for bone "${piece.bone}" has ${bone ? "no bind matrix" : "no such bone"}`);
+          continue;
+        }
+        piece.object.matrixAutoUpdate = false;
+        piece.object.matrix.copy(onBone);
+        (bone as THREE.Object3D).add(piece.object);
+        this.trackMaterials(piece.object);
+      }
+    });
 
     this.mixer = new THREE.AnimationMixer(instance.object);
     this.buildActions();
