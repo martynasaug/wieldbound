@@ -24962,3 +24962,58 @@ own shade. It measures scale-free contrast against a lit reference now. New
 tools: `palettecheck.mjs` (same shape, different material, different colours),
 `capeprobe.mjs` (where each link hangs), `capewalk.mjs` (successive frames of a
 run), `armourprobe.mjs` and `contrast.mjs`.
+
+## M70.288: a bench that measures the same body twice
+
+THE GARMENTS THAT MERGED WITH THE BODY had one cause, not six. A palette's
+`metal` is chosen for a BLADE — small, edged, living on highlights — and spread
+across a torso it lands on the skin's own value. Measured against a body at
+0.186: iron mail 0.217, a bronze jerkin 0.193. Both now take that same colour one
+shade up (`GARMENT`, metal x1.3: iron 0.577, bronze 0.658), which keeps the hue,
+so mail still reads as mail rather than turning tan the way the accent would have
+made it. Chain went to contrast 0.34, leather to 0.44, in the same frame.
+
+AND THEN THE BENCH LIED A FOURTH TIME, which is most of this entry. It logs in as
+`Art<clock>`, a new name every run, and `defaultLookFor` derives the SKIN TONE
+from a hash of the name across eight tones spanning lightness 0.24 to 0.72. Every
+piece here is judged against a patch of bare skin, so the reference was a
+different colour in every run: 0.114, 0.121, 0.135, 0.190, 0.235, 0.255 across
+identical builds. I read those swings as the art changing. The wood cloak is what
+it cost — failed at deltaE 9.7, moved to the palette's accent, measured 10.5,
+moved back — three passes over cloth that was never the problem. The look is
+pinned now (tan, average, no beard) and the run REFUSES to measure if the pin did
+not take, because asking for a look is not the same as wearing one. Two separate
+runs of four subjects now agree to the third decimal: reference 0.137 both times,
+cloak 22.7 and 22.6, chain 18.8 and 18.8.
+
+FOUR MORE RULES WERE MEASURING THE WRONG THING:
+
+1. THE FACING SURFACE WAS PICKED BY WORLD AXIS. The window took the piece's
+   vertices sorted on world z and called it "nearest the camera" — true only for
+   a camera on the +z side. The measurement camera sits at lower z, so it chose
+   the FAR quarter every time; on a cape that is the top of the fall against the
+   neck, and the window landed on the body. The cloak was scored 0.186 against a
+   body at 0.195 from a frame plainly showing a broad tan drape.
+2. NOTHING TESTED OCCLUSION. Footing asked whether the REFERENCE was covered,
+   never whether the piece was in view. A cape projects onto the torso's own
+   silhouette, so the sampler read body pixels at "coverage 100%" and reported
+   them as the cape. Judged by depth along the view axis now — a first attempt
+   comparing distance to a bone POINT scored a cloak 100% clear from a camera
+   that cannot see it, because the collar wraps the shoulders.
+3. LUMA CANNOT SEE COLOUR. It weights red at 0.2126, so a vivid crimson cape and
+   brown skin land within a hundredth of each other: an unmissable red drape was
+   scored 0.02 and failed. Contrast is now lightness OR colour (CIE76 deltaE over
+   CIELAB), and the verdict names which one carried it. The same blindness one
+   rule lower failed that cape as "too dark to read as anything" at luma 0.033,
+   so a piece is a hole only if it is dark AND colourless — metals measure chroma
+   2.3, dyed pieces 22 to 37, and the floor sits in that gap.
+4. A BOX IS NOT A GARMENT. The reference-overlap test projected each gear mesh's
+   bounding box, and a cape link's box is large, tilted and swinging, so the
+   cloak refused to measure contrast at all while no cloth was near the arm. It
+   reads the mesh's own vertices now. A band of a fall holding two clipped
+   vertices is no longer a width either: `middle 0.003` counted as measured.
+
+EVERY THRESHOLD CAME FROM MEASURED SUBJECTS, and where one did not, it says so in
+the file. The colour floor of 15 was read off ten pieces that read clearly on the
+character (weakest 18.8) — and it has a negative control only because the pinned
+body finally made one possible.

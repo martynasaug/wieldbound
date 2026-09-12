@@ -75,8 +75,44 @@ const RULES = {
   // Weber contrast against the bare body beside it. Below this a piece reads as
   // painted on rather than worn.
   contrast: { min: 0.25, why: "a piece blends into the body" },
+  // AND THE SAME QUESTION ASKED ABOUT COLOUR. Luma weights red at 0.2126, so a
+  // vivid crimson cape and brown skin land within a hundredth of each other in
+  // lightness: the rule above scored an unmissable red drape at 0.02 and failed
+  // it. Either kind of separation is enough for a piece to read, so the verdict
+  // takes whichever the piece has.
+  //
+  // THE NUMBER CAME FROM THE TEN SUBJECTS, NOT FROM ME. Measured: silver 58.3,
+  // verdant 52.9, brigandine 42.6, bronze 37.9, crimson 36.0, wood 36.9/25.2,
+  // steel 33.3, iron mail 20.4 — the weakest of ten that all read clearly on the
+  // character. A just-noticeable CIE76 difference is about 2.3, so 15 sits well
+  // above noise and below every piece I judged acceptable by eye.
+  //
+  // AND THIS FLOOR IS NOT YET TRUSTWORTHY. It was read off a table of ten
+  // subjects measured across several runs — and the bench logs in as a fresh
+  // player each time, with a RANDOMISED SKIN TONE, so the bare body every piece
+  // was compared against was a different colour in every run of that table. A
+  // tan cloak against pale skin and the same cloak against brown skin are
+  // honestly different numbers. The wood cloak looked like a negative control at
+  // 9.7, was "fixed" onto the accent, measured 10.5, and was reverted: nothing
+  // about the cloth ever changed.
+  //
+  // The appearance is pinned below from this run on. Until the table is taken
+  // again on a fixed body, treat 15 as provisional and compare figures only
+  // WITHIN one run, never across two.
+  colour: { min: 15, why: "a piece is the same colour as the body" },
   // And it must not be a hole either.
   minLuma: { min: 0.05, why: "a piece is too dark to read as anything" },
+  // THE SAME BLINDNESS, ONE RULE LOWER. The crimson cape measured luma 0.109,
+  // 0.119 and 0.033 across three runs of the same build and failed the third as
+  // "too dark to read as anything" — from frames showing a vivid red drape.
+  // Luma weights red at 0.2126, so a strongly saturated red is dark by that
+  // measure however well it reads. A piece is only a hole if it is dark AND has
+  // no colour in it; chroma is the a*b* radius in CIELAB.
+  //
+  // PROVISIONAL, and marked so: unlike the colour floor, this number is not yet
+  // read off measured subjects — chroma is printed with every piece from this
+  // run on, and the floor should be reset once there are figures to set it from.
+  chroma: { min: 12, why: "a piece is dark and colourless — it reads as a hole" },
   // A worn piece has to stand off the body enough to have a silhouette.
   proud: { min: 0.012, why: "a piece hugs the body and has no outline of its own" },
   // A cape has to actually move between frames of a run.
@@ -100,10 +136,30 @@ await login(page, `Art${Date.now() % 100000}`);
 // --- the rig ---------------------------------------------------------------------------------
 // Frozen and identical for every subject, so two runs are comparable: noon, the
 // character facing the sun, one pose, one camera distance.
-await page.evaluate(() => {
+//
+// AND THE BODY ITSELF, which this comment claimed for a whole session while it
+// was not true. Every piece here is judged against a patch of BARE SKIN, and the
+// bench logs in as `Art<clock>` — a new name every run. `defaultLookFor` derives
+// the skin tone from a hash OF THE NAME, over eight tones spanning lightness
+// 0.24 (ebony) to 0.72 (porcelain). So the reference was a different colour in
+// every run: the bare-body window read 0.114, 0.121, 0.135, 0.190, 0.235, 0.255
+// across runs of identical builds, and I read those swings as the art changing.
+//
+// The wood cloak is what it cost. It was failed at deltaE 9.7, moved to the
+// palette's accent, measured 10.5, and moved back — three passes over cloth that
+// was never the problem, which is the prayer-beads pattern exactly. Figures from
+// before this pin cannot be compared with figures after it, or with each other.
+//
+// `tan` is mid-scale (0.39), so neither a very pale nor a very dark reference
+// flatters a piece; `average` build is scale 1.0, so limb figures stay in the
+// units the rest of this file is written in; no beard, because a full one is a
+// large dark mass right beside the collar windows.
+const PINNED_LOOK = { skin: "tan", build: "average", hair: "short", beard: "none", hairColor: "black" };
+await page.evaluate((look) => {
   const g = window.__wieldbound;
   g.world.dayNight.freeze(0.5);
   const a = g.localActor;
+  a.setLook(look);
   a.heading = Math.PI;
   a.root.rotation.y = Math.PI;
   const render = g.world.renderer.render.bind(g.world.renderer);
@@ -138,8 +194,26 @@ await page.evaluate(() => {
       return mesh;
     },
   };
-});
+}, PINNED_LOOK);
 await page.waitForTimeout(1500);
+
+// AND PROVE THE PIN TOOK. `setLook` returns early unless the actor has both an
+// identity and a loaded instance, so asking for a look is not the same as
+// wearing one — and a pin that quietly does nothing would leave every number
+// below measured against a random body while this file says otherwise. That is
+// the failure this whole bench exists to refuse, so it is checked, not assumed.
+{
+  const got = await page.evaluate(() => window.__wieldbound.localActor.currentLook);
+  const wrong = !got || Object.entries(PINNED_LOOK).filter(([k, v]) => got[k] !== v);
+  if (!got || wrong.length) {
+    console.error(`artcheck: the look did not pin — asked for ${JSON.stringify(PINNED_LOOK)},` +
+      ` got ${JSON.stringify(got)}. Every measurement here is against bare skin, so a body that is` +
+      ` not the one named above makes the whole run uncomparable. Refusing to measure.`);
+    await browser.close();
+    process.exit(1);
+  }
+  console.log(`body pinned: ${Object.entries(PINNED_LOOK).map(([k, v]) => `${k} ${v}`).join(", ")}`);
+}
 
 /** Measurements that live entirely in the body mesh's own vertex space. */
 async function geometry(spec) {
@@ -230,8 +304,8 @@ async function geometry(spec) {
  * view it was taken from is identical every time, so every measurement starts
  * by putting the camera back.
  */
-async function measurementCamera() {
-  return page.evaluate(() => {
+async function measurementCamera(yaw) {
+  return page.evaluate((yaw) => {
     const g = window.__wieldbound;
     const a = g.localActor;
     // THE POSE, TOO, NOT JUST THE CAMERA. With the camera pinned the piece
@@ -244,13 +318,19 @@ async function measurementCamera() {
     g.__artHold = () => {
       const target = a.position.clone();
       target.y += 0.95;
-      // THE LIT SIDE, which is the front: the rig turns the character to face
-      // the sun, and cameras here are placed at `heading + yaw`, so yaw = PI is
-      // the view that sees the sunlit face of a piece. Pinned behind the
-      // character instead, this sampled every piece's shadowed back against a
-      // forearm in full light, and passed all four styles for the wrong reason
-      // — the mirror image of the run that failed them all.
-      const f = a.heading;
+      // WHICH SIDE THIS IS, stated once and consistently with the shot tiles
+      // below. Cameras here are placed at `heading + yaw` and the rig turns the
+      // character to `heading = PI`, so yaw = PI looks at the FACE and yaw = 0
+      // looks at the BACK.
+      //
+      // This took no yaw at all and used `heading` — the back — while the
+      // comment here claimed it was the lit front. Both halves of that mistake
+      // did damage: the claim is what made "the piece's front face" seem like
+      // the right surface to sample, and the silence about the real side is why
+      // a cape could be measured for three passes without anyone asking whether
+      // the fall was in frame. The side is now chosen per piece, by what is
+      // actually visible, and reported with the numbers.
+      const f = a.heading + yaw;
       g.world.camera.position.set(target.x + Math.sin(f) * 3.0, target.y + 0.3, target.z + Math.cos(f) * 3.0);
       g.world.camera.lookAt(target);
     };
@@ -262,12 +342,30 @@ async function measurementCamera() {
     g.__artHold();
     const c = g.world.camera.position;
     return [+c.x.toFixed(2), +c.y.toFixed(2), +c.z.toFixed(2)];
-  });
+  }, yaw);
 }
 
-/** Pixels, from the same frame the shots come from. */
-async function sampleAround(meshFilter) {
-  const cameraAt = await measurementCamera();
+/**
+ * ONE SIDE, AND IT IS THE LIT ONE.
+ *
+ * I briefly measured each piece from whichever of two sides "saw" more of it.
+ * That run reported every one of ten subjects from yaw PI at 100% visible —
+ * because the visibility test could not find its reference bone and defaulted to
+ * "visible", so both sides tied and the first won. What it actually sampled was
+ * the character's shaded face: every piece dropped (plate 0.368 to 0.143, robe
+ * 0.260 to 0.045), the reference rose to 0.255, and everything "passed contrast"
+ * by being DARKER than the body while two pieces failed as black holes. That is
+ * the mirror-image failure this file already records once.
+ *
+ * Yaw 0 is the sunlit side, and it is also the side a cape's fall faces — the
+ * yaw-0 tile on every sheet is the one showing the drape. So it is the only
+ * viewpoint here, and the visibility test below is a REFUSAL, never a chooser.
+ */
+const SIDES = [{ name: "lit side", yaw: 0 }];
+
+/** Pixels, from the same frame the shots come from, taken from ONE side. */
+async function sampleFrom(meshFilter, side) {
+  const cameraAt = await measurementCamera(side.yaw);
   await page.waitForTimeout(280);
   const boxes = await page.evaluate((meshFilter) => {
     const g = window.__wieldbound;
@@ -312,6 +410,9 @@ async function sampleAround(meshFilter) {
     // they were the armour and scored a plainly visible steel plate at 0.11
     // against a sunlit arm. The window is taken from the piece's own vertices
     // instead: the middle of the front face, where the plate actually is.
+    // One camera position, shared by the facing sort and the visibility test
+    // below — they have to be talking about the same viewpoint.
+    const camPos = cam.position.clone();
     const front = [];
     {
       const p = piece.geometry.attributes.position;
@@ -320,7 +421,16 @@ async function sampleAround(meshFilter) {
         v.fromBufferAttribute(p, i).applyMatrix4(piece.matrixWorld);
         front.push(v.clone());
       }
-      front.sort((m, n) => n.z - m.z);
+      // NEAREST THE CAMERA HAS TO MEAN NEAREST THE CAMERA. This sorted on world
+      // z and called the result "the nearest quarter of the piece's vertices to
+      // the camera", which is only true for a camera on the +z side. The
+      // measurement camera is placed from `heading`, which puts it at LOWER z —
+      // so this picked the FAR quarter every time. On a cape that is the top of
+      // the fall where it meets the neck, and the window landed on the body:
+      // `cape:cloak` was scored 0.186 against a body at 0.195 and failed for
+      // blending in, from a frame that plainly shows a broad tan drape. The
+      // number was the body's own value, measured twice.
+      front.sort((m, n) => m.distanceTo(camPos) - n.distanceTo(camPos));
     }
     // A PATCH OF BARE BODY THE GEAR CANNOT REACH, and proved so rather than
     // assumed. The reference was a strip of UPPER arm — which the pauldrons
@@ -356,6 +466,32 @@ async function sampleAround(meshFilter) {
     // surface, which is what a player sees and what "does it read" is about.
     const facing = front.slice(0, Math.max(8, Math.round(front.length * 0.25)));
     const pieceRect = inset(project(facing), 0.18);
+    // AND IS THAT SURFACE IN VIEW AT ALL? A projected rectangle says nothing
+    // about what stands in front of it. A cape's fall projects onto the torso's
+    // own silhouette from the front, so the sampler read body pixels, called the
+    // coverage 100%, and reported them as the cape — the footing check only ever
+    // asked whether the REFERENCE was covered, never the piece.
+    //
+    // A piece's facing vertices have to lie nearer the camera than the body's
+    // core; if they do not, the body is between the camera and the piece.
+    // AND IF THE TEST CANNOT RUN, IT HAS NOT PASSED. This defaulted to 1 when the
+    // core bone was not found, which is exactly how ten subjects in a row
+    // reported "100% of the facing surface is clear of the body" from a side
+    // that cannot see a cape at all. An unrunnable check is a refusal.
+    // DEPTH ALONG THE VIEW AXIS, NOT DISTANCE TO A BONE POINT. The first version
+    // of this compared each vertex's distance to the `Torso` bone's distance, and
+    // scored a cloak 100% clear from a camera that cannot see its fall at all:
+    // the collar wraps the shoulders and is genuinely nearer the camera than the
+    // spine, while the torso stands squarely in front of the cloth below it.
+    // "Something is between the camera and this" is a statement about depth.
+    const core = boneAt("Torso") ?? boneAt("Abdomen") ?? boneAt("Body");
+    const forward = new V();
+    cam.getWorldDirection(forward);
+    const depth = (p) => p.clone().sub(camPos).dot(forward);
+    const coreDepth = core ? depth(core) : null;
+    const visible = core
+      ? +(facing.filter((v) => depth(v) < coreDepth).length / facing.length).toFixed(2)
+      : null;
     const r = armSpan * 0.22;
     const bodyRect = inset(project([
       armAt.clone().add(new V(-r, r, -r)),
@@ -365,17 +501,33 @@ async function sampleAround(meshFilter) {
     // Does any gear sit on the reference? Rectangles, in screen space.
     const overlaps = (p, q) =>
       p.x < q.x + q.width && q.x < p.x + p.width && p.y < q.y + q.height && q.y < p.y + p.height;
+    // THE CLOTH, NOT THE BOX AROUND IT. This projected each gear mesh's bounding
+    // box, and a cape link's box is large, tilted and swinging — so `cape:cloak`
+    // refused to measure contrast at all, reporting the forearm reference as
+    // covered by gear while no cloth was within a foot of the arm. A box is not
+    // a garment; the mesh's own vertices are.
+    const hull = (mesh) => {
+      const p = mesh.geometry.attributes.position;
+      const step = Math.max(1, Math.floor(p.count / 200));
+      const out = [];
+      const v = new V();
+      for (let i = 0; i < p.count; i += step) {
+        out.push(v.fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld).clone());
+      }
+      return out.length ? out : corners(mesh);
+    };
     let covered = false;
     a.root.traverse((o) => {
       if (covered || !o.isMesh) return;
       if (!o.name.startsWith("gear_") && !o.name.startsWith("hand_") && !o.name.startsWith("held_")) return;
-      if (overlaps(bodyRect, inset(project(corners(o)), 0.05))) covered = true;
+      if (overlaps(bodyRect, inset(project(hull(o)), 0.05))) covered = true;
     });
 
     return {
       piece: pieceRect,
       body: bodyRect,
       referenceCovered: covered,
+      visible,
       proud: (() => {
         // How far the piece stands off the body, in world units: the piece's own
         // half-depth against the torso's.
@@ -405,12 +557,72 @@ async function sampleAround(meshFilter) {
         r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
       }
       const total = d.length / 4;
-      return { luma: n ? (0.2126 * r + 0.7152 * g + 0.0722 * b) / n / 255 : 0, covered: n / total, sky: sky / total };
+      // THE MEAN COLOUR, NOT ONLY ITS LIGHTNESS. Luma weights red at 0.2126, so
+      // a saturated crimson cape and brown skin come out within a hundredth of
+      // each other in luma while being obviously different colours — `cape:cape`
+      // was scored 0.04 from a frame showing a vivid red drape. A rule about
+      // whether a piece reads against the body has to be able to see hue.
+      return {
+        luma: n ? (0.2126 * r + 0.7152 * g + 0.0722 * b) / n / 255 : 0,
+        rgb: n ? [r / n / 255, g / n / 255, b / n / 255] : [0, 0, 0],
+        covered: n / total,
+        sky: sky / total,
+      };
     }, shot.toString("base64"));
   };
   const piece = await read(boxes.piece);
   const body = await read(boxes.body);
-  return { piece, body, proud: boxes.proud, referenceCovered: boxes.referenceCovered, cameraAt };
+  return {
+    piece, body, proud: boxes.proud, referenceCovered: boxes.referenceCovered,
+    visible: boxes.visible, side: side.name, cameraAt,
+  };
+}
+
+/**
+ * THE SIDE THE PIECE ACTUALLY FACES.
+ *
+ * A cuirass is a ring and reads from either side; a cape is on the back and
+ * reads from one. Measuring every piece from one fixed side is how a cloak got
+ * judged on the pixels of the torso in front of it. Both sides are tried and
+ * the one that genuinely sees the piece is used — and named in the output, so a
+ * figure can never again be compared against one taken from elsewhere.
+ *
+ * Both windows still come from a single frame, so the piece and the bare-body
+ * reference are lit alike whichever side wins.
+ */
+async function sampleAround(meshFilter) {
+  let best = null;
+  for (const side of SIDES) {
+    const seen = await sampleFrom(meshFilter, side);
+    if (!seen) continue;
+    if (!best || seen.visible > best.visible) best = seen;
+  }
+  return best;
+}
+
+/**
+ * PERCEPTUAL DISTANCE, because "blends into the body" is about colour.
+ *
+ * CIELAB, D65, and a plain CIE76 difference over it — enough to separate a red
+ * cape from brown skin, which Weber contrast on luma cannot do at all. Both
+ * figures are printed; the threshold below is set from measured subjects rather
+ * than chosen, so a rule is never invented to fit one piece.
+ */
+function lab([r, g, b]) {
+  const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const [R, G, B] = [lin(r), lin(g), lin(b)];
+  const x = (0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047;
+  const y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  const z = (0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883;
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const [fx, fy, fz] = [f(x), f(y), f(z)];
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+
+function deltaE(a, b) {
+  const [l1, a1, b1] = lab(a);
+  const [l2, a2, b2] = lab(b);
+  return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
 }
 
 const report = [];
@@ -496,22 +708,41 @@ for (const subject of SUBJECTS) {
     // FOOTING FIRST. If the windows are not on the character, or the reference
     // is in shadow, nothing below this line is worth printing.
     const footing = seen.piece.covered > 0.5 && seen.body.covered > 0.5 && seen.body.luma > 0.08
-      && !seen.referenceCovered;
+      && !seen.referenceCovered && seen.visible !== null && seen.visible >= 0.5;
     say(`   palette ${palette}; piece luma ${seen.piece.luma.toFixed(3)}, body ${seen.body.luma.toFixed(3)},` +
       ` coverage ${(seen.piece.covered * 100).toFixed(0)}%/${(seen.body.covered * 100).toFixed(0)}%` +
       (seen.referenceCovered ? "; REFERENCE IS UNDER GEAR" : ""));
-    say(`   measured from ${JSON.stringify(seen.cameraAt)}`);
+    say(`   measured from ${JSON.stringify(seen.cameraAt)}, the ${seen.side} — ` +
+      (seen.visible === null
+        ? "VISIBILITY UNMEASURED: no core bone to test occlusion against"
+        : `${(seen.visible * 100).toFixed(0)}% of the piece's facing surface is clear of the body`));
     if (!verdict("measurement footing", footing,
       seen.referenceCovered
         ? "the bare-body reference is covered by gear — contrast cannot be measured here"
-        : "windows on the character and a lit reference")) {
+        : seen.visible === null
+          ? "occlusion could not be tested — refusing to assume the piece is in view"
+          : seen.visible < 0.5
+            ? `the body stands in front of the piece (${(seen.visible * 100).toFixed(0)}% clear) — this is not a window on the piece`
+            : "windows on the character and a lit reference")) {
       say("   refusing to judge contrast on this frame");
     } else {
       const contrast = Math.abs(seen.piece.luma - seen.body.luma) / Math.max(seen.body.luma, 0.01);
-      verdict("stands out from the body", contrast >= RULES.contrast.min,
-        `contrast ${contrast.toFixed(2)}, need ${RULES.contrast.min} — ${RULES.contrast.why}`);
-      verdict("not a black hole", seen.piece.luma >= RULES.minLuma.min,
-        `luma ${seen.piece.luma.toFixed(3)}, need ${RULES.minLuma.min} — ${RULES.minLuma.why}`);
+      const dE = deltaE(seen.piece.rgb, seen.body.rgb);
+      // EITHER KIND OF SEPARATION COUNTS, and the verdict names which one carried
+      // it, so a piece that reads only by colour can never again be failed by a
+      // rule that cannot see colour.
+      const byLuma = contrast >= RULES.contrast.min;
+      const byColour = dE >= RULES.colour.min;
+      verdict("stands out from the body", byLuma || byColour,
+        `contrast ${contrast.toFixed(2)} (need ${RULES.contrast.min}), colour deltaE ${dE.toFixed(1)}` +
+        ` (need ${RULES.colour.min})` +
+        (byLuma && byColour ? " — separates by both" : byLuma ? " — separates by lightness" : byColour ? " — separates by colour alone" : "") +
+        ` — ${RULES.contrast.why}`);
+      const chroma = Math.hypot(...lab(seen.piece.rgb).slice(1));
+      verdict("not a black hole",
+        seen.piece.luma >= RULES.minLuma.min || chroma >= RULES.chroma.min,
+        `luma ${seen.piece.luma.toFixed(3)} (need ${RULES.minLuma.min}), chroma ${chroma.toFixed(1)}` +
+        ` (need ${RULES.chroma.min}) — ${RULES.minLuma.why}`);
     }
     verdict("has its own silhouette", seen.proud >= RULES.proud.min,
       `stands ${seen.proud.toFixed(4)} off the body, need ${RULES.proud.min} — ${RULES.proud.why}`);
@@ -580,7 +811,14 @@ for (const subject of SUBJECTS) {
           // with no vertices in it — `cape:cape` reported `middle 0` — and a
           // zero silently entering a ratio is how a rule passes by luck. Null
           // says "not measured" and the verdict below refuses it.
-          bands.push(x1 > x0 ? +(x1 - x0).toFixed(3) : null);
+          //
+          // AND NEITHER IS A SLIVER. The first version of this guard only caught
+          // a band with NO vertices, so the same cape came back with `middle
+          // 0.003`: two vertices clipped by a band edge, reported as a width.
+          // A band has to hold a real slice of the fall to count as measured —
+          // a hundredth of the character is the floor for that.
+          const width = x1 > x0 ? +(x1 - x0).toFixed(3) : null;
+          bands.push(width !== null && width >= 0.01 ? width : null);
         }
         return { drop: +drop.toFixed(3), hem: bands[0], middle: bands[1], collar: bands[2] };
       });

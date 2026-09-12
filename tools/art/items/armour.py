@@ -249,6 +249,21 @@ LEATHER_TRIM = "DarkSteel"  # that colour at half strength, for straps and belts
 # real area — panels and bands, not piping — instead of a few studs.
 BRIGHT = "Red"            # the accent, used as a surface rather than as trim
 
+# A BROAD SURFACE NEEDS A SHADE UP. The accent fixed the styles that had room for
+# a panel, but three had none: mail, a jerkin and a cloak are each one continuous
+# surface, and banding them left the mean where it was — the bulk outvotes the
+# trim. Measured on the bench against a body at 0.186: iron's mail read 0.217,
+# bronze's jerkin 0.193, wood's cloak 0.11 contrast. The cause is the same in all
+# three — a palette's `metal` is picked for a BLADE, which is small and lives on
+# highlights, and spread across a torso it lands on the skin's own value (iron
+# 0.444, wood 0.438, bronze 0.506 against skin's ~0.37 equivalent).
+#
+# So a garment broad enough to have no trim takes that same colour one shade up
+# (`LightSteel`, metal x1.3): iron 0.577, wood 0.569, bronze 0.658. It keeps the
+# hue, so mail still reads as mail rather than turning tan the way the accent
+# would have made it.
+GARMENT = "LightSteel"    # the palette's metal, a shade up, for a surface with no room for trim
+
 
 # --- chest ----------------------------------------------------------------------------------
 # Six, and no two share a silhouette: the whole reason this file exists.
@@ -374,10 +389,10 @@ def chain_chest(a):
                          (20.0 + PROUD * 0.8, BODY["chest_y0"] + 12.0),
                          (20.0 + PROUD * 0.8, BODY["chest_y1"] - 10.0),
                          (16.0 + PROUD * 0.4, BODY["chest_y1"] + 6.0)],
-            "Steel", squash=(1.0, 1.15), z=-3.0)
+            GARMENT, squash=(1.0, 1.15), z=-3.0)
     # A standing collar, the piece that separates mail from a tabard at a glance.
     a.shell(BONE_CHEST, [(13.0, BODY["chest_y1"] + 3.0), (14.0, BODY["chest_y1"] + 12.0)],
-            "Steel", squash=(1.0, 1.1), sides=8, z=-3.0)
+            GARMENT, squash=(1.0, 1.1), sides=8, z=-3.0)
     # Banding across the shirt reads as rings at this size — in the accent, so
     # the rings are visible against the mail rather than a darker shade of it.
     # Wide bands, not piping: iron's mail sits at 0.21 against a body at 0.27,
@@ -385,12 +400,12 @@ def chain_chest(a):
     for y in (BODY["chest_y0"] + 4.0, BODY["chest_y0"] + 17.0, BODY["chest_y0"] + 30.0):
         a.band(BONE_CHEST, y, 20.0 + PROUD * 0.8, BRIGHT, tube=4.5, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"] + 2.0), (26.0, BODY["waist_y1"] - 32.0)],
-            "Steel", squash=(1.0, 1.0), z=-6.0)
+            GARMENT, squash=(1.0, 1.0), z=-6.0)
     a.band(BONE_WAIST, BODY["waist_y1"] - 32.0, 26.0, "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0)
     # Short sleeves of mail rather than pauldrons: mail drapes, it does not plate.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(13.0, BODY["shoulder_y"] + 5.0), (12.0, BODY["shoulder_y"] - 15.0)],
-                "Steel", squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+                GARMENT, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
 
 
 def leather_chest(a):
@@ -401,7 +416,7 @@ def leather_chest(a):
                          (21.0 + PROUD * 0.7, BODY["chest_y0"] + 14.0),
                          (21.0 + PROUD * 0.7, BODY["chest_y1"] - 12.0),
                          (17.0 + PROUD * 0.35, BODY["chest_y1"] + 5.0)],
-            LEATHER, squash=(1.0, 1.15), z=-3.0)
+            GARMENT, squash=(1.0, 1.15), z=-3.0)
     # A broad panel of the palette's bright accent down the chest, so a jerkin
     # is not one mid-tone surface at the body's own value.
     a.plate(BONE_CHEST, [(-13.0, BODY["chest_y0"] - 2.0), (13.0, BODY["chest_y0"] - 2.0),
@@ -705,15 +720,30 @@ def cape_back(a):
 
 
 def cloak_back(a):
-    """A cloak: longer, wider, with a rolled collar and a clasp at the throat."""
+    """A cloak: longer, wider, with a rolled collar and a clasp at the throat.
+
+    THIS STYLE IS WHERE THE BENCH GOT CAUGHT LYING A FOURTH TIME, so read any
+    old measurement of it with suspicion. It was moved to the palette's accent on
+    the strength of "contrast 0.06, deltaE 9.7", then measured 10.5 on the accent
+    and was moved back. Neither number meant what I took it to mean: the bench
+    logs in as a fresh player each run and the character's SKIN TONE is
+    randomised, so the bare-body reference every piece is compared against was a
+    different colour every time. A tan cloak against pale skin and the same cloak
+    against brown skin are honestly different numbers, and nothing about the
+    cloth had changed between them.
+
+    It stays on `GARMENT` with the other garments until it has been measured
+    against a fixed body. The photograph that prompted the revert shows a clear
+    tan drape on a pale grey character — not a piece that merges with anything.
+    """
     a.hanging([(31.0, BODY["chest_y1"] + 5.0, -27.0),
                (27.0, BODY["chest_y0"] + 10.0, -29.0),
                (38.0, BODY["waist_y0"] - 16.0, -36.0),
                (48.0, BODY["waist_y0"] - 50.0, -44.0),
-               (52.0, BODY["waist_y0"] - 72.0, -48.0)], LEATHER, thickness=5.0)
+               (52.0, BODY["waist_y0"] - 72.0, -48.0)], GARMENT, thickness=5.0)
     a.shell(BONE_CHEST, [(20.0, BODY["chest_y1"] - 2.0), (23.0, BODY["chest_y1"] + 8.0),
                          (20.0, BODY["chest_y1"] + 14.0)],
-            LEATHER, squash=(1.0, 1.15), sides=10, z=-3.0)
+            GARMENT, squash=(1.0, 1.15), sides=10, z=-3.0)
     # AND THE SHOULDER STRAPS. This was the one cape building its own collar, so
     # it was also the one still invisible from the front — its triangle count
     # never moved when the others gained theirs.
