@@ -235,6 +235,25 @@ class Armour:
             # band lands exactly on that 25. Older runs said `middle null` only
             # because nothing had vertices there; pleats populated the band and
             # revealed a shape that was always this. Nothing to correct.
+            # AND IT HAS TO WRAP, or it stays a flat box on the back — reported in
+            # those words twice, and true both times. Every version of this fall
+            # has been a PLANE: x sweeping -w to +w at one z. Pleats gave it
+            # something to catch light, and a plane with ripples in it is still a
+            # signboard on a hinge from any angle but straight behind.
+            #
+            # Cloth hanging off two shoulders curves round the ribs, so z comes
+            # FORWARD as |x| grows. Quadratic rather than linear: a cape is nearly
+            # flat across the spine and turns hard at the edges, which is also
+            # what keeps the middle of the fall from bulging away from the back.
+            #
+            # `wrapped_ring` has sat unused in this class since the first attempt
+            # at this, and its failure is worth not repeating: it carried a LINING
+            # in a second material, so the two surfaces lit differently and read as
+            # bright rails down both edges, and every segment built its own ends so
+            # each link showed a hard seam. One material, and the ends of adjacent
+            # segments still come from the same interpolated station, so neither
+            # returns.
+            CURL = 0.40
             LOBES = pleats
             COLUMNS = max(2, LOBES * 2)
             rings = []
@@ -245,8 +264,10 @@ class Armour:
                     t = c / COLUMNS
                     x = -w + 2 * w * t
                     fold = abs(math.sin(math.pi * t * LOBES)) * fold_depth
-                    ring_back.append(mesh(x, y, z - half - fold))
-                    ring_front.append(mesh(x, y, z + half + fold))
+                    # How far round the body this column has come.
+                    curl = ((abs(x) / max(w, 1e-6)) ** 2) * w * CURL
+                    ring_back.append(mesh(x, y, z - half - fold + curl))
+                    ring_front.append(mesh(x, y, z + half + fold + curl))
                 # One closed loop: across the back, down the far edge, back along
                 # the front. Reversed on the return so the ring does not cross.
                 rings.append(ring_back + list(reversed(ring_front)))
@@ -651,10 +672,21 @@ def dress_limbs(a, style):
     if not kit:
         return
     mat, r0, r1 = kit["arm"]
+    # THE UPPER ARM, OR THE LIMB IS THREE THINGS WITH HOLES BETWEEN THEM. The
+    # pauldron is a vertical shell at the shoulder, ending about y 172; the bracer
+    # is a horizontal sleeve from out 78. Between them sits the whole upper arm,
+    # out 34 to 78, wearing nothing — which on the plate reads as a bright cuff
+    # hovering below a bare arm, worst on the robes and Blackglass Mail. A sleeve
+    # here joins pauldron to bracer so the arm is one covered limb.
+    for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
+        a.sleeve(bone, side, 40.0, FOREARM_OUT0 + 2.0, r0 + 1.6, r0 + 0.4, mat)
     for bone, side in BONE_FOREARM:
         # A bracer: a tube round the forearm, flaring a little at the wrist.
         a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT1, r0, r1, mat)
         a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, r1 + 1.2, r1 + 0.6, kit["trim"])
+        # And a band where the bracer meets the elbow, so the two sleeves read as
+        # one arm rather than two tubes that happen to touch.
+        a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT0 + 3.0, r0 + 1.0, r0 + 0.5, kit["trim"])
     if not kit["leg"]:
         return
     leg = kit["leg"]
@@ -663,6 +695,16 @@ def dress_limbs(a, style):
         a.shell(bone, [(12.5, BODY["hip_y"] - 4.0), (13.5, BODY["hip_y"] - 24.0),
                        (12.5, BODY["knee_y"] + 8.0)],
                 leg, squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
+        # A BAND, OR IT IS TROUSERS. Flat palette metal over a thigh reads as
+        # blue-grey cloth on the plate — the leg pieces were the only gear in the
+        # catalogue with no internal structure at all, which is the same fault
+        # the chest pieces were fixed for two milestones ago.
+        a.band(bone, BODY["hip_y"] - 20.0, 13.6, kit["trim"], tube=2.6,
+               squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
+        # And a knee cop: the one piece of leg armour a player can actually name.
+        a.shell(bone, [(11.0, BODY["knee_y"] + 12.0), (13.8, BODY["knee_y"] + 5.0),
+                       (11.5, BODY["knee_y"] - 1.0)],
+                kit["trim"], squash=(1.0, 0.92), sides=8, x=side * THIGH_X)
     for bone, side in BONE_CALF:
         # And a greave over the shin, stopping above the boot.
         a.shell(bone, [(12.5, BODY["knee_y"] + 2.0), (13.0, BODY["knee_y"] - 14.0),
