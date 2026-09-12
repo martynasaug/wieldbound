@@ -317,8 +317,15 @@ class Armour:
         #
         # Back goes back, front comes forward, so the cloth thickens at each fold
         # and stays put on average. The panel's centreline does not move at all.
+        # AND IT WRAPS, for the same reason `hanging` does — this is the other
+        # flat-sheet builder in the file and teaching only one of them left the
+        # tabard a red board on the plate, measured at edge density 0.0128 against
+        # a 0.02 floor while the wrapped cloak read 0.178. A panel belted to a
+        # chest still curves round the ribs; it just curves less than a fall that
+        # hangs free, so the curl is gentler here.
         COLUMNS = 6
         LOBES = 3
+        CURL = 0.22
         rings = []
         for w, y, z in stations:
             fold_depth = w * 0.16
@@ -327,8 +334,12 @@ class Armour:
                 t = c / COLUMNS
                 x = -w + 2 * w * t
                 fold = abs(math.sin(math.pi * t * LOBES)) * fold_depth
-                ring_back.append(mesh(x, y, z - half - fold))
-                ring_front.append(mesh(x, y, z + half + fold))
+                # Away from the body as the panel comes round the ribs. `drape` is
+                # used for FRONT panels, where "forward" is +z, so the curl is
+                # negative: the edges fall back toward the flanks.
+                curl = ((abs(x) / max(w, 1e-6)) ** 2) * w * CURL
+                ring_back.append(mesh(x, y, z - half - fold - curl))
+                ring_front.append(mesh(x, y, z + half + fold - curl))
             rings.append(ring_back + list(reversed(ring_front)))
         self.part(bone).loft(rings, mat)
 
@@ -699,8 +710,16 @@ def dress_limbs(a, style):
         # blue-grey cloth on the plate — the leg pieces were the only gear in the
         # catalogue with no internal structure at all, which is the same fault
         # the chest pieces were fixed for two milestones ago.
-        a.band(bone, BODY["hip_y"] - 20.0, 13.6, kit["trim"], tube=2.6,
-               squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
+        #
+        # ONE HAIRLINE BAND WAS NOT ENOUGH, and the chest pieces already recorded
+        # why: "a hairline of brighter metal does not change that" — what worked
+        # there was the accent over REAL AREA. Chain Mail, Silvered Mail and
+        # Brigandine still photographed with blue-grey trousers, so the thigh gets
+        # three bands with space between them, the way a mail chausse or a set of
+        # plate tassets is actually built.
+        for y in (BODY["hip_y"] - 12.0, BODY["hip_y"] - 28.0, BODY["hip_y"] - 44.0):
+            a.band(bone, y, 13.6, kit["trim"], tube=3.2,
+                   squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
         # And a knee cop: the one piece of leg armour a player can actually name.
         a.shell(bone, [(11.0, BODY["knee_y"] + 12.0), (13.8, BODY["knee_y"] + 5.0),
                        (11.5, BODY["knee_y"] - 1.0)],
@@ -1000,11 +1019,19 @@ def mantle_back(a):
     # A short fall wants FEW and SHALLOW: two folds at half the usual depth give
     # it the break of light that says cloth, without the corrugation that comes
     # of packing six across a piece with no room for them.
+    #
+    # THAT WAS TRUE OF A FLAT MANTLE AND IS NOT TRUE OF A WRAPPED ONE. Two shallow
+    # folds on a plane measured 0.0131 against a 0.02 floor and photographed as a
+    # plain trapezoid — the same verdict from both instruments. The reason six
+    # folds corrugated this piece was that a flat short fall has nothing but the
+    # folds to shape it; now that the cross-section curls round the shoulders
+    # there is a form underneath them, so the cloth can carry four without
+    # reading as ribbed plastic.
     a.hanging([(24.0, BODY["chest_y1"] + 5.0, -26.0),
                (30.0, BODY["chest_y1"] - 10.0, -29.0),
                (38.0, BODY["chest_y0"] + 14.0, -33.0),
                (44.0, BODY["chest_y0"] - 2.0, -36.0)], CLOTH, thickness=5.0, segments=2,
-              pleats=2, fold=0.09)
+              pleats=4, fold=0.13)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(15.0, BODY["shoulder_y"] + 7.0), (17.0, BODY["shoulder_y"] - 6.0)],
