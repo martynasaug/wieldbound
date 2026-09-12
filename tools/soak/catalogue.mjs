@@ -38,16 +38,40 @@ page.on("console", (m) => {
   if (m.type() === "error") errors.push(`error: ${m.text()}`);
 });
 await login(page, `Cat${Date.now() % 100000}`);
-await page.evaluate(() => {
+// THE SAME BODY EVERY TIME, or two plates cannot be compared. This logs in as
+// `Cat<clock>`, a new name each run, and `defaultLookFor` derives the skin tone
+// from a hash OF THE NAME over eight tones spanning lightness 0.24 to 0.72. Two
+// plates shot an hour apart came out on a dark character standing in shade and a
+// pale one in open sun, which flattered the second and made the change look
+// bigger than it was. Gear is judged AGAINST a body; if the body moves, nothing
+// in the picture means anything. Pinned to the same look the art bench uses
+// (`tools/soak/artcheck.mjs`), so a plate and a measurement describe one figure.
+const PINNED_LOOK = { skin: "tan", build: "average", hair: "short", beard: "none", hairColor: "black" };
+await page.evaluate((look) => {
   const g = window.__wieldbound;
+  g.localActor.setLook(look);
   g.world.dayNight.freeze(0.5);
   const render = g.world.renderer.render.bind(g.world.renderer);
   g.world.renderer.render = (s, c) => {
     g.__catHold?.();
     render(s, c);
   };
-});
+}, PINNED_LOOK);
 await page.waitForTimeout(1500);
+
+// And prove it took: `setLook` returns early if the actor has no identity or no
+// loaded instance yet, so asking for a look is not the same as wearing one.
+{
+  const got = await page.evaluate(() => window.__wieldbound.localActor.currentLook);
+  const wrong = !got || Object.entries(PINNED_LOOK).some(([k, v]) => got[k] !== v);
+  if (wrong) {
+    console.error(`catalogue: the look did not pin — asked for ${JSON.stringify(PINNED_LOOK)},` +
+      ` got ${JSON.stringify(got)}. Plates shot on different bodies cannot be compared.`);
+    await browser.close();
+    process.exit(1);
+  }
+  console.log(`body pinned: ${Object.entries(PINNED_LOOK).map(([k, v]) => `${k} ${v}`).join(", ")}`);
+}
 
 const groups = new Map();
 for (const base of wanted) {
