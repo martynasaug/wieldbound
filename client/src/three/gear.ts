@@ -1366,7 +1366,12 @@ function partsFor(slot: ItemSlot, style: GearStyle, rarity: ItemRarity): Part[] 
  * piece.
  */
 const MODELLED_ARMOUR = new Set<string>([
-  "armor:plate", "armor:scale", "armor:brigandine", "armor:chain", "armor:leather", "armor:robe",
+  // `plate`, `leather` and `robe` are GARMENTS now — see `GARMENT_STYLES` — and
+  // `garmentFor` is consulted first, so listing them here would be a claim
+  // nothing acts on. Three chest styles keep this route until there is authored
+  // art for them, which is what this set was always for: replaced piece by
+  // piece, with the old path carrying whatever has not been replaced.
+  "armor:scale", "armor:brigandine", "armor:chain",
   "helm:cap", "helm:full", "helm:horned", "helm:circlet", "helm:hood",
   "boots:low", "boots:tall", "boots:plated", "boots:wrapped",
   "cape:cape", "cape:cloak", "cape:mantle", "cape:tabard",

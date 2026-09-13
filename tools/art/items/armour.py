@@ -733,13 +733,25 @@ def dress_limbs(a, style):
                squash=(1.0, 0.9), sides=8, x=side * CALF_X)
 
 
+# THREE OF SIX, BECAUSE THREE ARE WORN RATHER THAN BUILT.
+#
+# `armor:plate`, `armor:leather` and `armor:robe` are the pack's own outfits now
+# — cut free of their hands, head and feet by `tools/art/garments.py` and bound
+# to the wearer's skeleton. `Actor.dress` asks `garmentFor` before it asks
+# `hasArmourModel`, so those three never reach this file, and building them here
+# would export models the game no longer loads.
+#
+# `plate_chest`, `leather_chest` and `robe_chest` are LEFT IN THE FILE on
+# purpose. They carry measurements that cost real work and still describe this
+# body — how far a cuirass must stand off the ribs before it reads as a garment
+# rather than paint, what a jerkin needs to separate from the tunic under it,
+# why a robe has to be cut from the palette's accent because wood's metal sits
+# on the skin's own value. Deleting the functions would burn that record to save
+# nothing; dropping them from this table is what makes them unreachable.
 CHEST = {
-    "plate": plate_chest,
     "scale": scale_chest,
     "brigandine": brigandine_chest,
     "chain": chain_chest,
-    "leather": leather_chest,
-    "robe": robe_chest,
 }
 
 
