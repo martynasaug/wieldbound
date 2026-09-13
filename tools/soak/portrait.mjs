@@ -25,11 +25,58 @@ const WANT = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const OUT = "tools/soak/shots/portrait";
 mkdirSync(OUT, { recursive: true });
 
+// THE LOOK IS AN ARGUMENT NOW, because this harness could not photograph a
+// hairstyle: it pinned `hair: "none", beard: "none"` and every shot came back
+// shaved and clean-shaven whatever had just been cut. A piece that loads is not
+// a piece that reads, and the only way to judge one is to wear it.
+//
+//   node tools/soak/portrait.mjs head --hair=swept --beard=full
+//
+// The filename carries the styles, so a run photographing four hairstyles does
+// not overwrite itself three times and leave one picture to draw conclusions
+// from. `WANT` already drops `--` tokens, so these never look like view names.
+const flag = (key, fallback) => {
+  const hit = process.argv.slice(2).find((a) => a.startsWith(`--${key}=`));
+  return hit ? hit.slice(key.length + 3) : fallback;
+};
+const HAIR = flag("hair", "none");
+const BEARD = flag("beard", "none");
+const SKIN = flag("skin", "tan");
+// A HAIR COLOUR THE GAME WOULD ACTUALLY CHOOSE. This pinned "brown", and against
+// the default `tan` skin that is a delta of 0.071 in value — so every hairstyle
+// photographed as a lumpy brown extension of the scalp, and I nearly read that
+// as the art being wrong. `shared/look.ts` has `readableHair`, which walks the
+// palette until it is at least 0.16 from the skin; six of the fourteen colours
+// fail that against tan, "brown" among them, and the game skips all six. The
+// harness has to pick from the same side of that line as the game does.
+const HAIR_COLOR = flag("hairColor", "espresso");
+// THE HOUR, because the default froze the one time of day at which a front-on
+// portrait CANNOT be lit. `daynight.ts` puts the sun at
+// `(cos((t - 0.25) * 2pi) * 0.88, max(0.16, sin(...)), 0.34)`, so at t = 0.5 the
+// azimuth term is cos(pi/2) = 0 and the direction is about (0, 0.947, 0.322):
+// noon, straight down, leaning to +z. The `face` and `body` cameras sit at
+// `heading + pi` looking back along -z, which puts that sun behind the head —
+// and every front shot came back a silhouette with a correctly lit courtyard
+// behind it. I twice started blaming the art.
+//
+// t = 0.30 and t = 0.70 give azimuth about +/-0.59: the side rake that made the
+// `side` view read cleanly with this same character, tone and hair colour.
+const HOUR = Number(flag("hour", "0.30"));
+// Only name the file after a style that is actually worn, so the default shots
+// keep the plain names the rest of this session's notes refer to.
+const SUFFIX = HAIR === "none" && BEARD === "none" ? "" : `_${HAIR}-${BEARD}`;
+
 /** Every view this harness knows how to take. */
 const VIEWS = {
   // `lift` is a fraction of the body's height above the aim point, so a view
   // frames the same way whatever the character is wearing.
-  face: { yaw: Math.PI, dist: 1.2, aim: 0.94, lift: 0.04 },
+  // `dist` was 1.2 with `aim` 0.94, which put the camera inside the skull: the
+  // frame filled with scalp and cut off at the jaw, and a hairstyle that raises
+  // the body box — the swept crest takes `head` from 1.80 to 1.85 — pushed the
+  // aim point higher still and made it worse. `aim` is a FRACTION of body
+  // height, so the framing moves with whatever the character is wearing; the
+  // distance has to leave room for that.
+  face: { yaw: Math.PI, dist: 2.0, aim: 0.88, lift: 0.03 },
   head: { yaw: Math.PI * 0.75, dist: 1.3, aim: 0.9, lift: 0.06 },
   body: { yaw: Math.PI, dist: 3.4, aim: 0.55, lift: 0.06 },
   back: { yaw: 0, dist: 3.4, aim: 0.55, lift: 0.06 },
@@ -50,16 +97,22 @@ page.on("console", (m) => {
 });
 await login(page, `Port${Date.now() % 100000}`);
 
-await page.evaluate(() => {
+await page.evaluate((look) => {
   const g = window.__wieldbound;
-  g.world.dayNight.freeze(0.5);
+  g.world.dayNight.freeze(look.hour);
   const a = g.localActor;
   // IDS THAT STILL EXIST. This asked for `hair: "short"`, retired with the rest
   // of the procedural styles when the tables shrank to what has art that lands
   // on this body. `sanitizeLook` drops a look with an unknown field WHOLE, so
   // the harness would have photographed a character whose look never applied —
   // and the picture would have been read as art rather than as a failed call.
-  a.setLook({ skin: "tan", build: "average", hair: "none", beard: "none", hairColor: "brown" });
+  //
+  // PASSED IN rather than pinned, and passed as a SECOND ARGUMENT rather than
+  // closed over: `page.evaluate` runs this in the browser, where the harness's
+  // own constants do not exist. Declaring `HAIR` above and still writing "none"
+  // here would photograph a shaved head for every style — a rule edited that
+  // nothing consults, which is the third time this session.
+  a.setLook({ skin: look.skin, build: "average", hair: look.hair, beard: look.beard, hairColor: look.hairColor });
   a.heading = Math.PI;
   a.root.rotation.y = Math.PI;
   // THE BODY'S OWN BOUNDS, FROM THE LIVE MESHES, recomputed on demand. Only the
@@ -73,7 +126,13 @@ await page.evaluate(() => {
     let hi = null;
     actor.root.traverse((o) => {
       if (!o.isMesh || !o.geometry?.attributes?.position) return;
-      if (!/PlayerBody|Face|Garment|Monk/.test(o.name)) return;
+      // `look_hair` and `look_beard` are in this list because `Actor` names its
+      // worn head pieces that, and a hairstyle standing above the crown was
+      // otherwise outside the box this harness aims by — so the camera framed a
+      // head that stopped at the skull and clipped the hair off the top of the
+      // shot. The whole point of this file is to aim from the live meshes; the
+      // filter has to name the meshes actually being photographed.
+      if (!/PlayerBody|Face|Garment|Monk|look_/.test(o.name)) return;
       const p = o.geometry.attributes.position;
       const v = new V();
       for (let i = 0; i < p.count; i++) {
@@ -94,7 +153,12 @@ await page.evaluate(() => {
     g.__hold?.();
     render(s, c);
   };
-});
+// HANDED OVER, not closed over. `page.evaluate` runs the callback in the
+// BROWSER, where `HAIR`, `BEARD` and `SKIN` do not exist — adding the parameter
+// without also passing the value leaves it `undefined` and every portrait comes
+// back shaved. The same omission fetched `/textures/undefined` in `skinmask.mjs`
+// an hour ago and read as a corrupt atlas.
+}, { hair: HAIR, beard: BEARD, skin: SKIN, hairColor: HAIR_COLOR, hour: HOUR });
 await page.waitForTimeout(3500);
 
 for (const name of views) {
@@ -130,7 +194,7 @@ for (const name of views) {
       : null;
   }, view);
   await page.waitForTimeout(450);
-  const file = `${OUT}/${name}.png`;
+  const file = `${OUT}/${name}${SUFFIX}.png`;
   writeFileSync(file, await page.screenshot({ clip: { x: 380, y: 60, width: 520, height: 660 } }));
   console.log(
     used

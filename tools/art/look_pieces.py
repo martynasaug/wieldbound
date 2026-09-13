@@ -219,7 +219,47 @@ def main():
         # The two 48-face groups are the reason this splits on height as well as
         # count: brows and moustache are the same clump reused, and only their z
         # tells them apart (2.32..2.45 against 1.99..2.19).
+        # AND THE OTHER TWO DONORS SPLIT ON GEOMETRY, NOT ON COUNTS. The rules
+        # above are particular to `Monk.001` — 8, 48 and 160 happen to be
+        # distinctive there — and transfer to nothing. The Wizard's islands are
+        # 14/32/44/68 faces and the Warrior's 10/32/44, so a count rule would
+        # merge hair with beard on both.
+        #
+        # Measured, every island on both donors falls cleanly on one side of the
+        # SAME two questions — does it reach behind the skull, and how high does
+        # it stand? Front is -y; the skull runs z 2.056..2.945.
+        #
+        #   Wizard  12 islands  y 0.275..0.650   z 2.663..2.983   crown and back
+        #            4 islands  y -0.399..0.460  z 2.338..3.057   locks sweeping over
+        #            1 island   y -0.376..-0.276 z 2.289..2.543   the nose (14f)
+        #           16 islands  y max <= -0.077  z 2.005..2.585   moustache and beard
+        #
+        #   Warrior 33 islands  reaching y 0.722, tops to z 2.914  a full head of hair
+        #            1 island   y -0.402..-0.273 z 2.277..2.480   the nose (10f)
+        #           NOTHING below z 2.120 at the front — the Warrior is clean-shaven,
+        #           which is why these two donors give two silhouettes and not one.
+        #
+        # No island on either donor sits in between, so these thresholds are read
+        # off a gap in the data rather than tuned until the picture looked right.
+        def classify_pack(o):
+            pts = [o.matrix_world @ v.co for v in o.data.vertices]
+            back = max(p.y for p in pts)
+            front = min(p.y for p in pts)
+            top = max(p.z for p in pts)
+            width = max(abs(p.x) for p in pts)
+            # The nose is the one small island centred on the face and forward of
+            # everything: both donors have exactly one, and it is not hair.
+            if len(o.data.polygons) <= 14 and width < 0.07 and front < -0.25:
+                return "nose"
+            # Anything that reaches behind the skull, or stands above the brow
+            # line, is hair. Beard and moustache do neither.
+            if back > 0.05 or top > 2.60:
+                return "hair"
+            return "beard"
+
         def classify(o):
+            if name != "Monk":
+                return classify_pack(o)
             n = len(o.data.polygons)
             if n == 160:
                 return "beads"

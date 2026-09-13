@@ -56,12 +56,27 @@ function pieceGeometry(file: string): Promise<THREE.BufferGeometry | null> {
  * `Monk.001` by `tools/art/look_pieces.py` with their world transform baked in,
  * so they need no frame at all: see the attach site in `Actor.ts`.
  */
+const HAIR_FILES: Record<string, string> = {
+  // The Wizard's crest, swept back off the crown: 12 islands, 624 faces.
+  swept: "Wizard_hair",
+  // The Warrior's layered mop, locks reaching the jaw: 33 islands, 1392 faces.
+  shaggy: "Warrior_hair",
+};
+
+const BEARD_FILES: Record<string, string> = {
+  moustache: "Monk_moustache",
+  monk: "Monk_beard",
+  // The Wizard's beard arrives with its moustache already part of the same
+  // island group, so it is one choice rather than two that can be combined.
+  full: "Wizard_beard",
+};
+
 export function lookPieceFile(slot: "hair" | "beard", style?: HairStyleId | BeardStyleId): string | null {
   if (!style || style === "none") return null;
-  // Only the two cut so far. A style with no harvested art draws nothing, which
-  // is honest, rather than falling back to a file authored for another rig.
-  if (slot === "beard") return style === "moustache" ? "Monk_moustache" : style === "monk" ? "Monk_beard" : null;
-  return null;
+  // A style with no harvested art draws nothing, which is honest, rather than
+  // falling back to a file authored for another rig — which is what put hair in
+  // the skull, at the ankles and underground before these were cut.
+  return (slot === "hair" ? HAIR_FILES : BEARD_FILES)[style] ?? null;
 }
 
 export function lookPieceGeometry(file: string | null): Promise<THREE.BufferGeometry | null> {

@@ -31,15 +31,29 @@ export const BUILD_IDS = ["slight", "lean", "average", "sturdy", "broad"] as con
 // choice which draws nothing is a menu of no-ops, so the choices that cannot be
 // worn are not offered.
 //
-// Hair is "none" alone until pack hair is cut: the Wizard's `Face` (1374f) and
-// the Warrior's (1402f) both carry real hair and come apart the same way
-// `Monk.001` did, so this grows back by harvesting rather than by modelling.
-export const HAIR_STYLE_IDS = ["none"] as const;
-// Cut from the Monk's own face piece by `tools/art/look_pieces.py`: the 48-face
-// mirrored pair low on the lip, and the 26 clumps that wrap the jaw. Both are
-// baked in mesh-bind space and placed by `boneAttachMatrix`, so they need no
-// frame supplied anywhere.
-export const BEARD_STYLE_IDS = ["none", "moustache", "monk"] as const;
+// HARVESTED, as promised, from the two pack heads that carry real hair. Both
+// came apart the way `Monk.001` did — `tools/art/look_pieces.py` splits them and
+// sorts each island by where it sits rather than by how many faces it has:
+// anything reaching behind the skull (y > 0.05) or standing above the brow line
+// (z > 2.60) is hair, and both donors' islands fall on one side of that with no
+// island in between.
+//
+//   swept   the Wizard's 12 islands / 624f   a crest swept back off the crown
+//   shaggy  the Warrior's 33 islands / 1392f a layered mop with locks to the jaw
+//
+// Two silhouettes rather than two variants of one, which is what made both worth
+// cutting: the Warrior carries no beard at all and its hair falls forward, while
+// the Wizard's sweeps back off a high forehead.
+export const HAIR_STYLE_IDS = ["none", "swept", "shaggy"] as const;
+// Cut from the pack's own faces by `tools/art/look_pieces.py`. The Monk's give
+// two: the 48-face mirrored pair low on the lip, and the 26 clumps that wrap the
+// jaw. The Wizard's beard comes as ONE island group with its moustache already
+// part of it — visible in the group render — so it is a single "full" choice
+// rather than something that can be split further.
+//
+// All are baked in mesh-bind space and placed by `boneAttachMatrix`, so they
+// need no frame supplied anywhere.
+export const BEARD_STYLE_IDS = ["none", "moustache", "monk", "full"] as const;
 
 export const HAIR_COLORS = [
   { id: "black", label: "Black", hex: 0x141013 },
@@ -146,7 +160,11 @@ export const LOOK_OPTIONS: readonly LookOption[] = [
     key: "hair",
     label: "Hairstyle",
     kind: "style",
-    choices: [{ id: "none", label: "Shaved" }],
+    choices: [
+      { id: "none", label: "Shaved" },
+      { id: "swept", label: "Swept back" },
+      { id: "shaggy", label: "Shaggy" },
+    ],
   },
   {
     key: "beard",
@@ -155,7 +173,8 @@ export const LOOK_OPTIONS: readonly LookOption[] = [
     choices: [
       { id: "none", label: "Clean-shaven" },
       { id: "moustache", label: "Moustache" },
-      { id: "monk", label: "Full beard" },
+      { id: "monk", label: "Braided beard" },
+      { id: "full", label: "Full beard" },
     ],
   },
   { key: "hairColor", label: "Hair colour", kind: "color", choices: HAIR_COLORS },

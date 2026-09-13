@@ -25223,3 +25223,57 @@ three small pieces on a large bare dome. The pack ships no eye or mouth geometry
 on any character — 108 islands across Monk, Wizard and Warrior, none eye-shaped —
 so those characters read as faces through brow, nose and facial hair alone. That
 makes the default starting look a design question, not a bug to fix.
+
+### Hair and beard, harvested rather than modelled
+
+Asked for player customization art. The Monk gave a beard and a moustache when
+its face came apart; the other two heads that carry hair are the Wizard's `Face`
+(1374f) and the Warrior's (1402f), and both split the same way.
+
+FACE COUNTS DO NOT TRANSFER. The Monk's rules — 8 nose, 48 brow or moustache,
+160 bead — work because those numbers happen to be distinctive in `Monk.001`.
+The Wizard's islands are 14/32/44/68 and the Warrior's 10/32/44, so a count rule
+merges hair with beard on both. Measured, every island on both donors falls on
+one side of the same two questions: does it reach behind the skull (y > 0.05),
+and does it stand above the brow line (z > 2.60)? Hair does one or both; beard
+does neither. No island on either donor sits in between, so the thresholds are
+read off a gap in the data rather than tuned until the picture looked right.
+
+    Wizard   hair 12 islands / 624f    a crest swept back off the crown
+             beard 20 islands / 736f   full, with its moustache already part of it
+    Warrior  hair 33 islands / 1392f   a layered mop with locks to the jaw
+             no beard at all — the Warrior is clean-shaven
+
+Two silhouettes rather than two variants of one, which is what made both worth
+cutting. `HAIR_STYLE_IDS` grows from ["none"] to ["none","swept","shaggy"] and
+`BEARD_STYLE_IDS` gains "full". Every id has art that lands on the body; the
+option lists and the id tables moved together, because `sanitizeLook` rejects a
+look whose field is not in its option's choices and a mismatch sends players who
+had already chosen back through the creator.
+
+AND THE FACE READS NOW. The open question from the last entry was whether a bare
+dome with brows and a nose could ever look like a face, given the pack ships no
+eye or mouth geometry on any character. Photographed with hair and beard on, at
+full-figure distance, it does: the pack's faces read because facial hair FRAMES
+them, and ours now has the frame it was missing.
+
+THE HARNESS WAS PHOTOGRAPHING A SHAVED HEAD. `portrait.mjs` pinned
+`hair: "none", beard: "none"` and could not photograph a hairstyle at all, so it
+takes `--hair=`, `--beard=`, `--skin=` and `--hairColor=` now, and the filename
+carries the styles so four runs do not overwrite one picture.
+
+TWICE MORE, THE SAME OMISSION: a parameter added to a `page.evaluate` callback
+without being passed to `evaluate` arrives `undefined` in the browser, and a
+constant declared at the top of the file is not a constant the call site uses.
+Both would have produced portraits I read as art.
+
+AND THE HARNESS NEARLY CONVICTED THE ART. Every hairstyle photographed as a
+lumpy brown extension of the scalp, because the harness pinned
+`hairColor: "brown"` — which against `tan` skin is a value delta of 0.071.
+`shared/look.ts` has `readableHair`, which walks the palette until it is at least
+0.16 clear of the skin; six of the fourteen colours fail that against tan and the
+game skips every one of them. The art was fine. The harness was asking for a
+colour the game would never choose.
+
+`__bodyBox` also had to learn the names `look_hair` and `look_beard`, or a
+hairstyle standing above the crown sat outside the box the camera aims by.
