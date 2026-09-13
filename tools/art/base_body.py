@@ -104,7 +104,11 @@ BODY_MESH = "Rogue"
 # new system: the pack ships three more (Warrior 1446, Wizard 1410, Monk 2624),
 # all on the same bone with the same convention, so a creator option becomes a
 # choice of which one to load.
-STRIP = ("Belt", "Guard", "Pouch", "Shoelace.L", "Shoelace.R", "Rogue_Dagger")
+#
+# `Icosphere` is scene junk the donor carries — 80 faces of nothing, riding along
+# in every export until it was spotted by re-importing the result and listing
+# what was actually in the file.
+STRIP = ("Belt", "Guard", "Pouch", "Shoelace.L", "Shoelace.R", "Rogue_Dagger", "Icosphere")
 
 
 def main():
@@ -145,6 +149,35 @@ def main():
     print(f"BASE BODY faces={len(body.data.polygons)} verts={len(body.data.vertices)} "
           f"groups={len(body.vertex_groups)} bones={len(arm.data.bones)} "
           f"clips={len(bpy.data.actions)}")
+    # AND THE MATERIAL, WHICH THIS SCRIPT KEPT NOT DOING. The body once rendered
+    # as black chrome, and the fix — attach the atlas the client ships, drop the
+    # metalness — was made in a one-off shell command and never written down
+    # here. Every export since has quietly undone it: re-imported, this file
+    # reads `images=NONE, metallic=1.0` on both meshes. The same shape of mistake
+    # as `STRIP` governing nothing, and the same cure: put the rule where the
+    # work happens.
+    #
+    # The FBX importer never wires this pack's textures in (measured: no image
+    # node anywhere, base colour a flat 0.8), and the glTF branch of `assets.ts`
+    # does none of the dressing `dressFbx` does for FBX — so a GLB must carry its
+    # own. Metal with no environment map renders near-black, which this project
+    # learned once about armour and once about a body.
+    texture = os.path.abspath("client/public/textures/Rogue_Texture.png")
+    image = bpy.data.images.load(texture) if os.path.exists(texture) else None
+    for obj in [body] + [o for o in bpy.data.objects if o.type == "MESH" and o is not body]:
+        for mat in obj.data.materials:
+            if not mat or not mat.use_nodes:
+                continue
+            bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+            if bsdf:
+                bsdf.inputs["Metallic"].default_value = 0.0
+            has_image = any(n.type == "TEX_IMAGE" and n.image for n in mat.node_tree.nodes)
+            if image and bsdf and not has_image:
+                tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                tex.image = image
+                mat.node_tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    print(f"  material: {'atlas attached' if image else 'NO TEXTURE FILE'}, metalness 0")
+
     print("  stripped: " + ", ".join(sorted(dropped)))
     # Said out loud so the two lists cannot silently disagree again: what
     # survives is as much the point as what goes.

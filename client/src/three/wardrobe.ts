@@ -224,7 +224,14 @@ export function loadGarments(): Promise<void> {
           geometry: mesh.geometry,
           material: Array.isArray(mesh.material) ? mesh.material[0] : mesh.material,
         });
-      } catch {
+      } catch (err) {
+        // SAY WHY. A bare `catch` here cost a debugging round: all four garments
+        // came back null with no warning at all, which is indistinguishable from
+        // "the files hold no skinned mesh" and sent me looking at the cut rather
+        // than at the fetch. Silent failure is the same fault as a rule nothing
+        // consults — see `STRIP`, `removeGloves`, and the material step that
+        // lived in a shell command instead of in the script.
+        console.warn(`wardrobe: ${file} did not load —`, err);
         garments.set(id, null);
       }
     }
