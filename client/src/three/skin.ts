@@ -254,6 +254,37 @@ function recolour(base: THREE.Texture, tone: SkinTone): THREE.Texture | null {
     ctx.drawImage(image, 0, 0);
     const pixels = ctx.getImageData(0, 0, width, height);
     const d = pixels.data;
+
+    // THE BASELINE IS THIS TEXTURE'S, NOT ONE REMEMBERED FROM ANOTHER BODY.
+    //
+    // Every tone below is expressed as a move away from the atlas's own mean
+    // lightness — `tone.target + (l - mean) * contrast` — and `BASE_MEAN` was
+    // 0.36, measured off `Monk_Texture.png` when the Monk was the only body.
+    // The player wears the Rogue's atlas now, which means 0.197: measured, its
+    // lightness never rises above 0.514 and two thirds of it sits between 0.1
+    // and 0.2, where the Monk's mass sits between 0.3 and 0.4. Against a
+    // baseline nearly twice too high, every pixel evaluated `l - 0.36` as a
+    // large negative and was pushed far darker than any tone asked for — a
+    // character rendering near-black whatever skin was chosen.
+    //
+    // Computed here from the SKIN pixels of the texture actually in hand, in a
+    // first pass over the same data, so a new body needs no new constant. That
+    // matters now rather than later: garments cut from the Warrior, Ranger and
+    // Wizard atlases are next, and each has a mean of its own.
+    let skinSum = 0;
+    let skinCount = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      const [h, sat, l] = rgbToHsl(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
+      if (skinWeight(h, sat, l) <= 0) continue;
+      skinSum += l;
+      skinCount++;
+    }
+    // Falling back to the Monk's figure rather than to zero: a texture with no
+    // skin in it at all should leave the transform where it has always been,
+    // not drive every pixel to full lightness.
+    const baseMean = skinCount > 0 ? skinSum / skinCount : BASE_MEAN;
+
     for (let i = 0; i < d.length; i += 4) {
       if (d[i + 3] === 0) continue;
       const [h, sat, l] = rgbToHsl(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
@@ -265,7 +296,7 @@ function recolour(base: THREE.Texture, tone: SkinTone): THREE.Texture | null {
       const [r, g, b] = hslToRgb(
         (h + tone.hueShift + 1) % 1,
         clamp01(sat * tone.saturation),
-        clamp01(tone.target + (l - BASE_MEAN) * tone.contrast),
+        clamp01(tone.target + (l - baseMean) * tone.contrast),
       );
       d[i] = d[i] + (r * 255 - d[i]) * w;
       d[i + 1] = d[i + 1] + (g * 255 - d[i + 1]) * w;

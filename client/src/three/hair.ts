@@ -73,7 +73,16 @@ export function lookPieceGeometry(file: string | null): Promise<THREE.BufferGeom
  * The offset below is that difference, in the bone's own axes.
  */
 export const HAIR_ANCHOR_BONE = "Head";
-export const HAIR_ANCHOR_OFFSET: [number, number, number] = [0, -0.401, 0];
+/**
+ * AND THE OFFSET IS IN THE BONE'S OWN UNITS. Measured in the model's world
+ * space, the two head centres differ by 0.401 — but a piece hung off the `Head`
+ * bone is positioned in that bone's local frame, inside an instance the loader
+ * has scaled by 0.6105 to reach the player's height. Applying the world figure
+ * there overshot: photographed, the hair sat 0.24 below the bone (piece at world
+ * y 1.04 against a Head bone at 1.28) — low by very nearly the difference
+ * between the raw number and the scaled one.
+ */
+export const HAIR_ANCHOR_OFFSET: [number, number, number] = [0, -0.156, 0];
 
 export function hairMaterial(color: THREE.Color): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
