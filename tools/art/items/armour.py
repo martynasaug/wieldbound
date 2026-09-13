@@ -667,13 +667,19 @@ THIGH_X, CALF_X = 22.0, 23.6
 
 # What each style wears on its limbs: the main material, and whether it plates
 # the legs. A robe has sleeves and no greaves; plate has both.
+# THREE ENTRIES, MATCHING `CHEST`. This named all six styles, three of which are
+# worn as garments now and never reach this file — a table promising bracers and
+# greaves to something that does not consult it. The same stale-rule fault as
+# `STRIP` governing nothing and `MODELLED_ARMOUR` listing styles `garmentFor`
+# intercepts first, so it is corrected here rather than left to mislead.
+#
+# A garment already carries its own sleeves and legs: it is a whole outfit cut
+# free of the wearer's hands, head and feet, so limb pieces would double up on
+# cloth that is already there.
 LIMB_KIT = {
-    "plate":      {"arm": ("Steel", 12.5, 13.5), "leg": "Steel", "trim": "DarkSteel"},
     "scale":      {"arm": (BRIGHT, 12.0, 13.0), "leg": "Steel", "trim": "DarkSteel"},
     "brigandine": {"arm": (LEATHER_TRIM, 12.0, 13.0), "leg": "Steel", "trim": "DarkSteel"},
     "chain":      {"arm": (GARMENT, 12.0, 13.0), "leg": GARMENT, "trim": "DarkSteel"},
-    "leather":    {"arm": (LEATHER_TRIM, 11.5, 12.5), "leg": None, "trim": "Wood"},
-    "robe":       {"arm": (CLOTH, 12.0, 14.0), "leg": None, "trim": CLOTH_TRIM},
 }
 
 
