@@ -90,9 +90,21 @@ import bpy
 DONOR = "client/public/models/Rogue.fbx"
 BODY_MESH = "Rogue"
 
-# Everything that makes the donor a ROGUE rather than a person. `Face` is here
-# because the head is the character creator's, not the costume's.
-STRIP = ("Belt", "Guard", "Pouch", "Shoelace.L", "Shoelace.R", "Rogue_Dagger", "Face")
+# Everything that makes the donor a ROGUE rather than a person.
+#
+# `Face` IS KEPT, and that reverses an earlier decision. It was stripped on the
+# reasoning that the head belongs to the character creator — which is right about
+# who OWNS it and wrong about what to ship in the meantime: the creator has no
+# face art, so stripping it left every player bald and featureless, and the
+# Monk-era hair that was supposed to cover for it is modelled in a different
+# rig's frame and cannot be placed (five attempts, recorded in `hair.ts`).
+#
+# This Face is 122 faces authored for THIS skull, parented to `Head`, and it fits
+# with nothing fitted. Face variety later is then a cheap change rather than a
+# new system: the pack ships three more (Warrior 1446, Wizard 1410, Monk 2624),
+# all on the same bone with the same convention, so a creator option becomes a
+# choice of which one to load.
+STRIP = ("Belt", "Guard", "Pouch", "Shoelace.L", "Shoelace.R", "Rogue_Dagger")
 
 
 def main():
@@ -113,10 +125,20 @@ def main():
     body = bpy.data.objects[BODY_MESH]
     arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
 
+    # `STRIP` GOVERNS THIS, AND UNTIL NOW IT DID NOT. This loop dropped every
+    # mesh that was not the body, so taking "Face" out of the tuple above changed
+    # nothing but the warning text: the export came back byte-identical, 562
+    # faces, and the player stayed bald. The same shape of mistake as
+    # `removeGloves` — editing a rule that nothing consults — and the same tell,
+    # a number that does not move when it should.
     dropped = []
+    kept = []
     for o in [x for x in bpy.data.objects if x.type == "MESH" and x is not body]:
-        dropped.append(o.name)
-        bpy.data.objects.remove(o, do_unlink=True)
+        if o.name in STRIP:
+            dropped.append(o.name)
+            bpy.data.objects.remove(o, do_unlink=True)
+        else:
+            kept.append(o.name)
     body.name = "PlayerBody"
     body.data.name = "PlayerBody"
 
@@ -124,6 +146,9 @@ def main():
           f"groups={len(body.vertex_groups)} bones={len(arm.data.bones)} "
           f"clips={len(bpy.data.actions)}")
     print("  stripped: " + ", ".join(sorted(dropped)))
+    # Said out loud so the two lists cannot silently disagree again: what
+    # survives is as much the point as what goes.
+    print("  kept:     " + (", ".join(sorted(kept)) if kept else "(nothing but the body)"))
     missing = [n for n in STRIP if n not in dropped]
     if missing:
         # Loud, because a prop that silently stops being stripped is a rogue's

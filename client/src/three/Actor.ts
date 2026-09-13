@@ -1725,6 +1725,20 @@ export class Actor {
    */
   private applyLookPieces(): void {
     if (!this.identity || !this.instance) return;
+    // ONLY ON THE BODY THEY WERE MODELLED FOR. Every piece in `hair.py` and
+    // `facial_hair.py` is authored in the local frame of `Monk001`, the Monk's
+    // rigid head piece, and lands correctly by inheriting that mesh's transform
+    // wholesale. On the player's body — the stripped Rogue — there is no such
+    // node, and five attempts at supplying an equivalent offset put the hair
+    // inside the skull, at the ankles and finally underground (see
+    // `HAIR_ANCHOR_OFFSET`). Drawing them there is worse than not drawing them:
+    // the head carries the pack's own `Face`, which fits because it was authored
+    // for this skull.
+    //
+    // This is a gate, not a deletion. The pieces are correct art for the Monk,
+    // which is still a body an actor can be given, and re-fitting them for other
+    // heads is a modelling job rather than a constant.
+    if (this.bodyModel !== "Monk") return;
     const { hair, beard, hairColor } = this.resolvedLook();
     this.applyLookPiece("hair", lookPieceFile("hair", hair), hairColor);
     this.applyLookPiece("beard", lookPieceFile("beard", beard), hairColor);
