@@ -50,8 +50,24 @@ export function lookPieceGeometry(file: string | null): Promise<THREE.BufferGeom
   return file ? pieceGeometry(file) : Promise.resolve(null);
 }
 
-/** The node every piece hangs beside, in the frame it was modelled against. */
-export const HAIR_ANCHOR_MESH = "Monk001";
+/**
+ * The node every piece hangs beside, in the frame it was modelled against.
+ *
+ * AND THE FRAME IS NOW WRONG, which is worth saying out loud rather than
+ * leaving to be discovered. Every piece here was modelled against `Monk001`,
+ * the Monk's rigid head piece, and hung beside it with that piece's own
+ * transform so it landed exactly where it was authored with no fitting done.
+ * The player body is no longer the Monk: it is `PlayerBody`, the Rogue stripped
+ * to its skinned mesh, whose skull is a different size at a different origin.
+ *
+ * Pointing the anchor at the new mesh is what makes hair APPEAR at all — with
+ * no `Monk001` in the scene, `applyLookPieces` finds no anchor and every
+ * player's chosen hair, beard and brows silently draw nothing. It does not make
+ * them FIT: they will sit at the wrong scale and the wrong height until
+ * `tools/art/hair.py` and `facial_hair.py` are re-fitted against this head.
+ * A visible misfit is a bug someone can see; an invisible one is not.
+ */
+export const HAIR_ANCHOR_MESH = "PlayerBody";
 
 export function hairMaterial(color: THREE.Color): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({

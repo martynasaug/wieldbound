@@ -365,6 +365,33 @@ function instantiateNow(proto: THREE.Group, name: string, height: number): Insta
   const box = new THREE.Box3().setFromObject(object);
   const size = new THREE.Vector3();
   box.getSize(size);
+
+  // Z-UP FILES STAND UP HERE, because this is where the engine decides how a
+  // model stands and the exporter is the wrong place to argue about it.
+  //
+  // Everything used to arrive through the FBX loader, which converts Z-up source
+  // into Y-up on our behalf, so `size.y` was the height by construction. A GLB
+  // carries whatever axis it was written with, and Blender's `export_yup` flag
+  // trades one bug for another: off, the body exported Z-up and this read its
+  // DEPTH (0.814) as its height and scaled it 3.6x too large; on, the numbers
+  // came out right and the character lay face-down, because the rig and all
+  // twenty-five clips were authored Z-up and a blanket conversion tips the whole
+  // thing over. Five export attempts, and the answer was never in the exporter.
+  //
+  // A standing figure is taller than it is deep, so depth exceeding height is
+  // the tell for a Z-up file — and the fix is the rotation the FBX loader would
+  // have applied anyway. It is measured again afterwards because the box is what
+  // the scale is derived from.
+  if (size.z > size.y) {
+    object.rotation.x = -Math.PI / 2;
+    object.updateMatrixWorld(true);
+    new THREE.Box3().setFromObject(object).getSize(size);
+  }
+
+  // And now `size.y` is the height again, which matters: the widest extent of a
+  // T-posed character is the ARM SPAN (3.098 against a height of 2.949), so
+  // anything that reached for "the largest dimension" would size every body by
+  // its outstretched arms.
   const scale = size.y > 0 ? height / size.y : 1;
   object.scale.setScalar(scale);
 

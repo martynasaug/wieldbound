@@ -93,8 +93,9 @@ import { PALETTES, itemBase, type PaletteDef } from "../../../shared/items";
  * Read once at module load rather than per actor, so every character in a
  * session is the same body — a world with one of each would answer nothing.
  */
-const WANT_NEW_BODY =
-  typeof location !== "undefined" && new URLSearchParams(location.search).get("body") === "new";
+// `?body=new` is gone with the choice it selected. It existed to stand two
+// candidate bodies side by side in the live game; there is one body now, and a
+// flag nothing reads is a comment that lies.
 // THE PLAYER IS THE WIZARD NOW, and the reason is worth recording because it
 // undoes a lot of work rather than adding to it.
 //
@@ -108,7 +109,19 @@ const WANT_NEW_BODY =
 // The Wizard is Elsbet Vane's model (`shared/town.ts`, `body: "mage"`), which is
 // the robe that prompted this: a hooded gown with layered shoulder capes, a sash
 // and a skirted hem, all authored, all rigged to the skeleton we already use.
-export const PLAYER_BODY = WANT_NEW_BODY ? "Player_Base.glb" : "Wizard";
+// AND THE ROBE IS AN ITEM, NOT THE CHARACTER. Wearing the Wizard outright made
+// every newly spawned player a robed mage before they had picked anything up,
+// which is backwards: the robe is a thing you find. So the body is a PLAIN one
+// and the pack's outfits become gear worn over it.
+//
+// `Player_Base.glb` is that plain body, and it is no longer the old mannequin.
+// It is the Rogue stripped to its skinned mesh — belt, guard, pouch, shoelaces,
+// dagger and face plane all dropped — which leaves an authored figure in a tunic
+// and shorts, with bare hands and feet, on the same 44-bone `CharacterArmature`
+// every garment and all twenty-five pooled clips are built against. Five passes
+// of sculpting my own underlayer never came close to it; the pack already
+// contained the thing I was approximating.
+export const PLAYER_BODY = "Player_Base.glb";
 
 /**
  * The body whose clips come from the pooled library rather than from itself.
