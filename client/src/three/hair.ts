@@ -74,26 +74,64 @@ export function lookPieceGeometry(file: string | null): Promise<THREE.BufferGeom
  */
 export const HAIR_ANCHOR_BONE = "Head";
 /**
- * DERIVED FROM THE SKULL, NOT TUNED AGAINST THE BONE.
+ * NOT AN OFFSET — THE HEAD PIECE'S WHOLE TRANSFORM, REPRODUCED.
  *
- * Two guesses at this bought six millimetres between them, because both were
- * wrong in two ways at once: wrong scale AND wrong sign. The bone's world matrix
- * says why. Its axes read x [0.61, 0, 0], y [0, 0.607, 0.064], z [0, -0.064,
- * 0.607] — the instance scale of 0.6105 is baked in, with a slight forward pitch
- * in the cross terms. So a local offset reaches the world multiplied by 0.607,
- * and -0.156 local moved the hair 0.095 down when it needed to go UP.
+ * Three passes went into tuning a scalar here, and every one was two orders of
+ * magnitude away from the number the geometry actually assumes. Measured at
+ * last: `Hair_short.glb` is authored spanning y -3.002 to -2.242, centred near
+ * y -2.62. That is not near any skull — it is the LOCAL FRAME of `Monk001`,
+ * whose own local position is (0.001, -2.756, 0.003) on the `Head` bone. Each
+ * piece was modelled in that frame and hung beside that mesh carrying its
+ * transform wholesale, so it landed correctly with nothing fitted at runtime.
  *
- * And the target was never the bone origin. Measured in the running game, the
- * hair sat at world y 1.182 while the skull it is meant to cap centres at 1.403
- * and crowns at 1.802. Hair belongs on the skull, so the offset is the gap to
- * the skull's own centre, converted into the bone's frame:
+ * Hanging the same geometry off the bone with a +-0.2 nudge could therefore
+ * never work: it needed roughly -2.76, and I was adjusting the third decimal of
+ * the wrong quantity. The fault was treating a frame mismatch as a distance.
  *
- *     (1.403 - 1.182) / 0.607 = +0.364 local, from a starting -0.156
+ * So this reproduces the head piece's transform, then corrects for the skulls
+ * differing. Measured, in each rig's own space:
  *
- * which is the number below. Anything further is a fit against the crown rather
- * than the centre, and should be measured the same way rather than nudged.
+ *     Monk001 piece   local (0.001, -2.756, 0.003), centred world z 2.100
+ *     Rogue skull     centre 0.373 above the Head bone, crown 0.818 above
+ *
+ * The Monk's frame put the hair 0.373 - (2.100 - 2.127) = about 0.40 higher
+ * relative to its bone than this skull wants, and hair caps a crown rather than
+ * floating at a centre, so the y term carries the piece's own -2.756 plus the
+ * crown difference.
  */
-export const HAIR_ANCHOR_OFFSET: [number, number, number] = [0, 0.208, 0];
+/**
+ * AND THAT WAS THE FOURTH WRONG ANSWER, so this constant stops being tuned.
+ *
+ * Reproducing `Monk001`'s own -2.756 put the hair at world y 0.095 — on the
+ * floor, at the character's ankles — because that translation lives in a frame
+ * the MONK's rig provides, and reaching the world through this bone it is
+ * multiplied by the instance scale of 0.607. Four values now (-0.401, -0.156,
+ * +0.208, -1.938), each derived or tuned, each wrong, because the quantity is a
+ * transform chain and I kept solving for a scalar.
+ *
+ * Zero is honest: the piece hangs at the bone with no invented correction, which
+ * is visibly wrong rather than wrong in a way that looks deliberate. The real
+ * fix is not here at all — this hair was modelled for the Monk's skull and the
+ * pack ships `Face` meshes authored for THESE heads. Harvesting those as
+ * character-creator options is the work, and it needs no fitting.
+ *
+ * FIVE VALUES, ALL WRONG, and the last is the one that settles the method
+ * question: -0.401, -0.156, +0.208, -1.938, and finally the pack's own -2.756,
+ * which put the hair BELOW THE GROUND at world y -0.403. That last one is the
+ * tell. Every rigid head piece in this kit carries local (0.001, -2.756, 0.003)
+ * on `Head` — but on the pack's own rigs, where the armature carries a scale of
+ * 100. Reaching the world through this bone, which the loader has already scaled
+ * to 0.607 to make the body player-height, the same number means something
+ * entirely different.
+ *
+ * The lesson is not "try a sixth number". It is that a position in a transform
+ * chain cannot be solved by substituting constants into one link of it. If this
+ * ever does need placing rather than replacing, the local position should be
+ * COMPUTED at attach time — bone.matrixWorld inverted against the skull's
+ * measured crown — so the arithmetic happens once per body instead of once per
+ * guess.
+ */
+export const HAIR_ANCHOR_OFFSET: [number, number, number] = [0, 0, 0];
 
 export function hairMaterial(color: THREE.Color): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
