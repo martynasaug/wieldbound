@@ -183,22 +183,23 @@ def main():
         print(f"RENDERED {render}")
 
     if export:
-        # See the header: rotate the rig, then export WITHOUT converting again.
+        # NOTHING IS ROTATED HERE. The orientation is the LOADER's job, and every
+        # attempt to solve it at export time made things worse in a new way.
         #
-        # AND THE ROTATION HAS TO BE BAKED. Setting `rotation_euler` on the
-        # armature OBJECT changed nothing in the file: with `export_apply=False`
-        # the exporter writes each object's own transform, and that node rotation
-        # is dropped or ignored on the way in — the re-export measured
-        # {x 3.098, y 0.814, z 2.949}, byte-for-byte the Z-up numbers it had
-        # before, and the body arrived face-down and 3.6x too large again.
-        # `transform_apply` bakes it into the vertices and the bone rests, so the
-        # data is genuinely Y-up and no flag is involved.
-        arm.rotation_euler[0] += math.radians(-90)
-        bpy.context.view_layer.update()
-        bpy.ops.object.select_all(action="DESELECT")
-        arm.select_set(True)
-        bpy.context.view_layer.objects.active = arm
-        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+        # The last of those attempts was the subtlest and is worth recording,
+        # because the numbers all looked right while the character lay on the
+        # ground. Baking a -90 degree rotation into the armature with
+        # `transform_apply` rotates the BONE RESTS and leaves the mesh vertices
+        # untouched — so the exported file measures upright (x 3.098, y 3.007,
+        # z 1.004, tall on y), the loader's Z-up test correctly declines to
+        # rotate it, and then skinning drags the body flat because the skeleton
+        # is in a frame the mesh is not. Mesh and skeleton must agree, and the
+        # only way to keep them agreeing is to move neither.
+        #
+        # So the data stays exactly as the donor authored it: Z-up. `instantiate`
+        # in `assets.ts` sees depth exceeding height, rotates the whole object as
+        # the FBX loader would have, and both frames stay together. Measured that
+        # way, the body stands with its feet at 0 and its head at 1.68.
         os.makedirs(os.path.dirname(export), exist_ok=True)
         bpy.ops.object.select_all(action="SELECT")
         bpy.ops.export_scene.gltf(

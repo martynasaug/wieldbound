@@ -77,7 +77,49 @@ const CATALOGUE = {
 
 export type DonorPartId = keyof typeof CATALOGUE;
 
+/**
+ * The pack's four outfits, cut into wearable garments.
+ *
+ * A DIFFERENT KIND OF PART, and that is why it has its own table rather than
+ * being squeezed into the one above. Everything in `CATALOGUE` is a rigid prop
+ * parented to a bone, carrying the local transform that put it there — a
+ * pauldron, a belt, a pouch. These are SKINNED: the clothes of a pack body, with
+ * the skin thirds cut away (`tools/art/base_body.py` records the split), bound
+ * to the wearer's own skeleton and deforming with it. `DonorPart`'s bone,
+ * position, quaternion and scale mean nothing for one of these.
+ *
+ * Cut by dominant bone weight, dropping every face that follows a hand, head or
+ * foot bone, because the player's own body supplies those and an item must never
+ * replace them:
+ *
+ *     robe     444 faces   from Wizard.001
+ *     plate    563 faces   from Warrior_Body
+ *     leather  600 faces   from Ranger
+ *     light    350 faces   from Rogue
+ *
+ * Binding is safe for the reason harvesting rigid props was: bone order is
+ * identical across all five rigs — 32 skinning bones in the same sequence — so
+ * no `skinIndex` remap is needed. Proven rather than assumed: the Warrior's body
+ * mesh was bound to the Wizard's skeleton in the running game and photographed
+ * deforming correctly.
+ */
+const GARMENTS = {
+  robe: "garments/robe.glb",
+  plate: "garments/plate.glb",
+  leather: "garments/leather.glb",
+  light: "garments/light.glb",
+} as const;
+
+export type GarmentId = keyof typeof GARMENTS;
+
+/** A harvested garment: geometry and the material it was painted with. */
+export interface Garment {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
+}
+
 const cache = new Map<DonorPartId, DonorPart | null>();
+const garments = new Map<GarmentId, Garment | null>();
 let ready: Promise<void> | null = null;
 
 /**
@@ -143,4 +185,54 @@ export function loadWardrobe(): Promise<void> {
 /** One harvested piece, or null if its donor never arrived. */
 export function donorPart(id: DonorPartId): DonorPart | null {
   return cache.get(id) ?? null;
+}
+
+/**
+ * Loads the four cut garments.
+ *
+ * SEPARATE FROM `loadWardrobe` BECAUSE THE FAILURE IS SEPARATE: a missing prop
+ * costs a pauldron, and a missing garment costs a character their armour. Both
+ * are survivable and neither should take the other down, so a garment that will
+ * not load caches as null and the styles that wanted it fall back the way they
+ * did before any of this existed.
+ */
+let garmentsReady: Promise<void> | null = null;
+
+export function loadGarments(): Promise<void> {
+  if (garmentsReady) return garmentsReady;
+  garmentsReady = (async () => {
+    for (const [id, file] of Object.entries(GARMENTS) as [GarmentId, string][]) {
+      try {
+        const root = await loadModel(file);
+        let found: THREE.SkinnedMesh | null = null;
+        root.traverse((o) => {
+          const mesh = o as THREE.SkinnedMesh;
+          if (!found && mesh.isSkinnedMesh) found = mesh;
+        });
+        if (!found) {
+          // Loud: a garment file that parses but holds no skinned mesh is a
+          // cutting mistake upstream, and silence would show as a character
+          // wearing nothing at all.
+          console.warn(`wardrobe: ${file} has no skinned mesh`);
+          garments.set(id, null);
+          continue;
+        }
+        const mesh: THREE.SkinnedMesh = found;
+        garments.set(id, {
+          // Shared and never mutated, exactly as the rigid parts are: geometry
+          // is style, and the wearer owns only its material.
+          geometry: mesh.geometry,
+          material: Array.isArray(mesh.material) ? mesh.material[0] : mesh.material,
+        });
+      } catch {
+        garments.set(id, null);
+      }
+    }
+  })();
+  return garmentsReady;
+}
+
+/** One cut garment, or null if its file never arrived. */
+export function garment(id: GarmentId): Garment | null {
+  return garments.get(id) ?? null;
 }
