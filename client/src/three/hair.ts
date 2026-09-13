@@ -74,15 +74,26 @@ export function lookPieceGeometry(file: string | null): Promise<THREE.BufferGeom
  */
 export const HAIR_ANCHOR_BONE = "Head";
 /**
- * AND THE OFFSET IS IN THE BONE'S OWN UNITS. Measured in the model's world
- * space, the two head centres differ by 0.401 — but a piece hung off the `Head`
- * bone is positioned in that bone's local frame, inside an instance the loader
- * has scaled by 0.6105 to reach the player's height. Applying the world figure
- * there overshot: photographed, the hair sat 0.24 below the bone (piece at world
- * y 1.04 against a Head bone at 1.28) — low by very nearly the difference
- * between the raw number and the scaled one.
+ * DERIVED FROM THE SKULL, NOT TUNED AGAINST THE BONE.
+ *
+ * Two guesses at this bought six millimetres between them, because both were
+ * wrong in two ways at once: wrong scale AND wrong sign. The bone's world matrix
+ * says why. Its axes read x [0.61, 0, 0], y [0, 0.607, 0.064], z [0, -0.064,
+ * 0.607] — the instance scale of 0.6105 is baked in, with a slight forward pitch
+ * in the cross terms. So a local offset reaches the world multiplied by 0.607,
+ * and -0.156 local moved the hair 0.095 down when it needed to go UP.
+ *
+ * And the target was never the bone origin. Measured in the running game, the
+ * hair sat at world y 1.182 while the skull it is meant to cap centres at 1.403
+ * and crowns at 1.802. Hair belongs on the skull, so the offset is the gap to
+ * the skull's own centre, converted into the bone's frame:
+ *
+ *     (1.403 - 1.182) / 0.607 = +0.364 local, from a starting -0.156
+ *
+ * which is the number below. Anything further is a fit against the crown rather
+ * than the centre, and should be measured the same way rather than nudged.
  */
-export const HAIR_ANCHOR_OFFSET: [number, number, number] = [0, -0.156, 0];
+export const HAIR_ANCHOR_OFFSET: [number, number, number] = [0, 0.208, 0];
 
 export function hairMaterial(color: THREE.Color): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
