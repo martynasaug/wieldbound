@@ -142,8 +142,29 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
  */
 export function skinWeight(h: number, s: number, l: number): number {
   const hueDeg = h * 360;
-  const hue = 1 - smoothstep(33, 37, hueDeg);
-  const saturation = smoothstep(0.15, 0.21, s);
+  // A BAND, NOT A CEILING, and the lower edge is the half that was missing.
+  //
+  // This was `1 - smoothstep(33, 37, hue)`: everything warmer than 33 degrees
+  // counted as skin. On the Monk that worked, because its cloth sits ABOVE its
+  // skin in hue (35.5 against 31.3). The player's body is the Rogue, whose cloth
+  // sits far BELOW it — measured per face against the bones that own them:
+  //
+  //     Rogue  skin  hue 26.8  sat 0.361  L 0.277
+  //     Rogue  cloth hue  7.1  sat 0.377  L 0.152
+  //     Monk   skin  hue 31.3  sat 0.275  L 0.315
+  //     Monk   cloth hue 35.5  sat 0.227  L 0.318
+  //
+  // A one-sided ramp admits the Rogue's crimson cloth and its flesh alike, so
+  // the only thing left separating them was the lightness floor — which is why
+  // the mask ended up selecting the palest CLOTH panels and leaving every scrap
+  // of skin alone. Photographed, that is a character in a near-black tunic whose
+  // trousers change colour when you pick a skin tone.
+  //
+  // Scored against both atlases using the per-bone ground truth above, this band
+  // admits 0.70 of the Rogue's skin and leaks 0.04 of its cloth, against 0.28
+  // and 0.00 for the rule it replaces.
+  const hue = smoothstep(15, 22, hueDeg) * (1 - smoothstep(33, 38, hueDeg));
+  const saturation = smoothstep(0.16, 0.22, s);
   // THE WINDOW WAS CUT FOR THE MONK'S ATLAS AND THE BODY IS NOT THE MONK.
   //
   // Measured: this mask passes lightness 0.15 to 0.56, and the Rogue's atlas —
@@ -153,11 +174,14 @@ export function skinWeight(h: number, s: number, l: number): number {
   // atlases (Rogue 0.197, max 0.514) it selects nearly the whole texture, so
   // choosing a skin tone repaints the tunic and the boots with it.
   //
-  // Narrowed from below rather than from above: skin on these atlases is the
-  // LIGHTER end of a dark painting, and the cloth is the bulk beneath it. The
-  // upper edge stays where it was, since nothing here is brighter than 0.65.
-  const dark = smoothstep(0.30, 0.38, l);
-  const pale = 1 - smoothstep(0.46, 0.56, l);
+  // AND THE FLOOR CAME BACK DOWN. Raising it to 0.30 was meant to stop the mask
+  // eating the Rogue's tunic, and it did — by excluding the Rogue's skin too,
+  // which centres at L 0.277 with its lower decile at 0.173. The tunic is now
+  // held off by the hue band above, where the two classes are 20 degrees apart,
+  // so lightness no longer has to do work it cannot do: on the Monk atlas skin
+  // and cloth sit at 0.315 and 0.318, indistinguishable by lightness at all.
+  const dark = smoothstep(0.19, 0.25, l);
+  const pale = 1 - smoothstep(0.44, 0.54, l);
   return hue * saturation * dark * pale;
 }
 

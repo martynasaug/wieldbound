@@ -23,11 +23,23 @@
 
 export const SKIN_TONE_IDS = ["porcelain", "fair", "light", "olive", "tan", "bronze", "umber", "ebony"] as const;
 export const BUILD_IDS = ["slight", "lean", "average", "sturdy", "broad"] as const;
-export const HAIR_STYLE_IDS = ["none", "short", "long", "ponytail", "bun", "mohawk", "spiky"] as const;
-// Four are the Monk's own authored clumps, recombined; two are modelled on top of
-// them. See `tools/art/facial_hair.py`. "monk" is the beard every character
-// already wore, which is why it is the default.
-export const BEARD_STYLE_IDS = ["none", "moustache", "goatee", "chops", "monk", "long", "braided"] as const;
+// EVERY ID HERE HAS ART THAT LANDS ON THE BODY, and the list shrank to make
+// that true. It offered six hairstyles and six beards from `hair.py` and
+// `facial_hair.py`, all modelled in the local frame of `Monk001` — correct on
+// the Monk, unplaceable on the player's body, where five derived offsets put
+// them in the skull, at the ankles and underground. A creator that lists a
+// choice which draws nothing is a menu of no-ops, so the choices that cannot be
+// worn are not offered.
+//
+// Hair is "none" alone until pack hair is cut: the Wizard's `Face` (1374f) and
+// the Warrior's (1402f) both carry real hair and come apart the same way
+// `Monk.001` did, so this grows back by harvesting rather than by modelling.
+export const HAIR_STYLE_IDS = ["none"] as const;
+// Cut from the Monk's own face piece by `tools/art/look_pieces.py`: the 48-face
+// mirrored pair low on the lip, and the 26 clumps that wrap the jaw. Both are
+// baked in mesh-bind space and placed by `boneAttachMatrix`, so they need no
+// frame supplied anywhere.
+export const BEARD_STYLE_IDS = ["none", "moustache", "monk"] as const;
 
 export const HAIR_COLORS = [
   { id: "black", label: "Black", hex: 0x141013 },
@@ -125,19 +137,16 @@ export const LOOK_OPTIONS: readonly LookOption[] = [
       { id: "broad", label: "Broad" },
     ],
   },
+  // THESE LISTS MUST MATCH THE ID TABLES ABOVE, and not only because the creator
+  // reads them. `sanitizeLook` rejects a look whose field is not in its option's
+  // choices, so an id offered here but absent from the table above — or the
+  // reverse — sends a player who had already chosen back through the creator on
+  // their next login. They shrank together for that reason.
   {
     key: "hair",
     label: "Hairstyle",
     kind: "style",
-    choices: [
-      { id: "none", label: "Shaved" },
-      { id: "short", label: "Short" },
-      { id: "long", label: "Long" },
-      { id: "ponytail", label: "Ponytail" },
-      { id: "bun", label: "Topknot" },
-      { id: "mohawk", label: "Mohawk" },
-      { id: "spiky", label: "Spiky" },
-    ],
+    choices: [{ id: "none", label: "Shaved" }],
   },
   {
     key: "beard",
@@ -146,11 +155,7 @@ export const LOOK_OPTIONS: readonly LookOption[] = [
     choices: [
       { id: "none", label: "Clean-shaven" },
       { id: "moustache", label: "Moustache" },
-      { id: "goatee", label: "Goatee" },
-      { id: "chops", label: "Mutton chops" },
       { id: "monk", label: "Full beard" },
-      { id: "long", label: "Long beard" },
-      { id: "braided", label: "Braided beard" },
     ],
   },
   { key: "hairColor", label: "Hair colour", kind: "color", choices: HAIR_COLORS },
@@ -249,9 +254,16 @@ export function defaultLookFor(name: string): CharacterLook {
   return {
     skin,
     build: BUILD_IDS[Math.min(BUILD_IDS.length - 1, Math.floor((((h >>> 24) & 0xff) / 256) * BUILD_IDS.length))],
+    // One entry until pack hair is cut, so this picks nothing. Kept as a lookup
+    // rather than the literal so it starts varying again the moment the table
+    // grows, instead of quietly staying shaved.
     hair: HAIR_STYLE_IDS[(h & 0xff) % HAIR_STYLE_IDS.length],
-    // The beard every character wore before there was a choice.
-    beard: "monk",
+    // CLEAN-SHAVEN, which reverses "the beard every character wore before there
+    // was a choice". That default made sense when the body WAS the Monk and its
+    // beard was already modelled into the head. The body now starts as a plain
+    // figure with grafted nose and brows, and a character who never opened the
+    // creator should look like that plain figure — not like a bearded monk.
+    beard: "none",
     hairColor: readableHair((h >>> 4) & 0xff, skin),
   };
 }

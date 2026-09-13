@@ -54,7 +54,12 @@ await page.evaluate(() => {
   const g = window.__wieldbound;
   g.world.dayNight.freeze(0.5);
   const a = g.localActor;
-  a.setLook({ skin: "tan", build: "average", hair: "short", beard: "none", hairColor: "brown" });
+  // IDS THAT STILL EXIST. This asked for `hair: "short"`, retired with the rest
+  // of the procedural styles when the tables shrank to what has art that lands
+  // on this body. `sanitizeLook` drops a look with an unknown field WHOLE, so
+  // the harness would have photographed a character whose look never applied —
+  // and the picture would have been read as art rather than as a failed call.
+  a.setLook({ skin: "tan", build: "average", hair: "none", beard: "none", hairColor: "brown" });
   a.heading = Math.PI;
   a.root.rotation.y = Math.PI;
   // THE BODY'S OWN BOUNDS, FROM THE LIVE MESHES, recomputed on demand. Only the

@@ -86,7 +86,11 @@ console.log("3. nobody's colouring changed on the day the creator shipped");
 console.log("4. a new character is sent into the creator, and what they pick stays");
 {
   const name = `Creator${Date.now() % 100000}`;
-  const chosen = { skin: "umber", build: "slight", hair: "ponytail", beard: "braided", hairColor: "ginger" };
+  // Ids that still exist. This read `hair: "ponytail", beard: "braided"`, and
+  // both were dropped when the style tables shrank to what has art that lands on
+  // the player's body — `sanitizeLook` rejects a look with an unknown field, so
+  // the whole fixture would have failed validation rather than the assertion.
+  const chosen = { skin: "umber", build: "slight", hair: "none", beard: "monk", hairColor: "ginger" };
   const { browser, page } = await open({ headless: true, width: 1280, height: 800 });
   try {
     await login(page, name, { creator: true });

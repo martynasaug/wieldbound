@@ -86,29 +86,46 @@ import os
 import sys
 
 import bpy
+import mathutils
 
 DONOR = "client/public/models/Rogue.fbx"
 BODY_MESH = "Rogue"
 
 # Everything that makes the donor a ROGUE rather than a person.
 #
-# `Face` IS KEPT, and that reverses an earlier decision. It was stripped on the
-# reasoning that the head belongs to the character creator — which is right about
-# who OWNS it and wrong about what to ship in the meantime: the creator has no
-# face art, so stripping it left every player bald and featureless, and the
-# Monk-era hair that was supposed to cover for it is modelled in a different
-# rig's frame and cannot be placed (five attempts, recorded in `hair.ts`).
+# `Face` IS STRIPPED, and the round trip through keeping it is recorded because
+# the mistake was not the decision — it was deciding without looking.
 #
-# This Face is 122 faces authored for THIS skull, parented to `Head`, and it fits
-# with nothing fitted. Face variety later is then a cheap change rather than a
-# new system: the pack ships three more (Warrior 1446, Wizard 1410, Monk 2624),
-# all on the same bone with the same convention, so a creator option becomes a
-# choice of which one to load.
+# The reasoning for keeping it went: the creator has no face art, so a bald head
+# ships worse than a borrowed one, and `Face` is 122 faces authored for THIS
+# skull on THIS bone, so it fits with nothing fitted. Every clause of that is
+# true. It is also irrelevant, because `Face` IS NOT A FACE. Rendered in
+# isolation, front-on (`tools/soak/shots/faces/`), the pack's four read:
+#
+#     Rogue    122 faces   a smooth featureless dome — a COWL
+#     Warrior 1446 faces   layered plates with tufts at the sides — HAIR
+#     Wizard  1410 faces   a peaked crown over falling strands — HOOD + BEARD
+#     Monk    2624 faces   brows, moustache, beard outline — FACIAL HAIR
+#
+# Not one of them has an eye, a nose or a brow ridge on a surface. `Face` in this
+# pack is the HAIR/HOOD PROP that sits in front of the skull; the face itself is
+# painted into the body atlas on the body mesh's own head. So keeping the Rogue's
+# put a hood on the player and a void where the face goes — the exact opposite of
+# the plain starting character it was meant to rescue — and the bald head it
+# "fixed" was never bald: it was the real head, already carrying its features.
+#
+# The tell was there before the render. I chose between the four by VERTEX COUNT,
+# which is the same move as reading `removeGloves` as working because the rule
+# existed, and as trusting Blender's measurement of an exported GLB. Counting is
+# not looking.
+#
+# Face VARIETY later is still cheap, but it is a texture and geometry job on the
+# head, not a choice of which of these four props to load.
 #
 # `Icosphere` is scene junk the donor carries — 80 faces of nothing, riding along
 # in every export until it was spotted by re-importing the result and listing
 # what was actually in the file.
-STRIP = ("Belt", "Guard", "Pouch", "Shoelace.L", "Shoelace.R", "Rogue_Dagger", "Icosphere")
+STRIP = ("Belt", "Guard", "Pouch", "Shoelace.L", "Shoelace.R", "Rogue_Dagger", "Icosphere", "Face")
 
 
 def main():
@@ -145,6 +162,186 @@ def main():
             kept.append(o.name)
     body.name = "PlayerBody"
     body.data.name = "PlayerBody"
+
+    # THE FACE, GRAFTED FROM THE MONK, because this pack's skull has none.
+    #
+    # Rogue, Monk and Wizard all carry the SAME featureless head — about 68 faces
+    # with no eye, nose or brow anywhere on it, confirmed by rendering each skull
+    # with its face piece hidden (`tools/soak/shots/heads/*_without_*.png`) — and
+    # `Rogue_Texture.png` paints no face either. Every feature a player
+    # recognises lives in one extra mesh: the Monk's `Monk.001`, which is the
+    # face this project shipped for its whole life before the body changed.
+    #
+    # That mesh is 2784 faces of 41 loose islands, and `tools/art/look_pieces.py`
+    # identified all of them by rendering each in red ON the head:
+    #
+    #       8 faces           the nose             (1)
+    #      48 faces, high z   a brow               (2, mirrored)
+    #      48 faces, low z    a moustache half     (2, mirrored)
+    #     160 faces           a prayer bead       (10, a ring at the collar)
+    #     34/36/46 faces      beard and sideburns (27, wrapping the jaw)
+    #
+    # ONLY THE NOSE AND BROWS ARE GRAFTED. They are facial STRUCTURE, wanted on
+    # every character before any choice is made, and a starting character without
+    # them reads as a blank. Beard and moustache are things a player picks, so
+    # they stay runtime look pieces; the beads are nobody's default and are
+    # exported for the wardrobe rather than worn here.
+    #
+    # NO OFFSET IS COMPUTED. Both files are the same 44-bone `CharacterArmature`
+    # in the same authored space, so the pieces keep their own parent_bone,
+    # matrix_parent_inverse and basis, and only the PARENT OBJECT is swapped to
+    # this rig's armature. The transform is carried over verbatim rather than
+    # reconstructed — which is the whole lesson of `hair.ts`, where five derived
+    # constants put hair in the skull, at the ankles and finally underground.
+    # Reparenting happens BEFORE the Monk's own armature is deleted, or the
+    # pieces would lose the frame they are being carried in.
+    face_donor = os.path.abspath("client/public/models/Monk.fbx")
+    # Captured BEFORE the donor is imported, because afterwards there is no way
+    # to tell this body's twelve clips from the Monk's eleven by name alone.
+    keep_clips = {a.name for a in bpy.data.actions}
+    grafted = []
+    if os.path.exists(face_donor):
+        seen = {o.as_pointer() for o in bpy.data.objects}
+        bpy.ops.import_scene.fbx(filepath=face_donor)
+        added = [o for o in bpy.data.objects if o.as_pointer() not in seen]
+        faces_of = [o for o in added if o.type == "MESH" and len(o.data.polygons)]
+        source = max(faces_of, key=lambda o: len(o.data.polygons)) if faces_of else None
+        if source:
+            source.parent = arm
+            for o in added:
+                if o is not source:
+                    bpy.data.objects.remove(o, do_unlink=True)
+
+            bpy.ops.object.select_all(action="DESELECT")
+            source.select_set(True)
+            bpy.context.view_layer.objects.active = source
+            mark = {o.as_pointer() for o in bpy.data.objects}
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
+            bpy.ops.mesh.separate(type="LOOSE")
+            bpy.ops.object.mode_set(mode="OBJECT")
+            islands = [source] + [o for o in bpy.data.objects
+                                  if o.type == "MESH" and o.as_pointer() not in mark]
+
+            brow = 0
+            for o in islands:
+                n = len(o.data.polygons)
+                top = max((o.matrix_world @ v.co).z for v in o.data.vertices)
+                if n == 8:
+                    o.name = o.data.name = "Face_nose"
+                    grafted.append(o)
+                elif n == 48 and top > 2.30:
+                    brow += 1
+                    o.name = o.data.name = f"Face_brow{brow}"
+                    grafted.append(o)
+            for o in islands:
+                if o not in grafted:
+                    bpy.data.objects.remove(o, do_unlink=True)
+
+            # STRAIGHTENED, because the Monk authored this face OFF-AXIS and a
+            # verbatim graft inherits the skew. Measured on a skull centred at
+            # x 0 and running -0.335..0.335:
+            #
+            #     brow A  x -0.072..0.211   centre +0.069
+            #     brow B  x -0.375..-0.090  centre -0.233
+            #     nose    x -0.124..-0.019  centre -0.071
+            #
+            # Those two brows are not reflections of each other — a symmetric
+            # pair would sit near +/-0.15 — and one of them overhangs the skull's
+            # left edge by 0.04. On the Monk this is hidden under a hood and a
+            # beard; on a bare head it is a crooked face, which is part of what
+            # the close portrait shows.
+            #
+            # So one brow is MIRRORED from the other rather than both being kept,
+            # and the nose is centred. Mirroring keeps the pair identical by
+            # construction, which no pair of tuned offsets would.
+            brows = [o for o in grafted if o.name.startswith("Face_brow")]
+            nose = next((o for o in grafted if o.name == "Face_nose"), None)
+            if nose:
+                # MEASURED AND MOVED IN THE SAME SPACE, which the first version
+                # was not. It took min/max over `matrix_world @ v.co` — world
+                # space — and then applied the correction with `data.transform`,
+                # which is LOCAL. The two differ by this piece's bone-parent
+                # transform, so the shift was wrong by exactly that much and the
+                # nose exported at centre +0.071 on a skull 0.670 wide: a tenth
+                # of the head off-axis, plainly visible at portrait distance.
+                #
+                # The brows came out symmetric (+/-0.151) through all of this
+                # because MIRRORING is space-independent — reflecting one piece
+                # onto another needs no correct origin, which is why that half
+                # worked while this half silently did not. A fix that works for
+                # the wrong reason hides the one that doesn't.
+                xs = [v.co.x for v in nose.data.vertices]
+                nose.data.transform(mathutils.Matrix.Translation(
+                    (-(min(xs) + max(xs)) / 2, 0, 0)))
+            if len(brows) == 2:
+                # Keep the one that sits INSIDE the skull, and reflect it.
+                keep, drop = sorted(brows, key=lambda o: abs(
+                    sum((o.matrix_world @ v.co).x for v in o.data.vertices) / len(o.data.vertices)))
+                mirrored = keep.data.copy()
+                mirrored.transform(mathutils.Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)))
+                mirrored.flip_normals()
+                # THE ORPHAN KEEPS THE NAME UNTIL IT IS GONE. Swapping `drop.data`
+                # leaves its original mesh datablock in the file with zero users
+                # and still called `Face_brow2`, so assigning that name to the
+                # mirror collided and Blender handed back `Face_brow2.001` — which
+                # is what the exported GLB was named. Renaming harder would not
+                # have helped; the previous occupant has to leave first.
+                stale = drop.data
+                drop.data = mirrored
+                stale.name = "Face_brow_replaced"
+                if stale.users == 0:
+                    bpy.data.meshes.remove(stale)
+                drop.name = drop.data.name = "Face_brow2"
+                keep.name = keep.data.name = "Face_brow1"
+
+            # NO SECOND ATLAS. These wore `Monk_Texture` — correct for pieces cut
+            # from the Monk, and the reason `Player_Base.glb` embedded TWO images
+            # totalling 1.52 MB of a 2.0 MB file. Worse than the weight: a rigid
+            # mesh with its own material can never be toned, because
+            # `Actor.bodyMaterials` is built from SKINNED meshes only, so a tan
+            # character kept a Monk-brown nose. `buildBareHands` met this exact
+            # problem and solved it by sharing the body's own material instance —
+            # "there is nothing to keep in step: it is the same material."
+            #
+            # So the pieces are re-UV'd onto the Rogue atlas's head-skin region,
+            # measured at u 0.368..0.644, v 0.041..0.352, whose centroid texel is
+            # hue 31.0, sat 0.322, L 0.353 — real flesh. Flat-mapped to a patch
+            # well inside it: these are 104 faces of solid skin with no painted
+            # detail to lose, and sharing the body's atlas is what lets them
+            # share the body's material and therefore the body's tone.
+            # CLEARING IS NOT SHARING, which is the trap this nearly fell into. A
+            # mesh with an empty material slot does not inherit the body's — it
+            # exports with a default of its own, lands in a separate material,
+            # and is excluded from `bodyMaterials` exactly as before. The body's
+            # material is ASSIGNED here so there is one material for body and
+            # face, which is the whole mechanism by which the tone reaches them.
+            skin_mat = body.data.materials[0] if body.data.materials else None
+            patch_u = 0.49
+            patch_v = 0.17
+            for o in grafted:
+                o.data.materials.clear()
+                if skin_mat:
+                    o.data.materials.append(skin_mat)
+                uv = o.data.uv_layers.active or o.data.uv_layers.new(name="UVMap")
+                # One texel for the whole piece. These are 104 faces of solid
+                # flesh with no painted detail to preserve, so a flat sample of
+                # the head region is honest — and it keeps the pieces on the
+                # body's atlas, which is what lets them share its material. If
+                # they ever need painted shading, this is the line to replace.
+                for loop in o.data.loops:
+                    uv.data[loop.index].uv = (patch_u, patch_v)
+            # AND THE MONK'S ANIMATIONS GO BACK, which the first version of this
+            # graft did not do. Importing a second character to borrow two meshes
+            # also imports ITS ACTIONS, and the exporter writes every action in
+            # the file: `clips=12` became `clips=23` and `Player_Base.glb` grew
+            # to 2.27 MB. The body must ship its own twelve and no one else's — a
+            # duplicate clip set is both dead weight in every client download and
+            # a second set of names for `findClip` to choose between.
+            for action in [a for a in bpy.data.actions if a.name not in keep_clips]:
+                bpy.data.actions.remove(action)
+    print("  face:     " + (", ".join(f"{o.name}({len(o.data.polygons)}f)" for o in grafted)
+                            or "NONE GRAFTED — the character has no nose or brows"))
 
     print(f"BASE BODY faces={len(body.data.polygons)} verts={len(body.data.vertices)} "
           f"groups={len(body.vertex_groups)} bones={len(arm.data.bones)} "

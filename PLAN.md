@@ -25146,3 +25146,80 @@ TWO REAL OPTIONS, and this is a scope decision rather than a bug:
      armour already are, and swap the arm's hand geometry for them;
   b) keep the Monk's hands and cover them with the fist weapon family, which
      already exists and already puts gloves ON deliberately.
+
+### The hood was a cowl I never looked at
+
+Reported plainly — "why do we still have a hood on and no real facial
+features/structure? The point of all this was to make plain basic starting
+character model" — and the cause was one line in `base_body.py` keeping the
+Rogue's `Face` mesh. I had kept it on the reasoning that 122 faces authored for
+this skull must be a face. Rendered, it is a smooth featureless COWL. I chose
+between four candidates by VERTEX COUNT, which is the same move as reading
+`removeGloves` as working because the rule existed. Counting is not looking.
+
+THEN I LOOKED AT THE WRONG THING TWICE MORE. Rendering each pack `Face` alone,
+untextured, I concluded the pack has no faces at all — a hollow shell lit from
+outside shows its inside through the opening, so a brow ridge reads as
+"overlapping plates" and a jaw as "tufts". The Monk's face had been on the
+player character for the whole project. An isolated untextured render is not a
+look at a model; it is a look at a shell. `tools/art/head_probe.py` now renders
+each head textured, in place, with the rest of the character around it.
+
+WHAT THE PACK ACTUALLY IS: the skull is a featureless blank shared by every
+character (Rogue, Monk and Wizard all ~68 faces, no eye, nose or brow), and every
+feature a player recognises lives in one extra mesh. `Monk.001` is 2784 faces of
+41 loose islands, and `tools/art/look_pieces.py` identified all 41 by rendering
+each one IN RED ON THE HEAD:
+
+      8 faces           the nose             (1)
+     48 faces, high z   a brow               (2, mirrored)
+     48 faces, low z    a moustache half     (2, mirrored)
+    160 faces           a prayer bead       (10, a ring at the collar)
+    34/36/46 faces      beard and sideburns (27, wrapping the jaw)
+
+Nose and brows are grafted into `Player_Base.glb` on the `Head` bone: facial
+structure is not a choice. Beard and moustache are cut as look pieces and placed
+by `boneAttachMatrix` — `boneInverses[Head]` times the bind matrix, the matrix
+hands, armour and capes already attach through — so the five derived constants
+that put hair in the skull, at the ankles and underground are gone, along with
+the `bodyModel !== "Monk"` gate.
+
+THE MONK AUTHORED THAT FACE OFF-AXIS: brow centres +0.069 and -0.233, nose
+-0.071, on a skull centred at 0. One brow is mirrored from the other and the nose
+centred, verified in the export at +/-0.151 and 0.000.
+
+A NUMBER THAT DID NOT MOVE, for the third time in this project. An eight-face
+nose exported at 879,860 bytes. I guessed the armature was riding along, cleared
+the parent, and got 879,860 bytes — the same number to the byte. Read rather than
+guessed, the glTF JSON says no `skins`, no `animations`, one `image` of 877,213
+bytes: `dress()` had put the atlas on every piece. Clearing materials took the
+nose to 2,128 bytes and `Player_Base.glb` from 2.0 MB to 1.13 MB.
+
+AND THE SKIN MASK WAS RECOLOURING THE TROUSERS. `skinWeight` was cut for the
+Monk's atlas, whose cloth sits ABOVE its skin in hue; the Rogue's sits far BELOW
+it. Measured per face against the bones that own them:
+
+    Rogue skin  hue 26.8  L 0.277      Rogue cloth hue  7.1  L 0.152
+    Monk  skin  hue 31.3  L 0.315      Monk  cloth hue 35.5  L 0.318
+
+So a one-sided hue ramp admitted both Rogue classes, and the lightness floor at
+0.30 — raised to stop the mask eating the tunic — excluded the Rogue's flesh,
+which centres at 0.277. The mask selected the palest CLOTH and left every scrap
+of skin alone: a character in a near-black tunic whose trousers changed colour
+when you picked a skin tone. It is a hue BAND now, scored against both atlases:
+0.70 of the Rogue's skin admitted, 0.04 of its cloth leaked.
+
+KNOWN REGRESSION, recorded rather than hidden: that band leaks 0.44 of the MONK's
+cloth, because its skin and cloth are inseparable by colour (L 0.315 against
+0.318). The player's body is the Rogue and the grafted face now shares the
+Rogue's atlas, so no player is affected — but an actor still given the Monk body
+will recolour its robe with skin tone.
+
+AND THE FACE STILL DOES NOT READ AS A FACE. Measured live against the crown, the
+pieces sit where the Monk's do; the placement is right. What is missing is
+everything AROUND them: the Monk has a tonsure, sideburns, a moustache and a
+beard framing the jaw, so its features occupy a defined area, while ours are
+three small pieces on a large bare dome. The pack ships no eye or mouth geometry
+on any character — 108 islands across Monk, Wizard and Warrior, none eye-shaped —
+so those characters read as faces through brow, nose and facial hair alone. That
+makes the default starting look a design question, not a bug to fix.

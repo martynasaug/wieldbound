@@ -12,20 +12,33 @@
 // The overlay is the one to judge: magenta should cover the skin areas of the
 // atlas and nothing else.
 //
-//   node tools/soak/skinmask.mjs [out]
+// THE TEXTURE IS AN ARGUMENT NOW, and that is the point of this edit. It was
+// hardcoded to `Monk_Texture.png`, which was every body there was when it was
+// written. The player wears the Rogue's atlas today and the grafted nose and
+// brows wear the Monk's, so "which pixels count as skin" has two answers and
+// this could only ever show one of them.
+//
+// Measured, they are not close: 62% of the Rogue's pixels lie in lightness
+// 0.1-0.2 against the Monk's 8%, and the mask passes 11% of the Rogue against
+// 47% of the Monk. That is why the body renders as raw dark cloth while the face
+// tones correctly — one window, two paintings, opposite outcomes.
+//
+//   node tools/soak/skinmask.mjs [texture] [out]
+//     texture  file under client/public/textures/, default Monk_Texture.png
 import { mkdirSync, writeFileSync } from "node:fs";
 import { open, login } from "./driver.mjs";
 
-const OUT = process.argv[2] ?? "tools/soak/shots/skinmask";
+const TEXTURE = (process.argv[2] ?? "Monk_Texture.png").replace(/^.*[\\/]/, "");
+const OUT = process.argv[3] ?? `tools/soak/shots/skinmask/${TEXTURE.replace(/\.png$/i, "")}`;
 mkdirSync(OUT, { recursive: true });
 
 const { browser, page } = await open({ headless: true, width: 800, height: 600 });
 await login(page, `Mask${Date.now() % 100000}`);
 
-const images = await page.evaluate(async () => {
+const images = await page.evaluate(async (texture) => {
   const { skinWeight } = await import("/src/three/skin.ts");
   const img = new Image();
-  img.src = "/textures/Monk_Texture.png";
+  img.src = `/textures/${texture}`;
   await img.decode();
   const w = img.width, h = img.height;
   const read = document.createElement("canvas");
@@ -75,7 +88,12 @@ const images = await page.evaluate(async () => {
     d[i + 3] = 255;
   });
   return { mask: mask.png, overlay: overlay.png, share: mask.share };
-});
+// PASSED IN, which the parameter alone did not do. Adding `(texture)` to the
+// callback without also handing it to `evaluate` left it `undefined` in the
+// page, which fetched `/textures/undefined` and threw `EncodingError: The source
+// image cannot be decoded` — a failure that reads like a broken atlas and is
+// really a missing argument. Both textures serve 200 image/png.
+}, TEXTURE);
 
 writeFileSync(`${OUT}/mask.png`, Buffer.from(images.mask, "base64"));
 writeFileSync(`${OUT}/overlay.png`, Buffer.from(images.overlay, "base64"));

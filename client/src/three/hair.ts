@@ -39,11 +39,29 @@ function pieceGeometry(file: string): Promise<THREE.BufferGeometry | null> {
   return pending;
 }
 
-/** The file behind each head piece a look can wear, or null for none. */
-export function lookPieceFile(slot: "hair" | "beard" | "brows", style?: HairStyleId | BeardStyleId): string | null {
-  if (slot === "brows") return "Face_brows";
+/**
+ * The file behind each head piece a look can wear, or null for none.
+ *
+ * BROWS ARE NO LONGER A SLOT. They used to be hardcoded here to `Face_brows`,
+ * drawn on every character whatever they chose. They are now part of the body:
+ * `tools/art/base_body.py` grafts the Monk's nose and both brows onto the
+ * skull's `Head` bone at export, because facial STRUCTURE is not a choice and a
+ * character missing it reads as a blank rather than as bald. Asking for the
+ * slot here as well would draw a second pair inside the first.
+ *
+ * THE BEARD FILES ARE THE PACK'S OWN NOW. `Beard_*.glb` and `Hair_*.glb` from
+ * `hair.py`/`facial_hair.py` are modelled in the local frame of `Monk001` and
+ * cannot be placed on this body — five derived constants tried and put hair in
+ * the skull, at the ankles and underground. The harvested pieces are cut from
+ * `Monk.001` by `tools/art/look_pieces.py` with their world transform baked in,
+ * so they need no frame at all: see the attach site in `Actor.ts`.
+ */
+export function lookPieceFile(slot: "hair" | "beard", style?: HairStyleId | BeardStyleId): string | null {
   if (!style || style === "none") return null;
-  return slot === "hair" ? `Hair_${style}` : `Beard_${style}`;
+  // Only the two cut so far. A style with no harvested art draws nothing, which
+  // is honest, rather than falling back to a file authored for another rig.
+  if (slot === "beard") return style === "moustache" ? "Monk_moustache" : style === "monk" ? "Monk_beard" : null;
+  return null;
 }
 
 export function lookPieceGeometry(file: string | null): Promise<THREE.BufferGeometry | null> {

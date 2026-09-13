@@ -32,7 +32,7 @@ import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel
 import { garment } from "./wardrobe";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
-import { HAIR_ANCHOR_BONE, HAIR_ANCHOR_OFFSET, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
+import { HAIR_ANCHOR_BONE, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
 import type { CharacterLook } from "../../../shared/look";
 import { applySkin } from "./skin";
 import { pickClip, loadClipLibrary } from "./clips";
@@ -1769,27 +1769,29 @@ export class Actor {
    */
   private applyLookPieces(): void {
     if (!this.identity || !this.instance) return;
-    // ONLY ON THE BODY THEY WERE MODELLED FOR. Every piece in `hair.py` and
-    // `facial_hair.py` is authored in the local frame of `Monk001`, the Monk's
-    // rigid head piece, and lands correctly by inheriting that mesh's transform
-    // wholesale. On the player's body — the stripped Rogue — there is no such
-    // node, and five attempts at supplying an equivalent offset put the hair
-    // inside the skull, at the ankles and finally underground (see
-    // `HAIR_ANCHOR_OFFSET`). Drawing them there is worse than not drawing them:
-    // the head carries the pack's own `Face`, which fits because it was authored
-    // for this skull.
+    // THE GATE IS GONE, because the reason for it is.
     //
-    // This is a gate, not a deletion. The pieces are correct art for the Monk,
-    // which is still a body an actor can be given, and re-fitting them for other
-    // heads is a modelling job rather than a constant.
-    if (this.bodyModel !== "Monk") return;
+    // It read `if (this.bodyModel !== "Monk") return;` and was correct at the
+    // time: every piece from `hair.py`/`facial_hair.py` is authored in the local
+    // frame of `Monk001` and lands only by inheriting that mesh's transform, so
+    // on the stripped Rogue there was nothing to inherit and five derived
+    // offsets put hair in the skull, at the ankles and underground.
+    //
+    // The pieces worn here are cut from the pack instead — `look_pieces.py`
+    // splits `Monk.001` into its 41 islands and writes each group with its WORLD
+    // TRANSFORM BAKED INTO THE VERTICES. That leaves them in the donor's
+    // mesh-bind space, which is the same space this body's `boneInverses` are
+    // expressed in, so placement is a matrix already on hand rather than a
+    // constant to guess. See `applyLookPiece`.
+    //
+    // BROWS ARE NOT ASKED FOR. They and the nose are grafted into the body by
+    // `base_body.py`; requesting the slot would draw a second pair inside them.
     const { hair, beard, hairColor } = this.resolvedLook();
     this.applyLookPiece("hair", lookPieceFile("hair", hair), hairColor);
     this.applyLookPiece("beard", lookPieceFile("beard", beard), hairColor);
-    this.applyLookPiece("brows", lookPieceFile("brows"), hairColor);
   }
 
-  private applyLookPiece(slot: "hair" | "beard" | "brows", file: string | null, colour: THREE.Color): void {
+  private applyLookPiece(slot: "hair" | "beard", file: string | null, colour: THREE.Color): void {
     const instance = this.instance;
     if (!instance) return;
     const key = `${file ?? "none"}|${colour.getHexString()}`;
@@ -1801,39 +1803,43 @@ export class Actor {
       // A later choice, or a new rig, has overtaken this one.
       if (this.lookPieceTokens.get(slot) !== token || instance !== this.instance) return;
       this.removeLookPiece(slot);
-      // THE HEAD BONE, NOT A MESH NAMED AFTER ONE BODY.
+      // PLACED BY A MATRIX ALREADY ON HAND, NOT BY A CONSTANT.
       //
-      // This used to find the mesh called `HAIR_ANCHOR_MESH`, take ITS PARENT
-      // and copy ITS TRANSFORM. On the Monk that anchor was `Monk001`, a rigid
-      // head piece parented to the `Head` bone carrying the exact local offset
-      // the hair was modelled against, so a piece inherited both for free and
-      // nothing needed fitting.
+      // The history is worth keeping because it is the same mistake three ways.
+      // This first found a mesh named after one body (`Monk001`) and copied its
+      // transform; that worked only while the player WAS the Monk. Then it hung
+      // the piece off the `Head` bone with an offset, and five values were
+      // derived or tuned for that offset — -0.401, -0.156, +0.208, -1.938, and
+      // the pack's own -2.756 — putting hair inside the skull, at the ankles and
+      // finally underground. A position in a transform chain cannot be solved by
+      // substituting constants into one link of it.
       //
-      // The player body is the stripped Rogue now, and `PlayerBody` is a SKINNED
-      // mesh whose parent is the armature, with the whole body's transform. So
-      // every piece was being parented to the wrong node with the wrong offset,
-      // and the hair rendered as a blonde mass the size of the head.
-      //
-      // Measured, both skulls are near enough the same size — Monk 0.751 x 0.815
-      // x 0.934, Rogue 0.670 x 0.814 x 0.890 — so this is not a scale problem.
-      // It is a frame problem: the Monk's head piece centred at world z 2.100
-      // and this skull centres at 2.501, with the `Head` bone running 2.127 to
-      // 2.756. Hanging a piece off the bone with that difference as its offset
-      // puts it back in the frame it was authored in.
-      let anchor: THREE.Object3D | null = null;
-      instance.object.traverse((o) => {
-        if (!anchor && (o as THREE.Bone).isBone && o.name === HAIR_ANCHOR_BONE) anchor = o;
-      });
-      const parent = anchor as THREE.Object3D | null;
-      if (geometry && parent) {
+      // The pieces worn here are cut from the pack by `look_pieces.py` with
+      // their WORLD TRANSFORM BAKED INTO THE VERTICES, which leaves them in the
+      // donor's mesh-bind space. This body's skeleton expresses its inverses in
+      // that same space, so `boneAttachMatrix` — `boneInverses[Head]` times the
+      // bind matrix, the very matrix hands, armour and capes attach through —
+      // places them exactly, with nothing supplied here. Both files are the same
+      // 44-bone `CharacterArmature`, which is what makes that space shared.
+      const bone = this.bones.get(HAIR_ANCHOR_BONE);
+      const onBone = boneAttachMatrix(instance.object, HAIR_ANCHOR_BONE);
+      if (geometry && bone && onBone) {
         const mesh = new THREE.Mesh(geometry, hairMaterial(colour));
         mesh.name = `look_${slot}`;
-        mesh.position.set(...HAIR_ANCHOR_OFFSET);
-        mesh.castShadow = slot !== "brows";
+        // The bone drives it from here; an auto-updated transform would
+        // immediately overwrite this with position/quaternion/scale defaults.
+        mesh.matrixAutoUpdate = false;
+        mesh.matrix.copy(onBone);
+        mesh.castShadow = true;
         mesh.receiveShadow = true;
-        parent.add(mesh);
+        bone.add(mesh);
         this.lookPieces.set(slot, mesh);
         this.trackMesh(mesh);
+      } else if (geometry) {
+        // Loud, because the failure is invisible: a beard that finds no bone
+        // simply draws nothing, and the character reads as clean-shaven rather
+        // than as broken.
+        console.warn(`look: ${slot} piece has ${bone ? "no bind matrix" : "no Head bone"}`);
       }
       this.syncHairVisibility();
       this.refreshOutlines();
