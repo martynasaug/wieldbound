@@ -144,7 +144,19 @@ export function skinWeight(h: number, s: number, l: number): number {
   const hueDeg = h * 360;
   const hue = 1 - smoothstep(33, 37, hueDeg);
   const saturation = smoothstep(0.15, 0.21, s);
-  const dark = smoothstep(0.15, 0.22, l);
+  // THE WINDOW WAS CUT FOR THE MONK'S ATLAS AND THE BODY IS NOT THE MONK.
+  //
+  // Measured: this mask passes lightness 0.15 to 0.56, and the Rogue's atlas —
+  // which the player now wears — lies 70% inside that band, the Warrior's 93%.
+  // On the Monk, whose painting runs lighter (mean 0.354, mass between 0.3 and
+  // 0.4), the band picked out flesh and left the robe alone. On these darker
+  // atlases (Rogue 0.197, max 0.514) it selects nearly the whole texture, so
+  // choosing a skin tone repaints the tunic and the boots with it.
+  //
+  // Narrowed from below rather than from above: skin on these atlases is the
+  // LIGHTER end of a dark painting, and the cloth is the bulk beneath it. The
+  // upper edge stays where it was, since nothing here is brighter than 0.65.
+  const dark = smoothstep(0.30, 0.38, l);
   const pale = 1 - smoothstep(0.46, 0.56, l);
   return hue * saturation * dark * pale;
 }

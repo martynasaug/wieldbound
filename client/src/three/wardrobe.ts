@@ -218,11 +218,35 @@ export function loadGarments(): Promise<void> {
           continue;
         }
         const mesh: THREE.SkinnedMesh = found;
+        const source = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as
+          THREE.MeshStandardMaterial;
+        // DRESSED, BECAUSE NOTHING ELSE DRESSES A GLB. `dressFbx` rebuilds every
+        // FBX material as a standard one at roughness 0.86 and metalness 0, with
+        // the texture bound and the colour forced white; the glTF branch of
+        // `assets.ts` does none of that and keeps whatever the file carries.
+        //
+        // Worn straight from the file, a garment is a `MeshPhysicalMaterial` on
+        // glTF defaults, whose clearcoat and specular terms render it as a black
+        // silhouette in this scene's lighting — all four photographed that way.
+        // The atlases themselves are simply dark paintings (Rogue means 0.197,
+        // Warrior 0.233), which is fine: they read correctly under the same
+        // treatment the FBX bodies get, and wrong under any other.
+        //
+        // This is the third time the same gap has bitten — the body's black
+        // chrome, the missing atlas, and now this — so it is worth stating
+        // plainly: a GLB carries geometry, and the engine supplies the surface.
+        const dressed = new THREE.MeshStandardMaterial({
+          map: source?.map ?? null,
+          color: source?.map ? new THREE.Color(0xffffff) : (source?.color?.clone() ?? new THREE.Color(0xffffff)),
+          roughness: 0.86,
+          metalness: 0,
+        });
+        dressed.name = source?.name ?? id;
         garments.set(id, {
           // Shared and never mutated, exactly as the rigid parts are: geometry
           // is style, and the wearer owns only its material.
           geometry: mesh.geometry,
-          material: Array.isArray(mesh.material) ? mesh.material[0] : mesh.material,
+          material: dressed,
         });
       } catch (err) {
         // SAY WHY. A bare `catch` here cost a debugging round: all four garments
