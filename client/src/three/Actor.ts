@@ -31,7 +31,7 @@ import { instantiate, findNode, findClip, type Instance } from "./assets";
 import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildBareHands, buildHandPieces, fistCentre, hasArmourModel, removeHandGeometry, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
-import { HAIR_ANCHOR_MESH, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
+import { HAIR_ANCHOR_BONE, HAIR_ANCHOR_OFFSET, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
 import type { CharacterLook } from "../../../shared/look";
 import { applySkin } from "./skin";
 import { pickClip, loadClipLibrary } from "./clips";
@@ -1743,18 +1743,34 @@ export class Actor {
       // A later choice, or a new rig, has overtaken this one.
       if (this.lookPieceTokens.get(slot) !== token || instance !== this.instance) return;
       this.removeLookPiece(slot);
+      // THE HEAD BONE, NOT A MESH NAMED AFTER ONE BODY.
+      //
+      // This used to find the mesh called `HAIR_ANCHOR_MESH`, take ITS PARENT
+      // and copy ITS TRANSFORM. On the Monk that anchor was `Monk001`, a rigid
+      // head piece parented to the `Head` bone carrying the exact local offset
+      // the hair was modelled against, so a piece inherited both for free and
+      // nothing needed fitting.
+      //
+      // The player body is the stripped Rogue now, and `PlayerBody` is a SKINNED
+      // mesh whose parent is the armature, with the whole body's transform. So
+      // every piece was being parented to the wrong node with the wrong offset,
+      // and the hair rendered as a blonde mass the size of the head.
+      //
+      // Measured, both skulls are near enough the same size — Monk 0.751 x 0.815
+      // x 0.934, Rogue 0.670 x 0.814 x 0.890 — so this is not a scale problem.
+      // It is a frame problem: the Monk's head piece centred at world z 2.100
+      // and this skull centres at 2.501, with the `Head` bone running 2.127 to
+      // 2.756. Hanging a piece off the bone with that difference as its offset
+      // puts it back in the frame it was authored in.
       let anchor: THREE.Object3D | null = null;
       instance.object.traverse((o) => {
-        if (!anchor && o.name === HAIR_ANCHOR_MESH && (o as THREE.Mesh).isMesh) anchor = o;
+        if (!anchor && (o as THREE.Bone).isBone && o.name === HAIR_ANCHOR_BONE) anchor = o;
       });
-      const parent = (anchor as THREE.Object3D | null)?.parent;
-      if (geometry && anchor && parent) {
-        const from = anchor as THREE.Object3D;
+      const parent = anchor as THREE.Object3D | null;
+      if (geometry && parent) {
         const mesh = new THREE.Mesh(geometry, hairMaterial(colour));
         mesh.name = `look_${slot}`;
-        mesh.position.copy(from.position);
-        mesh.quaternion.copy(from.quaternion);
-        mesh.scale.copy(from.scale);
+        mesh.position.set(...HAIR_ANCHOR_OFFSET);
         mesh.castShadow = slot !== "brows";
         mesh.receiveShadow = true;
         parent.add(mesh);

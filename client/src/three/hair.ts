@@ -51,23 +51,29 @@ export function lookPieceGeometry(file: string | null): Promise<THREE.BufferGeom
 }
 
 /**
- * The node every piece hangs beside, in the frame it was modelled against.
+ * The bone every piece hangs from, and the offset that puts it in the frame it
+ * was modelled in.
  *
- * AND THE FRAME IS NOW WRONG, which is worth saying out loud rather than
- * leaving to be discovered. Every piece here was modelled against `Monk001`,
- * the Monk's rigid head piece, and hung beside it with that piece's own
- * transform so it landed exactly where it was authored with no fitting done.
- * The player body is no longer the Monk: it is `PlayerBody`, the Rogue stripped
- * to its skinned mesh, whose skull is a different size at a different origin.
+ * A BONE RATHER THAN A MESH, because a mesh name is a property of one body and
+ * the hair has now outlived two. Every piece here was modelled in the local
+ * space of `Monk001` — the Monk's rigid head piece, parented to `Head` — and
+ * hung beside it carrying that piece's own transform, so it landed exactly
+ * where it was authored with nothing fitted at runtime. That worked precisely
+ * while the player was the Monk.
  *
- * Pointing the anchor at the new mesh is what makes hair APPEAR at all — with
- * no `Monk001` in the scene, `applyLookPieces` finds no anchor and every
- * player's chosen hair, beard and brows silently draw nothing. It does not make
- * them FIT: they will sit at the wrong scale and the wrong height until
- * `tools/art/hair.py` and `facial_hair.py` are re-fitted against this head.
- * A visible misfit is a bug someone can see; an invisible one is not.
+ * The player body is the stripped Rogue now, and its `PlayerBody` mesh is
+ * SKINNED, parented to the armature rather than to a bone, carrying the whole
+ * body's transform. Pointing the old mesh-name anchor at it made every piece
+ * appear in the wrong place at the wrong offset — hair the size of the skull.
+ *
+ * Measured, the two heads are near enough the same size (Monk 0.751 x 0.815 x
+ * 0.934, Rogue 0.670 x 0.814 x 0.890), so no rescaling is wanted. What differs
+ * is where the frame sits: the Monk's head piece centred at world z 2.100 and
+ * this skull centres at 2.501, against a `Head` bone running 2.127 to 2.756.
+ * The offset below is that difference, in the bone's own axes.
  */
-export const HAIR_ANCHOR_MESH = "PlayerBody";
+export const HAIR_ANCHOR_BONE = "Head";
+export const HAIR_ANCHOR_OFFSET: [number, number, number] = [0, -0.401, 0];
 
 export function hairMaterial(color: THREE.Color): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
