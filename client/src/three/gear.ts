@@ -41,7 +41,7 @@ import {
   type WeaponType,
 } from "../../../shared/protocol-types";
 import { loadModel } from "./assets";
-import { donorPart, type DonorPartId } from "./wardrobe";
+import { donorPart, garment, type DonorPartId, type GarmentId } from "./wardrobe";
 import { PALETTES, itemBase, type PaletteDef } from "../../../shared/items";
 
 // --- Bodies ---------------------------------------------------------------
@@ -640,8 +640,15 @@ function stripHands(mesh: THREE.SkinnedMesh): THREE.BufferGeometry {
   for (const [name, attribute] of Object.entries(geo.attributes)) {
     const a = attribute as THREE.BufferAttribute;
     const items = a.itemSize;
-    const src = a.array as unknown as { [i: number]: number };
-    const Ctor = a.array.constructor as new (n: number) => ArrayLike<number> & { [i: number]: number };
+    // THE SOURCE ARRAY'S OWN TYPE, carried through rather than laundered. This
+    // built the destination via a hand-written constructor signature and then
+    // cast the result back, which typechecked as neither: three.js wants one of
+    // its `TypedArray` union members and got `ArrayLike<number> &
+    // ArrayBufferView`. Positions are Float32, skin indices Uint16 — the copy
+    // has to preserve whichever it was, so the constructor comes off the array
+    // itself and is typed as what it actually is.
+    const src = a.array as Float32Array;
+    const Ctor = (a.array as Float32Array).constructor as Float32ArrayConstructor;
     const dst = new Ctor(keep.length * 3 * items);
     let w = 0;
     for (const t of keep) {
@@ -650,7 +657,7 @@ function stripHands(mesh: THREE.SkinnedMesh): THREE.BufferGeometry {
         for (let c = 0; c < items; c++) dst[w++] = src[from + c];
       }
     }
-    out.setAttribute(name, new THREE.BufferAttribute(dst as unknown as ArrayLike<number> & ArrayBufferView, items, a.normalized));
+    out.setAttribute(name, new THREE.BufferAttribute(dst, items, a.normalized));
   }
   out.userData = { ...geo.userData, handsStripped: triangles - keep.length };
   out.computeBoundingBox();
@@ -1367,6 +1374,30 @@ const MODELLED_ARMOUR = new Set<string>([
 
 export function hasArmourModel(slot: ItemSlot, style: GearStyle): boolean {
   return MODELLED_ARMOUR.has(`${slot}:${style}`);
+}
+
+/**
+ * Chest styles worn as a GARMENT — one of the pack's own outfits, cut free of
+ * its skin and bound to the wearer's skeleton.
+ *
+ * Four of the six, because there are four authored costumes and six styles.
+ * `scale`, `brigandine` and `chain` keep the procedural path until something
+ * better exists for them, which is the arrangement `MODELLED_ARMOUR` already
+ * describes: replaced piece by piece, with the old route still carrying whatever
+ * has not been replaced.
+ *
+ * Checked BEFORE `hasArmourModel`, because a garment is a different kind of
+ * thing from a modelled style: not a set of rigid pieces bolted one per bone,
+ * but a single skinned mesh sharing the body's own skeleton.
+ */
+const GARMENT_STYLES: Partial<Record<string, GarmentId>> = {
+  "armor:robe": "robe",
+  "armor:plate": "plate",
+  "armor:leather": "leather",
+};
+
+export function garmentFor(slot: ItemSlot, style: GearStyle): GarmentId | null {
+  return GARMENT_STYLES[`${slot}:${style}`] ?? null;
 }
 
 /**

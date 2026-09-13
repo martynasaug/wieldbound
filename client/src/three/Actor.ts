@@ -28,7 +28,8 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildBareHands, buildHandPieces, fistCentre, hasArmourModel, removeHandGeometry, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
+import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildBareHands, buildHandPieces, fistCentre, garmentFor, hasArmourModel, removeHandGeometry, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
+import { garment } from "./wardrobe";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
 import { HAIR_ANCHOR_BONE, HAIR_ANCHOR_OFFSET, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
@@ -1341,6 +1342,49 @@ export class Actor {
     const built: { object: THREE.Object3D; holder: THREE.Object3D }[] = [];
     for (const [slot, layer] of layers) {
       if (!layer) continue;
+      // A GARMENT IS THE PACK'S OWN OUTFIT, WORN. Checked first, because it is a
+      // different kind of thing from everything below: not rigid pieces bolted
+      // one per bone, but a single SKINNED mesh sharing this body's skeleton —
+      // the robe Elsbet Vane wears, cut free of the hands, head and feet that
+      // belong to the wearer.
+      //
+      // It attaches itself rather than going through `GearAttachment`, whose
+      // `bone`, `boneLocal` and `bindLocal` fields describe where to bolt a
+      // rigid piece and mean nothing here. The fist-weapon branch above does its
+      // own attachment for the same reason.
+      const wantGarment = garmentFor(slot, layer.style);
+      if (wantGarment) {
+        const piece = garment(wantGarment);
+        let body: THREE.SkinnedMesh | null = null;
+        this.instance?.object.traverse((o) => {
+          const mesh = o as THREE.SkinnedMesh;
+          if (!body && mesh.isSkinnedMesh) body = mesh;
+        });
+        if (piece && body) {
+          const host: THREE.SkinnedMesh = body;
+          const worn = new THREE.SkinnedMesh(piece.geometry, piece.material);
+          worn.name = `worn_${layer.style}`;
+          // The wearer's own skeleton, not the donor's. Bone order is identical
+          // across all five rigs in this pack — 32 skinning bones in the same
+          // sequence — so no `skinIndex` remap is needed, which was measured
+          // rather than assumed before any of this was built.
+          worn.bind(host.skeleton, host.bindMatrix.clone());
+          worn.bindMatrixInverse.copy(host.bindMatrixInverse);
+          // A garment is cut to the body and deforms with it; culling it by its
+          // own bind-pose bounds pops it out of view mid-animation.
+          worn.frustumCulled = false;
+          worn.castShadow = true;
+          worn.receiveShadow = true;
+          host.parent?.add(worn);
+          this.worn.push(worn);
+          this.trackMaterials(worn);
+          this.refreshOutlines();
+          continue;
+        }
+        // Falling through on purpose: a garment whose file never loaded should
+        // leave the character in whatever the old route draws, not naked.
+        console.warn(`gear: garment "${wantGarment}" unavailable; falling back for ${slot}:${layer.style}`);
+      }
       // MODELLED STYLES TAKE THE SAME ROUTE AS A FIST WEAPON: a piece per bone,
       // seated with the skeleton's bind transform. See `buildArmourModel`.
       if (hasArmourModel(slot, layer.style)) {

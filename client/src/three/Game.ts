@@ -119,7 +119,7 @@ import { ATTACK_SLOT, Hotbar, type BarAction } from "../ui/Hotbar";
 import { Actor } from "./Actor";
 import { PLAYER_BODY } from "./gear";
 import { loadClipLibrary } from "./clips";
-import { loadWardrobe } from "./wardrobe";
+import { loadWardrobe, loadGarments } from "./wardrobe";
 import { Hud } from "./hud";
 import { Floaters, type FloatSpec } from "./floaters";
 import { Drops } from "./drops";
@@ -1796,12 +1796,18 @@ export class Game {
     // wears any more. Same reason as the clips: a pauldron fetched at the moment
     // you equip a breastplate arrives after the breastplate does.
     const kit = loadWardrobe();
+    // And the four outfits cut out of those same rigs, which are worn rather
+    // than bolted on — the robe, the plate, the leather and the light. Loaded
+    // here for exactly the reason the pieces above are: a garment fetched at the
+    // moment you equip a breastplate arrives after the breastplate does, and the
+    // fallback in `Actor.dress` would have already drawn the procedural version.
+    const outfits = loadGarments();
     const body = this.localActor.load();
     const people = buildNpcs(this.world.scene).then((npcs) => {
       this.npcs = npcs;
     });
-    await Promise.all([decor, anims, kit, body, people]);
-    this.loadMark("assets (decor, anims, kit, body, people)");
+    await Promise.all([decor, anims, kit, outfits, body, people]);
+    this.loadMark("assets (decor, anims, kit, outfits, body, people)");
     // The models have parsed; their textures have not necessarily arrived, and
     // a first frame that repaints itself twenty megabytes at a time is exactly
     // what a loading screen exists to hide.
