@@ -26131,3 +26131,49 @@ front-and-back was the one thing already right: that is what a tabard is, and it
 only read as wrong because a strip that narrow looks like a sash.
 
 19 fitted, 0 not. Suite green. Rechecked on the sheets and in game.
+
+**Phase 70 M70.344 — the hood was on backwards, and the crowns were inside the head.**
+Two reports, both correct, both settled by measurement rather than by another
+round of nudging.
+
+"LOOK AT ALL THE HOODS, IT'S COMPLETELY MISPLACED, TO THE POINT THAT IT'S
+LAUGHABLE." It was on back to front. Measured on the RANGER, where this mesh
+belongs, the cloak sits BEHIND the head: its back reaches 0.345 further back than
+his skull and its front stops 0.214 SHORT of his face, because the cowl opens
+forward and the drape hangs off the nape. Measured on the player by
+`helmfit.mjs`, it was the exact opposite — 0.222 in FRONT of the face with its
+back 0.13 forward of the back of the skull. The depth axis is inverted for this
+piece, so what you looked through was the BACK of the hood, with the drape over
+the face and the whole crown and nape bare.
+
+Registration could never have caught it, and the reason is worth keeping:
+`register.fit` matches head CENTRES, and a mesh turned about its own centre has
+the same centre it started with. It reported a shift of eighteen thousandths,
+correctly, while the hood was pointing the wrong way. A registration check is not
+an orientation check.
+
+Turned about the head's vertical axis BEFORE registration, so the scaling acts on
+a hood already facing the right way. Centred too: the drape is 0.065 off-centre on
+the Ranger himself, deliberate on a character who wears it over one shoulder and
+just a slipped hood on anyone else. And lifted 0.058 to clear the crown, because
+the Ranger's own hood clears his head by -0.011 — registering it faithfully onto
+a taller skull reproduces that fault instead of fixing it.
+
+A REAL BUG FOUND WHILE WRITING THE FIX: the correction was first written against
+`vert.co` while the mesh was still parented to the Head bone. The boxes it
+corrects against are WORLD boxes and `vert.co` is LOCAL, so it would have applied
+the turn in the wrong frame. The world transform is baked in first now and
+everything after it is in one space.
+
+"AND PARTS OF THE CROWNS ARE IN THE HEAD." The circlet's box was x[1.68,2.07] —
+the skull's box to the hundredth, which is what a band buried in a head measures
+like. A BAND'S RADIUS IS ITS CENTRELINE: at r 34 with tube 3.5 the inner surface
+sat at 30.5 against a skull of 33.4, so three units of head stood through the
+gold. `over_skull` from M70.343 does not catch this on its own — it floors the
+centreline, and the tube has to be added on top. The ornament and stone were at
+`head_front_z - 4` and `- 2`, behind the face's own surface; they sit proud of the
+band now. Circlet coverage 5% to 11%, and its box surrounds the skull instead of
+matching it.
+
+Hood coverage 39% to 43%, crown clearance -0.009 to +0.028. 19 fitted, 0 not.
+Suite green.

@@ -1008,11 +1008,28 @@ def circlet_helm(a):
     """A band on the brow and a stone at the front. The one head piece that shows the wearer."""
     # A circlet is worn ABOVE the brow — the whole point of the style is that it
     # leaves the face visible, and at the brow line it covered the eyes instead.
-    a.band(BONE_HEAD, BROW_Y + 10.0, 34.0, "Gold", tube=3.5, squash=(1.0, 1.16), z=SKULL_Z)
+    # AND IT WAS WORN INSIDE THE SKULL. Reported: "parts of the crowns are IN the
+    # head." Measured by `helmfit.mjs`, the circlet's box was x[1.68,2.07] — the
+    # skull's box to the hundredth, which is what a band buried in a head looks
+    # like from outside.
+    #
+    # A BAND'S RADIUS IS ITS CENTRELINE, not its inside. At r 34 with tube 3.5
+    # the inner surface sat at 30.5, and `skull_profile.py` puts the skull at
+    # 33.4 half-width at this height: three units of head standing through the
+    # gold. `over_skull` alone does not catch this, because the number it floors
+    # is the centreline — the TUBE has to be added on top of it.
+    band_r = over_skull(34.0) + 3.5
+    a.band(BONE_HEAD, BROW_Y + 10.0, band_r, "Gold", tube=3.5, squash=(1.0, 1.16), z=SKULL_Z)
+    # The ornament and its stone sat at `head_front_z - 4` and `- 2` — BEHIND the
+    # face's own surface at 33, so the front of the circlet was inside the brow
+    # as well as the sides being inside the temples. They go outside the band
+    # instead: the band's front reaches `SKULL_Z + band_r * 1.16`, and these sit
+    # just proud of it.
+    front = SKULL_Z + band_r * 1.16
     a.plate(BONE_HEAD, [(-6.0, BROW_Y + 5.0), (6.0, BROW_Y + 5.0), (8.0, BROW_Y + 13.0),
                         (0.0, BROW_Y + 19.0), (-8.0, BROW_Y + 13.0)],
-            "Gold", z=BODY["head_front_z"] - 4.0, thickness=3.5)
-    a.stud(BONE_HEAD, (0.0, BROW_Y + 11.0, BODY["head_front_z"] - 2.0), (0.0, 0.0, 1.0), 6.0, 4.5, "Red", sides=6)
+            "Gold", z=front - 1.0, thickness=3.5)
+    a.stud(BONE_HEAD, (0.0, BROW_Y + 11.0, front + 1.5), (0.0, 0.0, 1.0), 6.0, 4.5, "Red", sides=6)
 
 
 def hood_helm(a):
