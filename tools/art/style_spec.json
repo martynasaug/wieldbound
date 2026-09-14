@@ -1,0 +1,208 @@
+{
+  "reference": {
+    "label": "pack reference",
+    "items": 14,
+    "tris": 248.0,
+    "coarseness": 470.34533254436064,
+    "faceted": 0.6119221810906914,
+    "bulk": 0.11301588519995842
+  },
+  "items": [
+    {
+      "tris": 248,
+      "area": 0.8806077936085349,
+      "coarseness": 281.62367151413815,
+      "faceted": 0.5161290322580645,
+      "bulk": 0.0786337739951961,
+      "size": [
+        0.359,
+        0.462,
+        0.575
+      ],
+      "name": "ShoulderPad.L",
+      "file": "Warrior.fbx"
+    },
+    {
+      "tris": 248,
+      "area": 0.8806075713867569,
+      "coarseness": 281.62374258201794,
+      "faceted": 0.5161290322580645,
+      "bulk": 0.07863462553553904,
+      "size": [
+        0.359,
+        0.462,
+        0.575
+      ],
+      "name": "ShoulderPad.R",
+      "file": "Warrior.fbx"
+    },
+    {
+      "tris": 76,
+      "area": 0.16158341704829068,
+      "coarseness": 470.34529525568024,
+      "faceted": 0.5263157894736842,
+      "bulk": 0.08683061569808395,
+      "size": [
+        0.207,
+        0.193,
+        0.379
+      ],
+      "name": "ArmGuard.L",
+      "file": "Ranger.fbx"
+    },
+    {
+      "tris": 76,
+      "area": 0.16158339142783054,
+      "coarseness": 470.3453698330411,
+      "faceted": 0.5263157894736842,
+      "bulk": 0.10285614633040471,
+      "size": [
+        0.184,
+        0.183,
+        0.381
+      ],
+      "name": "ArmGuard.R",
+      "file": "Ranger.fbx"
+    },
+    {
+      "tris": 576,
+      "area": 3.446377819895781,
+      "coarseness": 167.13199483665963,
+      "faceted": 0.5555555555555556,
+      "bulk": 0.7998956055635179,
+      "size": [
+        0.783,
+        0.892,
+        1.013
+      ],
+      "name": "Cloak",
+      "file": "Ranger.fbx"
+    },
+    {
+      "tris": 180,
+      "area": 0.28737763676055533,
+      "coarseness": 626.3535396457346,
+      "faceted": 0.6222222222222222,
+      "bulk": 0.8939838402270407,
+      "size": [
+        0.228,
+        0.338,
+        0.263
+      ],
+      "name": "Pouch",
+      "file": "Ranger.fbx"
+    },
+    {
+      "tris": 180,
+      "area": 0.25517319278170875,
+      "coarseness": 705.4032519551666,
+      "faceted": 0.6222222222222222,
+      "bulk": 1.0,
+      "size": [
+        0.243,
+        0.274,
+        0.242
+      ],
+      "name": "Pouch",
+      "file": "Wizard.fbx"
+    },
+    {
+      "tris": 24,
+      "area": 0.14625061500286296,
+      "coarseness": 164.10187402993267,
+      "faceted": 0.8333333333333334,
+      "bulk": 1.0,
+      "size": [
+        0.403,
+        0.26,
+        0.36
+      ],
+      "name": "ShoulderPad.L",
+      "file": "Wizard.fbx"
+    },
+    {
+      "tris": 24,
+      "area": 0.1462506066419696,
+      "coarseness": 164.10188341135202,
+      "faceted": 0.8333333333333334,
+      "bulk": 1.0,
+      "size": [
+        0.403,
+        0.26,
+        0.36
+      ],
+      "name": "ShoulderPad.R",
+      "file": "Wizard.fbx"
+    },
+    {
+      "tris": 712,
+      "area": 1.865508905173467,
+      "coarseness": 381.6652914523577,
+      "faceted": 0.6348314606741573,
+      "bulk": 0.12317562406951213,
+      "size": [
+        0.516,
+        0.142,
+        3.177
+      ],
+      "name": "Warrior_Sword",
+      "file": "Warrior_Sword.fbx"
+    },
+    {
+      "tris": 1312,
+      "area": 2.12942579168183,
+      "coarseness": 616.1285380899685,
+      "faceted": 0.5457317073170732,
+      "bulk": 0.04895571403121612,
+      "size": [
+        0.743,
+        0.308,
+        3.068
+      ],
+      "name": "Ranger_Bow",
+      "file": "Ranger_Bow.fbx"
+    },
+    {
+      "tris": 1286,
+      "area": 1.417510321375653,
+      "coarseness": 907.2244347060373,
+      "faceted": 0.6158631415241057,
+      "bulk": 0.06761414968495587,
+      "size": [
+        0.374,
+        0.374,
+        2.602
+      ],
+      "name": "Wizard_Staff",
+      "file": "Wizard_Staff.fbx"
+    },
+    {
+      "tris": 668,
+      "area": 0.5134270975326594,
+      "coarseness": 1301.061052698934,
+      "faceted": 0.6497005988023952,
+      "bulk": 0.14701792226222835,
+      "size": [
+        0.259,
+        0.065,
+        1.584
+      ],
+      "name": "Rogue_Dagger",
+      "file": "Rogue_Dagger.fbx"
+    },
+    {
+      "tris": 1704,
+      "area": 1.1026467351367966,
+      "coarseness": 1545.3725528771447,
+      "faceted": 0.607981220657277,
+      "bulk": 0.046350821846731234,
+      "size": [
+        0.796,
+        0.158,
+        2.932
+      ],
+      "name": "Cleric_Staff",
+      "file": "Cleric_Staff.fbx"
+    }
+  ]
+}

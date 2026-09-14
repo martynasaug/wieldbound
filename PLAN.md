@@ -25569,3 +25569,57 @@ atlases would be a separate decision about the game's look rather than a bug fix
 Suite 56/57 on the batch run, with `throwers.mjs` passing on its own — it drives
 a live socket against whatever monsters have spawned, and it flakes. Nothing in
 this milestone touches combat.
+
+
+**Phase 70 M70.327 — an instrument for item art, and four sketches that mostly
+fail.** Asked for the pack's outfits as the standard our items must reach, an
+instrument for producing art to it — "taste, style, textures, not just
+numbers" — and ideas of my own to look at.
+
+THE FIRST ATTEMPT AT THE INSTRUMENT WAS NUMBERS, AND THE CORRECTION WAS RIGHT.
+`style.py` measures four things off the reference — triangle budget, coarseness,
+faceting, bulk — and it earns its place as a sanity check, but a triangle budget
+has never made anything look good. What makes an item belong is silhouette,
+surface and the colour of the part beside it, and none of that reads off a table.
+
+So the instrument is `tools/art/bench.py`: the pack's own items and ours, rendered
+identically — same light, same three-quarter angle, same mid-grey ground, each
+normalised to the frame — and tiled by `sheet.mjs`. A reference in one window and
+our work in another is how every "close enough" in this project has happened.
+
+WHAT THE BENCH SHOWED, none of which was visible any other way:
+
+  * OUR ITEMS HAVE NO TEXTURE AT ALL. Every reference item is PAINTED — value
+    running down a blade, etched line-work on a pauldron, seams and a buckle on a
+    pouch. Ours are flat palette colours on bare geometry. This is the single
+    biggest gap and it is a missing CAPABILITY, not a missing effort: `kit.py` has
+    no way to paint an item, so no amount of recipe work closes it.
+  * THE REFERENCE IS NOT HARD-FACETED. Measured at 0.61 vertices per triangle it
+    is mostly welded — smooth-shaded, with the low-poly read coming from
+    silhouette and paint. `kit.Model.finish` sets `use_smooth = False` on every
+    polygon we build. `kit.py`'s own header describes the style as "faceted ...
+    every edge catches light as a bevel", and that reading is wrong.
+  * EVERY REFERENCE ITEM IS THREE OR FOUR COLOURS ON ONE SMALL OBJECT — steel
+    blade, red guard, wrapped grip, gold pommel. Ours are a steel blade and a grey
+    guard, which is why they read as unfinished.
+
+FOUR SKETCHES, AND I WILL NOT PRETEND THEY LANDED. `items/ideas.py` builds a helm,
+a pauldron, a cape and boots. The cape works — a leather yoke, a gold rim and a
+split red drape reads as cloth. The boots half work: the gold band and toe cap
+read, the shin is a featureless tube. The pauldron and the helm fail — three
+lames pile into a blob, and the helm's dome reads as an egg with its crest buried
+inside the shell and its nose bar invisible.
+
+The causes are mine and worth naming: lathes with too few profile points and too
+many sides come out blobby rather than chunky; parts were placed INTERSECTING
+rather than visibly stacked, so the details that carry the design are inside the
+form; and there is still no paint. I first blamed the smoothing angle and dropped
+it from 51 degrees to 31, which changed almost nothing — the geometry was the
+problem, and the re-render is what said so rather than the reasoning.
+
+THE NEXT STEP IS TEXTURE, not more recipes. The reference gets its quality from a
+painted atlas, and until `kit.py` can lay UVs onto one and paint into it, our
+items are flat shapes competing with painted ones. That is a real piece of work
+and it is the thing standing between this pipeline and art that belongs.
+
+No game code changed; nothing here is equipped yet.
