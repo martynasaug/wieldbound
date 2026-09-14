@@ -22,6 +22,7 @@ import { profiler } from "./profiler";
 import * as THREE from "three";
 import {
   appearanceClass,
+  HELM_COVERS_HAIR,
   type Appearance,
   type GearStyle,
   type ItemRarity,
@@ -2109,7 +2110,13 @@ export class Actor {
 
   /** Hair under a helm would poke through it, so a worn helm hides it. A beard stays. */
   private syncHairVisibility(): void {
-    const shown = !this.appearance?.layers.helm;
+    // PER STYLE, NOT PER SLOT. Reported: "why does wearing helmets (crown for
+    // example) remove your hairstyle?" This used to be `!layers.helm` — any head
+    // piece at all hid the hair, so a circlet, which is a band above the brow
+    // covering 11% of the skull, deleted a hairstyle the player had chosen. See
+    // `HELM_COVERS_HAIR`.
+    const helm = this.appearance?.layers.helm;
+    const shown = !helm || !HELM_COVERS_HAIR[helm.style];
     const hair = this.lookPieces.get("hair");
     if (hair) hair.visible = shown;
     // The cap goes with it. Left visible under a helm it would show as a

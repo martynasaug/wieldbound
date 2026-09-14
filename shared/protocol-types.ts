@@ -3590,6 +3590,27 @@ export const GEAR_STYLES = [
 ] as const;
 export type GearStyle = (typeof GEAR_STYLES)[number];
 
+// WHICH HEAD PIECES ACTUALLY COVER THE HAIR.
+//
+// Reported: "why does wearing helmets (crown for example) remove your
+// hairstyle?" The client hid hair whenever ANY helm layer was present, which is
+// right for a great helm and absurd for a circlet — a band worn above the brow
+// that leaves the whole skull visible. A player who chose a hairstyle lost it to
+// a piece of jewellery.
+//
+// Measured with `tools/soak/helmcover.mjs`, the five styles cover 49%, 43%, 85%,
+// 56% and 11% of the skull. The circlet is the outlier by a wide margin and is
+// the only one with nothing over the crown at all, so it is the only one that
+// keeps the hair. The hood keeps it too: it is cloth draped over a head, and a
+// fringe showing at the brow is how a hood looks on a person.
+export const HELM_COVERS_HAIR: Record<string, boolean> = {
+  cap: true,
+  full: true,
+  horned: true,
+  hood: false,
+  circlet: false,
+};
+
 // Slots that put a layer on the character. `ring` is invisible, and `weapon`
 // and `offhand` are held rather than worn — they hang off a hand bone and have
 // to move independently of the body.

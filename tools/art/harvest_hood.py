@@ -1,38 +1,53 @@
-# THE RANGER'S OWN HOOD, HARVESTED AS THE HOOD HELM.
+# THE PLAYER'S OWN COWL, HARVESTED AS THE HOOD HELM.
 #
 #   blender --background --factory-startup --python tools/art/harvest_hood.py
 #
-# Reported, twice: "the hood is looking like a regular helmet and not a hood ...
-# the design itself is completely bad. Look at the default archer character
-# model, he has a hood on, that's what it should look like."
+# Reported four times, escalating: "the hood is looking like a regular helmet and
+# not a hood", "it looks nothing like a hood, the design itself is completely
+# bad", and finally "look at all the hoods, it's completely misplaced, to the
+# point that it's laughable", with a photograph of it hanging off the back of the
+# head like a satchel.
 #
-# Both times I answered by modelling — folds, then a peak — and both times the
-# result was a dome with things attached to it, because a lathe about a vertical
-# axis IS a helmet and no amount of trim changes that. The pack already contains
-# the shape being asked for: the Ranger wears a real hood, and it is a separate
-# mesh called `Cloak` parented to the Head bone.
+# The first two rounds were answered by MODELLING — folds, then a peak — and both
+# produced a dome with things attached to it, because a lathe about a vertical
+# axis IS a helmet and no amount of trim changes that.
 #
-# It was in reach the whole time. `garments.py` cuts the Ranger's fittings and
-# explicitly DROPS this one, because a chest item must not put a hood on the
-# player's head — correct for the chest slot, and the same mesh is exactly what
-# the HELM slot wants.
+# The next four were answered by FITTING the Ranger's `Cloak` mesh, and every one
+# of them was wrong in a different direction: untouched it overhung the face,
+# turned it sat beside the head, mirrored it sat behind, and registered on its
+# cowl it still left the crown out. The reason all four failed is one mistake
+# repeated: `Cloak` is a hooded CLOAK, mostly drape, and every correction was
+# steered by a bounding box that was measuring the drape and calling it the hood.
 #
-# HARVESTED, NOT MODELLED, which is the lesson this phase keeps relearning: the
-# hair, the beards and the garments all came right the moment they stopped being
-# built from primitives and started being cut from art someone drew.
+# THE ANSWER WAS IN THE REPOSITORY THE WHOLE TIME, written down in `base_body.py`
+# and read past six times. The player's body is the Rogue stripped, and the list
+# of what gets stripped ends with `Face` — which, as that file's own note says at
+# length, IS NOT A FACE:
+#
+#     Rogue    106 faces   a smooth featureless dome — a COWL
+#
+# It is stripped from the BODY because a base character must not come with a hood
+# welded on. It is exactly what the HELM slot wants, and unlike anything cut from
+# another character it was authored FOR THIS SKULL ON THIS BONE. Rendered on its
+# own owner (`tools/soak/shots/roguecowl/01-whole.png`) it is a hood sitting on a
+# head with the opening at the face — which is all the last four builds were
+# trying to achieve by arithmetic.
+#
+# SO THERE IS NO REGISTRATION HERE, and that is the point rather than an
+# omission. `register.py`'s rule is that art HARVESTED FROM A DONOR must be fitted
+# to the wearer before export — and this is not from a donor. The wearer is the
+# Rogue and so is this. Fitting it to itself could only move it off the head it
+# already fits.
 #
 # THE MATERIAL IS RENAMED TO A KIT NAME so the game's palette reaches it.
 # `gear.ts` repaints armour by material NAME through `MATERIAL_LOOK`, and a piece
-# arriving as `Ranger_Texture` matches nothing, falls to the metal role and is
+# arriving as `Rogue_Texture` matches nothing, falls to the metal role and is
 # painted flat. Called `Steel` — which `armour.py` uses for cloth, being the
 # palette's most identifying tone — a Verdant hood comes out green and a Crimson
 # one red, like every other piece in the slot.
 
 import os
-
 import sys
-
-import math
 
 import bpy
 import mathutils
@@ -42,29 +57,15 @@ import register  # noqa: E402
 
 MODELS = "client/public/models"
 OUT = "client/public/models/armour/helm_hood.glb"
-DONOR = "Ranger.fbx"
-MESH = "Cloak"
 
-# How far above the crown the cloth has to sit. The skull is 0.890 tall, so this
-# is about three per cent of it -- enough that the head does not come through at
-# the top under animation, small enough that the hood does not float.
-CROWN_MARGIN = 0.03
+# The player's own file, and its own cowl. See the note above: this is not a
+# donor, it is the wearer, which is why nothing below fits or moves it.
+DONOR = "Rogue.fbx"
+MESH = "Face"
 
 
 def main():
     root = os.getcwd()
-
-    # REGISTERED ONTO THE HEAD IT WILL BE WORN ON, by the one routine that does
-    # this for every donor. See `register.py` for the table and the rule: art
-    # HARVESTED from a donor is fitted here, art AUTHORED from the kit already
-    # uses this body's own landmarks and needs nothing.
-    #
-    # Uncorrected, this hood landed 0.22 forward of the player's face with its
-    # crown 0.07 BELOW the skull's, so the head came out of the top of it. The
-    # shift turned out to be eighteen thousandths -- the two heads sit in nearly
-    # the same place -- and the SCALE was the whole of it: the Ranger's skull is
-    # 0.727 tall against the Rogue's 0.889, a fifth shorter.
-    wearer = register.wearer_head()
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.fbx(filepath=os.path.join(root, MODELS, DONOR))
@@ -78,91 +79,56 @@ def main():
         return
     print(f"{MESH}: {len(hood.data.polygons)} faces, parent {hood.parent_type}/{hood.parent_bone}")
 
-    donor = register.head_box()
-    if not donor:
-        print(f"no Head-weighted vertices on {DONOR}")
-        return
+    head = register.head_box()
 
-    # FREED FROM THE BONE FIRST, AND THE WORLD TRANSFORM BAKED IN, so that
-    # everything below is in one frame.
+    # BAKE THE WORLD TRANSFORM INTO THE VERTICES, by the same three lines
+    # `look_pieces.py` uses for the hair and the beards — which are also
+    # bone-parented props harvested off this rig, and which fit.
     #
-    # The measurements this is corrected against — the donor head box, the
-    # wearer's — are WORLD boxes, and `vert.co` is LOCAL. While this mesh is
-    # parented to the Head bone those are not the same space, so rotating or
-    # shifting vertices about a world point quietly applies the correction in the
-    # wrong frame. Baking here costs nothing and removes the whole class of
-    # error; the export below then has nothing left to apply.
-    world = hood.matrix_world.copy()
+    # It matters that it is these lines and not an equivalent-looking
+    # `transform_apply`. These props carry the pack's local offset on an armature
+    # SCALED 100, so their own coordinates mean nothing away from that rig.
+    # Transformed into the mesh data with the basis then cleared, the geometry is
+    # in the donor's MESH-BIND SPACE — the space our body's skeleton inverses are
+    # expressed in — so `boneAttachMatrix` places it exactly, with no constant
+    # supplied anywhere. That is the same note that records five tuned offsets in
+    # `hair.ts` being defeated by getting this wrong.
+    mw = hood.matrix_world.copy()
+    hood.data.transform(mw)
     hood.parent = None
-    hood.matrix_world = world
-    bpy.ops.object.select_all(action="DESELECT")
-    hood.select_set(True)
-    bpy.context.view_layer.objects.active = hood
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    hood.matrix_basis = mathutils.Matrix.Identity(4)
 
-    # IT WAS COMING OUT BACK TO FRONT, and that is why it read as a helmet with a
-    # hole in it rather than as a hood. Reported: "look at all the hoods, it's
-    # completely misplaced, to the point that it's laughable."
+    # MIRRORED IN DEPTH, and this is the one correction that survived being
+    # tested rather than reasoned about.
     #
-    # Measured on the RANGER, where this mesh belongs, the cloak sits BEHIND the
-    # head — its back is 0.345 further back than the skull's and its front stops
-    # 0.214 SHORT of the face, because the cowl opens forward and the drape hangs
-    # off the back of the skull. Measured on the player by `helmfit.mjs` it was
-    # the exact opposite: 0.222 in FRONT of the face, with its back 0.13 forward
-    # of the back of the skull, so the crown and nape were bare and the drape was
-    # hanging over the face. The depth axis is inverted for this piece.
+    # Measured on the Rogue, his cowl sits BEHIND his face: its front stops 0.164
+    # short of the face and its back reaches 0.408 past the back of the skull.
+    # Photographed in game, harvested untouched, it arrives IN FRONT of the face
+    # (`tools/soak/shots/hoodside/side.png`, shot in crimson so it cannot be
+    # mistaken for the scenery — an earlier round of this was diagnosed against a
+    # tree, in verdant).
     #
-    # Registration could never have caught it. `register.fit` matches head
-    # CENTRES, and a mesh turned about its own centre has the same centre it
-    # started with — the shift it reported was eighteen thousandths, correctly,
-    # while the hood was pointing the wrong way.
+    # The loader stands Z-up data up with a -90 degree rotation about X (see
+    # `instantiateNow` in `assets.ts`), which maps Blender's +y to three.js's -z.
+    # The BODY and its skeleton go through that together and stay agreeing; a
+    # rigid piece attached by `boneAttachMatrix` does not, so its depth arrives
+    # reversed. Nothing authored in `armour.py` shows this, because those are
+    # built in the game's own frame against the `BODY` table.
     #
-    # Turned about the head's own vertical axis, BEFORE registration, so the
-    # scaling that follows acts on a hood that is already facing the right way.
-    head_mid = (donor[0] + donor[1]) / 2
-    turn = mathutils.Matrix.Rotation(math.pi, 4, "Z")
+    # A MIRROR, not a turn. A 180-degree turn was tried on the Ranger's cloak and
+    # swings the whole piece across the head; a mirror flips only the depth axis,
+    # so the cowl stays over the skull and only its facing changes. The winding
+    # goes with it — a mirrored mesh is inside out — so the normals flip back.
+    lo, hi = head
+    mid_y = (lo.y + hi.y) / 2
     for vert in hood.data.vertices:
-        vert.co = head_mid + turn @ (vert.co - head_mid)
-    # AND CENTRED. The drape is off-centre by 0.065 on the Ranger himself — a
-    # deliberate asymmetry on a character who wears it over one shoulder — and on
-    # a head that is not his it just reads as the hood having slipped, with the
-    # skull standing out of one side of it. The turn above flips the sign of that
-    # offset; this removes it.
-    lo = mathutils.Vector((min(v.co[i] for v in hood.data.vertices) for i in range(3)))
-    hi = mathutils.Vector((max(v.co[i] for v in hood.data.vertices) for i in range(3)))
-    off = (lo.x + hi.x) / 2 - head_mid.x
-    for vert in hood.data.vertices:
-        vert.co.x -= off
-    print(f"turned about the head, and centred by {off:+.3f}")
-
-    scale, shift = register.fit(hood, donor, wearer)
-    print(f"registered: scale ({scale.x:.3f},{scale.y:.3f},{scale.z:.3f}) "
-          f"shift ({shift.x:+.3f},{shift.y:+.3f},{shift.z:+.3f})")
-    # AND LIFTED CLEAR OF THE CROWN. The Ranger's own hood only just covers his
-    # head — measured on him, its top is 0.011 BELOW the top of his skull — so
-    # registering it faithfully onto a taller skull reproduces that fault rather
-    # than fixing it, and the crown stands through the top of the cloth. It came
-    # out at -0.009 even after the 1.225 vertical scale.
-    #
-    # Registration is the wrong place to correct this: scaling the whole hood up
-    # until its crown clears would widen and lengthen it too, and it is already
-    # the right size everywhere else. A lift is the smaller change.
-    hood_top = max((hood.matrix_world @ v.co).z for v in hood.data.vertices)
-    want = wearer[1].z + CROWN_MARGIN
-    if hood_top < want:
-        hood.location.z += want - hood_top
-        print(f"lifted {want - hood_top:+.3f} to clear the crown")
-
-    # `fit` moves the object rather than its vertices, so that goes in too — the
-    # game's `boneAttachMatrix` places this with nothing supplied here.
-    bpy.ops.object.select_all(action="DESELECT")
-    hood.select_set(True)
-    bpy.context.view_layer.objects.active = hood
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+        vert.co.y = 2 * mid_y - vert.co.y
+    hood.data.flip_normals()
+    print(f"mirrored in depth about the head's own centre y={mid_y:.3f}")
 
     # NAMED FOR THE BONE. `build.py` exports armour as one object per bone and the
     # loader reads the object name to decide what to hang it on, so this has to be
-    # `Head` and not `Cloak`.
+    # `Head` and not `Face`.
     hood.name = "Head"
     hood.data.name = "Head"
 

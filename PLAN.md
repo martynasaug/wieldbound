@@ -26177,3 +26177,61 @@ matching it.
 
 Hood coverage 39% to 43%, crown clearance -0.009 to +0.028. 19 fitted, 0 not.
 Suite green.
+
+**Phase 70 M70.345 — the hood was in the repository all along, and a bounding box cannot see a hood.**
+Reported for the fourth and fifth time, with photographs: "LOOK AT HOW THE HOOD
+LOOKS, I KEEP TELLING YOU THE SAME THING OVER AND OVER FOR THE HUNDREDTH TIME."
+
+Six builds of this piece were wrong, and all six for one reason. The first two
+were MODELLED and came out as domes with trim. The next four cut the Ranger's
+`Cloak` and placed it by comparing BOUNDING BOXES — untouched it overhung the
+face, turned it sat beside the head, mirrored it sat behind, registered on its
+cowl it still left the crown out. `Cloak` is a hooded CLOAK: the cowl is a small
+part at the top and the rest is drape falling to the waist, so its box centre is
+nowhere near the head. Every correction was steered by a box that was measuring
+the drape and calling it the hood.
+
+THE ANSWER WAS WRITTEN DOWN IN THIS REPOSITORY AND READ PAST SIX TIMES.
+`base_body.py` strips a mesh called `Face` from the player's body, and its own
+note says at length what that mesh is: "Rogue 106 faces — a smooth featureless
+dome, a COWL". It is stripped because a base character must not come with a hood
+welded on. It is exactly what the helm slot wants, and unlike anything cut from
+another character it was authored FOR THIS SKULL ON THIS BONE, so it needs no
+registration at all — fitting it could only move it off the head it already fits.
+
+One correction remains and it was found by test, not by argument: the loader
+stands Z-up data up with a -90 degree rotation about X, which maps Blender's +y
+to three.js's -z. Body and skeleton go through that together and stay agreeing; a
+rigid piece placed by `boneAttachMatrix` does not, so its depth arrives reversed.
+A MIRROR fixes it — a 180-degree turn was tried and swings the piece across the
+head instead.
+
+FOUR INSTRUMENTS LIED IN THIS ONE PHASE, and that is the lesson worth more than
+the hood. The head-box test passed a helm with the temples through it. The ray
+test scored the Ranger's own hood at 29% ON HIS OWN HEAD. The box comparison
+matched the donor's depth ratio to the per-cent while the hood hung off the back
+of the skull. And a profile shot in the VERDANT palette was diagnosed for a round
+against what turned out to be a tree — it is shot in crimson now. THE RULE: a
+bounding box may say where something is not. It may never be asked whether a
+hollow thing is WORN. For that, render it and look at it.
+
+`tools/soak/hoodside.mjs` shoots the head front, side and back, because the side
+is the view that caught what four rounds of arithmetic missed.
+
+ALSO, both reported in the same message:
+
+"Why does wearing helmets (crown for example) remove your hairstyle?" Hair was
+hidden by ANY helm layer. Right for a great helm at 85% coverage, absurd for a
+circlet at 11% — a band above the brow that deleted a hairstyle the player chose.
+`HELM_COVERS_HAIR` decides per style now: cap, full and horned cover it; circlet
+and hood do not, a fringe at the brow being how a hood looks on a person.
+`tools/soak/hairhelm.mjs` checks all five.
+
+"Why does your character refresh when you equip an item?" Diagnosed, not yet
+fixed: `applyAppearance` calls `clearGear()` and rebuilds EVERY worn piece
+asynchronously whatever changed, so swapping a ring strips armour, cape, boots
+and helm and re-fetches them all. It needs to rebuild only the layer that
+changed, which means tagging worn objects by slot and clearing selectively —
+its own milestone, not a rider on this one.
+
+19 fitted, 0 not. Suite green, client typechecks.
