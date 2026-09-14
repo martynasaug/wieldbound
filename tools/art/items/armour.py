@@ -875,7 +875,19 @@ def full_helm(a):
         a.plate(BONE_HEAD, [(x - 3.0, 226.0), (x + 3.0, 226.0), (x + 3.0, 238.0), (x - 3.0, 238.0)],
                 "Black", z=BODY["head_front_z"] + 1.0, thickness=6.0)
     # A comb from brow to nape: the silhouette that says great helm at a glance.
-    a.box(BONE_HEAD, (0.0, CROWN_Y - 6.0, SKULL_Z), (7.0, 18.0, 64.0), "LightSteel", taper=0.7)
+    #
+    # IT WAS INSIDE THE DOME. Centred at CROWN_Y - 6 with a height of 18 it spanned
+    # y 281 to 299 against a shell whose crown is at 296 — so all but three units
+    # of it sat under the surface, and the helm photographed from BEHIND was a
+    # smooth featureless barrel. That angle matters more than the visor does: this
+    # is a third-person game and the camera is behind the character nearly all the
+    # time, which is the one view none of the review sheets was being read for.
+    a.box(BONE_HEAD, (0.0, CROWN_Y + 4.0, SKULL_Z), (7.0, 22.0, 60.0), "LightSteel", taper=0.7)
+    # A NAPE GUARD, for the same reason. The back of this helm had nothing on it
+    # at all; a plate across the base of the skull gives the silhouette a line
+    # where the neck meets the shell.
+    a.plate(BONE_HEAD, [(-20.0, 214.0), (20.0, 214.0), (17.0, 232.0), (-17.0, 232.0)],
+            "DarkSteel", z=BODY["head_back_z"] + 4.0, thickness=6.0, chamfer=1.5)
     a.band(BONE_HEAD, 240.0, 35.0, "DarkSteel", tube=3.0, squash=(1.0, 1.16), z=SKULL_Z)
 
 

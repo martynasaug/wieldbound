@@ -25884,3 +25884,24 @@ And the palette check itself: helms, boots, capes and the three procedural chest
 styles all vary correctly. The blindness fixed last milestone was garments only,
 which is what `repaint` versus a painted atlas would predict — but it was worth
 confirming rather than reasoning about. Suite 57/57.
+
+**Phase 70 M70.337 — the great helm's comb was inside the dome, so its back was a
+barrel.** Found by an accident: `palettes.mjs` was comparing palettes from BEHIND,
+because `heading + PI` is `armourstyles`' back view and I had written the harness
+without checking which. The `full` helm came back as a smooth featureless shell.
+
+Its comb is supposed to run brow to nape. Centred at `CROWN_Y - 6` with a height
+of 18 it spanned y 281 to 299 against a shell whose crown is at 296 — so all but
+three units of it sat under the surface. At `CROWN_Y + 4` with a height of 22 it
+stands proud from every angle, and a nape guard now crosses the base of the skull
+for the same reason.
+
+THE BACK IS THE VIEW THAT MATTERS MOST AND IT IS THE ONE NOTHING WAS BEING READ
+FOR. This is a third-person game and the camera sits behind the character nearly
+all the time. `armourstyles` has photographed front, side AND back for every style
+since it was written — the evidence was in every sheet this phase produced, and I
+had been reading the front tile and moving on. The instrument was right; the
+reading habit was not.
+
+Audited the rest from behind in daylight: `cap`, `horned` and `circlet` read from
+every angle, and `hood` is plain behind because a hood is. Suite 57/57.
