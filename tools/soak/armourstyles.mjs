@@ -60,21 +60,29 @@ await login(page, `Armour${Date.now() % 100000}`);
 // note about and that `capshow.mjs` made an hour ago.
 await page.evaluate((hour) => {
   const g = window.__wieldbound;
-  // THE MEASURED HOUR, not noon. `tools/soak/sunsweep.mjs` scores the same shot
-  // at twelve hours off the framebuffer: t = 0.5 is the DARKEST setting of the
-  // day for a front-facing subject, because the sun leans +z at every hour and
-  // all three views here look back along it. Every armour sheet ever taken by
-  // this harness was lit that way, which is why the Warrior's plate and the
-  // Ranger's leather read as near-black — and I checked the cut, the atlas, the
-  // metalness and the material before checking the light. The garment files are
-  // steel grey and teal green: see `tools/soak/shots/pack/_sheet.png`.
+  // DAYLIGHT, AND THE HOUR IS DIFFERENT FROM `portrait.mjs`'S ON PURPOSE.
+  //
+  // This froze noon originally, and `tools/soak/sunsweep.mjs` measures t = 0.5 as
+  // the darkest setting of the day for a FRONT-FACING FACE — the sun leans +z at
+  // every hour, so a camera looking back along it is backlit. I took that
+  // measurement and moved this harness to t = 0, which is the hour that sweep
+  // found brightest.
+  //
+  // THAT WAS AN OVER-GENERALISATION AND IT COST A WRONG CONCLUSION. `sunsweep`
+  // scores a head at two metres lit by the SPAWN BRAZIER, which is why t = 0 —
+  // night — wins there: the fire is the light. A whole figure at 3.4m is not
+  // that subject. Photographed side by side, every style read as a dark blob at
+  // t = 0 and the scale, brigandine and chain came back vivid at t = 0.45, and I
+  // had begun writing down "the armour is all too dark" as a fact about the art.
+  //
+  // Faces at night by firelight, armour in daylight. `ARMOUR_HOUR` overrides.
   g.world.dayNight.freeze(hour);
   const render = g.world.renderer.render.bind(g.world.renderer);
   g.world.renderer.render = (s, c) => {
     g.__armourHold?.();
     render(s, c);
   };
-}, Number(process.env.ARMOUR_HOUR ?? 0));
+}, Number(process.env.ARMOUR_HOUR ?? 0.45));
 await page.waitForTimeout(1500);
 
 // Front, side and BACK: a cape is only itself from behind, and a chest piece

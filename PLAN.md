@@ -25856,3 +25856,31 @@ so choosing it would have turned thirteen palettes into three browns.
 style across six palettes spanning the wheel, the character held still with the
 mixer stopped so any difference in the picture is the palette and nothing else.
 Suite 57/57.
+
+**Phase 70 M70.336 — armour is reviewed in daylight, faces at night, and I had
+generalised one measurement onto the other.** `sunsweep.mjs` measures t = 0.5 as
+the darkest hour for a front-facing FACE and t = 0.00 as the brightest. Two
+milestones ago I took that result and moved the armour sheet to t = 0 with it.
+
+That was an over-generalisation and it cost a wrong conclusion. `sunsweep` scores
+a HEAD AT TWO METRES lit by the spawn brazier — which is precisely why night wins
+there: the fire is the light, and at that range it reaches. A whole figure at
+3.4m is a different subject. Photographed side by side, every chest style reads
+as a dark blob at t = 0 and scale, brigandine and chain come back vivid at
+t = 0.45 — and I had already begun writing down "the armour is all too dark" as a
+fact about the art rather than about the lamp I was holding.
+
+Faces at night by firelight, armour in daylight. `ARMOUR_HOUR` still overrides,
+and `palettes.mjs` matches.
+
+Two smaller things from the same pass. `palettes.mjs` was comparing six palettes
+from BEHIND — `heading + PI` is `armourstyles`' back view, not its front — and it
+shows the front now. That mistake is worth keeping in the record because the back
+view it accidentally produced revealed something true: the `full` helm is a
+featureless barrel from behind, and a third-person camera looks at the back of a
+character most of the time. Back-of-item detail is worth a pass of its own.
+
+And the palette check itself: helms, boots, capes and the three procedural chest
+styles all vary correctly. The blindness fixed last milestone was garments only,
+which is what `repaint` versus a painted atlas would predict — but it was worth
+confirming rather than reasoning about. Suite 57/57.

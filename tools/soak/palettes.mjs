@@ -51,7 +51,9 @@ await page.evaluate((hour) => {
   g.__hold = () => {
     const target = a.position.clone();
     target.y += 0.85;
-    const f = a.heading + Math.PI;
+    // FRONT, matching armourstyles: heading + PI was its BACK view, and the
+    // first run of this harness compared six palettes from behind.
+    const f = a.heading;
     g.world.camera.position.set(target.x + Math.sin(f) * 3.5, target.y + 0.35, target.z + Math.cos(f) * 3.5);
     g.world.camera.lookAt(target);
   };
@@ -72,7 +74,7 @@ await page.evaluate((hour) => {
   a.mixer.update(0.0001);
   a.mixer.timeScale = 0;
 // HANDED OVER, not closed over: this callback runs in the browser.
-}, 0);
+}, 0.45);
 await page.waitForTimeout(1600);
 
 const tiles = [];
