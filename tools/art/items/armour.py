@@ -757,6 +757,11 @@ BONE_THIGH = (("UpperLegL", 1), ("UpperLegR", -1))
 BONE_CALF = (("LowerLegL", 1), ("LowerLegR", -1))
 # The forearm runs out 71 to 116 along the arm, at the arm's own axis.
 FOREARM_OUT0, FOREARM_OUT1 = 78.0, 112.0
+
+# The hand, on its own bone. Measurements from `gloves.py`, which cut this same
+# body: the wrist is at 116 and the curled fingers end at 164.
+BONE_HAND = (("Fist1L", 1), ("Fist1R", -1))
+HAND_OUT0, HAND_OUT1 = 114.0, 144.0
 THIGH_X, CALF_X = 22.0, 23.6
 
 # What each style wears on its limbs: the main material, and whether it plates
@@ -798,6 +803,31 @@ def dress_limbs(a, style):
         # And a band where the bracer meets the elbow, so the two sleeves read as
         # one arm rather than two tubes that happen to touch.
         a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT0 + 3.0, r0 + 1.0, r0 + 0.5, kit["trim"])
+    # AND A GAUNTLET, BECAUSE THE BRACER STOPPED AT THE WRIST.
+    #
+    # Reported as part of "there are spots of character skin": every suit of
+    # armour in the game ended at out 112 and left a bare hand hanging out of it.
+    # There is no glove SLOT — `ITEM_SLOTS` is weapon, offhand, helm, armor,
+    # cape, boots, ring — so a hand belongs to the chest item, the same way the
+    # thigh does.
+    #
+    # On the HAND bone rather than the forearm: a rigid tube long enough to cover
+    # a hand, hung off `LowerArm`, swings wide of it the moment the wrist bends.
+    # The rig carries `Fist1L`/`Fist1R` for exactly this, and `gloves.py` already
+    # measures the hand in these units — wrist at 116, knuckles at 150 — so the
+    # numbers line up with the bracer ending at 112 without a constant of mine.
+    #
+    # A HAND IS THICKER THAN A WRIST. `gloves.py` measures the bare forearm at
+    # radius 11 and the hand at half-thickness 19, so a gauntlet cut to the
+    # bracer's own radius would be a tube inside a fist.
+    for bone, side in BONE_HAND:
+        # TAPERED, OR IT IS A PIPE. Cut straight to out 150 at a constant radius
+        # the gauntlet covered the hand and read as a length of tube stuck on the
+        # wrist -- the character had no hands at all. It closes now, ending at the
+        # knuckles rather than past the fingers.
+        a.sleeve(bone, side, HAND_OUT0, HAND_OUT1 - 6.0, r1 + 2.5, r1 + 3.2, mat)
+        a.sleeve(bone, side, HAND_OUT1 - 6.0, HAND_OUT1, r1 + 3.2, r1 + 1.0, mat)
+        a.sleeve(bone, side, HAND_OUT0, HAND_OUT0 + 3.0, r1 + 3.8, r1 + 3.0, kit["trim"])
     if not kit["leg"]:
         return
     leg = kit["leg"]
@@ -1223,13 +1253,18 @@ def collar(a, mat, y=None, r=21.0, tube=3.5):
     from any angle, and two short straps run out over the shoulders to say what
     is holding the weight.
     """
+    # AND IT WAS INSIDE THE BODY. Radius 21 against a torso measured at 23
+    # half-width, so the one part of a cape a player sees from the front was
+    # buried in the chest — which is also why every cape read as hanging off
+    # nothing, with a gap between the cloth and the shoulder. Same fault as the
+    # chest shells; same floor fixes it.
     at = BODY["chest_y1"] - 4.0 if y is None else y
-    a.band(BONE_CHEST, at, r, mat, tube=tube, squash=(1.0, 1.15), z=-3.0)
+    a.band(BONE_CHEST, at, over_chest(r), mat, tube=tube, squash=(1.0, 1.15), z=-3.0)
     for side in (1, -1):
         a.plate(BONE_CHEST,
-                [(side * 6.0, at + 6.0), (side * 20.0, at + 1.0),
-                 (side * 20.0, at - 6.0), (side * 6.0, at - 3.0)],
-                mat, z=BODY["chest_front_z"] - 2.0, thickness=4.0, chamfer=1.0)
+                [(side * 6.0, at + 6.0), (side * 22.0, at + 1.0),
+                 (side * 22.0, at - 6.0), (side * 6.0, at - 3.0)],
+                mat, z=CHEST_SKIN_Z - 2.0, thickness=4.0, chamfer=1.0)
 
 
 def cape_back(a):
@@ -1248,10 +1283,21 @@ def cape_back(a):
     # back". A cape gathers at the shoulders and opens as it drops; the hem is
     # half as wide again as the collar now, and the fall lengthens to the knee
     # so there is room for it to open.
-    a.hanging([(30.0, BODY["chest_y1"] + 4.0, -27.0),
-               (25.0, BODY["chest_y0"] + 10.0, -29.0),
-               (34.0, BODY["waist_y0"] - 6.0, -35.0),
-               (46.0, BODY["waist_y0"] - 40.0, -43.0)], CLOTH)
+    # AND IT HUNG OFF THE SHOULDERS LIKE A PLANK. Photographed in profile for
+    # the first time (`tools/soak/wearlook.mjs`), the fall was a straight rigid
+    # slab leaning back at a constant angle with daylight between it and the
+    # body the whole way down — reported twice as "still looks the same".
+    #
+    # Two causes, both now fixed. The collar was radius 21 inside a torso of 23,
+    # so nothing visibly joined the cloth to the shoulders. And the profile is a
+    # STRAIGHT LINE from -27 to -43: a cape does not leave the shoulder at its
+    # final angle, it falls close to the back and opens near the hem. The upper
+    # stations come in against the body and the flare is pushed down into the
+    # last third, which is where a cape actually swings.
+    a.hanging([(30.0, BODY["chest_y1"] + 4.0, -26.0),
+               (26.0, BODY["chest_y0"] + 10.0, -27.5),
+               (34.0, BODY["waist_y0"] - 6.0, -31.0),
+               (46.0, BODY["waist_y0"] - 40.0, -41.0)], CLOTH)
     collar(a, "Gold")
 
 
@@ -1272,11 +1318,11 @@ def cloak_back(a):
     against a fixed body. The photograph that prompted the revert shows a clear
     tan drape on a pale grey character — not a piece that merges with anything.
     """
-    a.hanging([(31.0, BODY["chest_y1"] + 5.0, -27.0),
-               (27.0, BODY["chest_y0"] + 10.0, -29.0),
-               (38.0, BODY["waist_y0"] - 16.0, -36.0),
-               (48.0, BODY["waist_y0"] - 50.0, -44.0),
-               (52.0, BODY["waist_y0"] - 72.0, -48.0)], GARMENT, thickness=5.0)
+    a.hanging([(31.0, BODY["chest_y1"] + 5.0, -26.0),
+               (27.0, BODY["chest_y0"] + 10.0, -27.5),
+               (38.0, BODY["waist_y0"] - 16.0, -32.0),
+               (48.0, BODY["waist_y0"] - 50.0, -42.0),
+               (52.0, BODY["waist_y0"] - 72.0, -47.0)], GARMENT, thickness=5.0)
     a.shell(BONE_CHEST, [(20.0, BODY["chest_y1"] - 2.0), (23.0, BODY["chest_y1"] + 8.0),
                          (20.0, BODY["chest_y1"] + 14.0)],
             GARMENT, squash=(1.0, 1.15), sides=10, z=-3.0)
@@ -1326,10 +1372,10 @@ def mantle_back(a):
     # cape, so it still reads as the SHORT one beside them — and the same flare
     # now happens over enough height to look like cloth opening rather than a
     # cone widening.
-    a.hanging([(24.0, BODY["chest_y1"] + 5.0, -26.0),
-               (30.0, BODY["chest_y0"] + 16.0, -30.0),
-               (36.0, BODY["waist_y1"] - 8.0, -35.0),
-               (42.0, BODY["waist_y0"] - 8.0, -39.0)], CLOTH, thickness=5.0, segments=2,
+    a.hanging([(26.0, BODY["chest_y1"] + 5.0, -26.0),
+               (30.0, BODY["chest_y0"] + 16.0, -28.0),
+               (36.0, BODY["waist_y1"] - 8.0, -32.0),
+               (42.0, BODY["waist_y0"] - 8.0, -38.0)], CLOTH, thickness=5.0, segments=2,
               pleats=4, fold=0.13)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):

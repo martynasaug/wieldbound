@@ -26382,3 +26382,51 @@ taken from the narrowest place it is true: the skull, the chest, and the collar.
 STILL OUTSTANDING: the capes are flat boards from the side. Bare forearms and
 hands on every style, which is the empty glove slot rather than a fault, but
 reads as skin.
+
+**Phase 70 M70.349 — the capes stopped being planks, and the armour grew hands.**
+Both of these were on my own outstanding list and the answer to both was the
+same one that fixed the chest: a piece cut narrower than the body it goes on.
+
+THE CAPES HUNG OFF NOTHING. Photographed in profile for the first time, every
+cape was a straight rigid slab leaning back at a constant angle with daylight
+between it and the body the whole way down — reported twice as "still looks the
+same even though you said it's fixed", and correct both times. The widths and
+hems corrected in M70.343 were real but cosmetic; the shape underneath was a
+board.
+
+Two causes. The COLLAR — the one part of a cape a player sees from the front,
+and the only thing joining the cloth to the shoulders — was radius 21 against a
+torso measured at 23 half-width, so it was buried inside the body and drew
+nothing. And the fall's profile is a STRAIGHT LINE from z -27 to -43: a cape
+does not leave the shoulder at its final angle. The collar goes through
+`over_chest` now, and the upper stations come in against the back with the flare
+pushed down into the last third, which is where a cape actually swings.
+
+THE ARMOUR ENDED AT THE WRIST. Every suit stopped at out 112 and left a bare
+hand hanging out of it — part of "there are spots of character skin", and the
+one piece of it that was never the head. There is no glove SLOT, so a hand
+belongs to the chest item the same way the thigh does. The gauntlet rides
+`Fist1L`/`Fist1R` rather than the forearm, because a tube long enough to cover a
+hand swings wide of it the moment the wrist bends, and `gloves.py` already
+measures this body's hand in the same units the limb kit uses — wrist at 116,
+knuckles at 150 — so the numbers meet the bracer's 112 with no constant of mine.
+Cut straight it was a length of pipe stuck on the wrist and the character had no
+hands at all; it tapers and closes at the knuckles now.
+
+AND ITEMS ARE WORN TOGETHER NOW. `wearlook.mjs` grew combination sheets, because
+every fault found in this phase has been a piece against the BODY and a piece
+against another PIECE had never once been looked at. Not the cross product —
+six armours by five helms by four boots by four capes is four hundred and eighty
+outfits — but the pairs that can actually collide: `sets` (one full outfit per
+armour, cycling the others so every style is worn), `neck` (a hood against every
+armour's collar), `backs` (every cape over pauldrons), `hems` (every boot under
+the plate skirt).
+
+Capes over chain now read correctly from all four sides: collar visible, drape
+following the back, flare at the hem.
+
+19 fitted, 0 not. Suite green.
+
+STILL OPEN, seen in the combination sheets: the `cap` helm is a flat-topped box
+and its rim sits at the eye line, with the brow geometry poking through at the
+temples. `over_skull` made it wide enough and did not make it a good shape.
