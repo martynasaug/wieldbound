@@ -250,4 +250,8 @@ def main():
         print(f"WROTE {obj.name}.png")
 
 
-main()
+
+# GUARDED, so `onbody.py` can import these builders without the module
+# rendering its own sheet on the way in — which it did, four times, before this.
+if __name__ == "__main__":
+    main()

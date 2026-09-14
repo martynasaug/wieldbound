@@ -25623,3 +25623,42 @@ items are flat shapes competing with painted ones. That is a real piece of work
 and it is the thing standing between this pipeline and art that belongs.
 
 No game code changed; nothing here is equipped yet.
+
+**Phase 70 M70.328 — put the sketches on the character, and watch them fall
+apart.** "What's important is how they are displayed on a character." Correct,
+and `bench.py` cannot answer it. That bench stands an item beside the reference
+and judges craft — silhouette, surface, colour. A piece of gear is worn, at a
+fixed distance, on a body that is mostly other gear, and an item that reads
+beautifully alone can be invisible on a shoulder or twice the size it should be.
+
+`tools/art/onbody.py` puts each sketch on the player's actual body at the bone it
+belongs to, scaled to the part of the body it has to fit, and photographs the
+whole figure. On the character all four of the previous milestone's sketches are
+wrong: the pauldron floats off the side of the shoulder, the helm balances on top
+of the head like a hat and is too small to enclose it, the boots hover undersized
+at mid-shin, and the mantle is a red sliver behind the shoulders. The bench
+flattered every one of them.
+
+That is a finding about the instrument as much as about the art. Craft in
+isolation and fit on a body are different questions, and only the second one
+ships. `bench.py` keeps its job — it is where the texture gap showed up — but it
+is no longer the last word.
+
+THE BASIS IS DERIVED, NOT ASSUMED: up from the nose to the brows, forward from
+the skull's centre to the nose. These files do not agree about which axis is up,
+and a scalp cap built on "+Y is up" came out as a ring standing on edge two
+milestones ago. Nothing in this file needs to know how the body was exported.
+
+Two of my own faults on the way, both the familiar shapes. Importing `ideas.py`
+ran its `main()` and rendered a sheet on the way in, so the first run wrote every
+file twice — guarded now. And the camera used `to_track_quat("-Z", "Y")`, which
+rolls to WORLD up; the body is authored Z-up and laid on its back by the glTF
+importer, so the first four shots came back with the character horizontal and
+half out of frame. The camera uses the measured basis now, like everything else
+here had already learned to.
+
+Fitting is the next piece of work and a discipline of its own: `armour.py` builds
+against landmarks measured per bone by `body_frame.py`, not against a bounding
+box and a guessed offset, which is all this preview does.
+
+No game code changed; nothing here is equipped.
