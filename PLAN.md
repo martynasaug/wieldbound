@@ -25966,3 +25966,35 @@ exactly what the measurement is for.
 
 STILL OUTSTANDING and reported in the same breath: the hood reads as a hard
 helmet rather than cloth. Suite 57/57.
+
+**Phase 70 M70.340 — the hood is the Ranger's hood, because the pack already had
+one.** Reported twice: "the hood is looking like a regular helmet and not a hood…
+the design itself is completely bad. Look at the default archer character model,
+he has a hood on, that's what it should look like."
+
+Both times I answered by MODELLING — folds, then a peak — and both times the
+result was a dome with things attached to it, because a lathe about a vertical
+axis IS a helmet and no amount of trim changes that.
+
+The shape was in the pack the whole time. The Ranger wears a real hood and it is
+a separate mesh called `Cloak`, parented to the Head bone. `garments.py` already
+knew about it: it cuts the Ranger's fittings and explicitly DROPS this one,
+because a chest item must not put a hood on the player's head. Correct for that
+slot — and the same mesh is exactly what the HELM slot wanted.
+
+`tools/art/harvest_hood.py` bakes it the way `look_pieces.py` bakes a beard and
+names it for the bone so the loader hangs it on the head. Its material is renamed
+to a kit name so the palette reaches it; arriving as `Ranger_Texture` it would
+match nothing in `MATERIAL_LOOK`, fall to the metal role and be painted flat.
+
+HARVESTED, NOT MODELLED. This phase keeps relearning it: the hair, the beards and
+the garments all came right the moment they stopped being built from primitives
+and started being cut from art someone had drawn. That sentence is already in
+`monk_clips.py` about the player body, six milestones back, in my own words.
+
+One note on the metric. `helmcover` reports the hood at 28%, DOWN from the 57% my
+modelled dome scored. That is the metric failing to describe a hood rather than
+the hood failing: a hood hangs off the head instead of hugging it, and its
+opening is supposed to show a face. Coverage is the right question for a helm and
+the wrong one for a cowl — a number that disagrees with the picture is not
+automatically the one to trust. Suite 57/57.

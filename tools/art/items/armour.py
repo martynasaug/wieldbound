@@ -964,14 +964,28 @@ def hood_helm(a):
     # the face, so the cowl read as a closed box with a wall where a face goes.
     # The shell is pulled back off the face and the opening is framed by two
     # cheek folds instead.
-    a.shell(BONE_HEAD, [(33.0, 224.0), (38.0, 244.0), (39.0, 272.0), (32.0, 292.0), (19.0, 300.0)],
-            CLOTH, squash=(1.0, 1.16), z=SKULL_Z - 8.0)
+    # A HOOD IS A SILHOUETTE, NOT A SURFACE. Reported: "the hood is looking like a
+    # regular helmet and not a hood." True — it was a smooth lathe dome, which is
+    # geometrically a helmet whatever material it is painted in, and the folds it
+    # had were small enough to vanish. At the game's camera a character is about
+    # sixty pixels tall, so what separates a hood from a helm there is not surface
+    # detail at all: it is a PEAK and a FALL.
+    #
+    # So the cowl rises past the crown to a narrow point and a peak flops back off
+    # it, and the cloth carries on down over the shoulders. That outline is a hood
+    # at any distance; a dome is a helm at any distance.
+    a.shell(BONE_HEAD, [(35.0, 212.0), (40.0, 238.0), (40.0, 270.0), (30.0, 294.0), (12.0, 310.0)],
+            CLOTH, squash=(1.0, 1.18), z=SKULL_Z - 6.0, arc=0.80, turn=math.pi / 2, cap=False)
+    # The point, lying back off the crown the way a loose hood does.
+    a.box(BONE_HEAD, (0.0, 302.0, SKULL_Z - 26.0), (13.0, 14.0, 40.0), CLOTH, taper=0.35)
     for side in (1, -1):
         a.plate(BONE_HEAD, [(side * 16.0, 228.0), (side * 30.0, 236.0), (side * 30.0, 276.0), (side * 18.0, 272.0)],
                 CLOTH, z=BODY["head_front_z"] - 6.0, thickness=9.0, chamfer=3.0)
-    # And the fall down the back, which is what a cowl is from behind.
-    a.plate(BONE_HEAD, [(-26.0, 206.0), (26.0, 206.0), (30.0, 250.0), (-30.0, 250.0)],
-            CLOTH, z=BODY["head_back_z"] + 4.0, thickness=7.0)
+    # And the fall, which is what a cowl is from behind — onto the shoulders now
+    # rather than stopping at the nape, because a hood that ends at the skull is
+    # a cap with a point on it.
+    a.plate(BONE_HEAD, [(-30.0, 196.0), (30.0, 196.0), (34.0, 240.0), (-34.0, 240.0)],
+            CLOTH, z=BODY["head_back_z"] + 4.0, thickness=8.0)
 
 
 HELM = {
