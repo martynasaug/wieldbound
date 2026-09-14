@@ -25998,3 +25998,39 @@ the hood failing: a hood hangs off the head instead of hugging it, and its
 opening is supposed to show a face. Coverage is the right question for a helm and
 the wrong one for a cowl — a number that disagrees with the picture is not
 automatically the one to trust. Suite 57/57.
+
+**Phase 70 M70.341 — one head, and the donors are normalised onto it at harvest.**
+Asked, and it cuts through the whole phase: "why are you even using different
+heads? It should be 1 default our character's head."
+
+There IS one head in the game — the player wears the stripped Rogue. The five
+heads are in the SOURCE ART, because every wearable is cut from one of the pack's
+characters and those were modelled with different skulls: Rogue 0.670 x 0.814 x
+0.890, Monk within 0.3%, Wizard within 1-3%, Warrior 15% narrower, Ranger 18%
+shorter. A fact about the pack, not a choice.
+
+The mistake was letting it reach the game. Pieces were harvested in the donor's
+proportions and the mismatch was found one piece at a time: the Warrior's hair a
+size too small, reading as a bald patch; the Ranger's hood a size too small,
+letting the crown through the top of it. The same bug, diagnosed from scratch
+twice, weeks of effort apart, both times as a placement fault and only then
+measured.
+
+`tools/art/register.py` makes it one rule. It measures the wearer's skull and
+every donor's, and fits a harvested object onto the wearer before export — scale
+about the donor's head centre first, then translate the centres together, because
+the other order moves the piece and then grows it away from where it was put. The
+table FLAGS which donors need fitting rather than leaving that to be rediscovered,
+and it reproduces both hand-derived corrections exactly.
+
+`skull_compare.py` would have said so the first time and was never asked: it lists
+only the characters that had already been harvested from, and the Ranger is not in
+it. A table that describes some of the donors is how you get surprised by the rest.
+
+THE RULE, and it is short: art HARVESTED from a donor is registered at harvest
+time; art AUTHORED from the kit is built against this body's own landmarks and
+needs nothing. `harvest_hood.py` is the first through it.
+
+STILL OUTSTANDING: hair and beards carry the same correction as a RUNTIME table in
+`hair.ts` (`DONOR_SCALE`). That belongs at harvest time too, and deleting it would
+leave the runtime applying no per-donor correction anywhere. Suite 57/57.

@@ -30,7 +30,13 @@
 
 import os
 
+import sys
+
 import bpy
+import mathutils
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import register  # noqa: E402
 
 MODELS = "client/public/models"
 OUT = "client/public/models/armour/helm_hood.glb"
@@ -40,6 +46,19 @@ MESH = "Cloak"
 
 def main():
     root = os.getcwd()
+
+    # REGISTERED ONTO THE HEAD IT WILL BE WORN ON, by the one routine that does
+    # this for every donor. See `register.py` for the table and the rule: art
+    # HARVESTED from a donor is fitted here, art AUTHORED from the kit already
+    # uses this body's own landmarks and needs nothing.
+    #
+    # Uncorrected, this hood landed 0.22 forward of the player's face with its
+    # crown 0.07 BELOW the skull's, so the head came out of the top of it. The
+    # shift turned out to be eighteen thousandths -- the two heads sit in nearly
+    # the same place -- and the SCALE was the whole of it: the Ranger's skull is
+    # 0.727 tall against the Rogue's 0.889, a fifth shorter.
+    wearer = register.wearer_head()
+
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.fbx(filepath=os.path.join(root, MODELS, DONOR))
 
@@ -52,6 +71,16 @@ def main():
         return
     print(f"{MESH}: {len(hood.data.polygons)} faces, parent {hood.parent_type}/{hood.parent_bone}")
 
+    donor = register.head_box()
+    if not donor:
+        print(f"no Head-weighted vertices on {DONOR}")
+        return
+
+    # Freed from its bone FIRST, so the registration and the bake both act on
+    # world coordinates rather than on a transform the bone still owns.
+    scale, shift = register.fit(hood, donor, wearer)
+    print(f"registered: scale ({scale.x:.3f},{scale.y:.3f},{scale.z:.3f}) "
+          f"shift ({shift.x:+.3f},{shift.y:+.3f},{shift.z:+.3f})")
     # BAKED, exactly as `look_pieces.py` bakes a beard: the world transform goes
     # into the vertices and the object is freed from its bone, so the game's
     # `boneAttachMatrix` places it with nothing supplied here.
