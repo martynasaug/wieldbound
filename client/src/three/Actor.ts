@@ -1940,7 +1940,11 @@ export class Actor {
     // head keeps the cap off the eyes while still reaching down far enough that
     // the parting does not show skull. The brow is the landmark because it is
     // the only feature on the model that marks the top of the face.
-    const hairline = browAt.sub(skull.centre).dot(up) + reach * 0.10;
+    // Just above the brow. The cap now requires a WHOLE triangle to clear this
+    // line rather than its centroid, which already pushes the edge up by most of
+    // a triangle; adding a tenth of a head on top of that stopped the cap well
+    // short of the hairline and let the parting show skull again.
+    const hairline = browAt.sub(skull.centre).dot(up) + reach * 0.02;
     return { up, hairline };
   }
 

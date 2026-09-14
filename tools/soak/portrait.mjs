@@ -90,6 +90,16 @@ const HOUR = Number(flag("hour", "0.00"));
 // all. Being able to switch it off turns "what is that band" from a guess into
 // one render.
 const RIM = flag("rim", null);
+// PAINT EVERY HEAD MESH A DIFFERENT COLOUR, so nothing on screen is
+// unaccounted for.
+//
+//   node tools/soak/portrait.mjs face --hair=swept --paint=1
+//
+// Judging "what is that shape near the eyebrow" by eye means guessing whether
+// it is hair, the scalp cap, the skull or a brow. Colouring them settles it in
+// one frame; it found the scalp-cap axis bug after three rounds of arithmetic
+// had not. scalp red, hair green, body blue, face magenta.
+const PAINT = flag("paint", null);
 // Only name the file after a style that is actually worn, so the default shots
 // keep the plain names the rest of this session's notes refer to.
 const SUFFIX = HAIR === "none" && BEARD === "none" ? "" : `_${HAIR}-${BEARD}`;
@@ -201,8 +211,25 @@ await page.evaluate((look) => {
 // without also passing the value leaves it `undefined` and every portrait comes
 // back shaved. The same omission fetched `/textures/undefined` in `skinmask.mjs`
 // an hour ago and read as a corrupt atlas.
-}, { hair: HAIR, beard: BEARD, skin: SKIN, hairColor: HAIR_COLOR, hour: HOUR, rim: RIM });
+}, { hair: HAIR, beard: BEARD, skin: SKIN, hairColor: HAIR_COLOR, hour: HOUR, rim: RIM, paint: PAINT });
 await page.waitForTimeout(3500);
+
+// AFTER the wait, not in the same breath as `setLook`. A look piece is fetched,
+// seated against the skull and only THEN attached, so painting immediately
+// colours whatever happened to exist already: the hair came back its own brown
+// and I read that as "the shape by the eyebrow is not hair".
+if (PAINT) {
+  await page.evaluate(() => {
+    window.__wieldbound.localActor.root.traverse((o) => {
+      if (!o.isMesh || !o.material?.color) return;
+      if (o.name === "look_scalp") o.material.color.setHex(0xff0000);
+      else if (o.name === "look_hair") o.material.color.setHex(0x00ff00);
+      else if (o.name === "look_beard") o.material.color.setHex(0xffff00);
+      else if (o.name === "PlayerBody") o.material.color.setHex(0x0044ff);
+      else if (/^Face_/.test(o.name)) o.material.color.setHex(0xff00ff);
+    });
+  });
+}
 
 for (const name of views) {
   const view = VIEWS[name];

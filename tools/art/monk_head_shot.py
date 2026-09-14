@@ -16,6 +16,7 @@
 # island, which is right for a careful catalogue and far too slow for one look.
 
 import os
+import sys
 
 import bpy
 import mathutils
@@ -23,15 +24,25 @@ import mathutils
 OUT = "tools/soak/shots/heads"
 
 
+CHARACTERS = {
+    "Monk": ("Monk.fbx", "Monk.001", "Monk_Texture.png"),
+    "Wizard": ("Wizard.fbx", "Face", "Wizard_Texture.png"),
+    "Warrior": ("Warrior.fbx", "Face", "Warrior_Texture.png"),
+}
+
+
 def main():
     root = os.getcwd()
+    args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    who = args[0] if args else "Monk"
+    fbx, facename, texname = CHARACTERS[who]
     os.makedirs(os.path.join(root, OUT), exist_ok=True)
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    bpy.ops.import_scene.fbx(filepath=os.path.join(root, "client/public/models/Monk.fbx"))
+    bpy.ops.import_scene.fbx(filepath=os.path.join(root, "client/public/models", fbx))
 
-    face = bpy.data.objects.get("Monk.001")
+    face = bpy.data.objects.get(facename)
     if not face:
-        print("no Monk.001; meshes present:")
+        print("no " + facename + "; meshes present:")
         for o in bpy.data.objects:
             if o.type == "MESH":
                 print("   ", o.name)
@@ -47,11 +58,11 @@ def main():
         hi = mathutils.Vector((max(hi[i], p[i]) for i in range(3)))
     centre = (lo + hi) / 2
     span = max(hi - lo)
-    print(f"Monk.001 box {tuple(round(v, 3) for v in lo)} .. {tuple(round(v, 3) for v in hi)}")
+    print(f"{who} {facename} box {tuple(round(v, 3) for v in lo)} .. {tuple(round(v, 3) for v in hi)}")
 
     # A flat texture-less render would hide the beard against the face, so the
     # image is loaded the way `look_pieces.py` does it.
-    img_path = os.path.join(root, "client/public/textures/Monk_Texture.png")
+    img_path = os.path.join(root, os.path.join("client/public/textures", texname))
     image = bpy.data.images.load(img_path) if os.path.exists(img_path) else None
     for obj in [o for o in bpy.data.objects if o.type == "MESH"]:
         for mat in obj.data.materials:
@@ -97,7 +108,7 @@ def main():
         cam.location = centre + d
         # Point the camera at the head: the -Z axis of a camera is its forward.
         cam.rotation_euler = (centre - cam.location).to_track_quat("-Z", "Y").to_euler()
-        sc.render.filepath = os.path.join(root, OUT, f"monk_face_{name}.png")
+        sc.render.filepath = os.path.join(root, OUT, f"{who.lower()}_face_{name}.png")
         bpy.ops.render.render(write_still=True)
         print(f"WROTE {sc.render.filepath}")
 

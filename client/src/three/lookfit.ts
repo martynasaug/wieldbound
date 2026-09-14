@@ -39,19 +39,20 @@ const CONTACT = 0.015;
 /**
  * How far the scalp cap stands off the skull, in the skull's own units.
  *
- * IT HAS TO CLEAR THE RIM, NOT THE SKIN, and that is the whole reason this is a
- * fixed distance rather than the 1.2% scale it started as. `Actor` draws a
- * back-face outline shell 0.0136 WORLD units outside every mesh, in a warm cream
- * (`RIM_COLOR`, 0xffe6bd). A cap lifted 1.2% stands about 0.003 off a head whose
- * radius is 0.445 — a fifth of what the rim needs — so the SKULL's own outline
- * shell came through the cap and drew a pale band round the crown. It read
- * exactly like bare scalp above the hair, and it was reported as such.
+ * SMALL, BECAUSE THE CAP HAS TO FIT UNDER THE HAIR. This was 0.035 on the
+ * reasoning that it should clear the outline shell `Actor` draws 0.0136 world
+ * units outside every mesh — and that produced a new fault: the Wizard's hair is
+ * scaled to 0.988, SMALLER than the skull it sits on, so a cap standing 0.035
+ * proud of the skull stuck out past the hair and showed as a wedge beside the
+ * temple. Reported as "what the hell is that on the right side of his eyebrow",
+ * and it was this.
  *
- * The body's world scale is about 0.607, so the rim's 0.0136 world is 0.022 in
- * this space; 0.035 clears it with room and is still only 8% of a head radius,
- * which under a hairstyle is invisible.
+ * The lift only ever needed to beat z-fighting. Clearing the rim turned out not
+ * to be its job: once the cap became a proper dome over the crown — it was a
+ * ring standing on edge before, see `scalpCap` — it covers the skull's silhouette
+ * there, and the pale band went with it.
  */
-const CAP_LIFT = 0.035;
+const CAP_LIFT = 0.006;
 
 /**
  * The skull's triangles, in the same space the look pieces are placed in.
@@ -250,12 +251,19 @@ export function scalpCap(skull: Skull, up: THREE.Vector3, floor: number): THREE.
   // top half of the face painted out. A cap is scalp — it has to stop where hair
   // stops, and the only thing on the model that knows where that is, is the brow.
   for (let j = 0; j < t.length; j += 9) {
-    const mid = (
-      height(t[j], t[j + 1], t[j + 2]) +
-      height(t[j + 3], t[j + 4], t[j + 5]) +
-      height(t[j + 6], t[j + 7], t[j + 8])
-    ) / 3;
-    if (mid <= floor) continue;
+    // THE LOWEST CORNER, NOT THE MIDDLE. This skull is 75 vertices for a whole
+    // head, so one triangle spans from the crown to the brow — and a centroid
+    // test admits it WHOLE, which drew the cap in a band across the eyebrows and
+    // down the bridge of the nose. Photographed with every head mesh in its own
+    // colour, the shape by the eyebrow was the cap. Requiring the entire triangle
+    // to clear the hairline errs the other way, leaving the cap's edge a little
+    // high, and that edge lives under a fringe where nothing can see it.
+    const low = Math.min(
+      height(t[j], t[j + 1], t[j + 2]),
+      height(t[j + 3], t[j + 4], t[j + 5]),
+      height(t[j + 6], t[j + 7], t[j + 8]),
+    );
+    if (low <= floor) continue;
     for (let k = 0; k < 9; k += 3) {
       const dx = t[j + k] - c.x, dy = t[j + k + 1] - c.y, dz = t[j + k + 2] - c.z;
       const len = Math.hypot(dx, dy, dz) || 1;

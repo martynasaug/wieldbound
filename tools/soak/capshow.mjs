@@ -10,15 +10,21 @@
 import { open, login } from "./driver.mjs";
 import { writeFileSync } from "node:fs";
 
+const HAIR = process.argv[2] ?? "shaggy";
+const LIFT = Number(process.argv[3] ?? 0.25);
 const { browser, page } = await open({ headless: true, width: 1280, height: 800 });
 await login(page, `Cap${Date.now() % 100000}`);
 await page.waitForTimeout(2200);
 
-await page.evaluate(() => {
+// HANDED OVER, NOT CLOSED OVER. This callback runs in the BROWSER, where the
+// harness constants do not exist -- referencing LIFT there put NaN in the
+// camera position and the shot came back as a distant view of the whole
+// courtyard. portrait.mjs carries a note about this exact mistake.
+await page.evaluate(({ HAIR, LIFT }) => {
   const g = window.__wieldbound;
   const a = g.localActor;
   g.world.dayNight.freeze(0);
-  a.setLook({ skin: "tan", build: "average", hair: "shaggy", beard: "none", hairColor: "espresso" });
+  a.setLook({ skin: "tan", build: "average", hair: HAIR, beard: "none", hairColor: "espresso" });
   a.heading = Math.PI;
   a.root.rotation.y = Math.PI;
   window.__bodyBox = () => {
@@ -47,10 +53,10 @@ await page.evaluate(() => {
     const height = box.hi.y - box.lo.y;
     const target = new V((box.lo.x + box.hi.x) / 2, box.lo.y + height * 0.9, (box.lo.z + box.hi.z) / 2);
     const f = a.heading + Math.PI;
-    g.world.camera.position.set(target.x + Math.sin(f) * 1.5, target.y + height * 0.25, target.z + Math.cos(f) * 1.5);
+    g.world.camera.position.set(target.x + Math.sin(f) * 1.5, target.y + height * LIFT, target.z + Math.cos(f) * 1.5);
     g.world.camera.lookAt(target);
   };
-});
+}, { HAIR, LIFT });
 
 await page.waitForTimeout(2200);
 const painted = await page.evaluate(() => {

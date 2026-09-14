@@ -25430,3 +25430,45 @@ had already started thickening the cap to cover something that was not scalp.
 The cap does sit outside the rim shell now, so it no longer shows either way.
 
 Suite 57/57.
+
+
+**Phase 70 M70.324 — the shape by the eyebrow was the cap, twice over.**
+Reported against the sheet M70.323 shipped on: "what the hell is that on the
+right side of his eyebrow". It was the scalp cap that milestone added, failing
+in two unrelated ways, neither of which I saw in the twelve pictures I looked at
+before calling it done.
+
+FIRST, IT LAY ACROSS THE BROWS AND DOWN THE NOSE. The skull is 75 vertices for a
+whole head, so a single triangle spans from the crown to the brow — and a
+CENTROID test admits that triangle whole. Testing the lowest corner instead errs
+the other way, leaving the cap's edge high, which costs nothing because that edge
+lives under a fringe.
+
+SECOND, IT STOOD PROUD OF THE HAIR AT THE TEMPLE. `CAP_LIFT` was 0.035, sized to
+clear the outline shell `Actor` draws 0.0136 world units outside every mesh. But
+the Wizard's hair is scaled to 0.988 — SMALLER than the skull it sits on — so a
+cap standing that far off the skull stuck out past the hair and read as a wedge
+beside the ear. The lift only ever needed to beat z-fighting. Clearing the rim
+stopped being its job the moment the cap became a proper dome over the crown,
+because it then covers the skull's silhouette there and the pale band goes with
+it. 0.006 now, and the crown is still solid from directly above.
+
+BOTH WERE FOUND BY PAINTING, NOT BY LOOKING HARDER. `portrait.mjs` gains
+`--paint`, which colours every head mesh differently so nothing on screen is
+unaccounted for, and `--rim`, which takes the outline out of the picture — the
+pale band at the crown had already sent me thickening a cap to cover something
+that was not scalp. Between them these turn "what is that shape" into one render
+instead of an argument, and they are the reason this milestone took one pass
+where the last three took several.
+
+THREE INSTRUMENT FAULTS ALONG THE WAY, all the same shape as ever. The paint ran
+in the same breath as `setLook`, before the piece it was meant to colour had
+attached, so the hair came back its own brown and I read that as "the shape is
+not hair". `capshow.mjs` referenced a harness constant inside a `page.evaluate`
+callback — the exact mistake `portrait.mjs` carries a note about — putting NaN in
+the camera and returning a distant view of the courtyard. And the magenta used
+for the face meshes reads as red under firelight, which had me briefly convinced
+the cap was covering the brows when what I was looking at WAS the brows. It was
+covering them, but not in that frame.
+
+Suite 57/57.
