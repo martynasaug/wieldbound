@@ -256,18 +256,40 @@ class Armour:
             CURL = 0.40
             LOBES = pleats
             COLUMNS = max(2, LOBES * 2)
+            # THE PLEAT AMPLITUDE IS A PARAMETER AND `fold` WAS ALSO THE LOOP'S
+            # OWN VARIABLE, so the second ring of every segment computed
+            # `fold_depth = w * fold` from the LAST COLUMN'S fold distance instead
+            # of from the argument. And that last column is always zero —
+            # `sin(pi * 1 * LOBES)` closes on a whole lobe by construction, which
+            # the note above this makes a point of — so `fold_depth` came out 0
+            # and the bottom ring of every segment was FLAT.
+            #
+            # Every cape in the game was therefore pleated along its top edge and
+            # ruled straight along its bottom. That is most of the "cardboard"
+            # read, and it is why the three amplitude guesses recorded above kept
+            # measuring 0.000 however the depth was tuned: half the geometry was
+            # never getting any. The pleat depth has its own name now.
+            pleat_depth_of = lambda w: (w * fold if LOBES else 0.0)
+            # A HEM IS NOT A RULED LINE EITHER. The bottom of the lowest segment
+            # dips where the cloth hangs off a pleat's crest and lifts in the
+            # valley between two, so a cape ends in points rather than in a
+            # guillotine cut. It costs nothing: the vertices already exist.
+            HEM_DIP = 0.10 if i == segments - 1 else 0.0
             rings = []
-            for w, y, z in (top, bottom):
-                fold_depth = w * fold if LOBES else 0.0
+            for ri, (w, y, z) in enumerate((top, bottom)):
+                fold_depth = pleat_depth_of(w)
+                dip = HEM_DIP if ri == 1 else 0.0
                 ring_front, ring_back = [], []
                 for c in range(COLUMNS + 1):
                     t = c / COLUMNS
                     x = -w + 2 * w * t
-                    fold = abs(math.sin(math.pi * t * LOBES)) * fold_depth
+                    lobe = abs(math.sin(math.pi * t * LOBES))
+                    crease = lobe * fold_depth
+                    yy = y - lobe * w * dip
                     # How far round the body this column has come.
                     curl = ((abs(x) / max(w, 1e-6)) ** 2) * w * CURL
-                    ring_back.append(mesh(x, y, z - half - fold + curl))
-                    ring_front.append(mesh(x, y, z + half + fold + curl))
+                    ring_back.append(mesh(x, yy, z - half - crease + curl))
+                    ring_front.append(mesh(x, yy, z + half + crease + curl))
                 # One closed loop: across the back, down the far edge, back along
                 # the front. Reversed on the return so the ring does not cross.
                 rings.append(ring_back + list(reversed(ring_front)))
@@ -277,12 +299,31 @@ class Armour:
             # ground when the cape swings.
             if i == segments - 1:
                 w, y, z = bottom
-                model.loft([
-                    [mesh(-w, y, z - half), mesh(w, y, z - half),
-                     mesh(w, y, z + half), mesh(-w, y, z + half)],
-                    [mesh(-w * 0.99, y - 2.5, z - half * 2.2), mesh(w * 0.99, y - 2.5, z - half * 2.2),
-                     mesh(w * 0.99, y - 2.5, z + half * 2.2), mesh(-w * 0.99, y - 2.5, z + half * 2.2)],
-                ], mat, cap_start=False, cap_end=True)
+                # ACROSS THE COLUMNS, so the hem follows the points the fall now
+                # ends in. A four-point band drew a dead straight bar under a
+                # scalloped edge — the one shape that would have put the
+                # cardboard back after everything above took it away.
+                fold_depth = pleat_depth_of(w)
+                lip_top, lip_low = [], []
+                for c in range(COLUMNS + 1):
+                    t = c / COLUMNS
+                    x = -w + 2 * w * t
+                    lobe = abs(math.sin(math.pi * t * LOBES))
+                    crease = lobe * fold_depth
+                    yy = y - lobe * w * HEM_DIP
+                    curl = ((abs(x) / max(w, 1e-6)) ** 2) * w * CURL
+                    lip_top.append((x, yy, z, crease, curl))
+                    lip_low.append((x * 0.99, yy - 2.5, z, crease, curl))
+                for ring in (lip_top, lip_low):
+                    thick = half if ring is lip_top else half * 2.2
+                    back = [mesh(x, yy, zz - thick - crease + curl) for x, yy, zz, crease, curl in ring]
+                    front = [mesh(x, yy, zz + thick + crease + curl) for x, yy, zz, crease, curl in ring]
+                    rings_hem = back + list(reversed(front))
+                    if ring is lip_top:
+                        hem_rings = [rings_hem]
+                    else:
+                        hem_rings.append(rings_hem)
+                model.loft(hem_rings, mat, cap_start=False, cap_end=True)
             # NO LINING, and the parameter is ignored rather than removed so the
             # recipes keep reading as they did. It was a second sheet a
             # millimetre inside the first, and at this size the two never read as
@@ -326,14 +367,27 @@ class Armour:
         COLUMNS = 6
         LOBES = 3
         CURL = 0.22
+        # A HEM IS NOT A RULED LINE. Every station shared one y, so the bottom of
+        # every cape in the game ended in a perfectly straight horizontal edge —
+        # and photographed on a character all four read as cardboard however well
+        # they were pleated, because the pleats say "cloth" and the hem says
+        # "sheet metal" and the hem wins. The last ring dips between the folds
+        # now, so the cloth ends in points where it hangs and lifts where it is
+        # gathered. It costs no triangles: the vertices already exist.
+        HEM_DIP = 0.11
         rings = []
-        for w, y, z in stations:
+        last = len(stations) - 1
+        for si, (w, y, z) in enumerate(stations):
             fold_depth = w * 0.16
             ring_front, ring_back = [], []
             for c in range(COLUMNS + 1):
                 t = c / COLUMNS
                 x = -w + 2 * w * t
                 fold = abs(math.sin(math.pi * t * LOBES)) * fold_depth
+                if si == last:
+                    # Lowest where the fold is deepest — cloth hangs from the
+                    # crest of a pleat and rises in the valley between two.
+                    y = stations[si][1] - (fold / max(fold_depth, 1e-6)) * w * HEM_DIP
                 # Away from the body as the panel comes round the ribs. `drape` is
                 # used for FRONT panels, where "forward" is +z, so the curl is
                 # negative: the edges fall back toward the flanks.
@@ -936,7 +990,7 @@ def plated_boots(a):
         # shin rather than inside it.
         a.plate(bone, [(side * SHIN_X - 4.0, 13.0), (side * SHIN_X + 4.0, 13.0),
                        (side * SHIN_X + 3.0, 43.0), (side * SHIN_X - 3.0, 43.0)],
-                "LightSteel", z=12.0, thickness=5.0, chamfer=1.5)
+                "LightSteel", z=17.5, thickness=5.0, chamfer=1.5)
 
 
 def wrapped_boots(a):

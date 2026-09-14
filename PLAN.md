@@ -25750,3 +25750,35 @@ clones correctly `false`.
 
 Suite 56/57 in the batch with `throwers.mjs` passing on its own — the usual live
 socket flake. Nothing here touches combat.
+
+**Phase 70 M70.332 — the capes were flat along the bottom because a parameter got
+overwritten.** Every cape read as cardboard, and the cause was a variable name.
+`hanging(..., fold=0.18)` takes the pleat amplitude as a parameter, and its column
+loop assigns to the same name:
+
+    for w, y, z in (top, bottom):
+        fold_depth = w * fold                     # the parameter, first ring only
+        for c in ...:
+            fold = abs(sin(pi * t * LOBES)) * fold_depth
+
+The last column is always zero — `sin` closes on a whole lobe by construction,
+which the comments in that function make a point of — so by the second ring `fold`
+is 0 and `fold_depth` with it. EVERY CAPE SEGMENT WAS PLEATED ALONG ITS TOP EDGE
+AND RULED FLAT ALONG ITS BOTTOM.
+
+That is why the three amplitude guesses recorded in that same function kept
+measuring edge density 0.000 however the depth was tuned — `half*1.6`, `w*0.16`,
+`w*0.26`, each reasoned about carefully — half the geometry was never receiving
+any of it. The note there concluded "fold COUNT drives this and depth barely
+does", which was a sensible reading of measurements taken through a bug. The
+pleat depth has its own name now.
+
+The hem was the other half: the bottom of the lowest segment was a four-point
+band, a dead straight bar under the fall. It follows the columns now and dips
+where the cloth hangs off a pleat's crest, so a cape ends in points rather than a
+guillotine cut. Cape, cloak, mantle and tabard all read as cloth from behind.
+
+And the Ridgeguard ridge promised last milestone: `shin` builds a shell of radius
+15 tapering to 13.5, so its front face sits near z 14 — and the ridge was placed
+at z 12.0, INSIDE the leg, which is exactly why it read as a dark seam rather than
+a ridge. 17.5 stands it proud with room for the chamfer. Suite 57/57.
