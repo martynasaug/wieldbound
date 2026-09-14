@@ -1442,13 +1442,54 @@ function wornFinish(material: THREE.Material | THREE.Material[]): THREE.Material
   return material;
 }
 
+/**
+ * Chest styles worn as a garment that carry their own gloves.
+ *
+ * A garment is a skinned costume cut from one of the pack's characters, and
+ * `garments.py` cuts `Fist` and `Thumb` away as skin — correctly, the player
+ * owns their own hands. But `dress_limbs` only gauntlets the three PROCEDURAL
+ * chest styles, and `applyAppearance` takes the garment branch and never
+ * reaches the modelled path, so these three ended at the wrist with a bare hand
+ * hanging out. Worst on the plate: a full suit of armour with naked hands.
+ *
+ * `armour.py` builds them as `glove_<style>.glb` and the garment branch loads
+ * them alongside the costume. `glove` is a file prefix, not an `ItemSlot` —
+ * there is no glove slot in this game, and a hand belongs to the chest item the
+ * same way a thigh does.
+ */
+const GARMENT_GLOVES = new Set<string>(["leather", "plate", "robe"]);
+
+/** Does this garment style come with hands of its own? */
+export function hasGarmentGloves(style: GearStyle): boolean {
+  return GARMENT_GLOVES.has(style);
+}
+
+/** The gloves for one garment style, bolted to the hand bones. */
+export function buildGarmentGloves(
+  style: GearStyle,
+  rarity: ItemRarity,
+  paletteId?: string,
+): Promise<GearAttachment[]> {
+  return buildPiecesFrom(`armour/glove_${style}.glb`, `glove_${style}`, rarity, paletteId);
+}
+
 export async function buildArmourModel(
   slot: ItemSlot,
   style: GearStyle,
   rarity: ItemRarity,
   paletteId?: string,
 ): Promise<GearAttachment[]> {
-  const proto = await loadModel(`armour/${slot}_${style}.glb`);
+  return buildPiecesFrom(`armour/${slot}_${style}.glb`, `${slot}_${style}`, rarity, paletteId);
+}
+
+/** One GLB of bone-named pieces, repainted and turned into attachments. */
+async function buildPiecesFrom(
+  file: string,
+  tag: string,
+  rarity: ItemRarity,
+  paletteId?: string,
+): Promise<GearAttachment[]> {
+  const proto = await loadModel(file);
   // Indexed loosely on purpose: the palette arrives off the wire as a string
   // (see `GearLayer.palette`), and an id the catalogue no longer has should
   // fall back to steel rather than throw a body away.
@@ -1458,7 +1499,7 @@ export async function buildArmourModel(
     const piece = wholeModel(child);
     if (!piece) continue;
     const mesh = new THREE.Mesh(piece.geometry, wornFinish(repaint(piece.material, palette, rarity, piece.geometry)));
-    mesh.name = `gear_${slot}_${style}_${child.name}`;
+    mesh.name = `gear_${tag}_${child.name}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     // A `Cape0/1/2` piece is a LINK IN A CHAIN, not a piece bolted to a bone:
@@ -1481,7 +1522,7 @@ export async function buildArmourModel(
         : { bone: name, object: mesh, bindLocal: true },
     );
   }
-  if (!out.length) console.warn(`gear: armour/${slot}_${style}.glb has no named pieces`);
+  if (!out.length) console.warn(`gear: ${file} has no named pieces`);
   return out;
 }
 

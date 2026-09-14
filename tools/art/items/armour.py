@@ -455,6 +455,19 @@ CLOTH_TRIM = "Red"        # its accent
 LEATHER = "Steel"         # a jerkin is the same palette, told apart by its SHAPE
 LEATHER_TRIM = "DarkSteel"  # that colour at half strength, for straps and belts
 
+# EXCEPT ON A BOOT. The line above is right about a jerkin — a mail shirt and a
+# leather one are the same palette and you tell them apart by their cut — and it
+# is wrong about footwear. `LEATHER` is the METAL role, the palette's brightest
+# and most identifying tone, so leather boots came out paler than the armour
+# above them and read as white trainers: the brightest thing on a dark figure,
+# at the one place on it nobody is meant to look first.
+#
+# A boot that is actually leather takes the WOOD role, which is the palette's
+# leather colour by construction — 0x5c3d24 under steel, 0x8b7d63 under bone.
+# `plated` keeps the metal, because a greave is a greave.
+BOOT_HIDE = "Wood"
+BOOT_TRIM = "DarkWood"
+
 # AND THE WORST PLACE TO SIT IS JUST BELOW THE SKIN. Measured against a stable
 # reference at last, the three failures are all garments whose main surface
 # lands a hair under the body's own value — iron 0.209, bronze 0.229 and 0.251
@@ -1214,17 +1227,17 @@ def shin_band(a, mat, y, r, tube=2.5):
 
 def low_boots(a):
     """A shoe and a turned-down ankle cuff. The one that gets out of the way."""
-    shoe(a, LEATHER, toe="Wood")
-    shin(a, LEATHER, 11.0, 21.0, 14.0, 13.0)
-    shin_band(a, "Wood", 21.0, 14.0, tube=2.5)
+    shoe(a, BOOT_HIDE, toe=BOOT_TRIM)
+    shin(a, BOOT_HIDE, 11.0, 21.0, 14.0, 13.0)
+    shin_band(a, LEATHER_TRIM, 21.0, 14.0, tube=2.5)
 
 
 def tall_boots(a):
     """To the knee, with the top turned over — the silhouette that says riding boot."""
-    shoe(a, LEATHER, toe="DarkWood")
-    shin(a, LEATHER, 11.0, 46.0, 14.5, 12.5)
-    shin_band(a, "Wood", 46.0, 14.0, tube=3.5)
-    shin_band(a, "Wood", 24.0, 13.6, tube=2.0)
+    shoe(a, BOOT_HIDE, toe=BOOT_TRIM)
+    shin(a, BOOT_HIDE, 11.0, 46.0, 14.5, 12.5)
+    shin_band(a, LEATHER_TRIM, 46.0, 14.0, tube=3.5)
+    shin_band(a, LEATHER_TRIM, 24.0, 13.6, tube=2.0)
 
 
 def plated_boots(a):
@@ -1260,7 +1273,10 @@ def plated_boots(a):
 
 def wrapped_boots(a):
     """Cloth wound from ankle to knee over a soft sole: the lightest thing to wear."""
-    shoe(a, LEATHER, height=11.0)
+    # The SOLE is hide and the wrapping is cloth, which is the whole point of
+    # the style; both were the metal role before, so it read as a pale boot with
+    # pale rings on it rather than as cloth over leather.
+    shoe(a, BOOT_HIDE, height=11.0)
     shin(a, CLOTH, 11.0, 44.0, 13.5, 12.0)
     for y in (16.0, 25.0, 34.0, 42.0):
         shin_band(a, CLOTH, y, 13.6, tube=2.2)
@@ -1271,6 +1287,53 @@ BOOTS = {
     "tall": tall_boots,
     "plated": plated_boots,
     "wrapped": wrapped_boots,
+}
+
+
+# --- hands -------------------------------------------------------------------------------------
+# GLOVES FOR THE STYLES THAT ARE GARMENTS.
+#
+# `dress_limbs` gives chain, scale and brigandine a gauntlet, because those are
+# built here. `leather`, `plate` and `robe` are the pack's own costumes — skinned
+# meshes cut by `garments.py` — and `Actor.applyAppearance` takes the garment
+# branch and never reaches the modelled path, so those three ended at the wrist
+# with a bare hand hanging out of them. Worst on the plate: a full suit of
+# armour with naked hands.
+#
+# The donors cannot supply these. `garments.py` cuts `Fist` and `Thumb` away as
+# SKIN, correctly — the player owns their own hands — and the pack's characters
+# have bare hands underneath anyway.
+#
+# So they are built here and exported on their own, as `glove_<style>.glb`, and
+# the garment branch loads them alongside the costume. Same bones and same
+# measurements as the gauntlet in `dress_limbs`, so a hand is a hand whichever
+# route dressed it.
+def _glove(a, mat, trim):
+    for bone, side in BONE_HAND:
+        a.sleeve(bone, side, HAND_OUT0, HAND_OUT1 - 6.0, 15.5, 16.2, mat)
+        a.sleeve(bone, side, HAND_OUT1 - 6.0, HAND_OUT1, 16.2, 14.0, mat)
+        a.sleeve(bone, side, HAND_OUT0, HAND_OUT0 + 3.0, 16.8, 16.0, trim)
+
+
+def leather_glove(a):
+    """A hide glove, the palette's leather tone — see `BOOT_HIDE`."""
+    _glove(a, BOOT_HIDE, BOOT_TRIM)
+
+
+def plate_glove(a):
+    """A steel gauntlet, to match a suit of plate."""
+    _glove(a, "Steel", "DarkSteel")
+
+
+def robe_glove(a):
+    """A cloth mitt: the same surface the robe is, so it reads as part of it."""
+    _glove(a, GARMENT, LEATHER_TRIM)
+
+
+GLOVE = {
+    "leather": leather_glove,
+    "plate": plate_glove,
+    "robe": robe_glove,
 }
 
 
@@ -1459,14 +1522,23 @@ CAPE = {
 }
 
 # Slot per style, so `build.py` can name the file and the game can find it.
+# `glove` is not an `ItemSlot` and is not meant to be: there is no glove slot in
+# this game. It is a FILE PREFIX, so a garment style's hands export to
+# `glove_plate.glb` beside the costume they belong to. The ids are the chest
+# styles they dress, which is safe because `CHEST` holds only the three
+# procedural styles and never these three.
 SLOT_OF = {
     **{style: "armor" for style in CHEST},
     **{style: "helm" for style in HELM},
     **{style: "boots" for style in BOOTS},
     **{style: "cape" for style in CAPE},
+    **{style: "glove" for style in GLOVE},
 }
-RECIPES = {**CHEST, **HELM, **BOOTS, **CAPE}
-FAMILIES = {"chest": list(CHEST), "helm": list(HELM), "boots": list(BOOTS), "cape": list(CAPE)}
+RECIPES = {**CHEST, **HELM, **BOOTS, **CAPE, **GLOVE}
+FAMILIES = {
+    "chest": list(CHEST), "helm": list(HELM), "boots": list(BOOTS),
+    "cape": list(CAPE), "glove": list(GLOVE),
+}
 
 
 def build(style):

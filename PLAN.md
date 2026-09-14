@@ -26474,3 +26474,41 @@ outlined, and face detail was being outlined at all.
 
 19 fitted, 0 not. Suite green, `gearchurn` accumulates nothing over 40 changes,
 client typechecks.
+
+**Phase 70 M70.351 — gloves for the costumes, and boots that are not trainers.**
+Both were on the outstanding list.
+
+THE GARMENT STYLES HAD NO HANDS. `dress_limbs` gauntlets chain, scale and
+brigandine because those are built here; `leather`, `plate` and `robe` are the
+pack's own costumes, and `applyAppearance` takes the garment branch and never
+reaches the modelled path — so those three ended at the wrist with a bare hand
+hanging out. Worst on the plate: a full suit of armour with naked hands. The
+donors cannot supply them either: `garments.py` cuts `Fist` and `Thumb` away as
+SKIN, correctly, and the pack's characters have bare hands underneath anyway.
+
+So they are built here and exported on their own as `glove_<style>.glb`, on the
+same bones and to the same measurements as the gauntlet in `dress_limbs`, and
+the garment branch loads them alongside the costume. `glove` is a FILE PREFIX,
+not an `ItemSlot` — there is no glove slot in this game, and a hand belongs to
+the chest item the same way a thigh does. `buildArmourModel` and
+`buildGarmentGloves` now share one `buildPiecesFrom`, since both are "a GLB of
+bone-named pieces, repainted".
+
+THE BOOTS WERE THE BRIGHTEST THING ON THE FIGURE. `LEATHER = "Steel"` — the
+METAL role, the palette's most identifying tone — and the comment beside it is
+right about a jerkin and wrong about footwear: a mail shirt and a leather one
+are told apart by their cut, but a leather boot rendered paler than the armour
+above it reads as a white trainer. Leather boots take the WOOD role now, which
+is the palette's leather colour by construction (0x5c3d24 under steel, 0x8b7d63
+under bone); `plated` keeps its metal, because a greave is a greave.
+
+AND THE DEV SERVER HAD TO BE RESTARTED, which is worth writing down because it
+cost a wrong diagnosis. The new `glove_*.glb` files 404'd in the browser while
+`curl` reported 200 — Vite caches its public-directory listing at startup and
+serves the SPA fallback for anything added since, so the response was
+`text/html` at 104,483 bytes for every one of them. Checking the CONTENT TYPE
+rather than the status code is what named it: `armor_chain.glb` came back
+`model/gltf-binary` and the gloves came back `text/html`. A 200 is not proof
+the right thing was served.
+
+19 fitted, 0 not. Suite green, client typechecks.

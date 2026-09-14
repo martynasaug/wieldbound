@@ -29,7 +29,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildBareHands, buildHandPieces, fistCentre, garmentFor, hasArmourModel, removeHandGeometry, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
+import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildBareHands, buildGarmentGloves, buildHandPieces, fistCentre, garmentFor, hasArmourModel, hasGarmentGloves, removeHandGeometry, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
 import { garment } from "./wardrobe";
 import { tintedGarment } from "./garmenttint";
 import { PALETTES, type PaletteDef } from "../../../shared/items";
@@ -1516,6 +1516,33 @@ export class Actor {
             part.userData.gearKey = slot;
             this.worn.push(part);
             this.trackMaterials(part);
+          }
+
+          // AND THE HANDS THE COSTUME DOES NOT COME WITH. `garments.py` cuts
+          // `Fist` and `Thumb` away as skin — correctly, the player owns their
+          // own hands — and `dress_limbs` only gauntlets the three PROCEDURAL
+          // chest styles, which this branch never reaches. So a garment ended at
+          // the wrist with a bare hand hanging out of it, worst on the plate: a
+          // full suit of armour with naked hands. See `buildGarmentGloves`.
+          if (hasGarmentGloves(layer.style)) {
+            void buildGarmentGloves(layer.style, layer.rarity, layer.palette).then(async (gloves) => {
+              if (!gloves.length || !this.current(slot, slotGen)) return;
+              for (const glove of gloves) {
+                const handBone = this.bones.get(glove.bone);
+                const seat = this.instance ? boneAttachMatrix(this.instance.object, glove.bone) : null;
+                if (!handBone || !seat) continue;
+                await this.options.warmUp?.(glove.object);
+                if (!this.current(slot, slotGen)) return;
+                glove.object.matrixAutoUpdate = false;
+                glove.object.matrix.copy(seat);
+                handBone.add(glove.object);
+                glove.object.userData.gearKey = slot;
+                this.worn.push(glove.object);
+                this.trackMaterials(glove.object);
+              }
+              this.refreshOutlines();
+              this.options.warmDraw?.(this.root);
+            });
           }
 
           this.refreshOutlines();
