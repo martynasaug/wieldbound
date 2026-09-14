@@ -840,16 +840,25 @@ def skullcap(a, mat, y0=BROW_Y, y1=CROWN_Y, wide=35.0):
 
 
 def cap_helm(a):
-    """A skullcap: grips the crown, leaves the whole face alone, and has a brow band."""
-    skullcap(a, "Steel")
-    # THE BAND RIDES THE CAP, NOT THE FACE. At the brow line it still crossed
-    # the eyes and read as a blindfold in every photograph — because the band is
-    # a full ring and this face is flat, so its front edge lands on the eyes
-    # however high the number says it is. It sits up on the dome now, where a
-    # helmet's rim actually is, and the nasal is a short stub off it.
-    a.band(BONE_HEAD, BROW_Y + 9.0, 35.0, "DarkSteel", tube=3.0, squash=(1.0, 1.16), z=SKULL_Z)
-    a.plate(BONE_HEAD, [(-3.5, BROW_Y + 4.0), (3.5, BROW_Y + 4.0), (4.0, BROW_Y + 14.0), (-4.0, BROW_Y + 14.0)],
-            "Steel", z=BODY["head_front_z"] - 2.0, thickness=4.0)
+    """A skullcap that comes down to the brow, with a rim and a nasal."""
+    # IT HAS TO COME DOWN TO THE BROW OR IT IS A BEANIE. Photographed large, the
+    # cap capped the crown and stopped at y 264, leaving a bare forehead half the
+    # height of the face with a dark ring sitting on it — which read as a hat
+    # with trim, not as armour.
+    #
+    # The note this replaces moved the band UP to escape a blindfold read, and
+    # that was the right diagnosis of the wrong cause: a full ring at the brow
+    # looks like a blindfold when there is nothing above it, because then the
+    # ring IS the helmet. With a dome coming down to meet it the same ring reads
+    # as the helmet's rim, which is what it is. So the dome drops instead of the
+    # band rising.
+    skullcap(a, "Steel", y0=BROW_Y - 8.0, wide=36.0)
+    a.band(BONE_HEAD, BROW_Y - 6.0, 36.0, "DarkSteel", tube=3.0, squash=(1.0, 1.16), z=SKULL_Z)
+    # THE NASAL HANGS BELOW THE RIM, over the nose. It used to run from BROW_Y+4
+    # to BROW_Y+14 — entirely ABOVE the brow, a stub on the forehead pointing at
+    # the ceiling — which is the other half of why this style read as a hat.
+    a.plate(BONE_HEAD, [(-3.5, BROW_Y - 22.0), (3.5, BROW_Y - 22.0), (4.5, BROW_Y - 4.0), (-4.5, BROW_Y - 4.0)],
+            "Steel", z=BODY["head_front_z"] - 1.0, thickness=4.0)
 
 
 def full_helm(a):

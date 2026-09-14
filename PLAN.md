@@ -25782,3 +25782,18 @@ And the Ridgeguard ridge promised last milestone: `shin` builds a shell of radiu
 15 tapering to 13.5, so its front face sits near z 14 — and the ridge was placed
 at z 12.0, INSIDE the leg, which is exactly why it read as a dark seam rather than
 a ridge. 17.5 stands it proud with room for the chamfer. Suite 57/57.
+
+**Phase 70 M70.333 — the cap helm comes down to the brow, so it stops being a
+hat.** Photographed large, `cap` capped the crown and stopped at y 264, leaving a
+bare forehead half the height of the face with a dark ring sitting on it. It read
+as a beanie with trim rather than as armour.
+
+The note it replaces had moved that band UP to escape a "blindfold" read, and that
+was the right diagnosis of the wrong cause. A full ring at the brow looks like a
+blindfold when there is nothing above it — because then the ring IS the helmet.
+With a dome coming down to meet it, the same ring reads as the helmet's RIM, which
+is what it is. So the dome drops instead of the band rising.
+
+The nasal was the other half: it ran from `BROW_Y + 4` to `BROW_Y + 14`, entirely
+ABOVE the brow — a stub on the forehead pointing at the ceiling. It hangs below
+the rim over the nose now. Suite 57/57.
