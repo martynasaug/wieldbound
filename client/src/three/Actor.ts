@@ -2010,7 +2010,7 @@ export class Actor {
         // See `scalpCap`. Hair only: a beard has nothing to cover.
         if (slot === "hair" && skull) {
           const head = this.headUp(skull);
-          const capGeo = scalpCap(skull, head.up, head.hairline);
+          const capGeo = scalpCap(skull, head.up, head.hairline, head.forward ?? undefined);
           if (capGeo) {
             const cap = new THREE.Mesh(capGeo, hairMaterial(colour));
             cap.name = "look_scalp";
@@ -2076,7 +2076,7 @@ export class Actor {
    * about which axis anything was exported along. Falls back to +Y for a body
    * with no face, which is the old behaviour and no worse than it was.
    */
-  private headUp(skull: Skull): { up: THREE.Vector3; hairline: number } {
+  private headUp(skull: Skull): { up: THREE.Vector3; hairline: number; forward: THREE.Vector3 | null } {
     const bone = this.bones.get(HAIR_ANCHOR_BONE);
     let brow: THREE.BufferGeometry | null = null;
     let nose: THREE.BufferGeometry | null = null;
@@ -2087,15 +2087,27 @@ export class Actor {
       if (!nose && mesh.name === CALIBRATION_MESH) nose = mesh.geometry;
     }
     const reach = Math.max(skull.size.x, skull.size.y, skull.size.z) * 0.5;
-    if (!brow || !nose) return { up: new THREE.Vector3(0, 1, 0), hairline: reach * 0.1 };
+    if (!brow || !nose) return { up: new THREE.Vector3(0, 1, 0), hairline: reach * 0.1, forward: null };
 
     const browAt = centroidOf(brow);
-    const up = browAt.clone().sub(centroidOf(nose));
+    const noseAt = centroidOf(nose);
+    const up = browAt.clone().sub(noseAt);
     // Brows sit only a little above a nose, so this is a short vector; without
     // normalising, every distance measured along it would be scaled by however
     // far apart this particular face happens to put them.
-    if (up.lengthSq() <= 1e-9) return { up: new THREE.Vector3(0, 1, 0), hairline: reach * 0.1 };
+    if (up.lengthSq() <= 1e-9) return { up: new THREE.Vector3(0, 1, 0), hairline: reach * 0.1, forward: null };
     up.normalize();
+
+    // WHICH WAY THE FACE POINTS, so the scalp cap can hold the hairline at the
+    // brow in front and drop to the nape behind. The nose is the only landmark
+    // on this model that is unambiguously on the front of the head, and the part
+    // of it that is not "up" is "forward". Derived rather than assumed for the
+    // reason this file keeps relearning: +z is not forward in this space any more
+    // than +y was up, and every constant here that looked wrong for a week turned
+    // out to be an axis.
+    const forward = noseAt.clone().sub(skull.centre);
+    forward.addScaledVector(up, -forward.dot(up));
+    const facing = forward.lengthSq() > 1e-9 ? forward.normalize() : null;
 
     // A HAIRLINE IS ABOVE THE BROW, not at it. Clearing the brow by a tenth of a
     // head keeps the cap off the eyes while still reaching down far enough that
@@ -2106,7 +2118,7 @@ export class Actor {
     // a triangle; adding a tenth of a head on top of that stopped the cap well
     // short of the hairline and let the parting show skull again.
     const hairline = browAt.sub(skull.centre).dot(up) + reach * 0.02;
-    return { up, hairline };
+    return { up, hairline, forward: facing };
   }
 
   /**

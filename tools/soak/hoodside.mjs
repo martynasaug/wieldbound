@@ -23,7 +23,7 @@ await page.waitForTimeout(2400);
 
 await page.evaluate(() => {
   const g = window.__wieldbound;
-  g.localActor.setLook({ skin: "tan", build: "average", hair: "short", beard: "none", hairColor: "black" });
+  g.localActor.setLook({ skin: "tan", build: "average", hair: "shaggy", beard: "none", hairColor: "black" });
   g.world.dayNight.freeze(0.5);
   const render = g.world.renderer.render.bind(g.world.renderer);
   g.world.renderer.render = (s, c) => { g.__catHold?.(); render(s, c); };

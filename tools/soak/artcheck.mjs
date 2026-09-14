@@ -180,7 +180,7 @@ await login(page, `Art${Date.now() % 100000}`);
 // flatters a piece; `average` build is scale 1.0, so limb figures stay in the
 // units the rest of this file is written in; no beard, because a full one is a
 // large dark mass right beside the collar windows.
-const PINNED_LOOK = { skin: "tan", build: "average", hair: "short", beard: "none", hairColor: "black" };
+const PINNED_LOOK = { skin: "tan", build: "average", hair: "shaggy", beard: "none", hairColor: "black" };
 await page.evaluate((look) => {
   const g = window.__wieldbound;
   g.world.dayNight.freeze(0.5);

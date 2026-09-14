@@ -228,7 +228,46 @@ export function seatMatrix(
  * line — high enough that the cap never reaches a cheek or a jaw, which would
  * paint the face hair-coloured.
  */
-export function scalpCap(skull: Skull, up: THREE.Vector3, floor: number): THREE.BufferGeometry | null {
+/** Half the skull's largest extent — the unit every head measurement here uses. */
+function reachOf(skull: Skull): number {
+  return Math.max(skull.size.x, skull.size.y, skull.size.z) * 0.5;
+}
+
+/**
+ * The height a triangle has to clear, given how far back on the head it sits.
+ *
+ * `floor` at the face, falling to the bottom of the skull at the back. Measured
+ * on the triangle's rearmost corner so a triangle straddling the ear is judged
+ * by the part that needs covering — this skull is 75 vertices for a whole head,
+ * so a single triangle can span from the temple to the nape.
+ */
+function slidingFloor(
+  t: ArrayLike<number>,
+  j: number,
+  c: THREE.Vector3,
+  forward: THREE.Vector3,
+  floor: number,
+  reach: number,
+): number {
+  let back = Infinity;
+  for (let k = 0; k < 9; k += 3) {
+    const d =
+      (t[j + k] - c.x) * forward.x +
+      (t[j + k + 1] - c.y) * forward.y +
+      (t[j + k + 2] - c.z) * forward.z;
+    if (d < back) back = d;
+  }
+  // 0 at the face and forward of it, 1 a full half-head behind centre.
+  const behind = Math.max(0, Math.min(1, -back / (reach || 1)));
+  return floor * (1 - behind) + -reach * behind;
+}
+
+export function scalpCap(
+  skull: Skull,
+  up: THREE.Vector3,
+  floor: number,
+  forward?: THREE.Vector3,
+): THREE.BufferGeometry | null {
   const t = skull.tris;
   const c = skull.centre;
   const kept: number[] = [];
@@ -263,7 +302,22 @@ export function scalpCap(skull: Skull, up: THREE.Vector3, floor: number): THREE.
       height(t[j + 3], t[j + 4], t[j + 5]),
       height(t[j + 6], t[j + 7], t[j + 8]),
     );
-    if (low <= floor) continue;
+    // A HAIRLINE IS AT THE BROW IN FRONT AND AT THE NAPE BEHIND, and holding one
+    // height all the way round is why the back of every head was bare.
+    //
+    // Reported, with a photograph, as "spots of character skin": from behind, the
+    // shaggy hair is separate locks and the scalp showed tan between every one of
+    // them. The note above is honest that requiring a whole triangle to clear the
+    // hairline leaves the cap's edge high, and argues that the edge "lives under
+    // a fringe where nothing can see it" — true of the FACE, and there is no
+    // fringe at the back of a head.
+    //
+    // So the limit slides: the brow line where the face is, the bottom of the
+    // skull where it is not. The face is protected exactly as before — every
+    // round of eyes and brows being painted out came from the front — and the
+    // nape is covered, which is most of what a head of hair is.
+    const limit = forward ? slidingFloor(t, j, c, forward, floor, reachOf(skull)) : floor;
+    if (low <= limit) continue;
     for (let k = 0; k < 9; k += 3) {
       const dx = t[j + k] - c.x, dy = t[j + k + 1] - c.y, dz = t[j + k + 2] - c.z;
       const len = Math.hypot(dx, dy, dz) || 1;

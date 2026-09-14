@@ -60,12 +60,16 @@ OUT = "client/public/models/armour/helm_hood.glb"
 
 # The player's own file, and its own cowl. See the note above: this is not a
 # donor, it is the wearer, which is why nothing below fits or moves it.
-DONOR = "Rogue.fbx"
-MESH = "Face"
+DONOR = "Ranger.fbx"
+MESH = "Cloak"
 
 
 def main():
     root = os.getcwd()
+
+    # The head this will be worn on, measured first, because loading the donor
+    # replaces the scene.
+    wearer = register.wearer_head()
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.fbx(filepath=os.path.join(root, MODELS, DONOR))
@@ -98,33 +102,68 @@ def main():
     hood.parent = None
     hood.matrix_basis = mathutils.Matrix.Identity(4)
 
-    # MIRRORED IN DEPTH, and this is the one correction that survived being
-    # tested rather than reasoned about.
+    # IT WAS NEVER FACING THE WRONG WAY. IT WAS NEVER ON THE HEAD.
     #
-    # Measured on the Rogue, his cowl sits BEHIND his face: its front stops 0.164
-    # short of the face and its back reaches 0.408 past the back of the skull.
-    # Photographed in game, harvested untouched, it arrives IN FRONT of the face
-    # (`tools/soak/shots/hoodside/side.png`, shot in crimson so it cannot be
-    # mistaken for the scenery — an earlier round of this was diagnosed against a
-    # tree, in verdant).
+    # Three builds photographed on the body from four sides
+    # (`tools/soak/wearlook.mjs`), which is the only thing that has settled any
+    # of this:
     #
-    # The loader stands Z-up data up with a -90 degree rotation about X (see
-    # `instantiateNow` in `assets.ts`), which maps Blender's +y to three.js's -z.
-    # The BODY and its skeleton go through that together and stay agreeing; a
-    # rigid piece attached by `boneAttachMatrix` does not, so its depth arrives
-    # reversed. Nothing authored in `armour.py` shows this, because those are
-    # built in the game's own frame against the `BODY` table.
+    #   left alone          a pale dome over the whole face, hair behind it
+    #   mirrored            the cowl entirely BEHIND the head, open to the rear
+    #   mirrored + centred   a dome over the face AND an opening at the back
     #
-    # A MIRROR, not a turn. A 180-degree turn was tried on the Ranger's cloak and
-    # swings the whole piece across the head; a mirror flips only the depth axis,
-    # so the cowl stays over the skull and only its facing changes. The winding
-    # goes with it — a mirrored mesh is inside out — so the normals flip back.
-    lo, hi = head
-    mid_y = (lo.y + hi.y) / 2
+    # Read together they say what no single one of them did. Left alone, the cowl
+    # sat wholly in FRONT of the face, so what the camera saw was its outer back
+    # surface — the opening was already pointing at the face, correctly, the
+    # whole time. Mirroring turned a correct orientation into a wrong one; the
+    # third build proves it, because that is the one where the opening finally
+    # shows up at the BACK.
+    #
+    # So there is no axis correction here at all. This is the player's own cowl,
+    # authored on this bone, and it goes on the way its author put it on. The
+    # only thing wrong was WHERE.
+    #
+    # CENTRED ON THE COWL — not on the mesh. This is a hooded cloak: the cowl is
+    # the part at head height and the rest is drape falling to the waist, so the
+    # mesh's own box centre sits far below and behind the head, and aligning by
+    # it hangs the cowl out in space. That mistake has now been made four times
+    # across two different meshes, and it is the whole reason this took so long.
+    lo, _hi = head
+    at_head = [v.co for v in hood.data.vertices if v.co.z >= lo.z]
+    if not at_head:
+        print("no cowl found at head height")
+        return
+    # SCALED BY THE TWO HEADS, NOT BY SQUEEZING THE COWL ONTO ONE.
+    #
+    # `register.fit(hood, cowl_box, head_box)` was the obvious call and it is
+    # wrong here: it makes the cowl's box EQUAL the skull's, and a hood that is
+    # exactly the size of the head it covers is not a hood. Photographed, it came
+    # out at 0.855 x 0.912 — smaller than the cowl was authored — with the hair
+    # standing through the cloth in front of the face.
+    #
+    # What transfers is the ratio of the two HEADS: the Ranger's skull is
+    # 0.572 x 0.761 x 0.727 against this body's 0.670 x 0.814 x 0.890, so the
+    # hood grows by the same amount the head does and keeps the clearance its
+    # author gave it.
+    scale, wearer_mid, donor_mid = register.registration(head, wearer)
     for vert in hood.data.vertices:
-        vert.co.y = 2 * mid_y - vert.co.y
-    hood.data.flip_normals()
-    print(f"mirrored in depth about the head's own centre y={mid_y:.3f}")
+        vert.co = mathutils.Vector((
+            donor_mid[i] + (vert.co[i] - donor_mid[i]) * scale[i] for i in range(3)
+        ))
+
+    # THEN THE COWL — not the mesh — IS PUT ON THE HEAD. Re-measured after the
+    # scaling, because scaling about the donor's head centre moves it.
+    at_head = [v.co for v in hood.data.vertices if v.co.z >= lo.z * scale.z + donor_mid.z * (1 - scale.z)]
+    if not at_head:
+        at_head = [v.co for v in hood.data.vertices]
+    cowl_mid = mathutils.Vector((
+        (min(p[i] for p in at_head) + max(p[i] for p in at_head)) / 2 for i in range(3)
+    ))
+    shift = mathutils.Vector((wearer_mid.x - cowl_mid.x, wearer_mid.y - cowl_mid.y, 0.0))
+    for vert in hood.data.vertices:
+        vert.co += shift
+    print(f"scaled ({scale.x:.3f},{scale.y:.3f},{scale.z:.3f}), "
+          f"cowl centred by ({shift.x:+.3f},{shift.y:+.3f})")
 
     # NAMED FOR THE BONE. `build.py` exports armour as one object per bone and the
     # loader reads the object name to decide what to hang it on, so this has to be

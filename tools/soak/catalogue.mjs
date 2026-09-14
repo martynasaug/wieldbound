@@ -13,6 +13,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { open, login } from "./driver.mjs";
 import { ITEM_BASES } from "../../shared/items.ts";
+import { HAIR_STYLE_IDS } from "../../shared/look.ts";
 
 const OUT = process.argv[2] ?? "tools/soak/shots/catalogue";
 const FILTER = process.argv.slice(3);
@@ -46,7 +47,21 @@ await login(page, `Cat${Date.now() % 100000}`);
 // bigger than it was. Gear is judged AGAINST a body; if the body moves, nothing
 // in the picture means anything. Pinned to the same look the art bench uses
 // (`tools/soak/artcheck.mjs`), so a plate and a measurement describe one figure.
-const PINNED_LOOK = { skin: "tan", build: "average", hair: "short", beard: "none", hairColor: "black" };
+// THE IDS ARE CHECKED AGAINST THE REAL LIST, not just echoed back.
+//
+// This pinned `hair: "short"` for months. `setLook` stores whatever it is
+// handed without validating, so the "prove it pinned" check below passed --
+// it compared the value to itself -- while `HAIR_FILES` had no entry for it
+// and every sheet this tool has ever produced was shot on a BALD character.
+// Reported as "spots of character skin", which is exactly what a bare skull is.
+const PINNED_LOOK = { skin: "tan", build: "average", hair: "shaggy", beard: "none", hairColor: "black" };
+if (!HAIR_STYLE_IDS.includes(PINNED_LOOK.hair)) {
+  console.error(
+    `catalogue: hair "${PINNED_LOOK.hair}" is not a real style. ` +
+    `Pick one of: ${HAIR_STYLE_IDS.join(", ")}`,
+  );
+  process.exit(1);
+}
 await page.evaluate((look) => {
   const g = window.__wieldbound;
   g.localActor.setLook(look);

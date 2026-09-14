@@ -47,7 +47,7 @@ await page.waitForTimeout(2400);
 // The look is pinned for the same reason the catalogue pins it: skin tone is
 // hashed from the login name over eight tones, and a question about SKIN
 // SHOWING cannot be asked on a body whose skin is a different colour each run.
-const PINNED_LOOK = { skin: "tan", build: "average", hair: "short", beard: "none", hairColor: "black" };
+const PINNED_LOOK = { skin: "tan", build: "average", hair: "shaggy", beard: "none", hairColor: "black" };
 await page.evaluate((look) => {
   const g = window.__wieldbound;
   const a = g.localActor;

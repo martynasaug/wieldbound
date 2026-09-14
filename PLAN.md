@@ -26277,3 +26277,61 @@ Unchanged where it matters: `gearchurn` still reports nothing accumulated across
 40 full gear changes, `ghostswap` still finds no stale outline hulls through four
 weapon swaps, `gearcheck` finds no weapon without a drawable mesh. 19 fitted, 0
 not. Suite green, smoke green, client typechecks.
+
+**Phase 70 M70.347 — every review sheet was shot on a bald character.**
+Told, after four rounds of correcting things by measurement: "ACTUALLY SEE HOW
+ITEMS SIT ON THE BODY, DON'T JUDGE FROM THE CODE ALONE." Also: "the armors — I
+keep telling you there are spots of character skin", with a photograph, and
+"hood is the other way around, how do you not notice that."
+
+THE SKIN WAS THE HEAD, AND THE HEAD WAS BALD BECAUSE THE INSTRUMENT ASKED FOR A
+HAIRSTYLE THAT DOES NOT EXIST. `shared/look.ts` declares
+`HAIR_STYLE_IDS = ["none", "swept", "shaggy"]`. `catalogue.mjs` has pinned
+`hair: "short"` since it was written. `setLook` stores whatever it is handed
+without validating, `HAIR_FILES` has no entry for "short", and the sheet's own
+"prove it pinned" check compared the value to the value it had just set — so it
+passed, every time, while the character rendered bald. Every catalogue sheet in
+this phase, and every judgement made from one, was of a head with no hair on it.
+
+With a real hairstyle on, the fault is plain and it is not the armour: the
+shaggy hair is separate locks and the SCALP SHOWS TAN BETWEEN EVERY ONE OF THEM,
+across the whole back and crown. That is the brown patch in the photograph, on
+every item, in every view.
+
+`scalpCap` was already meant to cover this and could not, for a reason the file
+half-records: it keeps only triangles whose WHOLE span clears the hairline, and
+on a 75-vertex skull one triangle runs from crown to brow. Its note argues the
+high edge "lives under a fringe where nothing can see it" — true of the face,
+and there is no fringe at the back of a head. A hairline is at the brow in FRONT
+and at the nape BEHIND, so the limit slides between them now, using a forward
+vector derived from the nose rather than assumed. The face is protected exactly
+as before; the nape is covered, which is most of what a head of hair is.
+
+THE HOOD, SIXTH TO NINTH ATTEMPTS. Photographed on the body from four sides,
+three more builds each failed differently: left alone it was a pale dome over
+the whole face; mirrored it sat entirely behind the head, open to the rear;
+mirrored and centred it managed both at once. Read together they say there was
+never an axis problem — left alone, the cowl sat wholly in FRONT of the face, so
+the camera was seeing its outer back surface while the opening pointed at the
+face correctly the whole time.
+
+The Rogue's own `Face` cowl turned out to be the wrong mesh after all: it has no
+face opening, which is exactly why `base_body.py` strips it — its note says
+keeping it left "a void where the face goes". Back to the Ranger's `Cloak`,
+which has a real opening, placed two ways at once: SCALED by the ratio of the
+two skulls, and TRANSLATED so THE COWL — the part at head height, not the mesh,
+whose box is mostly drape — lands on the head. `register.fit` was the obvious
+call and is wrong here: it makes the cowl's box equal the skull's, and a hood the
+same size as the head it covers has the hair standing through it.
+
+`tools/soak/wearlook.mjs` is the instrument this should have had all along: four
+sides, one row per style, whole body in frame, at a size where a bare patch is
+not four pixels. It refuses to run if the hairstyle is not a real id, and again
+if the body ends up with no hair on it.
+
+STILL WRONG, seen properly for the first time and reported twice: the capes are
+FLAT BOARDS. The widths and hems corrected in M70.343 were real, but from the
+side every cape is a rigid plane standing off the back rather than cloth
+following the body. Next.
+
+19 fitted, 0 not. Suite green, client typechecks.
