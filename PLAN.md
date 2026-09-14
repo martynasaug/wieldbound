@@ -25822,3 +25822,37 @@ ACTING on a measurement before looking is what keeps costing time.
 
 Full catalogue reviewed in one sheet afterwards: nineteen styles across armor,
 helm, boots and cape, every one distinct and nothing broken. Suite 57/57.
+
+**Phase 70 M70.335 — a garment answers to its palette, so seventeen chest items
+stop being three.** `robe`, `plate` and `leather` are the pack's costumes worn as
+items, and they were the only armour in the game that ignored its own palette
+entirely: a Gilded Plate, a Blackened Plate and a Crimson Plate were the same
+pixels. Seventeen catalogue items rendering as three appearances, unnoticed
+because `armourstyles.mjs` photographs one style in ONE palette and structurally
+cannot ask the question.
+
+Everything else answers through `repaint`, which works because a procedural item
+is assembled from NAMED materials — Steel, Gold, Wood — each of which can be
+handed a colour. A garment has no such seams: it is one surface with a painting
+on it, and there is nothing to hand a colour to.
+
+So the painting is recoloured, which is the lesson `skin.ts` already paid for. A
+multiply over the material cannot do it — these atlases mean 0.197 to 0.233, so
+multiplying only makes a dark garment darker and a pale palette like Bone or
+Frost is unreachable by construction. `garmenttint.ts` transforms the pixels
+instead: hue from the palette, saturation mostly from it, and LIGHTNESS KEPT,
+because the lightness IS the painting — the folds, the seams, the shadow under a
+collar. Change it and a photograph of cloth becomes a silhouette in a new colour.
+
+Two details that decide whether it reads as armour or as a dyed sack. A nearly
+grey pixel keeps its own hue, the pull scaled by saturation: buckles, steel
+fittings and white trim carry almost none, and forcing the palette onto them
+paints the metalwork the same colour as the cloth. And the role taken is `metal`,
+not `wood` — metal is what carries a palette's identity (Crimson's red, Verdant's
+green, Bone's pale) while `wood` is a brown in nearly every one of the thirteen,
+so choosing it would have turned thirteen palettes into three browns.
+
+`tools/soak/palettes.mjs` is the instrument that asks the question at all: one
+style across six palettes spanning the wheel, the character held still with the
+mixer stopped so any difference in the picture is the palette and nothing else.
+Suite 57/57.

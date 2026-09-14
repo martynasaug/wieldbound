@@ -30,6 +30,8 @@ import {
 import { instantiate, findNode, findClip, type Instance } from "./assets";
 import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildBareHands, buildHandPieces, fistCentre, garmentFor, hasArmourModel, removeHandGeometry, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
 import { garment } from "./wardrobe";
+import { tintedGarment } from "./garmenttint";
+import { PALETTES, type PaletteDef } from "../../../shared/items";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
 import { CALIBRATION_DONOR, CALIBRATION_MESH, CALIBRATION_PIECE, HAIR_ANCHOR_BONE, SCALP_SLOT, donorOf, donorScale, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
@@ -1373,7 +1375,18 @@ export class Actor {
         });
         if (piece && body) {
           const host: THREE.SkinnedMesh = body;
-          const worn = new THREE.SkinnedMesh(piece.geometry, piece.material);
+          // IN THE COLOUR OF THE ITEM IT IS. A garment is one painted surface
+          // with no named materials to hand a palette to, so `repaint` — which
+          // every other item goes through — has nothing to act on, and until now
+          // a Gilded Plate and a Blackened Plate were the same pixels. See
+          // `tintedGarment`: the ATLAS is recoloured, hue from the palette and
+          // lightness kept, because the lightness is the painting.
+          //
+          // A material per wearer, because the wardrobe's is shared by everyone
+          // in that garment and two players in different palettes must not fight
+          // over one map. The geometry stays shared: geometry is style.
+          const dressed = this.garmentMaterialFor(piece, wantGarment, layer.palette);
+          const worn = new THREE.SkinnedMesh(piece.geometry, dressed);
           worn.name = `worn_${layer.style}`;
           // The wearer's own skeleton, not the donor's. Bone order is identical
           // across all five rigs in this pack — 32 skinning bones in the same
@@ -1933,6 +1946,31 @@ export class Actor {
       this.syncHairVisibility();
       this.refreshOutlines();
     });
+  }
+
+  /**
+   * A garment's material for one wearer, in the item's own palette.
+   *
+   * WHICH PALETTE ROLE A COSTUME TAKES IS `metal`, and it is worth saying why
+   * rather than leaving it looking arbitrary. A palette names three colours —
+   * metal, wood, accent — for items assembled from those materials. A costume is
+   * one surface and has to choose, and `metal` is the one that carries the
+   * palette's identity: Crimson's metal is its red, Verdant's its green, Bone's
+   * its pale. `wood` is a brown in nearly every palette, so picking it would make
+   * thirteen palettes into three browns.
+   */
+  private garmentMaterialFor(
+    piece: { material: THREE.Material },
+    id: string,
+    paletteId: string | undefined,
+  ): THREE.Material {
+    const palette = (PALETTES as Record<string, PaletteDef>)[paletteId ?? ""] ?? null;
+    const source = piece.material as THREE.MeshStandardMaterial;
+    if (!palette || !source.map) return source;
+    const mat = source.clone();
+    mat.map = tintedGarment(source.map, palette.metal, `${id}|${palette.id}`);
+    mat.needsUpdate = true;
+    return mat;
   }
 
   /**
