@@ -26430,3 +26430,47 @@ following the back, flare at the hem.
 STILL OPEN, seen in the combination sheets: the `cap` helm is a flat-topped box
 and its rim sits at the eye line, with the brow geometry poking through at the
 temples. `over_skull` made it wide enough and did not make it a good shape.
+
+**Phase 70 M70.350 — the tan spikes were the character's own outline.**
+Reviewing the combination sheets turned up two tan spikes coming up through the
+`cap` helm at both temples. Four wrong answers before the right one, and the
+sequence is worth keeping because each was disproved by one cheap measurement:
+
+  the hair's ghost      `look_hair` and `look_scalp` were `visible=false` under
+                        a cap with UNNAMED 995- and 66-triangle copies of both
+                        still visible beside them. A real bug — hulls are
+                        SIBLINGS on the bone, not children, so hiding a mesh
+                        never hid its ghost — and `buildSilhouette` now skips
+                        what is hidden. It was not the spikes.
+  the brow meshes       `Face_brow1/2` span 0.054 in world units and the spikes
+                        are three times that. Also fixed in passing: a forty-
+                        triangle brow inflated into a hull is a spike, and both
+                        builders skip face detail now.
+  helm geometry         shot in CRIMSON and in VERDANT: everything else changed
+                        colour and the spikes stayed TAN. Not the helm.
+  a seam in the dome    the upper shell is a full revolution and the lower one a
+                        0.70 arc, so their facets fall in different places; the
+                        arc overlaps by six units now. Still there.
+
+It was `RIM_COLOR`, 0xffe6bd — the figure's own outline. The rim is an inflated
+back-face copy of the BODY, and `HEAD_CLEAR` gave the helm three and a half
+units over the skull, so the inflated head stood through its own helmet. At 6.0
+it is covered. Nothing was wrong with the helmet; the character was wearing an
+outline a size too big for it.
+
+Coverage, with the extra clearance: cap 49% to 60%, hood 43% to 53%, horned 56%
+to 60%, full 85%, circlet 11%.
+
+AND THE CAP STOPPED AT THE EYES. `y0 = BROW_Y - 8` put the lower arc eight units
+below the brow where the dome's default is twenty-six, so the rim landed on the
+eye line. Its nasal sat at `head_front_z - 1` — 32 against a face front of 33,
+buried in the nose it guards. And between `y1 - 10` and `y1` the dome's radius
+fell from full width to 0.58 in one step, which on a ten-sided lathe is a lid
+with a bevel: every helm in the game was a box. One station in between makes it
+a dome.
+
+Two real rendering bugs came out of this: hidden meshes were still being
+outlined, and face detail was being outlined at all.
+
+19 fitted, 0 not. Suite green, `gearchurn` accumulates nothing over 40 changes,
+client typechecks.

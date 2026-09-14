@@ -919,7 +919,7 @@ CROWN_Y = 296.0
 # So the radius is not a taste number any more. Nothing worn on the head goes
 # below `HEAD_CLEAR` outside the skull's own half-width, and `over_skull` is
 # what enforces it.
-HEAD_CLEAR = 3.5
+HEAD_CLEAR = 6.0
 
 
 def over_skull(r):
@@ -956,8 +956,14 @@ def skullcap(a, mat, y0=BROW_Y - 26.0, y1=CROWN_Y, wide=36.0, arc=0.70):
     # The crown point keeps its 0.58 taper untouched: at `y1` the piece is
     # closing over the top of the head, where the skull has already drawn in, and
     # forcing it out to full width there would make a cylinder with a lid.
+    # AND THE CROWN IS ROUNDED, not chamfered. Between `y1 - 10` and `y1` the
+    # radius fell from the full width to 0.58 of it in one step, which on a
+    # ten-sided lathe is a flat lid with a bevel — photographed on a full set,
+    # every helm in the game was a box. One station in between costs four
+    # triangles and makes it a dome.
     a.shell(BONE_HEAD, [(over_skull(wide * 0.94), BROW_Y), (over_skull(wide), BROW_Y + 8.0),
-                        (over_skull(wide * 0.92), y1 - 10.0), (wide * 0.58, y1)],
+                        (over_skull(wide * 0.92), y1 - 12.0), (over_skull(wide * 0.78), y1 - 5.0),
+                        (wide * 0.5, y1)],
             mat, squash=(1.0, 1.16), z=SKULL_Z)
     # The cheeks and nape, hanging from the rim down past the ears. Turned to the
     # BACK: in this frame the lathe's angle runs from +x through -z, so pi/2 faces
@@ -966,8 +972,20 @@ def skullcap(a, mat, y0=BROW_Y - 26.0, y1=CROWN_Y, wide=36.0, arc=0.70):
     # THIS IS THE ARC THAT WAS SHOWING THE EARS. `wide * 0.9` = 32.4 against a
     # skull half-width of 33: the cheek piece passed THROUGH the head it was
     # meant to cover, so the temples stood proud of it down both sides.
+    # AND IT OVERLAPS THE DOME RATHER THAN BUTTING AGAINST IT.
+    #
+    # Both pieces end at `BROW_Y` at the same radius, so on paper they meet
+    # flush. They do not: the dome above is a FULL revolution and this is a
+    # 0.70 ARC, so the two lathes divide their angles differently and their
+    # facets fall in different places. Where a chord of one dips inside a chord
+    # of the other, the head shows through the join — as two tan spikes at the
+    # temples, which survived being shot in crimson while every real surface
+    # turned red, and survived widening the arc.
+    #
+    # Six units of overlap costs nothing and no seam between two surfaces of
+    # revolution at the same radius can be seen from outside.
     a.shell(BONE_HEAD, [(over_skull(wide * 0.9), y0), (over_skull(wide * 0.96), y0 + 12.0),
-                        (over_skull(wide * 0.94), BROW_Y)],
+                        (over_skull(wide * 0.94), BROW_Y + 6.0)],
             mat, squash=(1.0, 1.16), z=SKULL_Z, arc=arc, turn=math.pi / 2, cap=False)
 
 
@@ -984,13 +1002,35 @@ def cap_helm(a):
     # ring IS the helmet. With a dome coming down to meet it the same ring reads
     # as the helmet's rim, which is what it is. So the dome drops instead of the
     # band rising.
-    skullcap(a, "Steel", y0=BROW_Y - 8.0, wide=36.0)
-    a.band(BONE_HEAD, BROW_Y - 6.0, 36.0, "DarkSteel", tube=3.0, squash=(1.0, 1.16), z=SKULL_Z)
+    # AND IT STOPPED AT THE EYES. `y0 = BROW_Y - 8` gave the lower arc EIGHT
+    # units below the brow — where the dome's default is twenty-six, down past
+    # the ears — so the rim landed on the eye line and the brow ridge poked out
+    # underneath it at both temples. Photographed on a full set
+    # (`tools/soak/shots/wearlook/sets.png`), the style read as a bucket with a
+    # face under it rather than as a cap.
+    #
+    # The note above is right that the dome should drop to meet the band rather
+    # than the band rise to escape the eyes. It just did not drop far enough.
+    # AND THE OPENING WAS TOO WIDE. The dome`s lower arc covers 0.70 of the
+    # circle, leaving 108 degrees open -- plus or minus 54 from the face -- and
+    # the vertical edges where that arc ends fall right on the temples. Shot in
+    # crimson to tell helm from head (`tools/soak/spike.mjs`), the two tan
+    # spikes coming up through the cap stayed TAN while everything else turned
+    # red: they were never geometry, they were the head showing through the
+    # corners of its own face opening.
+    #
+    # 0.80 leaves plus or minus 36 degrees, which is a face and not a window.
+    skullcap(a, "Steel", y0=BROW_Y - 22.0, wide=36.0, arc=0.80)
+    a.band(BONE_HEAD, BROW_Y - 4.0, over_skull(36.0), "DarkSteel", tube=3.0, squash=(1.0, 1.16), z=SKULL_Z)
     # THE NASAL HANGS BELOW THE RIM, over the nose. It used to run from BROW_Y+4
     # to BROW_Y+14 — entirely ABOVE the brow, a stub on the forehead pointing at
     # the ceiling — which is the other half of why this style read as a hat.
+    # AND IT WAS INSIDE THE FACE. `head_front_z - 1` is 32 against a face whose
+    # front is 33, so the nasal was buried in the nose it is supposed to guard.
+    # The dome's own front surface is where it belongs: radius `over_skull(36)`
+    # at 1.16 squash, offset back by `SKULL_Z`.
     a.plate(BONE_HEAD, [(-3.5, BROW_Y - 22.0), (3.5, BROW_Y - 22.0), (4.5, BROW_Y - 4.0), (-4.5, BROW_Y - 4.0)],
-            "Steel", z=BODY["head_front_z"] - 1.0, thickness=4.0)
+            "Steel", z=SKULL_Z + over_skull(36.0) * 1.16 - 2.0, thickness=4.0)
 
 
 def full_helm(a):

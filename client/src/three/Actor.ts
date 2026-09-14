@@ -1782,6 +1782,24 @@ export class Actor {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
       if (mesh.material === this.silhouetteMaterial || mesh.material === this.outlineMaterial) return;
+      // NOT WHAT IS HIDDEN. A hull is a SIBLING on the bone, not a child of the
+      // mesh it traces (see `rimFor`), so hiding the mesh does not hide its
+      // ghost — and hair hidden under a helm went on being outlined. Reported
+      // as tan spikes coming up through the cap at both temples; measured, the
+      // cap had `look_hair` and `look_scalp` at `visible=false` with unnamed
+      // 995- and 66-triangle copies of both still visible beside them.
+      if (!mesh.visible) return;
+      // AND NOT THE FACE'S OWN DETAIL. `Face_brow1/2` are forty triangles each
+      // and `Face_nose` is ten; inflated into a through-walls hull and drawn
+      // with `GreaterDepth`, a brow becomes a tall spike that renders THROUGH
+      // whatever is in front of it — which, under a cap, is the helmet.
+      // Photographed as two tan spikes coming up through the dome at both
+      // temples, three times the height of the brow mesh itself.
+      //
+      // `buildRim` already skips `look_` pieces on the same reasoning: a
+      // silhouette is for reading a FIGURE through a wall, and a nose is not
+      // part of a figure at that distance.
+      if (mesh.name.startsWith("Face_") || mesh.name.startsWith("look_")) return;
       sources.push(mesh);
     });
 
@@ -2517,7 +2535,10 @@ export class Actor {
       // mesh, and the hull outlines every one of them: photographed in the game,
       // white lines laced through every fringe and fall and the hair read as
       // plastic pieces. The body's own outline still rings the figure.
-      if (mesh.name.startsWith("look_")) return;
+      // And the face's own detail, for the reason `buildSilhouette` gives: a
+      // forty-triangle brow with a hull round it is a spike, not an eyebrow.
+      if (mesh.name.startsWith("look_") || mesh.name.startsWith("Face_")) return;
+      if (!mesh.visible) return;
       sources.push(mesh);
     });
 
