@@ -25382,3 +25382,51 @@ All twelve combinations were re-rendered and looked at, which is the only reason
 any of this was caught: the numbers said the fit was fine two milestones running.
 
 Suite 57/57.
+
+
+**Phase 70 M70.323 — the Monk's whole face, and a scalp under the hair.** Two
+reports, both accurate, and a third fault found while chasing them.
+
+THE MONK BEARD WAS HALF HAIR. Measured in game the group spanned y 1.21 to 1.68
+against a nose at 1.44-1.55: above the eyes, wider than the skull, and from the
+side its clumps sat behind the ear. `look_pieces.py` calls this group "the 26
+clumps that wrap the jaw" and it is in fact 230 islands, 70 of which reach above
+the eye line. `tools/art/recut_beard.py` drops those, reading the eye line off
+the player's own face rather than assuming an axis — the brows and the nose are
+both meshes on the body, and a face has its brows above its nose.
+
+Then `tools/art/monk_head_shot.py` photographed the Monk itself, which should
+have happened before any of this was cut and would have saved two milestones.
+Its face is a jaw fringe WITH a moustache and almost nothing on the chin, so
+splitting it into two styles left each half reading as a thin outline round a
+bare face. The moustache is merged back in and "monk" is the Monk's whole face,
+which makes the ladder honest: a moustache, the Monk, or the Wizard's beard.
+
+THE HAIR HAD NO SCALP. Both styles are a ring of locks with nothing between
+them — invisible at eye level, and from directly above the crown was bare skin
+with clumps round the rim. This game looks down at the tops of heads all day,
+and every view `portrait.mjs` had was blind to it; it has a `top` view now.
+`scalpCap` builds a skullcap out of the head's own upper triangles in the hair's
+colour: it fits any head because it IS that head, costs about forty triangles,
+and a new hairstyle gets one without anybody authoring it.
+
+AND THE AXIS AGAIN, WHICH IS THE LESSON OF THIS WHOLE PHASE. The first cap came
+out as a ring standing on edge, because +Y IS NOT UP IN THE SPACE THESE PIECES
+LIVE IN: the matrix that places them rotates y into z, so "above the middle of
+the head" was splitting the head front from back. Two rounds of adjusting the
+threshold moved a boundary that was never on the right axis. Painting the cap
+red and photographing it — `tools/soak/capshow.mjs`, which colours every head
+mesh so nothing on screen is unaccounted for — showed in one frame what the
+arithmetic had not in three. Up is measured now, from the brows and the nose.
+
+The hairline is measured the same way. Guessed as a fraction of the skull it
+landed on the eye line, and the cap painted out the top half of all twelve
+faces — caught, again, only by re-rendering and looking.
+
+ONE THING RULED OUT RATHER THAN FIXED. The pale band over the crown is the RIM
+outline (0xffe6bd), not bare scalp: `portrait.mjs --rim=0` removes it entirely,
+and that flag exists now so the question is one render instead of an argument. I
+had already started thickening the cap to cover something that was not scalp.
+The cap does sit outside the rim shell now, so it no longer shows either way.
+
+Suite 57/57.

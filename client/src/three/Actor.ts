@@ -32,8 +32,8 @@ import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel
 import { garment } from "./wardrobe";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
-import { CALIBRATION_DONOR, CALIBRATION_MESH, CALIBRATION_PIECE, HAIR_ANCHOR_BONE, donorOf, donorScale, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
-import { calibrate, readSkull, seatMatrix, type Skull } from "./lookfit";
+import { CALIBRATION_DONOR, CALIBRATION_MESH, CALIBRATION_PIECE, HAIR_ANCHOR_BONE, SCALP_SLOT, donorOf, donorScale, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
+import { calibrate, centroidOf, readSkull, scalpCap, seatMatrix, type Skull } from "./lookfit";
 import type { CharacterLook } from "../../../shared/look";
 import { applySkin } from "./skin";
 import { pickClip, loadClipLibrary } from "./clips";
@@ -767,6 +767,8 @@ export class Actor {
   private readonly usesClipLibrary: boolean;
   /** See `skull`. `undefined` means not yet read; `null` means unreadable. */
   private skullCache: Skull | null | undefined = undefined;
+  /** The cap that rides with the hair. Its own slot so it is torn down with it. */
+  private readonly SCALP = SCALP_SLOT;
   /** See `lookCalibration`. Cleared with the body, like the skull. */
   private calibrationCache: Promise<THREE.Vector3> | null = null;
   /** The name this actor is tinted from. See `tintBody`. */
@@ -1814,6 +1816,7 @@ export class Actor {
       // A later choice, or a new rig, has overtaken this one.
       if (this.lookPieceTokens.get(slot) !== token || instance !== this.instance) return;
       this.removeLookPiece(slot);
+      if (slot === "hair") this.removeLookPiece(SCALP_SLOT);
       // PLACED BY A MATRIX ALREADY ON HAND, NOT BY A CONSTANT.
       //
       // The history is worth keeping because it is the same mistake three ways.
@@ -1866,6 +1869,28 @@ export class Actor {
         bone.add(mesh);
         this.lookPieces.set(slot, mesh);
         this.trackMesh(mesh);
+
+        // A scalp under the hair, so the gaps between locks are not bare head.
+        // See `scalpCap`. Hair only: a beard has nothing to cover.
+        if (slot === "hair" && skull) {
+          const head = this.headUp(skull);
+          const capGeo = scalpCap(skull, head.up, head.hairline);
+          if (capGeo) {
+            const cap = new THREE.Mesh(capGeo, hairMaterial(colour));
+            cap.name = "look_scalp";
+            // The cap is built in the SKULL's space, which is the space the
+            // frame maps from — so it takes the frame and none of the piece's
+            // own corrections. Applying the donor scale or the seat to it would
+            // move this head's own geometry off this head.
+            cap.matrixAutoUpdate = false;
+            cap.matrix.copy(onBone);
+            cap.castShadow = true;
+            cap.receiveShadow = true;
+            bone.add(cap);
+            this.lookPieces.set(SCALP_SLOT, cap);
+            this.trackMesh(cap);
+          }
+        }
       } else if (geometry) {
         // Loud, because the failure is invisible: a beard that finds no bone
         // simply draws nothing, and the character reads as clean-shaven rather
@@ -1875,6 +1900,48 @@ export class Actor {
       this.syncHairVisibility();
       this.refreshOutlines();
     });
+  }
+
+  /**
+   * Which way is UP in the space the head pieces live in.
+   *
+   * NOT +Y. These pieces are in the donor's mesh-bind frame and the matrix that
+   * places them rotates y into z, so anything in this file that reasons about
+   * "higher on the head" has to say so in the head's own terms.
+   *
+   * MEASURED FROM THE FACE, the same way `tools/art/recut_beard.py` does it: the
+   * brows and the nose are both meshes on this body, and a face has its brows
+   * above its nose. The vector between them is up, and it needs no assumption
+   * about which axis anything was exported along. Falls back to +Y for a body
+   * with no face, which is the old behaviour and no worse than it was.
+   */
+  private headUp(skull: Skull): { up: THREE.Vector3; hairline: number } {
+    const bone = this.bones.get(HAIR_ANCHOR_BONE);
+    let brow: THREE.BufferGeometry | null = null;
+    let nose: THREE.BufferGeometry | null = null;
+    for (const child of bone?.children ?? []) {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) continue;
+      if (!brow && /^Face_brow/.test(mesh.name)) brow = mesh.geometry;
+      if (!nose && mesh.name === CALIBRATION_MESH) nose = mesh.geometry;
+    }
+    const reach = Math.max(skull.size.x, skull.size.y, skull.size.z) * 0.5;
+    if (!brow || !nose) return { up: new THREE.Vector3(0, 1, 0), hairline: reach * 0.1 };
+
+    const browAt = centroidOf(brow);
+    const up = browAt.clone().sub(centroidOf(nose));
+    // Brows sit only a little above a nose, so this is a short vector; without
+    // normalising, every distance measured along it would be scaled by however
+    // far apart this particular face happens to put them.
+    if (up.lengthSq() <= 1e-9) return { up: new THREE.Vector3(0, 1, 0), hairline: reach * 0.1 };
+    up.normalize();
+
+    // A HAIRLINE IS ABOVE THE BROW, not at it. Clearing the brow by a tenth of a
+    // head keeps the cap off the eyes while still reaching down far enough that
+    // the parting does not show skull. The brow is the landmark because it is
+    // the only feature on the model that marks the top of the face.
+    const hairline = browAt.sub(skull.centre).dot(up) + reach * 0.10;
+    return { up, hairline };
   }
 
   /**
@@ -1967,8 +2034,13 @@ export class Actor {
 
   /** Hair under a helm would poke through it, so a worn helm hides it. A beard stays. */
   private syncHairVisibility(): void {
+    const shown = !this.appearance?.layers.helm;
     const hair = this.lookPieces.get("hair");
-    if (hair) hair.visible = !this.appearance?.layers.helm;
+    if (hair) hair.visible = shown;
+    // The cap goes with it. Left visible under a helm it would show as a
+    // hair-coloured skullcap poking out from under the brim.
+    const scalp = this.lookPieces.get(SCALP_SLOT);
+    if (scalp) scalp.visible = shown;
   }
 
   private tintBody(): void {

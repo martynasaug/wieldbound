@@ -37,6 +37,23 @@ import * as THREE from "three";
 const CONTACT = 0.015;
 
 /**
+ * How far the scalp cap stands off the skull, in the skull's own units.
+ *
+ * IT HAS TO CLEAR THE RIM, NOT THE SKIN, and that is the whole reason this is a
+ * fixed distance rather than the 1.2% scale it started as. `Actor` draws a
+ * back-face outline shell 0.0136 WORLD units outside every mesh, in a warm cream
+ * (`RIM_COLOR`, 0xffe6bd). A cap lifted 1.2% stands about 0.003 off a head whose
+ * radius is 0.445 — a fifth of what the rim needs — so the SKULL's own outline
+ * shell came through the cap and drew a pale band round the crown. It read
+ * exactly like bare scalp above the hair, and it was reported as such.
+ *
+ * The body's world scale is about 0.607, so the rim's 0.0136 world is 0.022 in
+ * this space; 0.035 clears it with room and is still only 8% of a head radius,
+ * which under a hairstyle is invisible.
+ */
+const CAP_LIFT = 0.035;
+
+/**
  * The skull's triangles, in the same space the look pieces are placed in.
  *
  * Only the triangles the Head bone OWNS. A gap measured against the whole body
@@ -188,6 +205,75 @@ export function seatMatrix(
   return new THREE.Matrix4()
     .makeTranslation(-dir.x * push, -dir.y * push, -dir.z * push)
     .multiply(scaled);
+}
+
+/**
+ * A skullcap in the shape of this head's crown, to go UNDER a hairstyle.
+ *
+ * WHY A HAIRSTYLE NEEDS ONE. The pack's hair is a ring of separate locks with
+ * nothing between them: from the front a fringe reads as a full head of hair,
+ * and from directly above the crown is bare scalp with clumps round the rim.
+ * That is invisible in a game played at eye level and glaring in this one, where
+ * the camera looks down at the tops of heads all day.
+ *
+ * Rather than model a cap per style, the head lends its own shape: the skull's
+ * upper triangles, pushed out barely far enough to clear the skin, drawn in the
+ * hair's colour. It fits any head exactly because it IS that head, it costs
+ * about forty triangles, and a new hairstyle gets one without anybody authoring
+ * anything.
+ *
+ * THE UPPER HALF ONLY. Measured on this body the skull centres at y 1.53 and the
+ * nose tops out at 1.551, so the half-way line falls almost exactly on the eye
+ * line — high enough that the cap never reaches a cheek or a jaw, which would
+ * paint the face hair-coloured.
+ */
+export function scalpCap(skull: Skull, up: THREE.Vector3, floor: number): THREE.BufferGeometry | null {
+  const t = skull.tris;
+  const c = skull.centre;
+  const kept: number[] = [];
+
+  // HOW HIGH A TRIANGLE SITS, ALONG THE HEAD'S OWN UP, and that vector has to be
+  // supplied because +y IS NOT UP IN THIS SPACE. The look pieces live in the
+  // donor's mesh-bind frame, and the matrix that places them rotates y into z —
+  // so the first version's `midY > centre.y` split the head FRONT FROM BACK
+  // rather than top from bottom. Painted red and photographed
+  // (`tools/soak/capshow.mjs`), the "cap" was a ring standing on edge, the gaps
+  // where the fringe parts showed bare skull, and two rounds of adjusting the
+  // threshold moved a boundary that was never on the right axis. Every number in
+  // this file that looked wrong for a week was an axis, not a magnitude.
+  const height = (x: number, y: number, z: number) =>
+    (x - c.x) * up.x + (y - c.y) * up.y + (z - c.z) * up.z;
+
+  // `floor` is the HAIRLINE, measured from the brows by the caller rather than
+  // guessed as a fraction of the skull. Guessing put it at the eye line, and the
+  // cap then covered the brows and the eyes: twelve characters rendered with the
+  // top half of the face painted out. A cap is scalp — it has to stop where hair
+  // stops, and the only thing on the model that knows where that is, is the brow.
+  for (let j = 0; j < t.length; j += 9) {
+    const mid = (
+      height(t[j], t[j + 1], t[j + 2]) +
+      height(t[j + 3], t[j + 4], t[j + 5]) +
+      height(t[j + 6], t[j + 7], t[j + 8])
+    ) / 3;
+    if (mid <= floor) continue;
+    for (let k = 0; k < 9; k += 3) {
+      const dx = t[j + k] - c.x, dy = t[j + k + 1] - c.y, dz = t[j + k + 2] - c.z;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      kept.push(
+        t[j + k] + (dx / len) * CAP_LIFT,
+        t[j + k + 1] + (dy / len) * CAP_LIFT,
+        t[j + k + 2] + (dz / len) * CAP_LIFT,
+      );
+    }
+  }
+  if (!kept.length) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(kept, 3));
+  // The skull's own winding is inherited, and a cap seen from the wrong side
+  // would be a hole; the material draws both faces, so this only needs normals
+  // to light believably.
+  geo.computeVertexNormals();
+  return geo;
 }
 
 /** The average of a geometry's vertices. */

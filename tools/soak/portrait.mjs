@@ -79,6 +79,17 @@ const HAIR_COLOR = flag("hairColor", "espresso");
 // t = 0.30 and t = 0.70 give azimuth about +/-0.59: the side rake that made the
 // `side` view read cleanly with this same character, tone and hair colour.
 const HOUR = Number(flag("hour", "0.00"));
+// THE OUTLINE, OFF, so art can be judged without it.
+//
+//   node tools/soak/portrait.mjs face --hair=shaggy --rim=0
+//
+// `Actor` draws a back-face shell 0.0136 world units outside every mesh in a
+// warm cream, and at the crown that reads as a pale band above the hair — close
+// enough to bare scalp that it was reported as one, and close enough that I
+// started thickening the scalp cap to cover something that may not be scalp at
+// all. Being able to switch it off turns "what is that band" from a guess into
+// one render.
+const RIM = flag("rim", null);
 // Only name the file after a style that is actually worn, so the default shots
 // keep the plain names the rest of this session's notes refer to.
 const SUFFIX = HAIR === "none" && BEARD === "none" ? "" : `_${HAIR}-${BEARD}`;
@@ -98,6 +109,16 @@ const VIEWS = {
   body: { yaw: Math.PI, dist: 3.4, aim: 0.55, lift: 0.06 },
   back: { yaw: 0, dist: 3.4, aim: 0.55, lift: 0.06 },
   side: { yaw: Math.PI * 0.5, dist: 3.4, aim: 0.55, lift: 0.06 },
+  // STRAIGHT DOWN ON THE CROWN, which none of the views above can see and which
+  // is the one angle a hairstyle made of separate clumps fails at: from the
+  // front a fringe reads as hair whatever is behind it, and the gaps between
+  // locks only show from over the top. Reported as "bald spots", and every view
+  // this harness had was blind to them.
+  //
+  // `lift` is a fraction of body height ABOVE the aim point, so a large one puts
+  // the camera over the head; the distance is small because it is looking down
+  // the short way.
+  top: { yaw: Math.PI, dist: 0.55, aim: 0.99, lift: 1.15 },
 };
 
 const views = (WANT.length ? WANT : ["face", "body"]).filter((v) => {
@@ -130,6 +151,11 @@ await page.evaluate((look) => {
   // here would photograph a shaved head for every style — a rule edited that
   // nothing consults, which is the third time this session.
   a.setLook({ skin: look.skin, build: "average", hair: look.hair, beard: look.beard, hairColor: look.hairColor });
+  if (look.rim !== null && look.rim !== undefined) {
+    // Private in TypeScript only; an ordinary property at runtime.
+    a.options.rim = Number(look.rim);
+    a.refreshOutlines();
+  }
   a.heading = Math.PI;
   a.root.rotation.y = Math.PI;
   // THE BODY'S OWN BOUNDS, FROM THE LIVE MESHES, recomputed on demand. Only the
@@ -175,7 +201,7 @@ await page.evaluate((look) => {
 // without also passing the value leaves it `undefined` and every portrait comes
 // back shaved. The same omission fetched `/textures/undefined` in `skinmask.mjs`
 // an hour ago and read as a corrupt atlas.
-}, { hair: HAIR, beard: BEARD, skin: SKIN, hairColor: HAIR_COLOR, hour: HOUR });
+}, { hair: HAIR, beard: BEARD, skin: SKIN, hairColor: HAIR_COLOR, hour: HOUR, rim: RIM });
 await page.waitForTimeout(3500);
 
 for (const name of views) {

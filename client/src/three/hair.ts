@@ -65,7 +65,26 @@ const HAIR_FILES: Record<string, string> = {
 
 const BEARD_FILES: Record<string, string> = {
   moustache: "Monk_moustache",
-  monk: "Monk_beard",
+  // RE-CUT, because `Monk_beard` was never only a beard. Measured in game it
+  // spanned y 1.21 to 1.68 against a nose at 1.44-1.55 — reaching above the eyes
+  // and out past the sides of the skull — and from the side its clumps sat
+  // behind and above the ear. That is the Monk's side hair, swept in by a
+  // threshold that was too generous; `look_pieces.py` describes this group as
+  // "the 26 clumps that wrap the jaw" and it is in fact 230 islands.
+  //
+  // `tools/art/recut_beard.py` drops the 70 that reach above the eye line. It
+  // reads that line off the player's own face rather than assuming an axis: the
+  // brows and the nose are both meshes on the body, and a face has its brows
+  // above its nose, so the axis and sign separating those two is the vertical.
+  //
+  // AND IT MERGES THE MOUSTACHE BACK IN. `tools/art/monk_head_shot.py`
+  // photographs the source — which should have happened before any of this was
+  // cut — and the Monk's face is a jaw fringe of pale clumps running from the
+  // temple down the jaw, WITH a moustache, and almost nothing on the chin. Split
+  // into two styles each half reads as a thin outline around a bare face."monk"
+  // is now the Monk's whole face, which also makes the ladder honest: a
+  // moustache alone, the Monk, or the Wizard's proper beard.
+  monk: "Monk_jaw",
   // The Wizard's beard arrives with its moustache already part of the same
   // island group, so it is one choice rather than two that can be combined.
   full: "Wizard_beard",
@@ -96,6 +115,7 @@ const BEARD_FILES: Record<string, string> = {
 const DONOR: Record<string, "Monk" | "Wizard" | "Warrior"> = {
   Monk_moustache: "Monk",
   Monk_beard: "Monk",
+  Monk_jaw: "Monk",
   Monk_nose: "Monk",
   Wizard_beard: "Wizard",
   Wizard_hair: "Wizard",
@@ -257,3 +277,9 @@ export function hairMaterial(color: THREE.Color): THREE.MeshStandardMaterial {
  */
 export const CALIBRATION_MESH = "Face_nose";
 export const CALIBRATION_PIECE = "Monk_nose";
+
+/**
+ * The slot the scalp cap occupies, kept apart from "hair" so the two are torn
+ * down and hidden together without either being mistaken for the other.
+ */
+export const SCALP_SLOT = "scalp";
