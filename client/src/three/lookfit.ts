@@ -131,6 +131,17 @@ export function seatMatrix(
   geometry: THREE.BufferGeometry,
   skull: Skull,
   donorScale: THREE.Vector3,
+  /**
+   * A correction the CALLER has already applied, so the gap is measured where
+   * the piece will actually be.
+   *
+   * Without this the seat measured the raw geometry — which is still 0.105 low,
+   * before `calibrate`'s fix — found a large gap to the throat, and pushed the
+   * piece backwards to close it. The nose came out 0.108 behind the face: a
+   * correct placement followed by a confident correction of a problem that had
+   * already been solved one line earlier.
+   */
+  applied: THREE.Vector3,
 ): THREE.Matrix4 {
   const pos = geometry.attributes.position as THREE.BufferAttribute;
   const n = pos.count;
@@ -142,9 +153,9 @@ export function seatMatrix(
   // hanging off the wrong point.
   const c = skull.centre;
   for (let i = 0; i < n; i++) {
-    pts[i * 3] = c.x + (pos.getX(i) - c.x) * donorScale.x;
-    pts[i * 3 + 1] = c.y + (pos.getY(i) - c.y) * donorScale.y;
-    pts[i * 3 + 2] = c.z + (pos.getZ(i) - c.z) * donorScale.z;
+    pts[i * 3] = c.x + (pos.getX(i) - c.x) * donorScale.x + applied.x;
+    pts[i * 3 + 1] = c.y + (pos.getY(i) - c.y) * donorScale.y + applied.y;
+    pts[i * 3 + 2] = c.z + (pos.getZ(i) - c.z) * donorScale.z + applied.z;
   }
 
   const scaled = new THREE.Matrix4().makeTranslation(c.x, c.y, c.z)
@@ -177,6 +188,53 @@ export function seatMatrix(
   return new THREE.Matrix4()
     .makeTranslation(-dir.x * push, -dir.y * push, -dir.z * push)
     .multiply(scaled);
+}
+
+/** The average of a geometry's vertices. */
+export function centroidOf(geometry: THREE.BufferGeometry): THREE.Vector3 {
+  const pos = geometry.attributes.position as THREE.BufferAttribute;
+  const out = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) out.x += pos.getX(i), out.y += pos.getY(i), out.z += pos.getZ(i);
+  return pos.count ? out.divideScalar(pos.count) : out;
+}
+
+/**
+ * THE OFFSET BETWEEN THE TWO SCRIPTS THAT BAKE FACES, measured off the one
+ * piece that exists in both forms.
+ *
+ * The player's nose is on this body twice over. `base_body.py` grafted a copy
+ * onto the skull as `Face_nose`, and `look_pieces.py` cut the same feature out
+ * of the same character as `Monk_nose.glb` for the creator. They are the same 32
+ * vertices of the same nose — and they do not agree about where those vertices
+ * sit, because the two scripts bake different transforms into them.
+ *
+ * `tools/soak/nosecheck.mjs` put the harvested copy on the head beside the baked
+ * one: it landed 0.105 low, 0.044 off centre and 0.040 forward, on a head 0.54
+ * tall. Every piece the creator wears comes from the second script, so every
+ * piece carries that same error — the moustache on the collarbone and the beard
+ * hanging down one side are one bug wearing two costumes, not two.
+ *
+ * MEASURED HERE RATHER THAN WRITTEN DOWN. The number could be a constant; the
+ * long note in `hair.ts` is a list of five constants that were each right until
+ * the art changed under them. Deriving it from the two copies costs one small
+ * file and survives the next re-cut, which is the point: when the pipeline
+ * changes, the correction changes with it instead of going quietly stale.
+ */
+export function calibrate(
+  baked: THREE.BufferGeometry | null,
+  harvested: THREE.BufferGeometry | null,
+): THREE.Vector3 {
+  // No reference on this body: place pieces exactly as before rather than
+  // inventing a correction. A body with no baked face is not necessarily wrong,
+  // it is just one this cannot speak about.
+  if (!baked || !harvested) return new THREE.Vector3();
+  if (baked.attributes.position.count !== harvested.attributes.position.count) {
+    // Not the same nose. Comparing a nose to a different nose would produce a
+    // confident number describing nothing.
+    console.warn("[look] calibration reference is not the same mesh; pieces left uncorrected");
+    return new THREE.Vector3();
+  }
+  return centroidOf(baked).sub(centroidOf(harvested));
 }
 
 /**

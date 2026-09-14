@@ -25335,3 +25335,50 @@ says plainly that what lights it is the spawn brazier and not the sun — the su
 leans +z at every hour, so a front-on camera is backlit all day.
 
 Suite 57/57.
+
+
+**Phase 70 M70.322 — the graft moved the face, so the pieces cut from it have to
+move too.** The last milestone ended by declaring the placement sound and the
+remaining beard fault a cutting problem. That was wrong, and the way it was
+wrong is the useful part.
+
+The evidence for "placement is sound" was that `Monk_nose.glb` and the player's
+baked `Face_nose` are the same 32 vertices in the same place. That compared two
+FILES, in Blender. The game does not draw files: it hangs a piece off the Head
+bone through a matrix, and whether THAT lands where the file says is a separate
+question I never put. `tools/soak/nosecheck.mjs` puts it — the player's own nose
+sent through the look-piece path and stood next to the copy baked onto the body —
+and the worn one came down 0.105 low, 0.044 off centre and 0.040 forward on a
+head 0.54 tall. A fifth of a face. It was the moustache on the collarbone and the
+Monk's beard hanging down one side: one bug, not two.
+
+`base_body.py` MOVED the Monk's features when it grafted them onto the skull.
+`look_pieces.py` cut the same features where they originally sat. Everything
+harvested from the Monk is therefore off by exactly how far the graft moved it,
+and the body carries its own answer: the nose exists on it twice over, baked and
+cut, and the difference between the two copies IS the correction. `calibrate()`
+measures it at load rather than storing it, for the reason `hair.ts` has a long
+note about — that file lists five constants which were each right until the art
+moved underneath them.
+
+THE CORRECTION IS THE MONK'S ALONE, and that was learned by breaking something.
+Applied to every donor it snapped the moustache onto the lip and the Monk's beard
+onto the jaw, and in the same instant walked the Wizard's beard — the one piece
+that had been sitting correctly since it was cut — off the chin. Nothing ever
+moved the Wizard's face; it was cut and worn in one frame. A correction that
+fixes two things and breaks a third is not a correction, it is a second offset,
+so it is scoped to the donor the reference came from and the other donors get
+nothing.
+
+AND ONE ORDERING BUG, which is worth recording because it read as a failed fix.
+`seatMatrix` measured the RAW geometry, so with the calibration in place it was
+still measuring a nose 0.105 low, finding a large gap to the THROAT, and pushing
+the piece backwards to close it — the nose landed 0.108 behind the face. A
+correct placement undone by a confident correction of a problem that had been
+solved one line earlier. The seat takes the applied offset now, and the residual
+is (0.002, -0.001, -0.007).
+
+All twelve combinations were re-rendered and looked at, which is the only reason
+any of this was caught: the numbers said the fit was fine two milestones running.
+
+Suite 57/57.

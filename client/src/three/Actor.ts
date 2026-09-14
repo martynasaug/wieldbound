@@ -32,8 +32,8 @@ import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel
 import { garment } from "./wardrobe";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
-import { HAIR_ANCHOR_BONE, donorScale, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
-import { readSkull, seatMatrix, type Skull } from "./lookfit";
+import { CALIBRATION_DONOR, CALIBRATION_MESH, CALIBRATION_PIECE, HAIR_ANCHOR_BONE, donorOf, donorScale, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
+import { calibrate, readSkull, seatMatrix, type Skull } from "./lookfit";
 import type { CharacterLook } from "../../../shared/look";
 import { applySkin } from "./skin";
 import { pickClip, loadClipLibrary } from "./clips";
@@ -767,6 +767,8 @@ export class Actor {
   private readonly usesClipLibrary: boolean;
   /** See `skull`. `undefined` means not yet read; `null` means unreadable. */
   private skullCache: Skull | null | undefined = undefined;
+  /** See `lookCalibration`. Cleared with the body, like the skull. */
+  private calibrationCache: Promise<THREE.Vector3> | null = null;
   /** The name this actor is tinted from. See `tintBody`. */
   private identity: string | undefined;
   /** When this actor next glances somewhere while standing still. */
@@ -1155,6 +1157,7 @@ export class Actor {
     // The new body has a new head, and a seat computed against the old one
     // would place every piece on a skull that is no longer there.
     this.skullCache = undefined;
+    this.calibrationCache = null;
     for (const [name, bone] of this.bones) {
       this.restBoneMatrices.set(name, bone.matrixWorld.clone());
     }
@@ -1805,7 +1808,9 @@ export class Actor {
     this.lookPieceKeys.set(slot, key);
     const token = (this.lookPieceTokens.get(slot) ?? 0) + 1;
     this.lookPieceTokens.set(slot, token);
-    void lookPieceGeometry(file).then((geometry) => {
+    void Promise.all([lookPieceGeometry(file), this.lookCalibration()]).then(([geometry, measured]) => {
+      // Only the donor the reference came from — see `CALIBRATION_DONOR`.
+      const fix = donorOf(file ?? "") === CALIBRATION_DONOR ? measured : new THREE.Vector3();
       // A later choice, or a new rig, has overtaken this one.
       if (this.lookPieceTokens.get(slot) !== token || instance !== this.instance) return;
       this.removeLookPiece(slot);
@@ -1828,7 +1833,10 @@ export class Actor {
       // places them exactly, with nothing supplied here. Both files are the same
       // 44-bone `CharacterArmature`, which is what makes that space shared.
       const bone = this.bones.get(HAIR_ANCHOR_BONE);
-      const onBone = boneAttachMatrix(instance.object, HAIR_ANCHOR_BONE);
+      // A face piece already on the head if there is one — see `headPieceFrame`
+      // for why that beats the skeleton's own matrix here — and the skeleton's
+      // as the fallback, so a body with no baked face still wears hair.
+      const onBone = this.headPieceFrame() ?? boneAttachMatrix(instance.object, HAIR_ANCHOR_BONE);
       if (geometry && bone && onBone) {
         const mesh = new THREE.Mesh(geometry, hairMaterial(colour));
         mesh.name = `look_${slot}`;
@@ -1844,9 +1852,14 @@ export class Actor {
         // leaves placement exactly as it was.
         const skull = this.skull();
         mesh.matrix.copy(onBone);
+        // The two-scripts correction first, so the piece is in the same space as
+        // the body's own face before anything is measured against the skull.
+        // Seating a piece that is still 0.105 low would measure the gap to the
+        // THROAT and close that instead.
+        mesh.matrix.multiply(new THREE.Matrix4().makeTranslation(fix.x, fix.y, fix.z));
         if (skull && file) {
           const [sx, sy, sz] = donorScale(file);
-          mesh.matrix.multiply(seatMatrix(geometry, skull, new THREE.Vector3(sx, sy, sz)));
+          mesh.matrix.multiply(seatMatrix(geometry, skull, new THREE.Vector3(sx, sy, sz), fix));
         }
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -1862,6 +1875,67 @@ export class Actor {
       this.syncHairVisibility();
       this.refreshOutlines();
     });
+  }
+
+  /**
+   * How far every harvested piece has to move to agree with this body's face.
+   *
+   * See `calibrate`. Resolved once per body and reused, because it is a property
+   * of the two export scripts rather than of any one hairstyle.
+   */
+  private lookCalibration(): Promise<THREE.Vector3> {
+    if (!this.calibrationCache) {
+      const bone = this.bones.get(HAIR_ANCHOR_BONE);
+      let baked: THREE.BufferGeometry | null = null;
+      for (const child of bone?.children ?? []) {
+        const mesh = child as THREE.Mesh;
+        if (mesh.isMesh && mesh.name === CALIBRATION_MESH) baked = mesh.geometry;
+      }
+      this.calibrationCache = lookPieceGeometry(CALIBRATION_PIECE).then((harvested) =>
+        calibrate(baked, harvested),
+      );
+    }
+    return this.calibrationCache;
+  }
+
+  /**
+   * The frame a rigid head piece belongs in, taken from one already on the head.
+   *
+   * WHY NOT `boneAttachMatrix`, WHICH EVERY OTHER ATTACHMENT USES. That matrix
+   * is `boneInverse * bindMatrix` — exactly the transform skinning applies to a
+   * vertex that follows one bone completely — and it is correct for gear
+   * authored on THIS body's own coordinates. The look pieces are not: they are
+   * cut out of the pack's characters by `look_pieces.py` with the DONOR's world
+   * transform baked into their vertices, and the two frames are close enough to
+   * look right and not close enough to be right.
+   *
+   * Measured with `tools/soak/nosecheck.mjs`, which sends the player's own nose
+   * through the look-piece path and compares it against the copy baked onto the
+   * body: the worn one landed 0.105 LOW, 0.044 off centre and 0.040 forward. On
+   * a head 0.54 tall that is a fifth of a face, and it is why the moustache sat
+   * on the character's collarbone and the Monk's beard hung down one side.
+   *
+   * The body already carries the answer. `base_body.py` grafts the Monk's nose
+   * and brows on as rigid children of the Head bone, and those are the same kind
+   * of object in the same donor space — so their local matrix IS the frame a
+   * harvested piece wants, with nothing derived and nothing tuned. Ground truth
+   * rather than arithmetic, which is the fourth lesson of the same shape in
+   * `hair.ts`: when a correct placement already exists on the model, copy it.
+   */
+  private headPieceFrame(): THREE.Matrix4 | null {
+    const bone = this.bones.get(HAIR_ANCHOR_BONE);
+    if (!bone) return null;
+    for (const child of bone.children) {
+      const mesh = child as THREE.Mesh;
+      // The worn pieces hang off this same bone, so a second beard would
+      // otherwise be framed against the first one and drift a little further
+      // every time the player changed style.
+      if (!mesh.isMesh || mesh.name.startsWith("look_")) continue;
+      if (!/^Face_/.test(mesh.name)) continue;
+      mesh.updateMatrix();
+      return mesh.matrix.clone();
+    }
+    return null;
   }
 
   /**

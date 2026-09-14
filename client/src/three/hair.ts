@@ -93,21 +93,55 @@ const BEARD_FILES: Record<string, string> = {
  * Stored as the scale that takes the donor's head to the player's, in the game's
  * axes (x across, y up, z forward), so the numbers can be applied directly.
  */
-const DONOR_SCALE: Record<string, [number, number, number]> = {
-  Monk_moustache: [1.003, 1.003, 1.002],
-  Monk_beard: [1.003, 1.003, 1.002],
-  Wizard_beard: [0.988, 0.973, 0.988],
-  Wizard_hair: [0.988, 0.973, 0.988],
-  Warrior_hair: [1.173, 1.097, 1.071],
+const DONOR: Record<string, "Monk" | "Wizard" | "Warrior"> = {
+  Monk_moustache: "Monk",
+  Monk_beard: "Monk",
+  Monk_nose: "Monk",
+  Wizard_beard: "Wizard",
+  Wizard_hair: "Wizard",
+  Warrior_hair: "Warrior",
 };
+
+const DONOR_SCALE: Record<string, [number, number, number]> = {
+  Monk: [1.003, 1.003, 1.002],
+  Wizard: [0.988, 0.973, 0.988],
+  Warrior: [1.173, 1.097, 1.071],
+};
+
+/** Which of the pack's characters a piece was cut from, if it is known. */
+export function donorOf(file: string): string | null {
+  return DONOR[file] ?? null;
+}
 
 /** How the donor's head compares to the player's, for a piece file. */
 export function donorScale(file: string): [number, number, number] {
   // An unlisted file is left at its authored size rather than guessed at. A
   // wrong scale is worse than none: it resizes art that may well have been cut
   // from this very head.
-  return DONOR_SCALE[file] ?? [1, 1, 1];
+  const donor = DONOR[file];
+  return donor ? DONOR_SCALE[donor] : [1, 1, 1];
 }
+
+/**
+ * THE CALIBRATION IS THE MONK'S ALONE, and that is the measurement talking.
+ *
+ * `calibrate` derives its correction by comparing the nose baked onto the player
+ * against the same nose cut loose for the creator. That reference is the MONK's
+ * nose — `base_body.py` grafted the Monk's features onto the skull — so what it
+ * measures is how far the graft moved them, and the answer only applies to
+ * pieces that came off the same face.
+ *
+ * Applying it to everything was tried and is visible in the history of this
+ * work: the Monk's moustache and beard snapped onto the lip and jaw, and the
+ * Wizard's beard, which had been the ONE piece sitting correctly all along,
+ * walked off the chin in the same instant. A correction that fixes two things
+ * and breaks a third is not a correction, it is a second offset.
+ *
+ * The other donors need no correction because nothing moved their faces: they
+ * were cut and worn in one frame. If a future body grafts a Wizard nose on,
+ * this is where the second reference goes.
+ */
+export const CALIBRATION_DONOR = "Monk";
 
 export function lookPieceFile(slot: "hair" | "beard", style?: HairStyleId | BeardStyleId): string | null {
   if (!style || style === "none") return null;
@@ -216,3 +250,10 @@ export function hairMaterial(color: THREE.Color): THREE.MeshStandardMaterial {
     side: THREE.DoubleSide,
   });
 }
+
+/**
+ * The one feature that exists both baked onto the body and cut as a loose piece,
+ * which is what makes the two pipelines comparable. See `calibrate`.
+ */
+export const CALIBRATION_MESH = "Face_nose";
+export const CALIBRATION_PIECE = "Monk_nose";
