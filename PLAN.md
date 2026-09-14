@@ -25662,3 +25662,28 @@ against landmarks measured per bone by `body_frame.py`, not against a bounding
 box and a guessed offset, which is all this preview does.
 
 No game code changed; nothing here is equipped.
+
+**Phase 70 M70.329 — put a design into the game, where it can be equipped.**
+"I don't see anything equipped on a character." Correct: everything up to here
+was a Blender preview. `onbody.py` proved the sketches were mis-fitted, but it
+could not show them WORN, because nothing had been wired into the game at all.
+
+The Ridgeguard design is now the `plated` boots style, authored the way
+`armour.py` authors everything — against landmarks measured per bone by
+`body_frame.py`, through `shell`/`band`/`plate`, rather than against a bounding
+box and a guessed offset, which is all the preview does. Built, exported, and
+photographed on a character by the game's own harness.
+
+The gold ankle band works: a warm accent low on the boot, which is the pack's own
+habit — every reference item has a brass or gold fitting somewhere and ours were
+steel on steel. The standing ridge does not: it is there as a seam up the front of
+the shin and reads dark rather than proud, because `z=12.0` does not clear the
+greave by enough to catch the light. Named rather than quietly left, because the
+next pass on this style is that number.
+
+The four boot styles no longer draw one block: low and tall are leather, wrapped
+is banded cloth, plated is steel with a gold line.
+
+What the milestone is really about is the ROUTE. A design becomes gear by being
+fitted to landmarks and exported as a style; `bench.py` flattered these sketches,
+`onbody.py` caught that, and the game is where it settles. Suite 57/57.

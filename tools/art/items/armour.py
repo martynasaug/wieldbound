@@ -909,14 +909,34 @@ def tall_boots(a):
 
 
 def plated_boots(a):
-    """A steel greave over the shin, a knee cop above it, and a plated toe."""
+    """
+    A steel greave with a standing ridge up the shin, a knee cop, and a gold band.
+
+    THE RIDGE AND THE BAND ARE THE DESIGN; the greave underneath is what this
+    style always was. Reviewed on a character (`tools/art/onbody.py`,
+    `armourstyles.mjs`), a plain tapered greave is a dark tube and reads as the
+    same block the other three boots draw — the review that prompted this file
+    said exactly that about all four. A boot is seen almost entirely from ABOVE
+    in this game, so the detail has to be on the front and the top of the shin
+    where an overhead camera can catch it, not on the sides.
+    """
     shoe(a, "Steel", toe="LightSteel")
     shin(a, "Steel", 11.0, 42.0, 15.0, 13.5)
     shin_band(a, "DarkSteel", 22.0, 15.0, tube=2.5)
+    # Gold at the ankle: one warm line low down, which is the pack's own habit —
+    # every reference item has a brass or gold fitting somewhere on it, and ours
+    # were steel-on-steel.
+    shin_band(a, "Gold", 14.0, 15.2, tube=2.0)
     for bone, side in BONE_SHIN:
         # The knee, which is what separates a greave from a tall boot.
         a.shell(bone, [(13.0, 44.0), (15.0, 50.0), (11.0, 56.0)], "LightSteel",
                 squash=(1.0, 1.0), sides=8, x=side * SHIN_X)
+        # The ridge, standing proud of the greave's front from ankle to knee.
+        # `plate` is thick towards the FACE, so its z puts it in front of the
+        # shin rather than inside it.
+        a.plate(bone, [(side * SHIN_X - 4.0, 13.0), (side * SHIN_X + 4.0, 13.0),
+                       (side * SHIN_X + 3.0, 43.0), (side * SHIN_X - 3.0, 43.0)],
+                "LightSteel", z=12.0, thickness=5.0, chamfer=1.5)
 
 
 def wrapped_boots(a):
