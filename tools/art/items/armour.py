@@ -863,17 +863,39 @@ def cap_helm(a):
 
 def full_helm(a):
     """A great helm: it closes over the face, and it has a comb and cheeks to show for it."""
-    # Tapered at the jaw rather than square: a straight-sided shell over a head
-    # this stylised is the bucket this style is being rescued from.
-    a.shell(BONE_HEAD, [(26.0, 214.0), (33.0, 232.0), (36.0, BROW_Y), (34.0, 284.0), (22.0, CROWN_Y)],
-            "Steel", squash=(1.0, 1.16), z=SKULL_Z)
+    # IT HAS TO ENCLOSE THE HEAD, and it did not. Reported: "there are literally
+    # parts of the head popping out of that helmet."
+    #
+    # The old shell ran 26 wide at y 214 and 33 at y 232, squashed 1.16 deep and
+    # sat back at SKULL_Z, so its front face at the jaw reached z 31 — against a
+    # face whose front is at `head_front_z` = 33. The chin came through the front
+    # of a CLOSED great helm, and from the side it read as a pale wedge of skin
+    # hanging out of the shell.
+    #
+    # Every station is cut against the head's own landmarks now rather than
+    # chosen to look right: wider than `head_half_x` = 33 at every height the
+    # head occupies, deep enough at 1.20 squash to clear `head_front_z` in front
+    # and `head_back_z` = -48 behind, and starting below `head_y0` = 206 so the
+    # jaw is inside it.
+    # AND WIDTH WAS THE WRONG AXIS. The first correction widened every station to
+    # 39 and the helm came out broader than the character's shoulders — a bucket,
+    # which is the exact fault this style was rescued from in the first place. The
+    # chin was coming through the FRONT, not the sides. So the depth carries it:
+    # at 1.28 squash the shell's face sits at z 36.5 over a 33 face, while the
+    # silhouette stays the width of a head.
+    a.shell(BONE_HEAD, [(29.0, 210.0), (34.0, 230.0), (36.0, BROW_Y), (34.0, 284.0), (23.0, 297.0)],
+            "Steel", squash=(1.0, 1.28), z=SKULL_Z)
     # The sight, at the eyes, where it belongs — this is the one band that should
     # be there — and a breath of slots under it.
+    #
+    # MOVED OUT WITH THE SHELL. These sat at `head_front_z + 1`, which was on the
+    # old shell's surface and is INSIDE the new one; a visor buried in its own
+    # helmet is a great helm with no face at all.
     a.plate(BONE_HEAD, [(-22.0, 246.0), (22.0, 246.0), (22.0, 255.0), (-22.0, 255.0)],
-            "Black", z=BODY["head_front_z"] + 1.0, thickness=7.0)
+            "Black", z=BODY["head_front_z"] + 5.0, thickness=7.0)
     for x in (-11.0, 0.0, 11.0):
         a.plate(BONE_HEAD, [(x - 3.0, 226.0), (x + 3.0, 226.0), (x + 3.0, 238.0), (x - 3.0, 238.0)],
-                "Black", z=BODY["head_front_z"] + 1.0, thickness=6.0)
+                "Black", z=BODY["head_front_z"] + 5.0, thickness=6.0)
     # A comb from brow to nape: the silhouette that says great helm at a glance.
     #
     # IT WAS INSIDE THE DOME. Centred at CROWN_Y - 6 with a height of 18 it spanned

@@ -25905,3 +25905,26 @@ reading habit was not.
 
 Audited the rest from behind in daylight: `cap`, `horned` and `circlet` read from
 every angle, and `hood` is plain behind because a hood is. Suite 57/57.
+
+**Phase 70 M70.338 — the great helm did not enclose the head, and my first fix
+made it a bucket.** Reported: "there are literally parts of the head popping out
+of that helmet." True, and visible in the sheet I had published one milestone
+earlier — I had gone to that picture to check the comb, checked the comb, and not
+looked at the rest of it.
+
+The shell ran 26 wide at y 214 and 33 at y 232, squashed 1.16 and set back at
+`SKULL_Z`, so its front face at the jaw reached z 31 against a face whose front is
+at `head_front_z` = 33. The chin came through the front of a CLOSED great helm,
+and from the side it read as a pale wedge of skin hanging out of the shell.
+
+MY FIRST CORRECTION WIDENED EVERY STATION TO 39, WHICH IS THE WRONG AXIS. The
+helm came out broader than the character's shoulders — a bucket, the exact fault
+this style was rescued from in the review that created this file. The chin was
+coming through the FRONT, not the sides. Depth carries it: at 1.28 squash the
+shell's face sits at z 36.5 over a 33 face while the silhouette stays the width of
+a head. The visor and breath slots had to move out with it, or a great helm wears
+its own visor on the inside.
+
+Verified by measurement rather than by eye: with the helm on, `PlayerBody` tops
+out at 1.674 against the helm's 1.768, and no hair, scalp or face piece is visible
+anywhere. Suite 57/57.
