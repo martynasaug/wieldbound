@@ -32,7 +32,8 @@ import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel
 import { garment } from "./wardrobe";
 import { strokePose, applyPose, type GatherPoseKind } from "./gatherpose";
 import { lookFor, resolveLook, type ResolvedLook } from "./look";
-import { HAIR_ANCHOR_BONE, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
+import { HAIR_ANCHOR_BONE, donorScale, hairMaterial, lookPieceFile, lookPieceGeometry } from "./hair";
+import { readSkull, seatMatrix, type Skull } from "./lookfit";
 import type { CharacterLook } from "../../../shared/look";
 import { applySkin } from "./skin";
 import { pickClip, loadClipLibrary } from "./clips";
@@ -764,6 +765,8 @@ export class Actor {
    * a dragon that plays a sword swing.
    */
   private readonly usesClipLibrary: boolean;
+  /** See `skull`. `undefined` means not yet read; `null` means unreadable. */
+  private skullCache: Skull | null | undefined = undefined;
   /** The name this actor is tinted from. See `tintBody`. */
   private identity: string | undefined;
   /** When this actor next glances somewhere while standing still. */
@@ -1149,6 +1152,9 @@ export class Actor {
     const k = GEAR_AUTHORED_ROOT_SCALE / rootScale;
     this.gearScale.set(k, k, k);
     this.restBoneMatrices.clear();
+    // The new body has a new head, and a seat computed against the old one
+    // would place every piece on a skull that is no longer there.
+    this.skullCache = undefined;
     for (const [name, bone] of this.bones) {
       this.restBoneMatrices.set(name, bone.matrixWorld.clone());
     }
@@ -1829,7 +1835,19 @@ export class Actor {
         // The bone drives it from here; an auto-updated transform would
         // immediately overwrite this with position/quaternion/scale defaults.
         mesh.matrixAutoUpdate = false;
+        // AND THEN SEATED ON THIS PARTICULAR SKULL. The frame above is right and
+        // the fit still is not: a piece is cut from one of the pack's characters
+        // and worn by another, and the donor's head is a different size with a
+        // different amount of face on the front of it. `lookfit.ts` measures
+        // both and works out the correction; see its note for the two faults it
+        // exists to close. Skipped entirely when the skull cannot be read, which
+        // leaves placement exactly as it was.
+        const skull = this.skull();
         mesh.matrix.copy(onBone);
+        if (skull && file) {
+          const [sx, sy, sz] = donorScale(file);
+          mesh.matrix.multiply(seatMatrix(geometry, skull, new THREE.Vector3(sx, sy, sz)));
+        }
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         bone.add(mesh);
@@ -1844,6 +1862,21 @@ export class Actor {
       this.syncHairVisibility();
       this.refreshOutlines();
     });
+  }
+
+  /**
+   * This body's skull, read once and kept until the body changes.
+   *
+   * CACHED BECAUSE IT IS READ PER PIECE, not per frame: a character choosing a
+   * hairstyle and a beard would otherwise walk the body's skin weights twice
+   * for one identical answer. Cleared by `swapBody`, which is the only thing
+   * that can make it wrong.
+   */
+  private skull(): Skull | null {
+    if (this.skullCache === undefined) {
+      this.skullCache = this.instance ? readSkull(this.instance.object, HAIR_ANCHOR_BONE) : null;
+    }
+    return this.skullCache;
   }
 
   private removeLookPiece(slot: string): void {

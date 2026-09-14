@@ -59,9 +59,26 @@ const HAIR_COLOR = flag("hairColor", "espresso");
 // and every front shot came back a silhouette with a correctly lit courtyard
 // behind it. I twice started blaming the art.
 //
+// AND THAT DERIVATION WAS STILL WRONG, WHICH IS WHY THE DEFAULT IS MEASURED NOW.
+// The reasoning below is sound and every front portrait taken under it still came
+// back with the face in shadow — dark enough that I read a correctly-fitted beard
+// as missing, and a lifted fringe as "barely visible". `tools/soak/sunsweep.mjs`
+// scores the same shot at twelve hours off the framebuffer, and the answer is
+// blunt: t = 0.32 is the DARKEST setting of the day for a face, at luminance 15.9,
+// and t = 0.00 is the brightest at 51.3. The derived default was the worst
+// available choice.
+//
+// WHAT ACTUALLY LIGHTS THE FACE IS THE BRAZIER, not the sun. t = 0.00 is night,
+// and the spawn point stands beside a lit brazier whose warm light falls on the
+// front of the head; the sun leans +z at every hour, so a front-on camera is
+// backlit all day. That is worth saying plainly rather than dressing up as a
+// solved sun angle: the portrait default is a NIGHT shot by firelight, which is
+// the best front lighting this location offers. Judge daylight art with `side`,
+// which the rake below does light properly.
+//
 // t = 0.30 and t = 0.70 give azimuth about +/-0.59: the side rake that made the
 // `side` view read cleanly with this same character, tone and hair colour.
-const HOUR = Number(flag("hour", "0.30"));
+const HOUR = Number(flag("hour", "0.00"));
 // Only name the file after a style that is actually worn, so the default shots
 // keep the plain names the rest of this session's notes refer to.
 const SUFFIX = HAIR === "none" && BEARD === "none" ? "" : `_${HAIR}-${BEARD}`;

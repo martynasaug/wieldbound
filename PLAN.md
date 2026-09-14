@@ -25277,3 +25277,61 @@ colour the game would never choose.
 
 `__bodyBox` also had to learn the names `look_hair` and `look_beard`, or a
 hairstyle standing above the crown sat outside the box the camera aims by.
+
+
+**Phase 70 M70.320 — the pieces are seated by measurement, not by a sixth
+constant.** Two faults came over from the other machine: beards floating in
+front of the face, and the shaggy hair standing off the crown. Both were real.
+Neither was quite what the report said, and the difference is the work.
+
+WHAT THE MEASUREMENTS ACTUALLY SAID. `tools/art/skull_compare.py` compares the
+vertices each rig's Head bone owns, and it kills the assumption the whole
+customizer rests on. `look_pieces.py` opens by asserting that Rogue, Monk and
+Wizard "all carry the same ~68-face head" — a claim made from FACE COUNTS, which
+cannot tell two heads of different SIZE apart, because scaling a mesh does not
+change how many faces it has. Monk and player agree to within 0.3%. THE WARRIOR
+IS 15% NARROWER and 9% shorter, and every hairstyle in the game is cut from it.
+
+So the hair was never lifting off the crown. It was a size too small and clinging
+INSIDE the scalp, which is why the crown showed through — measured in game at
+y 1.78 against a skull reaching 1.80, the opposite sign to the report. The beards
+were a separate fault: `face_depth.py` finds the Monk's features projecting 0.251
+in front of its skull where the player's grafted nose sits flush with it, so a
+moustache authored to rest on the Monk's lip hangs 0.090 clear of this one. Of
+the five pieces only the moustache actually floated; the monk and full beards
+were touching all along.
+
+`client/src/three/lookfit.ts` scales a piece by the ratio of the two skulls and
+then pushes it along one axis until it touches, both numbers read off geometry
+that is present at runtime. That is the point of doing it there: `hair.ts`
+carries a note recording FIVE offsets — -0.401, -0.156, +0.208, -1.938 and the
+pack's own -2.756 — each derived or tuned, each putting the hair somewhere new
+and wrong, and it closes by saying the placement should be computed at attach
+time against the skull's measured surface. This is that, and it means the next
+piece harvested from any character fits without anyone tuning anything.
+
+AGAINST TRIANGLES, NOT VERTICES, which is not fussiness. The skull is 75 vertices
+over a whole head, so a piece resting on the middle of a face reads as 0.05 clear
+of the nearest corner; a vertex test would invent that gap and then dutifully
+close it, driving every piece half a face-width into the skull.
+
+THREE BROKEN INSTRUMENTS ON THE WAY, which is by now the running theme of this
+work. The first standoff probe counted every unskinned mesh as head geometry and
+swept up the dagger in the character's hand, putting the skull's edge 0.9 off
+centre so that every piece "overlapped" it and all five gaps read 0.000 — a
+perfect fit, reported by a broken ruler. A Blender version was abandoned when the
+piece files and `Player_Base.glb` turned out to disagree about which axis is up;
+that is almost certainly why the incoming 0.43 and 0.415 do not reproduce here.
+And `sunsweep.mjs` first read the framebuffer between frames, where it has
+already been cleared, and reported every hour of the day as pitch black — I came
+one step from concluding the character is unlit at all hours.
+
+That sweep, once it worked, found something worth keeping. `portrait.mjs` derived
+its default hour from the sun formula and landed on t = 0.32, which measures as
+the DARKEST setting of the day for a face: luminance 15.9, against 51.3 at
+t = 0.00. Every face this session was judged in the dark, and I read a correctly
+fitted beard as missing because of it. The default is measured now, and the note
+says plainly that what lights it is the spawn brazier and not the sun — the sun
+leans +z at every hour, so a front-on camera is backlit all day.
+
+Suite 57/57.

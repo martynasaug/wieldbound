@@ -71,6 +71,44 @@ const BEARD_FILES: Record<string, string> = {
   full: "Wizard_beard",
 };
 
+/**
+ * WHICH HEAD EACH PIECE WAS CUT OFF, AND HOW BIG THAT HEAD WAS.
+ *
+ * Measured from the source files by `tools/art/skull_compare.py`, as the box of
+ * the vertices each rig's `Head` bone dominates — not the mesh's own box, which
+ * would include the shoulders. In the pack's own units, width x depth x height:
+ *
+ *     Rogue (the player)   0.670 x 0.814 x 0.890
+ *     Monk                 0.668 x 0.812 x 0.887     the same head, to 0.3%
+ *     Wizard               0.678 x 0.824 x 0.915     1-3% larger
+ *     Warrior              0.571 x 0.760 x 0.811     15% NARROWER, 9% shorter
+ *
+ * THIS IS WHY THE WARRIOR'S HAIR NEVER SAT RIGHT. `look_pieces.py` opens by
+ * asserting that these characters "all carry the same ~68-face head", and that
+ * claim was made from FACE COUNTS — which cannot tell two heads of different
+ * SIZE apart, because resizing a mesh does not change how many faces it has.
+ * The Monk and the Wizard are close enough that the error hid; the Warrior is
+ * not, and hair cut from it is a size too small for this skull.
+ *
+ * Stored as the scale that takes the donor's head to the player's, in the game's
+ * axes (x across, y up, z forward), so the numbers can be applied directly.
+ */
+const DONOR_SCALE: Record<string, [number, number, number]> = {
+  Monk_moustache: [1.003, 1.003, 1.002],
+  Monk_beard: [1.003, 1.003, 1.002],
+  Wizard_beard: [0.988, 0.973, 0.988],
+  Wizard_hair: [0.988, 0.973, 0.988],
+  Warrior_hair: [1.173, 1.097, 1.071],
+};
+
+/** How the donor's head compares to the player's, for a piece file. */
+export function donorScale(file: string): [number, number, number] {
+  // An unlisted file is left at its authored size rather than guessed at. A
+  // wrong scale is worse than none: it resizes art that may well have been cut
+  // from this very head.
+  return DONOR_SCALE[file] ?? [1, 1, 1];
+}
+
 export function lookPieceFile(slot: "hair" | "beard", style?: HairStyleId | BeardStyleId): string | null {
   if (!style || style === "none") return null;
   // A style with no harvested art draws nothing, which is honest, rather than
