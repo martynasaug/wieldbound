@@ -25472,3 +25472,57 @@ the cap was covering the brows when what I was looking at WAS the brows. It was
 covering them, but not in that frame.
 
 Suite 57/57.
+
+
+**Phase 70 M70.325 — look at the armour before authoring any, and find the
+fittings missing from it.** The next thing asked for is armour and helmet items
+in the style of the pack's own outfits, with the Wizard's robe named as the
+standard. So the first question is why the other garments do not reach it, and
+that is a question about art, which means looking at the art rather than at the
+code — the lesson of the last four milestones, applied before rather than after.
+
+THREE INSPECTION TOOLS, each answering one link of the chain. `body_shot.py`
+renders a pack character whole, in its own atlas: the Warrior is STEEL GREY plate
+with pauldrons and a gold belt, the Ranger is TEAL GREEN with gold trim.
+`garment_shot.py` renders the cut GLB alone, which splits "is the art dark" from
+"is the game darkening it": both files carry their colour correctly.
+`garmentmat.mjs` asks the running game what a worn garment is made of, and the
+answer is healthy on every count — white base colour, atlas present, sRGB,
+metalness 0, roughness 0.86.
+
+So nothing is broken, and the difference is real: the pack's atlases are darker
+paintings than the flat palette colours the procedural styles are given, which
+`wardrobe.ts` had already written down (Rogue means 0.197, Warrior 0.233). Beside
+a bronze scale painted from a palette, a photographic steel garment looks dim.
+That is worth knowing before anyone "fixes" it by brightening the textures.
+
+WHAT IS ACTUALLY MISSING IS THE FITTINGS. `garments.py` cuts the donor's BODY
+mesh and then deletes every other object — "no props, no weapon, no face" — and
+each of these characters carries its armour in pieces beside that body:
+
+    Warrior   ShoulderPad.L/R            on UpperArm.L/R
+    Ranger    Cloak, ArmGuard.L/R, Pouch on Head, LowerArm.L/R, Abdomen
+    Wizard    ShoulderPad.L/R, Pouch
+
+So the plate a player wears is the Warrior's padded suit with its pauldrons left
+behind, and the leather is the Ranger's tunic with no cloak and no bracers. That
+is most of why they read as plain next to the robe, whose bulk IS the gown. The
+pieces are rigid meshes parented to bones — exactly the shape `boneAttachMatrix`
+already attaches hair and modelled armour with — so they need cutting and
+attaching, not modelling.
+
+AND THE ARMOUR SHEET WAS LIT AT THE WORST HOUR OF THE DAY. `armourstyles.mjs`
+froze noon, which `sunsweep.mjs` measured two milestones ago as the darkest
+setting for a front-facing subject: the sun leans +z at every hour and all three
+of its views look back along it. Every armour sheet this project has ever taken
+was lit that way. It takes the measured hour now, with `ARMOUR_HOUR` to override.
+That did NOT turn out to be the cause of the dark garments — worth saying,
+because it was the obvious suspect and it was wrong, and the tools above are what
+settled it.
+
+One more instance of the same harness bug, for the record: the hour was first
+written as `process.env.ARMOUR_HOUR` INSIDE the `page.evaluate` callback, where
+the harness's own constants do not exist. That is the third time in two days;
+`portrait.mjs` carries the original note.
+
+Suite 57/57.

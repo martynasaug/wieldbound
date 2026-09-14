@@ -55,15 +55,26 @@ page.on("console", (m) => {
   if (m.type() === "error") errors.push(`error: ${m.text()}`);
 });
 await login(page, `Armour${Date.now() % 100000}`);
-await page.evaluate(() => {
+// HANDED OVER, NOT CLOSED OVER — `process.env` does not exist in the browser,
+// and writing it inside this callback is the same mistake `portrait.mjs` has a
+// note about and that `capshow.mjs` made an hour ago.
+await page.evaluate((hour) => {
   const g = window.__wieldbound;
-  g.world.dayNight.freeze(0.5);
+  // THE MEASURED HOUR, not noon. `tools/soak/sunsweep.mjs` scores the same shot
+  // at twelve hours off the framebuffer: t = 0.5 is the DARKEST setting of the
+  // day for a front-facing subject, because the sun leans +z at every hour and
+  // all three views here look back along it. Every armour sheet ever taken by
+  // this harness was lit that way, which is why the Warrior's plate and the
+  // Ranger's leather read as near-black — and I checked the cut, the atlas, the
+  // metalness and the material before checking the light. The garment files are
+  // steel grey and teal green: see `tools/soak/shots/pack/_sheet.png`.
+  g.world.dayNight.freeze(hour);
   const render = g.world.renderer.render.bind(g.world.renderer);
   g.world.renderer.render = (s, c) => {
     g.__armourHold?.();
     render(s, c);
   };
-});
+}, Number(process.env.ARMOUR_HOUR ?? 0));
 await page.waitForTimeout(1500);
 
 // Front, side and BACK: a cape is only itself from behind, and a chest piece
