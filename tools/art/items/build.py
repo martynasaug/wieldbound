@@ -17,6 +17,7 @@ from mathutils import Vector
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import armour  # noqa: E402
+import kit  # noqa: E402
 import gloves  # noqa: E402
 import weapons  # noqa: E402
 
@@ -126,6 +127,12 @@ def export(objs, path):
     for obj in objs:
         obj.location = (0, 0, 0)
         obj.rotation_euler = (0, 0, 0)
+        # BAKED DEPTH, HERE, because this is the one place every family passes
+        # through — weapons, armour and gloves all export from this function, and
+        # putting it in any of the three recipe modules would give the other two
+        # flat items. See `kit.bake_occlusion` for what it is and why it is value
+        # rather than colour.
+        kit.bake_occlusion(obj)
         obj.select_set(True)
     bpy.context.view_layer.objects.active = objs[0]
     bpy.ops.export_scene.gltf(

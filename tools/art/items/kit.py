@@ -334,3 +334,83 @@ class Model:
         for name in self.slots:
             obj.data.materials.append(material(name))
         return obj
+
+
+# --- baked depth -------------------------------------------------------------------
+
+def bake_occlusion(obj, samples=24, reach=None, floor=0.42):
+    """
+    Bake ambient occlusion into a vertex colour, so an item has painted depth.
+
+    WHY THIS EXISTS. `tools/art/bench.py` stands our items beside the pack's and
+    the difference is not silhouette and not triangle count: every reference item
+    is PAINTED — value running down a blade, dark in the recesses of a pauldron,
+    a seam on a pouch — and ours are flat palette colours on bare geometry. That
+    is the single biggest gap, and it is a missing capability rather than a
+    missing effort.
+
+    VALUE, NOT COLOUR, AND THAT IS THE WHOLE DESIGN. `gear.ts` repaints every
+    item by material NAME from its palette: that is what gives a Frostbrand its
+    ice and a Gilded Blade its gold, and baking colour into a texture would throw
+    it away. Occlusion is a multiplier on lightness, so it survives the repaint —
+    a Frostbrand comes out ice with dark creases, which is what the reference
+    does.
+
+    NO UVs AND NO ATLAS. A colour attribute rides inside the GLB, needs no second
+    file, no unwrap, and no atlas budget to manage. At these triangle counts the
+    gradient is coarse, which is correct: this pack's own shading is coarse.
+
+    `floor` is how dark a fully buried vertex may go. Occlusion that reaches zero
+    reads as dirt rather than as depth, and on a small object seen at ninety
+    pixels it just looks like the item has a hole in it.
+    """
+    import mathutils
+    from mathutils.bvhtree import BVHTree
+
+    me = obj.data
+    me.calc_loop_triangles()
+    verts = [v.co.copy() for v in me.vertices]
+    tris = [tuple(t.vertices) for t in me.loop_triangles]
+    if not tris:
+        return None
+    tree = BVHTree.FromPolygons(verts, tris, all_triangles=True)
+
+    size = max(me.dimensions) if hasattr(me, "dimensions") else 1.0
+    if reach is None:
+        # Occlusion is a LOCAL effect: how enclosed a point is by what is beside
+        # it. A ray long enough to cross the whole item makes a sword's tip
+        # "occluded" by its own pommel, and the blade goes uniformly grey.
+        reach = max(size * 0.22, 1e-4)
+
+    # A fixed spiral over the hemisphere rather than random directions: the same
+    # item baked twice should be the same item, and random sampling at 24 rays
+    # speckles a flat face with noise that reads as damage.
+    directions = []
+    golden = math.pi * (3.0 - math.sqrt(5.0))
+    for i in range(samples):
+        z = 1.0 - (i + 0.5) * 2.0 / samples
+        r = math.sqrt(max(0.0, 1.0 - z * z))
+        a = golden * i
+        directions.append(mathutils.Vector((math.cos(a) * r, math.sin(a) * r, z)))
+
+    normals = [v.normal.copy() for v in me.vertices]
+    shade = []
+    for i, co in enumerate(verts):
+        n = normals[i]
+        origin = co + n * (size * 1e-3)
+        hits = 0
+        used = 0
+        for d in directions:
+            if d.dot(n) <= 0.0:
+                continue
+            used += 1
+            hit = tree.ray_cast(origin, d, reach)
+            if hit[0] is not None:
+                hits += 1
+        openness = 1.0 - (hits / used if used else 0.0)
+        shade.append(floor + (1.0 - floor) * openness)
+
+    layer = me.color_attributes.new(name="AO", type="FLOAT_COLOR", domain="POINT")
+    for i, s in enumerate(shade):
+        layer.data[i].color = (s, s, s, 1.0)
+    return layer

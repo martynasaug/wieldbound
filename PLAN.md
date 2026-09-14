@@ -25713,3 +25713,40 @@ to the body, and no style dressing the character head to toe.
 A chest piece that is ONLY a chest piece means a legs slot, which is shared types,
 item data, the equip UI and the server. That is worth doing deliberately rather
 than arriving at it as the side effect of a cut. Suite 57/57.
+
+**Phase 70 M70.331 — baked depth on every item, without losing the palette.**
+The bench's finding was that every reference item is PAINTED — value down a
+blade, dark in a pauldron's recesses, a seam on a pouch — and ours are flat
+palette colours on bare geometry. This closes that, which is the work I
+recommended over a legs slot.
+
+VALUE, NOT COLOUR, IS THE WHOLE DESIGN. `gear.ts` repaints every item by material
+NAME from its palette — that is what gives a Frostbrand its ice and a Gilded
+Blade its gold — so baking a texture would have thrown the palette system away.
+Occlusion is a multiplier on lightness, so the two compose.
+
+`kit.bake_occlusion` casts a fixed spiral of rays per vertex against the item's
+own BVH and writes a colour attribute. No UVs, no atlas, no second file: it rides
+inside the GLB, and at these triangle counts the gradient is coarse, which is
+correct because this pack's shading is coarse. Two numbers are reasoned rather
+than tuned: the ray reach is local (22% of the item) because a ray long enough to
+cross a sword makes its tip "occluded" by its own pommel and the whole blade goes
+grey; and the floor is 0.42 because occlusion reaching zero reads as dirt rather
+than as depth on something ninety pixels tall.
+
+Baked in `build.export`, the one place weapons, armour and gloves all pass
+through — in any single recipe module the other two families would have stayed
+flat. All 84 exported items carry `COLOR_0`.
+
+ONE ASSUMPTION CAUGHT BEFORE IT SHIPPED, and it is the same species as the rest
+of this phase. I first set `vertexColors` on `paletteMaterial` and wrote a comment
+asserting that three.js ignores the flag when the geometry has no colour
+attribute. It does not: it compiles the shader expecting `color` and the mesh
+renders BLACK. The pack's donor meshes go through the same `repaint` and carry no
+`COLOR_0`, so that would have turned the entire borrowed wardrobe into
+silhouettes. `repaint` takes the geometry now and sets the flag from it — checked
+in the running game rather than argued: gear meshes `vertexColors=true`, outline
+clones correctly `false`.
+
+Suite 56/57 in the batch with `throwers.mjs` passing on its own — the usual live
+socket flake. Nothing here touches combat.

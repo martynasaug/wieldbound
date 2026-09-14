@@ -1457,7 +1457,7 @@ export async function buildArmourModel(
   for (const child of proto.children) {
     const piece = wholeModel(child);
     if (!piece) continue;
-    const mesh = new THREE.Mesh(piece.geometry, wornFinish(repaint(piece.material, palette, rarity)));
+    const mesh = new THREE.Mesh(piece.geometry, wornFinish(repaint(piece.material, palette, rarity, piece.geometry)));
     mesh.name = `gear_${slot}_${style}_${child.name}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -1740,7 +1740,7 @@ export async function buildHandPieces(baseId: string, rarity: ItemRarity): Promi
     if (!piece) continue;
     // The same cloth-and-forged finish worn armour takes: a knuckle plate is as
     // flat-facing as a cuirass, and full metalness turns it black. See `wornFinish`.
-    const mesh = new THREE.Mesh(piece.geometry, wornFinish(repaint(piece.material, palette, rarity)));
+    const mesh = new THREE.Mesh(piece.geometry, wornFinish(repaint(piece.material, palette, rarity, piece.geometry)));
     mesh.name = `hand_${baseId}_${child.name}`;
     mesh.castShadow = true;
     // `Fist1R.002` is `Fist1R` that shared a Blender session with five other
@@ -1849,7 +1849,7 @@ async function makeHeldItem(
       console.warn(`gear: ${meshName} not found on ${body}; ${baseId} will be invisible`);
       return null;
     }
-    mesh = new THREE.Mesh(donor.geometry, repaint(donor.material, palette, rarity));
+    mesh = new THREE.Mesh(donor.geometry, repaint(donor.material, palette, rarity, donor.geometry));
     mesh.position.copy(donor.position);
     mesh.quaternion.copy(donor.quaternion);
     mesh.scale.copy(donor.scale);
@@ -1910,7 +1910,7 @@ async function makeHeldItem(
       `fit:${base.art.model}|${lay}|${hold.grip ?? "-"}|${hold.flip}|${hold.roll}|${hold.clearance}|${hold.point ?? "-"}|${hold.onAxis}`,
       () => fitToGrip(donor.geometry, grip.box, lay, hold),
     );
-    mesh = new THREE.Mesh(fitted, repaint(donor.material, palette, rarity));
+    mesh = new THREE.Mesh(fitted, repaint(donor.material, palette, rarity, fitted));
   }
   if (!mesh) return null;
 
@@ -2187,6 +2187,18 @@ function repaint(
   source: THREE.Material | THREE.Material[],
   palette: PaletteDef,
   rarity: ItemRarity,
+  /**
+   * The geometry these materials will paint, if it is known.
+   *
+   * BAKED DEPTH IS OPT-IN PER MESH, and it has to be, because three.js does not
+   * ignore `vertexColors` on geometry that lacks the attribute — it compiles the
+   * shader expecting `color` and the mesh renders BLACK. Our own items carry
+   * `COLOR_0` from `kit.bake_occlusion`; the pack donor meshes do not, and they
+   * come through this same function. So the flag is set from the geometry rather
+   * than assumed, which is the difference between an item with creases and a
+   * wardrobe full of silhouettes.
+   */
+  geometry?: THREE.BufferGeometry,
 ): THREE.Material | THREE.Material[] {
   const list = Array.isArray(source) ? source : [source];
   const out = list.map((m) => {
@@ -2194,6 +2206,9 @@ function repaint(
     const look = MATERIAL_LOOK[src.name] ?? { role: "metal" as const };
     const mat = paletteMaterial(palette, look.role, rarity, look);
     mat.name = src.name;
+    // Occlusion baked per vertex multiplies over the palette colour, so a
+    // Frostbrand stays ice and gains dark creases. See the note on `geometry`.
+    if (geometry?.attributes.color) mat.vertexColors = true;
     return mat;
   });
   return out.length === 1 ? out[0] : out;
@@ -2631,7 +2646,7 @@ export async function buildGatherTool(kind: GatherToolKind): Promise<THREE.Objec
     const fitted = await cachedHeldGeometry(`tool:${kind}`, () =>
       fitToGrip(donor.geometry, grip.box, "along"),
     );
-    mesh = new THREE.Mesh(fitted, repaint(donor.material, palette, "honed"));
+    mesh = new THREE.Mesh(fitted, repaint(donor.material, palette, "honed", fitted));
   } else {
     const built = await cachedHeldGeometry(`tool:${kind}`, () => buildPickaxe(grip.box));
     mesh = new THREE.Mesh(built, [
