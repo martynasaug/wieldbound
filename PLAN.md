@@ -26512,3 +26512,55 @@ rather than the status code is what named it: `armor_chain.glb` came back
 the right thing was served.
 
 19 fitted, 0 not. Suite green, client typechecks.
+
+**Phase 70 M70.352 — the gauntlets come off, and every limb gets the floor the chest got.**
+Four reports in one message, and the first is a reversal.
+
+"WHAT THE HELL IS THIS BARREL LOOKING GARBAGE ... THE GAUNTLETS ARE UNNECESSARY
+AND LOOK TERRIBLE." They were. Two pale cylinders on the ends of the arms, and
+at the game's camera that is all they could ever be. Both routes are gone — the
+`dress_limbs` gauntlet and the `glove_<style>.glb` files built for the garment
+styles a milestone ago — along with their loader. The bare hand they were hiding
+belongs to the BODY, and a body is allowed to show at the hands: a face and a
+pair of hands are what a character has. The skin worth chasing was never there.
+
+"MASSIVE SPOTS WHERE THE CHARACTER'S BASE IS SEEN — all shoulders, part of the
+torso, bottom torso is worse and legs are absolutely the worst (80% is the
+character base pants). The same thing is with all the armours."
+
+`over_chest` fixed the chest in M70.348 and nothing else, so `coverwidth.mjs`
+was pointed at every region the body owns. Armour girth as a percentage of the
+body's:
+
+              torso  abdomen  upper arm  forearm  thigh  shin
+    chain      146%     96%       107%      97%     99%    95%
+    brigandine 144%     82%       107%      97%     99%    95%
+
+Every number outside the chest was AT OR UNDER the limb it covered. A shell the
+same girth as the leg inside it cannot cover that leg — the body wins wherever a
+facet falls inside — which is exactly why the thighs read as base pants and the
+shoulders and lower torso showed between the plates. `over_waist`, `over_thigh`,
+`over_shin` and `over_arm` are the same floor `over_chest` is, worked back from
+the same arithmetic: a piece of known radius, the percentage it scored, and the
+clearance the chest already gets. Abdomen 82 to 105, scale's 93 to 115, thigh 99
+to 105, shin 95 to 101.
+
+THE MEASUREMENT HAD TO BE REBUILT FIRST. Its first version filtered gear by each
+region's HEIGHT BAND and reported the torso at 680% covered — the body is bound
+in a T-pose, so both sleeves lie inside the torso's band and were counted as
+chest armour. Body and skinned garments share one skeleton, so both are bucketed
+by dominant skin weight now; rigid pieces by the bone they hang from.
+
+"THE HOOD IS FINALLY PLACED PROPERLY, BUT HAIR GOES RIGHT THROUGH IT." A hood is
+a thin surface pulled over a skull and the locks under it have nowhere to go.
+`HELM_COVERS_HAIR.hood` is true now. The fringe-at-the-brow idea needs hair
+authored to sit under a hood, which this pack does not have. Checked across all
+five: cap, full, horned and hood cover it, circlet keeps it.
+
+STILL OPEN AND SAID PLAINLY: `leather`, `plate` and `robe` draw NOTHING on the
+shin — `garments.py` cuts `LowerLeg` away because that is the boots slot's, so
+those three cover the leg only as far as the knee and rely on a boot for the
+rest. That is a real decision with a real cost and it is the user's call, not
+mine to reverse quietly.
+
+19 fitted, 0 not. Suite green, client typechecks.

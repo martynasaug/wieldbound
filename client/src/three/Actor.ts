@@ -29,7 +29,7 @@ import {
   type ItemSlot,
 } from "../../../shared/protocol-types";
 import { instantiate, findNode, findClip, type Instance } from "./assets";
-import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildBareHands, buildGarmentGloves, buildHandPieces, fistCentre, garmentFor, hasArmourModel, hasGarmentGloves, removeHandGeometry, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
+import { BUILTIN_WEAPON_MESHES, bareForearms, boneAttachMatrix, buildArmourModel, buildBareHands, buildHandPieces, fistCentre, garmentFor, hasArmourModel, removeHandGeometry, seatInFist, removeBakedBeads, keepBakedNose, PLAYER_BODY, POOLED_CLIP_BODY, buildArmour, buildHeldItem, buildGatherTool, type GearAttachment } from "./gear";
 import { garment } from "./wardrobe";
 import { tintedGarment } from "./garmenttint";
 import { PALETTES, type PaletteDef } from "../../../shared/items";
@@ -1518,33 +1518,12 @@ export class Actor {
             this.trackMaterials(part);
           }
 
-          // AND THE HANDS THE COSTUME DOES NOT COME WITH. `garments.py` cuts
-          // `Fist` and `Thumb` away as skin — correctly, the player owns their
-          // own hands — and `dress_limbs` only gauntlets the three PROCEDURAL
-          // chest styles, which this branch never reaches. So a garment ended at
-          // the wrist with a bare hand hanging out of it, worst on the plate: a
-          // full suit of armour with naked hands. See `buildGarmentGloves`.
-          if (hasGarmentGloves(layer.style)) {
-            void buildGarmentGloves(layer.style, layer.rarity, layer.palette).then(async (gloves) => {
-              if (!gloves.length || !this.current(slot, slotGen)) return;
-              for (const glove of gloves) {
-                const handBone = this.bones.get(glove.bone);
-                const seat = this.instance ? boneAttachMatrix(this.instance.object, glove.bone) : null;
-                if (!handBone || !seat) continue;
-                await this.options.warmUp?.(glove.object);
-                if (!this.current(slot, slotGen)) return;
-                glove.object.matrixAutoUpdate = false;
-                glove.object.matrix.copy(seat);
-                handBone.add(glove.object);
-                glove.object.userData.gearKey = slot;
-                this.worn.push(glove.object);
-                this.trackMaterials(glove.object);
-              }
-              this.refreshOutlines();
-              this.options.warmDraw?.(this.root);
-            });
-          }
-
+          // NO GLOVES. A garment ends at the wrist and the hand it leaves bare
+          // belongs to the BODY, which is allowed to show there: a face and a
+          // pair of hands are what a character has. Covering them was tried and
+          // rejected on sight — "what the hell is this barrel looking garbage
+          // ... the gauntlets are unnecessary and look terrible" — and they
+          // were: two pale cylinders on the ends of the arms.
           this.refreshOutlines();
           continue;
         }

@@ -1442,37 +1442,6 @@ function wornFinish(material: THREE.Material | THREE.Material[]): THREE.Material
   return material;
 }
 
-/**
- * Chest styles worn as a garment that carry their own gloves.
- *
- * A garment is a skinned costume cut from one of the pack's characters, and
- * `garments.py` cuts `Fist` and `Thumb` away as skin — correctly, the player
- * owns their own hands. But `dress_limbs` only gauntlets the three PROCEDURAL
- * chest styles, and `applyAppearance` takes the garment branch and never
- * reaches the modelled path, so these three ended at the wrist with a bare hand
- * hanging out. Worst on the plate: a full suit of armour with naked hands.
- *
- * `armour.py` builds them as `glove_<style>.glb` and the garment branch loads
- * them alongside the costume. `glove` is a file prefix, not an `ItemSlot` —
- * there is no glove slot in this game, and a hand belongs to the chest item the
- * same way a thigh does.
- */
-const GARMENT_GLOVES = new Set<string>(["leather", "plate", "robe"]);
-
-/** Does this garment style come with hands of its own? */
-export function hasGarmentGloves(style: GearStyle): boolean {
-  return GARMENT_GLOVES.has(style);
-}
-
-/** The gloves for one garment style, bolted to the hand bones. */
-export function buildGarmentGloves(
-  style: GearStyle,
-  rarity: ItemRarity,
-  paletteId?: string,
-): Promise<GearAttachment[]> {
-  return buildPiecesFrom(`armour/glove_${style}.glb`, `glove_${style}`, rarity, paletteId);
-}
-
 export async function buildArmourModel(
   slot: ItemSlot,
   style: GearStyle,

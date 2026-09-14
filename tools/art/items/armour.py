@@ -567,6 +567,51 @@ CHEST_SKIN = over_chest(0.0)
 CHEST_SKIN_Z = -3.0 + CHEST_SKIN * 1.15
 
 
+# THE SAME FLOOR FOR EVERY OTHER LIMB, and the same reason.
+#
+# `over_chest` fixed the chest and nothing else, so `tools/soak/coverwidth.mjs`
+# was pointed at every region the body owns. Armour girth as a percentage of the
+# body's, before this:
+#
+#     torso  abdomen  upper arm  forearm  thigh  shin
+#      146%     96%       107%      97%     99%    95%   (chain)
+#      144%     82%       107%      97%     99%    95%   (brigandine)
+#
+# Every number outside the chest is AT OR UNDER the limb it covers. A shell the
+# same girth as the leg inside it cannot cover that leg: the body wins wherever
+# a facet falls inside, which is why the thighs read as "80% character base
+# pants" and the shoulders and lower torso showed between the plates.
+#
+# The floors are worked back from the measurement the same way `CHEST_HALF_X`
+# was — a piece of known radius, the percentage it scored, and the arithmetic in
+# between — then given the same clearance the chest gets.
+WAIST_HALF_X = 27.0
+THIGH_HALF_X = 13.6
+SHIN_HALF_X = 13.4
+ARM_HALF_X = 12.7
+LIMB_CLEAR = 2.4
+
+
+def over_waist(r):
+    """A waist or skirt radius, never inside the abdomen it hangs on."""
+    return max(r, WAIST_HALF_X + LIMB_CLEAR)
+
+
+def over_thigh(r):
+    """A cuisse radius, never inside the thigh."""
+    return max(r, THIGH_HALF_X + LIMB_CLEAR)
+
+
+def over_shin(r):
+    """A greave radius, never inside the shin."""
+    return max(r, SHIN_HALF_X + LIMB_CLEAR)
+
+
+def over_arm(r):
+    """A sleeve or pauldron radius, never inside the arm."""
+    return max(r, ARM_HALF_X + LIMB_CLEAR)
+
+
 def plate_chest(a):
     """Plate: a shaped cuirass with a keel down the breast, a gorget, and tassets."""
     # The ribs are 17 wide and 23 deep, centred a little behind the middle: a
@@ -586,7 +631,7 @@ def plate_chest(a):
             "LightSteel", z=BODY["chest_front_z"] + 1.0, thickness=5.0)
     a.shell(BONE_CHEST, [(14.0, BODY["chest_y1"] + 1.0), (16.0, BODY["chest_y1"] + 7.0)],
             "DarkSteel", squash=(1.0, 1.05), sides=8, z=-3.0)
-    a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"] - 1.0), (24.0, BODY["waist_y1"] - 11.0)],
+    a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"] - 1.0), (over_waist(24.0), BODY["waist_y1"] - 11.0)],
             "Steel", squash=(1.0, 1.0), z=-6.0)
     for side in (1, -1):
         a.box(BONE_WAIST, (side * 13.0, BODY["waist_y1"] - 24.0, -4.0), (18.0, 24.0, 26.0), "Steel", taper=0.85)
@@ -620,11 +665,12 @@ def scale_chest(a):
     a.shell(BONE_CHEST, [(over_chest(18.0 + PROUD * 0.5), BODY["chest_y0"] + 6.0),
                          (20.0 + PROUD * 0.8, BODY["chest_y1"] - 12.0)],
             BRIGHT, squash=(1.0, 1.15), z=-3.0)
-    a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"]), (25.0, BODY["waist_y1"] - 28.0)],
+    a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"]), (over_waist(25.0), BODY["waist_y1"] - 28.0)],
             LEATHER, squash=(1.0, 1.0), z=-6.0)
     for k in range(8):
         angle = -math.pi * 0.6 + k * (math.pi * 1.2 / 7)
-        a.stud(BONE_WAIST, (math.sin(angle) * 23.0, BODY["waist_y1"] - 14.0, -6.0 + math.cos(angle) * 23.0),
+        a.stud(BONE_WAIST, (math.sin(angle) * over_waist(23.0), BODY["waist_y1"] - 14.0,
+                            -6.0 + math.cos(angle) * over_waist(23.0)),
                (math.sin(angle), -0.4, math.cos(angle)), 4.0, 4.0, CLOTH_TRIM, sides=4)
     pauldrons(a, "Steel", span=12.0, drop=9.0)
 
@@ -646,7 +692,8 @@ def brigandine_chest(a):
                              (side * 11.0, BODY["chest_y0"] + 4.0), (side * 3.0, BODY["chest_y0"] + 6.0)],
                 LEATHER, z=CHEST_SKIN_Z - 1.0, thickness=3.5)
     a.band(BONE_CHEST, BODY["chest_y0"] - 2.0, CHEST_SKIN, LEATHER_TRIM, tube=3.5, squash=(1.0, 1.15), z=-3.0)
-    a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"]), (23.0, BODY["waist_y1"] - 20.0)],
+    a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"]),
+                         (over_waist(23.0), BODY["waist_y1"] - 20.0)],
             "Red", squash=(1.0, 1.0), z=-6.0)
     pauldrons(a, LEATHER_TRIM, span=12.0, drop=8.0, lip=False)
 
@@ -667,12 +714,14 @@ def chain_chest(a):
     # and a hairline of brighter metal does not change that.
     for y in (BODY["chest_y0"] + 4.0, BODY["chest_y0"] + 17.0, BODY["chest_y0"] + 30.0):
         a.band(BONE_CHEST, y, over_chest(20.0 + PROUD * 0.8), BRIGHT, tube=4.5, squash=(1.0, 1.15), z=-3.0)
-    a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"] + 2.0), (26.0, BODY["waist_y1"] - 32.0)],
+    a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"] + 2.0),
+                         (over_waist(26.0), BODY["waist_y1"] - 32.0)],
             GARMENT, squash=(1.0, 1.0), z=-6.0)
-    a.band(BONE_WAIST, BODY["waist_y1"] - 32.0, 26.0, "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0)
+    a.band(BONE_WAIST, BODY["waist_y1"] - 32.0, over_waist(26.0), "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0)
     # Short sleeves of mail rather than pauldrons: mail drapes, it does not plate.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
-        a.shell(bone, [(13.0, BODY["shoulder_y"] + 5.0), (12.0, BODY["shoulder_y"] - 15.0)],
+        a.shell(bone, [(over_arm(13.0), BODY["shoulder_y"] + 5.0),
+                       (over_arm(12.0), BODY["shoulder_y"] - 15.0)],
                 GARMENT, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
 
 
@@ -771,10 +820,6 @@ BONE_CALF = (("LowerLegL", 1), ("LowerLegR", -1))
 # The forearm runs out 71 to 116 along the arm, at the arm's own axis.
 FOREARM_OUT0, FOREARM_OUT1 = 78.0, 112.0
 
-# The hand, on its own bone. Measurements from `gloves.py`, which cut this same
-# body: the wrist is at 116 and the curled fingers end at 164.
-BONE_HAND = (("Fist1L", 1), ("Fist1R", -1))
-HAND_OUT0, HAND_OUT1 = 114.0, 144.0
 THIGH_X, CALF_X = 22.0, 23.6
 
 # What each style wears on its limbs: the main material, and whether it plates
@@ -808,46 +853,33 @@ def dress_limbs(a, style):
     # hovering below a bare arm, worst on the robes and Blackglass Mail. A sleeve
     # here joins pauldron to bracer so the arm is one covered limb.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
-        a.sleeve(bone, side, 40.0, FOREARM_OUT0 + 2.0, r0 + 1.6, r0 + 0.4, mat)
+        a.sleeve(bone, side, 40.0, FOREARM_OUT0 + 2.0, over_arm(r0 + 1.6), over_arm(r0 + 0.4), mat)
     for bone, side in BONE_FOREARM:
         # A bracer: a tube round the forearm, flaring a little at the wrist.
-        a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT1, r0, r1, mat)
-        a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, r1 + 1.2, r1 + 0.6, kit["trim"])
+        a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT1, over_arm(r0), over_arm(r1), mat)
+        a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, over_arm(r1 + 1.2) + 0.8, over_arm(r1 + 0.6) + 0.4, kit["trim"])
         # And a band where the bracer meets the elbow, so the two sleeves read as
         # one arm rather than two tubes that happen to touch.
-        a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT0 + 3.0, r0 + 1.0, r0 + 0.5, kit["trim"])
-    # AND A GAUNTLET, BECAUSE THE BRACER STOPPED AT THE WRIST.
+        a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT0 + 3.0, over_arm(r0 + 1.0) + 0.8, over_arm(r0 + 0.5) + 0.4, kit["trim"])
+    # NO GAUNTLET, AND THIS IS A REVERSAL.
     #
-    # Reported as part of "there are spots of character skin": every suit of
-    # armour in the game ended at out 112 and left a bare hand hanging out of it.
-    # There is no glove SLOT — `ITEM_SLOTS` is weapon, offhand, helm, armor,
-    # cape, boots, ring — so a hand belongs to the chest item, the same way the
-    # thigh does.
+    # A tapered sleeve on the hand bone covered the bare hand and was rejected
+    # on sight: "what the hell is this barrel looking garbage ... the gauntlets
+    # are unnecessary and look terrible." They were. Two pale cylinders on the
+    # ends of the arms, and at the game camera that is all they could be.
     #
-    # On the HAND bone rather than the forearm: a rigid tube long enough to cover
-    # a hand, hung off `LowerArm`, swings wide of it the moment the wrist bends.
-    # The rig carries `Fist1L`/`Fist1R` for exactly this, and `gloves.py` already
-    # measures the hand in these units — wrist at 116, knuckles at 150 — so the
-    # numbers line up with the bracer ending at 112 without a constant of mine.
-    #
-    # A HAND IS THICKER THAN A WRIST. `gloves.py` measures the bare forearm at
-    # radius 11 and the hand at half-thickness 19, so a gauntlet cut to the
-    # bracer's own radius would be a tube inside a fist.
-    for bone, side in BONE_HAND:
-        # TAPERED, OR IT IS A PIPE. Cut straight to out 150 at a constant radius
-        # the gauntlet covered the hand and read as a length of tube stuck on the
-        # wrist -- the character had no hands at all. It closes now, ending at the
-        # knuckles rather than past the fingers.
-        a.sleeve(bone, side, HAND_OUT0, HAND_OUT1 - 6.0, r1 + 2.5, r1 + 3.2, mat)
-        a.sleeve(bone, side, HAND_OUT1 - 6.0, HAND_OUT1, r1 + 3.2, r1 + 1.0, mat)
-        a.sleeve(bone, side, HAND_OUT0, HAND_OUT0 + 3.0, r1 + 3.8, r1 + 3.0, kit["trim"])
+    # The bare hand it was hiding belongs to the BODY, and a body is allowed to
+    # show at the hands: a face and a pair of hands are what a character has.
+    # The skin worth chasing was never here -- it was the scalp, the throat and
+    # the flanks of the chest, and those are covered by covering them.
     if not kit["leg"]:
         return
     leg = kit["leg"]
     for bone, side in BONE_THIGH:
         # A cuisse over the front of the thigh, from the hip to just above the knee.
-        a.shell(bone, [(12.5, BODY["hip_y"] - 4.0), (13.5, BODY["hip_y"] - 24.0),
-                       (12.5, BODY["knee_y"] + 8.0)],
+        a.shell(bone, [(over_thigh(12.5), BODY["hip_y"] - 4.0),
+                       (over_thigh(13.5), BODY["hip_y"] - 24.0),
+                       (over_thigh(12.5), BODY["knee_y"] + 8.0)],
                 leg, squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
         # A BAND, OR IT IS TROUSERS. Flat palette metal over a thigh reads as
         # blue-grey cloth on the plate — the leg pieces were the only gear in the
@@ -861,18 +893,20 @@ def dress_limbs(a, style):
         # three bands with space between them, the way a mail chausse or a set of
         # plate tassets is actually built.
         for y in (BODY["hip_y"] - 12.0, BODY["hip_y"] - 28.0, BODY["hip_y"] - 44.0):
-            a.band(bone, y, 13.6, kit["trim"], tube=3.2,
+            a.band(bone, y, over_thigh(13.6), kit["trim"], tube=3.2,
                    squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
         # And a knee cop: the one piece of leg armour a player can actually name.
-        a.shell(bone, [(11.0, BODY["knee_y"] + 12.0), (13.8, BODY["knee_y"] + 5.0),
-                       (11.5, BODY["knee_y"] - 1.0)],
+        a.shell(bone, [(over_thigh(11.0) - 2.0, BODY["knee_y"] + 12.0),
+                       (over_thigh(13.8) + 1.0, BODY["knee_y"] + 5.0),
+                       (over_thigh(11.5) - 1.5, BODY["knee_y"] - 1.0)],
                 kit["trim"], squash=(1.0, 0.92), sides=8, x=side * THIGH_X)
     for bone, side in BONE_CALF:
         # And a greave over the shin, stopping above the boot.
-        a.shell(bone, [(12.5, BODY["knee_y"] + 2.0), (13.0, BODY["knee_y"] - 14.0),
-                       (11.5, BODY["ankle_y"] + 16.0)],
+        a.shell(bone, [(over_shin(12.5), BODY["knee_y"] + 2.0),
+                       (over_shin(13.0), BODY["knee_y"] - 14.0),
+                       (over_shin(11.5), BODY["ankle_y"] + 16.0)],
                 leg, squash=(1.0, 0.9), sides=8, x=side * CALF_X)
-        a.band(bone, BODY["knee_y"] - 1.0, 13.4, kit["trim"], tube=2.6,
+        a.band(bone, BODY["knee_y"] - 1.0, over_shin(13.4), kit["trim"], tube=2.6,
                squash=(1.0, 0.9), sides=8, x=side * CALF_X)
 
 
@@ -1290,53 +1324,6 @@ BOOTS = {
 }
 
 
-# --- hands -------------------------------------------------------------------------------------
-# GLOVES FOR THE STYLES THAT ARE GARMENTS.
-#
-# `dress_limbs` gives chain, scale and brigandine a gauntlet, because those are
-# built here. `leather`, `plate` and `robe` are the pack's own costumes — skinned
-# meshes cut by `garments.py` — and `Actor.applyAppearance` takes the garment
-# branch and never reaches the modelled path, so those three ended at the wrist
-# with a bare hand hanging out of them. Worst on the plate: a full suit of
-# armour with naked hands.
-#
-# The donors cannot supply these. `garments.py` cuts `Fist` and `Thumb` away as
-# SKIN, correctly — the player owns their own hands — and the pack's characters
-# have bare hands underneath anyway.
-#
-# So they are built here and exported on their own, as `glove_<style>.glb`, and
-# the garment branch loads them alongside the costume. Same bones and same
-# measurements as the gauntlet in `dress_limbs`, so a hand is a hand whichever
-# route dressed it.
-def _glove(a, mat, trim):
-    for bone, side in BONE_HAND:
-        a.sleeve(bone, side, HAND_OUT0, HAND_OUT1 - 6.0, 15.5, 16.2, mat)
-        a.sleeve(bone, side, HAND_OUT1 - 6.0, HAND_OUT1, 16.2, 14.0, mat)
-        a.sleeve(bone, side, HAND_OUT0, HAND_OUT0 + 3.0, 16.8, 16.0, trim)
-
-
-def leather_glove(a):
-    """A hide glove, the palette's leather tone — see `BOOT_HIDE`."""
-    _glove(a, BOOT_HIDE, BOOT_TRIM)
-
-
-def plate_glove(a):
-    """A steel gauntlet, to match a suit of plate."""
-    _glove(a, "Steel", "DarkSteel")
-
-
-def robe_glove(a):
-    """A cloth mitt: the same surface the robe is, so it reads as part of it."""
-    _glove(a, GARMENT, LEATHER_TRIM)
-
-
-GLOVE = {
-    "leather": leather_glove,
-    "plate": plate_glove,
-    "robe": robe_glove,
-}
-
-
 # --- back ------------------------------------------------------------------------------------
 # All four of these were ONE drape: `capeParts` in gear.ts ignored its style
 # argument entirely, so a Mantle, a Tabard and a Cloak were the same sheet of
@@ -1482,7 +1469,8 @@ def mantle_back(a):
               pleats=4, fold=0.13)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
-        a.shell(bone, [(15.0, BODY["shoulder_y"] + 7.0), (17.0, BODY["shoulder_y"] - 6.0)],
+        a.shell(bone, [(over_arm(15.0), BODY["shoulder_y"] + 7.0),
+                       (over_arm(17.0), BODY["shoulder_y"] - 6.0)],
                 CLOTH, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
     collar(a, LEATHER, r=20.0, tube=3.0)
 
@@ -1522,22 +1510,16 @@ CAPE = {
 }
 
 # Slot per style, so `build.py` can name the file and the game can find it.
-# `glove` is not an `ItemSlot` and is not meant to be: there is no glove slot in
-# this game. It is a FILE PREFIX, so a garment style's hands export to
-# `glove_plate.glb` beside the costume they belong to. The ids are the chest
-# styles they dress, which is safe because `CHEST` holds only the three
-# procedural styles and never these three.
 SLOT_OF = {
     **{style: "armor" for style in CHEST},
     **{style: "helm" for style in HELM},
     **{style: "boots" for style in BOOTS},
     **{style: "cape" for style in CAPE},
-    **{style: "glove" for style in GLOVE},
 }
-RECIPES = {**CHEST, **HELM, **BOOTS, **CAPE, **GLOVE}
+RECIPES = {**CHEST, **HELM, **BOOTS, **CAPE}
 FAMILIES = {
     "chest": list(CHEST), "helm": list(HELM), "boots": list(BOOTS),
-    "cape": list(CAPE), "glove": list(GLOVE),
+    "cape": list(CAPE),
 }
 
 

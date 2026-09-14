@@ -1,21 +1,32 @@
-// HOW WIDE IS THE ARMOUR, AGAINST HOW WIDE IS THE BODY UNDER IT?
+// HOW MUCH OF EACH LIMB IS ACTUALLY ARMOUR?
 //
 //   node tools/soak/coverwidth.mjs
 //
-// Reported: "that empty space between the chest armor and armguards, there's
-// literally half of the body naked." Photographed, the chain breastplate is a
-// strip down the middle of a torso twice its width, with the body's own tunic
-// showing on both sides.
+// Reported, repeatedly and correctly: "there are MASSIVE spots where the
+// character's base is seen — all shoulders, part of the torso, bottom torso is
+// worse and legs are absolutely the worst (80% is the character base pants)."
 //
-// The builder says that should not happen — the shell is cut at radius 20 and
-// `body_profile.py` measures the torso at 17 to 19 half-width — so either the
-// number in the recipe is not the number that reaches the screen, or the piece
-// is not where the recipe thinks. This asks the running game instead of the
-// source: the world-space X extent of what each chest style draws over the
-// torso, beside the X extent of the torso itself.
+// The chest was measured this way and fixed; no other region ever was.
+//
+// EVERYTHING IS BUCKETED BY BONE, which is the only way this measures what it
+// claims to. A first version filtered gear by the region's HEIGHT BAND and
+// reported the torso at 680% covered — because the body is bound in a T-pose,
+// so both sleeves lie inside the torso's band and got counted as chest armour.
+//
+// The body and the skinned garments share one skeleton, so both are bucketed by
+// dominant skin weight. Rigid pieces are bucketed by the bone they hang from.
 import { open, login } from "./driver.mjs";
 
 const STYLES = ["leather", "chain", "plate", "robe", "scale", "brigandine"];
+
+const REGIONS = [
+  ["torso", "^(Torso|Chest|Spine)$"],
+  ["abdomen", "^(Abdomen|Hips)$"],
+  ["upper arm", "^UpperArm"],
+  ["forearm", "^LowerArm"],
+  ["thigh", "^UpperLeg"],
+  ["shin", "^LowerLeg"],
+];
 
 const { browser, page } = await open({ headless: true, width: 900, height: 700 });
 const errors = [];
@@ -23,9 +34,10 @@ page.on("pageerror", (e) => errors.push(String(e)));
 await login(page, `Cov${Date.now() % 100000}`);
 await page.waitForTimeout(2400);
 
-const rows = await page.evaluate(async (styles) => {
+const rows = await page.evaluate(async ({ styles, regions }) => {
   const a = window.__wieldbound.localActor;
   const out = [];
+  const res = regions.map(([name, src]) => [name, new RegExp(src)]);
   const freeze = () => {
     if (a.mixer) a.mixer.stopAllAction();
     a.root.traverse((o) => { if (o.isSkinnedMesh) o.skeleton.pose(); });
@@ -36,60 +48,84 @@ const rows = await page.evaluate(async (styles) => {
     m[1] * x + m[5] * y + m[9] * z + m[13],
     m[2] * x + m[6] * y + m[10] * z + m[14],
   ];
+  // The widest extent across the two axes perpendicular to the limb's run —
+  // a girth, not a length, so a short sleeve is not credited for being long.
+  const girth = (pts) => {
+    if (!pts.length) return 0;
+    let best = 0;
+    for (const k of [0, 2]) {
+      best = Math.max(best, Math.max(...pts.map((p) => p[k])) - Math.min(...pts.map((p) => p[k])));
+    }
+    return best;
+  };
+  const regionOf = (bone) => {
+    for (const [name, re] of res) if (re.test(bone)) return name;
+    return null;
+  };
+  // Vertices of one skinned mesh, split by the bone that dominates each.
+  const bySkin = (mesh, into) => {
+    const p = mesh.geometry.attributes.position;
+    const si = mesh.geometry.attributes.skinIndex;
+    const sw = mesh.geometry.attributes.skinWeight;
+    if (!si || !sw) return;
+    const m = mesh.matrixWorld.elements;
+    const bones = mesh.skeleton.bones.map((b) => b.name);
+    for (let i = 0; i < p.count; i++) {
+      let best = -1, bw = 0.5;
+      for (const c of ["X", "Y", "Z", "W"]) {
+        const w = sw[`get${c}`](i);
+        if (w > bw) { bw = w; best = si[`get${c}`](i); }
+      }
+      if (best < 0) continue;
+      const region = regionOf(bones[best]);
+      if (!region) continue;
+      into.get(region).push(xf(m, p.getX(i), p.getY(i), p.getZ(i)));
+    }
+  };
 
   freeze();
-  // The torso's own span, from the body mesh, over the chest's height band.
   let body = null;
-  a.root.traverse((o) => { if (!body && o.isSkinnedMesh) body = o; });
-  const bp = body.geometry.attributes.position;
-  const si = body.geometry.attributes.skinIndex;
-  const sw = body.geometry.attributes.skinWeight;
-  const bm = body.matrixWorld.elements;
-  const bones = body.skeleton.bones.map((b) => b.name);
-  const torsoPts = [];
-  for (let i = 0; i < bp.count; i++) {
-    let best = -1, bw = 0.5;
-    for (const c of ["X", "Y", "Z", "W"]) {
-      const w = sw[`get${c}`](i);
-      if (w > bw) { bw = w; best = si[`get${c}`](i); }
-    }
-    if (best < 0) continue;
-    if (!/Torso|Abdomen|Chest|Spine/.test(bones[best])) continue;
-    torsoPts.push(xf(bm, bp.getX(i), bp.getY(i), bp.getZ(i)));
-  }
-  const tLo = Math.min(...torsoPts.map((p) => p[0]));
-  const tHi = Math.max(...torsoPts.map((p) => p[0]));
-  const tY = [Math.min(...torsoPts.map((p) => p[1])), Math.max(...torsoPts.map((p) => p[1]))];
-  out.push(`TORSO x[${tLo.toFixed(3)},${tHi.toFixed(3)}] width ${(tHi - tLo).toFixed(3)}`);
+  a.root.traverse((o) => { if (!body && o.isSkinnedMesh && !/^worn_/.test(o.name)) body = o; });
+  const bodyPts = new Map(res.map(([n]) => [n, []]));
+  bySkin(body, bodyPts);
 
   for (const style of styles) {
     a.setAppearance({ layers: { armor: { style, rarity: "honed", palette: "steel" } } });
     await new Promise((r) => setTimeout(r, 1400));
     freeze();
-    let lo = Infinity, hi = -Infinity, n = 0;
+
+    const gearPts = new Map(res.map(([n]) => [n, []]));
     const seen = new Set();
     a.root.traverse((o) => {
       if (!o.isMesh || !o.visible || !/^(gear_|worn_)/.test(o.name)) return;
-      // The torso pieces only — sleeves and skirts are not what is being asked.
-      if (!/Torso|Abdomen|^worn_[a-z]+$/.test(o.name)) return;
       if (seen.has(o.uuid)) return;
       seen.add(o.uuid);
-      const gp = o.geometry.attributes.position;
+      if (o.isSkinnedMesh) { bySkin(o, gearPts); return; }
+      // A rigid piece belongs to the bone it hangs from.
+      let bone = null;
+      for (let q = o.parent; q; q = q.parent) if (q.isBone) { bone = q.name; break; }
+      const region = bone && regionOf(bone);
+      if (!region) return;
+      const p = o.geometry.attributes.position;
       const m = o.matrixWorld.elements;
-      for (let i = 0; i < gp.count; i++) {
-        const p = xf(m, gp.getX(i), gp.getY(i), gp.getZ(i));
-        // Only where the chest is, so a skirt reaching the knee does not count.
-        if (p[1] < tY[0] || p[1] > tY[1]) continue;
-        lo = Math.min(lo, p[0]); hi = Math.max(hi, p[0]); n++;
+      for (let i = 0; i < p.count; i++) {
+        gearPts.get(region).push(xf(m, p.getX(i), p.getY(i), p.getZ(i)));
       }
     });
-    out.push(n
-      ? `${style.padEnd(11)} x[${lo.toFixed(3)},${hi.toFixed(3)}] width ${(hi - lo).toFixed(3)}  = ${((hi - lo) / (tHi - tLo) * 100).toFixed(0)}% of the torso`
-      : `${style.padEnd(11)} nothing over the torso`);
+
+    const cells = res.map(([name]) => {
+      const b = girth(bodyPts.get(name));
+      const g = girth(gearPts.get(name));
+      const pct = b > 0 ? Math.round((g / b) * 100) : 0;
+      return `${name} ${String(pct).padStart(3)}%`;
+    });
+    out.push(`${style.padEnd(11)} ${cells.join("   ")}`);
   }
   return out;
-}, STYLES);
+}, { styles: STYLES, regions: REGIONS });
 
+console.log("armour girth as a percentage of the body's, per region\n");
 for (const r of rows) console.log(r);
+console.log("\n0% means nothing is drawn there at all.");
 if (errors.length) console.log("ERRORS:", errors.slice(0, 3));
 await browser.close();

@@ -3607,7 +3607,15 @@ export const HELM_COVERS_HAIR: Record<string, boolean> = {
   cap: true,
   full: true,
   horned: true,
-  hood: false,
+  // A HOOD HIDES HAIR, and it took wearing one to see why. With the hood
+  // finally sitting on the head, the hair came straight through the cloth —
+  // "the hood is finally placed properly, but hair goes right through it." A
+  // hood is a thin surface pulled over a skull and the locks under it have
+  // nowhere to go. The fringe-at-the-brow idea needs hair authored to sit under
+  // a hood, which this pack does not have.
+  hood: true,
+  // The circlet keeps it: a band above the brow with nothing over the crown,
+  // which is the whole point of the style.
   circlet: false,
 };
 
