@@ -91,6 +91,17 @@ const VIEWS = [
   { label: "front", yaw: 0 },
   { label: "side", yaw: Math.PI / 2 },
   { label: "back", yaw: Math.PI },
+  // AND WHAT THE PLAYER ACTUALLY SEES. The three views above are shot at 3.4
+  // units from near eye level, which makes a character about 500 pixels tall.
+  // The GAME camera looks down a fixed (0, 9.5, 11) at a default distance of 9 --
+  // a 41 degree pitch, two and a half times further out -- and a character is
+  // about 60 pixels tall in it.
+  //
+  // Every judgement this project has made about item art was made at eight times
+  // the size a player sees it, and it shows: a comb, a visor slot, a gold ankle
+  // band and a scalloped hem are all invisible at 60 pixels. What survives is
+  // silhouette and two or three blocks of colour, seen mostly from ABOVE.
+  { label: "played", game: true },
 ];
 
 const rows = [];
@@ -133,6 +144,21 @@ for (const style of styles) {
         // WHOLE FIGURE, HEAD TO BOOT. The first run framed the chest at 2.4m
         // and cut the head off half the tiles — which is no way to judge a helm.
         target.y += 0.9;
+        if (view.game) {
+          // THE GAME'S OWN COMPOSITION, not a review framing: the fixed
+          // (0, 9.5, 11) direction `World` looks down and its default distance
+          // of 9. Nothing about this tile is chosen to show a piece off, which
+          // is the entire point of having it beside the other three.
+          const len = Math.hypot(0, 9.5, 11);
+          const d = 9;
+          g.world.camera.position.set(
+            target.x,
+            target.y + (9.5 / len) * d,
+            target.z + (11 / len) * d,
+          );
+          g.world.camera.lookAt(target);
+          return;
+        }
         const f = a.heading + view.yaw;
         g.world.camera.position.set(target.x + Math.sin(f) * 3.4, target.y + 0.35, target.z + Math.cos(f) * 3.4);
         g.world.camera.lookAt(target);

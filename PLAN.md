@@ -25928,3 +25928,41 @@ its own visor on the inside.
 Verified by measurement rather than by eye: with the helm on, `PlayerBody` tops
 out at 1.674 against the helm's 1.768, and no hair, scalp or face piece is visible
 anywhere. Suite 57/57.
+
+**Phase 70 M70.339 — play the game, and find that every judgement was made at
+eight times the size.** Asked to actually play with the items rather than
+photograph them. That was the right instruction and it invalidated most of how
+this phase has been reviewing art.
+
+`tools/soak/wearplay.mjs` equips a full set and plays — walks, runs, turns,
+swings — touching nothing about the camera. At the game's own camera a character
+is about SIXTY PIXELS TALL, seen down a fixed `(0, 9.5, 11)` at distance 9: a 41
+degree pitch. Every review sheet in this project is shot at 3.4 units from near
+eye level, which makes a character about 500 pixels. Eight times the size.
+
+At sixty pixels the comb of M70.337 is invisible. So are the visor slots, the
+gold ankle band of M70.329, the scalloped cape hem of M70.332 and the boot ridge.
+What survives is silhouette and two or three blocks of colour, seen mostly from
+ABOVE. `armourstyles.mjs` has a fourth "played" tile now at the game's own
+composition, so nothing is judged again at a size nobody sees it at.
+
+Then the complaint itself: "parts of the head showing on every single head
+piece." `tools/soak/helmcover.mjs` answers it by ray test rather than by eye —
+out through every vertex the Head bone owns, and on — giving cap 37%, hood 48%,
+full 75%, horned 17%, circlet 5%. At game scale `horned` and `circlet` read as a
+bare pale head.
+
+The cause was structural. `shell` is a full revolution, so a skullcap could only
+be brought below the brow by closing over the eyes — which is why both stopped at
+the crown. `kit.lathe` turns a partial ARC now, and `loft` knows not to wrap an
+open ring shut, which would seal the opening that makes a cap a cap. A skullcap
+is two pieces, because a helmet is two shapes: closed the whole way round above
+the brow, where a forehead is under the helmet, and an arc below it, where the
+face is. cap 37 → 44%, horned 17 → 41%.
+
+The first attempt used ONE arc for the whole height and traded the forehead away
+for the ears: 37% to 36%. A measurement telling you a change was lateral is
+exactly what the measurement is for.
+
+STILL OUTSTANDING and reported in the same breath: the hood reads as a hard
+helmet rather than cloth. Suite 57/57.

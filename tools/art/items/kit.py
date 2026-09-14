@@ -107,10 +107,15 @@ class Model:
 
     # --- lofting --------------------------------------------------------------------
 
-    def loft(self, rings, mat, cap_start=True, cap_end=True):
+    def loft(self, rings, mat, cap_start=True, cap_end=True, closed=True):
         """
         Skin a sequence of rings. A ring is a list of points, or a single point for
         a tip. Every ring of more than one point must have the same count.
+
+        `closed` wraps the last column back to the first, which is right for
+        anything turned the whole way round and WRONG for an arc: an open cap
+        would get a quad stretched straight across its opening, sealing the very
+        gap that makes it a cap rather than a bucket.
         """
         made = []
         for ring in rings:
@@ -121,22 +126,22 @@ class Model:
         for a, b in zip(made, made[1:]):
             if len(a) == 1 and len(b) > 1:
                 n = len(b)
-                for k in range(n):
+                for k in range(n if closed else n - 1):
                     self.face([a[0], b[(k + 1) % n], b[k]], mat)
             elif len(b) == 1 and len(a) > 1:
                 n = len(a)
-                for k in range(n):
+                for k in range(n if closed else n - 1):
                     self.face([a[k], a[(k + 1) % n], b[0]], mat)
             else:
                 n = len(a)
-                for k in range(n):
+                for k in range(n if closed else n - 1):
                     self.face([a[k], a[(k + 1) % n], b[(k + 1) % n], b[k]], mat)
         if cap_start and len(made[0]) > 2:
             self.face(list(reversed(made[0])), mat)
         if cap_end and len(made[-1]) > 2:
             self.face(made[-1], mat)
 
-    def lathe(self, profile, mat, sides=8, centre=(0.0, 0.0), squash=(1.0, 1.0), turn=0.0, cap=True, axis="z"):
+    def lathe(self, profile, mat, sides=8, centre=(0.0, 0.0), squash=(1.0, 1.0), turn=0.0, cap=True, axis="z", arc=1.0):
         """
         A turned part — grip, pommel, collar, shaft — from (radius, position) pairs.
         A radius of 0 closes to a point. Eight sides by default: round enough to
@@ -145,21 +150,39 @@ class Model:
         `axis` "z" turns it up the weapon (`centre` is x, y); "x" turns it across —
         a sledge's drum, a hammer's face — and then `centre` is y, z.
         """
+        # ARC IS THE FRACTION OF THE CIRCLE TURNED, and a partial one is what makes
+        # an open-fronted piece possible at all.
+        #
+        # Every helm built on this was a FULL revolution, so a skullcap could only
+        # be lowered past the brow by also closing over the eyes — which is why
+        # `cap` and `horned` stop at the crown and cover 37% and 17% of the head.
+        # Measured at the game's own camera, a character is about sixty pixels
+        # tall and those two read as a bare pale head with a smudge on top.
+        #
+        # An arc under 1 leaves a gap, centred opposite `turn`, so a cap can come
+        # down to the nape and the ears and still have a face.
+        span = 2 * math.pi * arc
+        closed = arc >= 0.999
+        steps = sides if closed else max(2, sides)
         rings = []
         for r, w in profile:
             if r <= 1e-6:
                 rings.append(V(centre[0], centre[1], w) if axis == "z" else V(w, centre[0], centre[1]))
                 continue
             ring = []
-            for k in range(sides):
-                a = turn + 2 * math.pi * k / sides + math.pi / sides
+            for k in range(steps if closed else steps + 1):
+                a = (
+                    turn + span * k / sides + math.pi / sides
+                    if closed
+                    else turn + span * (k / steps) - span / 2
+                )
                 p, q = math.cos(a) * r * squash[0], math.sin(a) * r * squash[1]
                 if axis == "z":
                     ring.append(V(centre[0] + p, centre[1] + q, w))
                 else:
                     ring.append(V(w, centre[0] + p, centre[1] + q))
             rings.append(ring if axis == "z" else list(reversed(ring)))
-        self.loft(rings, mat, cap_start=cap, cap_end=cap)
+        self.loft(rings, mat, cap_start=cap and closed, cap_end=cap and closed, closed=closed)
 
     def tube(self, path, radii, mat, sides=6, cap=True):
         """A faceted tube along a path — a scythe's bent snath, a bow's limb, a chain's run."""

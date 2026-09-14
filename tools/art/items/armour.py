@@ -80,7 +80,7 @@ class Armour:
 
     # --- the body's own shapes ----------------------------------------------------------
 
-    def shell(self, bone, stations, mat, squash=None, sides=10, cap=True, x=0.0, z=0.0):
+    def shell(self, bone, stations, mat, squash=None, sides=10, cap=True, x=0.0, z=0.0, arc=1.0, turn=0.0):
         """
         A tapered sleeve round the body's axis: a cuirass, a mail skirt, a collar.
 
@@ -90,7 +90,7 @@ class Armour:
         depth = (1.0, 0.82) if squash is None else squash
         self.part(bone).lathe(
             [(w * U, y * U) for w, y in stations], mat, sides=sides,
-            centre=(x * U, -z * U), squash=depth, cap=cap, axis="z",
+            centre=(x * U, -z * U), squash=depth, cap=cap, axis="z", arc=arc, turn=turn,
         )
 
     def plate(self, bone, outline, mat, z, thickness=5.0, chamfer=2.0):
@@ -833,10 +833,34 @@ BROW_Y = 264.0
 CROWN_Y = 296.0
 
 
-def skullcap(a, mat, y0=BROW_Y, y1=CROWN_Y, wide=35.0):
-    """The dome every head piece except the hood is built on."""
-    a.shell(BONE_HEAD, [(wide * 0.9, y0), (wide, y0 + 8.0), (wide * 0.9, y1 - 10.0), (wide * 0.6, y1)],
+def skullcap(a, mat, y0=BROW_Y - 26.0, y1=CROWN_Y, wide=36.0, arc=0.70):
+    """
+    The dome every head piece except the hood is built on — open at the face.
+
+    IT USED TO STOP AT THE BROW, because it had to. `shell` was a full revolution,
+    so the only way to bring a cap lower was to close it over the eyes. Measured
+    with `tools/soak/helmcover.mjs`, `cap` covered 37% of the skull and `horned`
+    17%, and at the GAME's own camera — where a character is about sixty pixels
+    tall — both read as a bare pale head with a smudge on top. Reported as
+    "parts of the head showing on every single head piece", which is exactly
+    what a crown-only cap is.
+
+    `kit.lathe` turns a partial arc now, so this comes down past the ears to the
+    nape and leaves the face open. 0.70 of the circle, centred on the back.
+    """
+    # TWO PIECES, BECAUSE A HELMET IS TWO SHAPES. Above the brow it closes all the
+    # way round — a forehead is under the helmet, and a cap that opens there is a
+    # horseshoe. Below the brow it can only be an arc, because that is where the
+    # face is. The first attempt used one arc for the whole height and traded the
+    # forehead away for the ears: coverage went 37% to 36%, which is the
+    # measurement telling you a change was lateral.
+    a.shell(BONE_HEAD, [(wide * 0.94, BROW_Y), (wide, BROW_Y + 8.0), (wide * 0.92, y1 - 10.0), (wide * 0.58, y1)],
             mat, squash=(1.0, 1.16), z=SKULL_Z)
+    # The cheeks and nape, hanging from the rim down past the ears. Turned to the
+    # BACK: in this frame the lathe's angle runs from +x through -z, so pi/2 faces
+    # away from the face and the gap that is left is the one you look out of.
+    a.shell(BONE_HEAD, [(wide * 0.9, y0), (wide * 0.96, y0 + 12.0), (wide * 0.94, BROW_Y)],
+            mat, squash=(1.0, 1.16), z=SKULL_Z, arc=arc, turn=math.pi / 2, cap=False)
 
 
 def cap_helm(a):
