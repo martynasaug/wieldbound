@@ -26034,3 +26034,46 @@ needs nothing. `harvest_hood.py` is the first through it.
 STILL OUTSTANDING: hair and beards carry the same correction as a RUNTIME table in
 `hair.ts` (`DONOR_SCALE`). That belongs at harvest time too, and deleting it would
 leave the runtime applying no per-donor correction anywhere. Suite 57/57.
+
+**Phase 70 M70.342 — the rule gets a guard, and it finds a piece that had shipped.**
+The registration rule from M70.341 is only worth what enforces it. Every misfit in
+this phase was found by a person looking at a picture and saying so — a hood in
+front of a face, a chin through a helm, a pauldron off a shoulder, boots at
+mid-shin. Each was then diagnosed from scratch, usually as the wrong axis first.
+That is survivable at nineteen styles and not at two hundred.
+
+`tools/soak/fitcheck.mjs` asks the question once, for every style in every slot. A
+worn piece hangs off a bone; that bone owns the vertices it dominates; a piece
+belonging to it must not have DAYLIGHT between itself and that region. It equips
+each style, freezes the pose, and prints the ones that fail.
+
+It immediately found one that had shipped and been called good: the leather
+garment's Ranger arm guards floated a quarter of a unit clear of this body's
+forearm. Three fits were tried. The joint-anchored one is the right idea —
+`register.fit` now takes a JOINT for a limb and a CENTRE for a head, because a
+guard sits PARTWAY ALONG a forearm and scaling it about the forearm's box centre
+only works if both forearms are the same length; the Ranger's is shorter, so the
+first version made the gap WORSE (0.133 to 0.192) while reporting a sensible
+scale. Even joint-anchored it would not come home, so the guards are DROPPED, with
+the three attempts written into `garments.py` so the next person does not repeat
+them. A piece that cannot be fitted is not shipped floating.
+
+Two calibrations, both learned by the guard crying wolf. The percentage-overlap
+test is gone — it failed a circlet for covering 16% of a head, which is what a
+circlet is, and every cape for hanging below the torso, which is what a cape does:
+seven failures, five of them correct art. And chained cape segments are skipped,
+because `Cape1` and `Cape2` hang from the link above them, not from the torso. The
+tolerance is 0.03, what a player could see, not zero — at 0.01 it failed a pouch
+for hanging six thousandths of body height low, under a pixel at the game camera.
+A guard that reports the invisible gets ignored exactly as fast as one that
+reports the harmless.
+
+RECHECKED, then rechecked in game, as asked. 19 fitted, 0 not. All four catalogue
+sheets read clean — helms enclose with no scalp through them and the hood sits as
+a cowl; all six armours hang on the body; boots land on the feet; all four capes
+hang from the shoulders. `wearplay.mjs` walked, ran, turned and fought a full set
+at the real game camera with no page errors and nothing floating at 60 pixels
+tall. Suite green.
+
+STILL OUTSTANDING, unchanged: `DONOR_SCALE` in `hair.ts` is the last per-donor
+correction still applied at runtime, and belongs at harvest time.

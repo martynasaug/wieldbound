@@ -45,6 +45,9 @@ import sys
 import bpy
 import bmesh
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import register  # noqa: E402
+
 # What a garment is NOT: the parts of a costume that are the wearer's own body,
 # and the parts another SLOT owns.
 #
@@ -68,9 +71,29 @@ SKIN_BONES = ("Fist", "Thumb", "Foot", "Head", "Neck", "LowerLeg")
 # Bone-parented meshes that are NOT armour, and must not travel with a garment.
 # A weapon is an item of its own and the face belongs to the wearer — the player
 # supplies both. Everything else parented to a bone is a fitting: see `cut`.
-DROP_MESHES = ("Sword", "Bow", "Arrow", "Staff", "Dagger", "Face", "Monk.001")
+DROP_MESHES = (
+    "Sword", "Bow", "Arrow", "Staff", "Dagger", "Face", "Monk.001",
+    # AND THE RANGER'S ARM GUARDS, which is a decision rather than a rule.
+    #
+    # `tools/soak/fitcheck.mjs` catches them floating clear of this body's
+    # forearm, and three attempts did not seat them: registering against the
+    # limb's bounding box made the gap WORSE (0.133 to 0.192), anchoring at the
+    # joint brought it back to 0.142, and neither is on the arm. The forearm is
+    # thinly weighted on both rigs, so the box that every one of those
+    # corrections is derived from is itself unreliable — the same sampling
+    # problem that asked for a 7.5x stretch on the Wizard's waist.
+    #
+    # A missing bracer is strictly better than a bracer beside the arm, and the
+    # leather garment keeps its pouch. Worth revisiting when a limb fitting is
+    # worth its own solution; not worth shipping a visible fault meanwhile.
+    "ArmGuard",
+)
 
 # donor file, the skinned mesh inside it, the garment it becomes, its atlas.
+# The bones a fitting can hang from. Named once so the wearer's limbs and its
+# joints are measured over the same set.
+LIMBS = ("UpperArmL", "UpperArmR", "LowerArmL", "LowerArmR", "Abdomen", "Torso", "Hips")
+
 JOBS = (
     ("Wizard", "Wizard.001", "robe", "Wizard_Texture"),
     ("Warrior", "Warrior_Body", "plate", "Warrior_Texture"),
@@ -100,7 +123,7 @@ def dress(obj, atlas_name):
     return image is not None
 
 
-def cut(donor, mesh_name, out_name, atlas, export_dir):
+def cut(donor, mesh_name, out_name, atlas, export_dir, wearer_limbs, wearer_joints):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.fbx(filepath=os.path.abspath(os.path.join(MODELS, f"{donor}.fbx")))
     body = bpy.data.objects[mesh_name]
@@ -162,9 +185,34 @@ def cut(donor, mesh_name, out_name, atlas, export_dir):
             bpy.data.objects.remove(obj, do_unlink=True)
             continue
         bone = obj.parent_bone.replace(".", "")
+        # CAPTURED BEFORE THE PARENT IS CLEARED. `obj.parent_bone` is empty once
+        # `obj.parent` is None, so reading it after unparenting asked the donor
+        # for the box of a bone called "" and got nothing -- and the registration
+        # below simply did not happen, silently, on every fitting.
+        parented_to = obj.parent_bone
         world = obj.matrix_world.copy()
         obj.parent = None
         obj.matrix_world = world
+        # REGISTERED ONTO THE WEARER'S OWN LIMB, by the same routine the hood
+        # uses. These fittings were exported raw, and `tools/soak/fitcheck.mjs`
+        # then caught the leather bracers floating a quarter of a unit clear of
+        # this body's forearm — the Ranger is 16% narrower than the Rogue, so a
+        # guard cut to its arm cannot sit on ours.
+        #
+        # It is the same bug as the Warrior's hair and the Ranger's hood, on a
+        # third bone. Registering here rather than per-piece is what stops there
+        # being a fourth.
+        donor_limb = register.bone_box(parented_to)
+        wearer_limb = wearer_limbs.get(bone)
+        # ANCHORED AT THE JOINT. A fitting hangs partway down a limb, so the
+        # point it shares with the wearer's version is the bone's origin, not
+        # the middle of the limb's bounding box.
+        donor_joint = register.bone_origin(parented_to)
+        wearer_joint = wearer_joints.get(bone)
+        if donor_limb and wearer_limb:
+            scale, shift = register.fit(obj, donor_limb, wearer_limb, donor_joint, wearer_joint)
+            print(f"  {obj.name} -> {bone}: scale "
+                  f"({scale.x:.3f},{scale.y:.3f},{scale.z:.3f})")
         # `transform_apply` needs the object selected and active, and it is the
         # step that turns "positioned by a parent" into "positioned by its own
         # vertices" — which is the only form the runtime can place.
@@ -207,8 +255,14 @@ def main():
             export_dir = os.path.abspath(args[i + 1]); i += 2
         else:
             i += 1
+    # Measured ONCE, before any donor is loaded: every fitting on every garment
+    # is registered against the same set of numbers.
+    wearer_joints = register.wearer_joints(LIMBS)
+    wearer_limbs = register.wearer_bones(
+        LIMBS
+    )
     for donor, mesh_name, out_name, atlas in JOBS:
-        cut(donor, mesh_name, out_name, atlas, export_dir)
+        cut(donor, mesh_name, out_name, atlas, export_dir, wearer_limbs, wearer_joints)
 
 
 main()

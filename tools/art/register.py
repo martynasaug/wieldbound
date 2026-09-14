@@ -55,13 +55,21 @@ WEARER = "Rogue.fbx"
 DONORS = ("Rogue.fbx", "Monk.fbx", "Wizard.fbx", "Warrior.fbx", "Ranger.fbx")
 
 
-def head_box():
-    """World box of the vertices this rig's Head bone dominates, or None."""
+def bone_box(bone="Head"):
+    """
+    World box of the vertices this rig's named bone dominates, or None.
+
+    ANY BONE, NOT JUST THE HEAD, because the mismatch is not a head problem — it
+    is a BODY problem, and the head is only where it was noticed first. The
+    leather garment's bracers came off the Ranger and floated a quarter of a unit
+    clear of this body's forearm, found by `tools/soak/fitcheck.mjs` on a piece
+    that had already shipped and been called good.
+    """
     lo = mathutils.Vector((1e9, 1e9, 1e9))
     hi = mathutils.Vector((-1e9, -1e9, -1e9))
     n = 0
     for obj in [o for o in bpy.data.objects if o.type == "MESH" and o.vertex_groups]:
-        idx = {g.index for g in obj.vertex_groups if g.name.replace(".", "") == "Head"}
+        idx = {g.index for g in obj.vertex_groups if g.name.replace(".", "") == bone.replace(".", "")}
         if not idx:
             continue
         mw = obj.matrix_world
@@ -85,35 +93,113 @@ def load(name):
     bpy.ops.import_scene.fbx(filepath=os.path.join(os.getcwd(), MODELS, name))
 
 
+def head_box():
+    """The head, by its old name, for callers that only ever want that."""
+    return bone_box("Head")
+
+
+def wearer_bones(names):
+    """
+    The player's own regions for a set of bones, measured fresh in one load.
+
+    Returned together because loading the wearer once and reading every bone off
+    it is the cheap way round, and because a caller that loads it per bone tends
+    to end up measuring some pieces against a scene that has moved on.
+    """
+    load(WEARER)
+    out = {}
+    for name in names:
+        box = bone_box(name)
+        if box:
+            out[name] = box
+    return out
+
+
+def wearer_joints(names):
+    """The player's own joint positions, over the same load as its limb boxes."""
+    load(WEARER)
+    out = {}
+    for name in names:
+        at = bone_origin(name)
+        if at is not None:
+            out[name] = at
+    return out
+
+
 def wearer_head():
     """The player's skull, measured fresh. Cheap, and never stale."""
-    load(WEARER)
-    box = head_box()
-    if not box:
+    boxes = wearer_bones(["Head"])
+    if "Head" not in boxes:
         raise RuntimeError(f"{WEARER} has no Head-weighted vertices")
-    return box
+    return boxes["Head"]
+
+
+# How far a single axis may be rescaled before the measurement is disbelieved.
+#
+# A HEAD IS DENSELY WEIGHTED AND A POUCH IS NOT. Generalising this from the skull
+# to any bone looked free and is not: the Wizard's `Abdomen` owns so few vertices
+# under its robe that the box came out a sliver, and the honest arithmetic on a
+# sliver asked for a 7.5x stretch on one axis. The head never showed this because
+# a skull has seventy-five vertices and a waist under a gown can have four.
+#
+# Outside this band the ratio is not describing a body, it is describing a
+# sampling accident, and the piece is left at its authored size — which is wrong
+# by a few per cent instead of wrong by a factor of seven.
+SCALE_LIMIT = (0.65, 1.55)
 
 
 def registration(donor_box, wearer_box):
-    """(scale, shift) taking a donor's head onto the wearer's."""
+    """(scale, wearer centre, donor centre) taking a donor's region onto the wearer's."""
     dlo, dhi = donor_box
     wlo, whi = wearer_box
     dsize, wsize = dhi - dlo, whi - wlo
-    scale = mathutils.Vector((
-        wsize[i] / dsize[i] if dsize[i] > 1e-6 else 1.0 for i in range(3)
-    ))
-    return scale, ((wlo + whi) / 2), ((dlo + dhi) / 2)
+    lo, hi = SCALE_LIMIT
+    axes = []
+    for i in range(3):
+        if dsize[i] <= 1e-6:
+            axes.append(1.0)
+            continue
+        r = wsize[i] / dsize[i]
+        axes.append(r if lo <= r <= hi else 1.0)
+    return mathutils.Vector(axes), ((wlo + whi) / 2), ((dlo + dhi) / 2)
 
 
-def fit(obj, donor_box, wearer_box):
-    """Scale a harvested object onto the wearer's head, then move it there."""
+def bone_origin(bone):
+    """Where a bone starts, in world space — the joint it pivots on."""
+    for obj in bpy.data.objects:
+        if obj.type != "ARMATURE":
+            continue
+        for b in obj.data.bones:
+            if b.name.replace(".", "") == bone.replace(".", ""):
+                return obj.matrix_world @ b.head_local
+    return None
+
+
+def fit(obj, donor_box, wearer_box, anchor=None, wearer_anchor=None):
+    """
+    Scale a harvested object onto the wearer, then move it there.
+
+    ANCHOR AT THE JOINT FOR A LIMB, AT THE CENTRE FOR A HEAD, and the difference
+    is not cosmetic. A helm surrounds the head, so the head's centre is the point
+    both versions share. An arm guard sits PARTWAY ALONG a forearm — scaling it
+    about the forearm's box centre and sliding the centres together preserves its
+    offset from that centre, which is only correct if both forearms are the same
+    length. They are not: the Ranger's is shorter, so the guard came out displaced
+    along the arm, and the first version of this made the gap WORSE (0.133 to
+    0.192) while reporting a sensible-looking scale.
+
+    Given a joint, the piece is scaled about THAT and moved by the difference
+    between the two joints, so its distance down the limb scales with the limb.
+    """
     scale, wearer_centre, donor_centre = registration(donor_box, wearer_box)
+    about = anchor if anchor is not None else donor_centre
+    to = wearer_anchor if wearer_anchor is not None else wearer_centre
     for vert in obj.data.vertices:
         vert.co = mathutils.Vector((
-            donor_centre[i] + (vert.co[i] - donor_centre[i]) * scale[i] for i in range(3)
+            about[i] + (vert.co[i] - about[i]) * scale[i] for i in range(3)
         ))
-    obj.location = obj.location + (wearer_centre - donor_centre)
-    return scale, wearer_centre - donor_centre
+    obj.location = obj.location + (to - about)
+    return scale, to - about
 
 
 def main():
