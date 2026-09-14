@@ -1,5 +1,18 @@
 // HOW IS EVERY WEAPON ACTUALLY HELD?
 //
+// AN OFF-HAND GAP OF ABOUT 0.19m IS CORRECT, NOT A FAULT — read this before
+// acting on one. Every shield in the catalogue reports the fist sitting roughly a
+// hand's breadth clear of the boards, which looks exactly like the floating
+// weapon this harness exists to catch. It is not. `gear.ts` straps an off-hand to
+// the FOREARM at the character's side rather than closing a fist round it, chosen
+// deliberately over a face-on mirror and photographed both ways — see the note
+// above its holder. The fist is nowhere near the shield and should not be.
+//
+// I read that number as a bug and gave all seven shields a grip point at the boss
+// before looking at one of them. They were already right, and the "fix" moved
+// every shield 1.3cm for nothing. A HELD weapon's gap is meaningful; an
+// off-hand's is not.
+//
 // Reported: "some weapons like axes are held the opposite way (blade facing
 // character), staves are held on the bottom for some reason, some wands are held
 // upside down, some bows are held at the bottom too." All true, and all the same

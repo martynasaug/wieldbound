@@ -25797,3 +25797,28 @@ is what it is. So the dome drops instead of the band rising.
 The nasal was the other half: it ran from `BROW_Y + 4` to `BROW_Y + 14`, entirely
 ABOVE the brow — a stub on the forehead pointing at the ceiling. It hangs below
 the rim over the nose now. Suite 57/57.
+
+**Phase 70 M70.334 — an off-hand gap is not a floating weapon, and I chased one.**
+`grips.mjs` reports every shield with the fist about 0.19m clear of the boards,
+which is exactly the shape of the fault that harness exists to catch. So I gave
+all seven shields a grip point at the boss.
+
+Then I looked at one. The shield is strapped to the FOREARM at the character's
+side, boss outward, and it is correct — `gear.ts` places an off-hand that way
+deliberately, chosen over a face-on mirror and photographed both ways, with the
+reasoning already written above its holder. The fist is nowhere near the shield
+and is not supposed to be.
+
+Reverted. Rebuilding from the reverted source produced byte-identical GLBs, which
+is the check that the revert was clean rather than an assertion that it was. The
+finding goes into `grips.mjs` instead: a HELD weapon's gap is meaningful, an
+off-hand's is not, and the note says so at the top where the numbers are read.
+That note is the only thing worth keeping from the trip.
+
+THE PATTERN IS THE POINT. This is the fourth time this phase that a number was
+read as a defect before the thing it described was looked at — the beard standoff,
+the dark garments, the scalp band, and now this. Measuring first is right;
+ACTING on a measurement before looking is what keeps costing time.
+
+Full catalogue reviewed in one sheet afterwards: nineteen styles across armor,
+helm, boots and cape, every one distinct and nothing broken. Suite 57/57.
