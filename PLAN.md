@@ -26235,3 +26235,45 @@ changed, which means tagging worn objects by slot and clearing selectively —
 its own milestone, not a rider on this one.
 
 19 fitted, 0 not. Suite green, client typechecks.
+
+**Phase 70 M70.346 — equipping one item stops rebuilding the whole outfit.**
+Reported: "why does when you equip an item your character refresh, if that makes
+sense." It makes sense, and it was exactly what the code did.
+
+`applyAppearance` bumped ONE counter for the whole character, called
+`clearGear()` with no argument, and rebuilt every worn layer. So changing a ring
+took off the armour, the cape, the boots and the helm, cancelled any build still
+in flight for all of them, and re-fetched the lot — the character flashed bare
+and the pieces came back one promise at a time.
+
+The counter is keyed now: one generation per worn slot, plus `hands` for the two
+held items, which are rebuilt together because they are not worn in a slot. A
+change to one slot bumps only that slot, so pending work elsewhere is left alone
+instead of being cancelled, and `clearGear(keys)` strips only what is actually
+coming off. Every worn and held object carries `userData.gearKey` so it can be
+found again.
+
+Three details that are easy to get wrong and were:
+
+  * THE BATCHED COMPILE IS GUARDED PER PIECE, not per batch. One `warmUp` call
+    can carry pieces from two layers, and a shared guard would throw away the
+    other layer's armour when either changed, leaving that slot bare until
+    something re-dressed it.
+  * THE CAPE'S JOINTS are cleared only when the cape is the thing coming off.
+    Cleared on an unrelated swap, the cape stays on the body and silently stops
+    swinging for the rest of the session.
+  * AN APPEARANCE THAT DIFFERS BY NOTHING now returns early instead of
+    rebuilding. `sameAppearance` reports a difference when a slot key is present
+    in one appearance and absent in the other even though both are empty, which
+    used to trigger a full re-dress for no change at all.
+
+`tools/soak/reequip.mjs` proves it by IDENTITY rather than by photograph — the
+flash lasts a few hundred milliseconds and lands between frames, but a mesh that
+was never taken off keeps its uuid. Dressed in chain, cap, cape and tall boots,
+then swapping only the helm: cape 2/2 kept, armor 10/10 kept, boots 4/4 kept,
+helm rebuilt as it should be.
+
+Unchanged where it matters: `gearchurn` still reports nothing accumulated across
+40 full gear changes, `ghostswap` still finds no stale outline hulls through four
+weapon swaps, `gearcheck` finds no weapon without a drawable mesh. 19 fitted, 0
+not. Suite green, smoke green, client typechecks.

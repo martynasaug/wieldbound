@@ -823,6 +823,20 @@ export class Actor {
   /** Bumped on every appearance change, so a slower earlier load cannot land
    *  after a faster later one and dress the character in the wrong gear. */
   private dressGeneration = 0;
+  /**
+   * The same guard, PER GEAR KEY — one per worn slot, plus `hands`.
+   *
+   * Reported: "why does when you equip an item your character refresh?" Because
+   * a single counter guarded the whole outfit: any change bumped it, which both
+   * cancelled every in-flight build and forced `clearGear` to strip the
+   * character bare, so swapping a ring re-fetched the armour, cape, boots and
+   * helm and the pieces popped back one promise at a time.
+   *
+   * Keyed, a change to one slot cancels only that slot's pending work and
+   * leaves the rest of the outfit on the body untouched. The counter itself
+   * stays global and monotonic so two builds can never share a number.
+   */
+  private gearGen = new Map<string, number>();
   /** The same guard one level up. Swapping from a staff to a sword and back
    *  faster than an FBX parses would otherwise leave whichever rig happened
    *  to finish last on screen, regardless of what is actually held. */
@@ -1247,12 +1261,66 @@ export class Actor {
    */
   setAppearance(appearance: Appearance): void {
     if (this.appearance && sameAppearance(this.appearance, appearance)) return;
+    // KEPT, so `applyAppearance` can rebuild only what differs. Captured before
+    // the assignment for the obvious reason: afterwards there is nothing left to
+    // compare against.
+    const previous = this.appearance;
     this.appearance = appearance;
     if (!this.instance) return; // load() is in flight and will pick it up
-    this.applyAppearance(appearance);
+    this.applyAppearance(appearance, previous);
   }
 
-  private applyAppearance(appearance: Appearance): void {
+  /** Start a build for one gear key, cancelling any still in flight for it. */
+  private nextGen(key: string): number {
+    const gen = ++this.dressGeneration;
+    this.gearGen.set(key, gen);
+    return gen;
+  }
+
+  /** Is this build still the one that key wants? */
+  private current(key: string, gen: number): boolean {
+    return this.gearGen.get(key) === gen;
+  }
+
+  /**
+   * Which gear keys differ between two appearances.
+   *
+   * `null` means "everything", for the first dress after a body build, where
+   * there is nothing on the character to keep.
+   */
+  private changedKeys(next: Appearance, previous: Appearance | null): Set<string> | null {
+    if (!previous) return null;
+    const keys = new Set<string>();
+    if (
+      previous.weaponBaseId !== next.weaponBaseId ||
+      previous.weaponType !== next.weaponType ||
+      previous.weaponRarity !== next.weaponRarity ||
+      previous.offhandBaseId !== next.offhandBaseId ||
+      previous.offhandRarity !== next.offhandRarity
+    ) {
+      keys.add(HANDS_KEY);
+    }
+    for (const slot of new Set<string>([
+      ...Object.keys(previous.layers),
+      ...Object.keys(next.layers),
+    ])) {
+      const a = previous.layers[slot as ItemSlot];
+      const b = next.layers[slot as ItemSlot];
+      if (!a !== !b) {
+        keys.add(slot);
+        continue;
+      }
+      // Palette and rarity included for the reason `sameAppearance` includes
+      // them: two chest pieces of the same shape in different colours must not
+      // compare equal, or the old paint stays on the body.
+      if (a && b && (a.style !== b.style || a.rarity !== b.rarity || a.palette !== b.palette)) {
+        keys.add(slot);
+      }
+    }
+    return keys;
+  }
+
+  private applyAppearance(appearance: Appearance, previous: Appearance | null = null): void {
     this.syncHairVisibility();
     // THE RIG IS NOT REBUILT HERE ANY MORE. It used to be: `CLASS_BODIES` was
     // read from the weapon, and a different answer tore the whole model down
@@ -1270,8 +1338,14 @@ export class Actor {
       this.measureLifts(this.bodyModel);
     }
 
-    const generation = ++this.dressGeneration;
-    this.clearGear();
+    // ONLY WHAT CHANGED. `null` is the first dress after a body build, where
+    // there is nothing on the character worth keeping.
+    const changed = this.changedKeys(appearance, previous);
+    const wants = (key: string) => !changed || changed.has(key);
+    if (changed && changed.size === 0) return;
+
+    const handsGen = wants(HANDS_KEY) ? this.nextGen(HANDS_KEY) : -1;
+    this.clearGear(changed);
     // IMMEDIATELY, not only once new gear lands. Putting a weapon away attaches
     // nothing, so the callbacks below never run and the outgoing weapon's hulls
     // would stay on the bone for the rest of the session. Rebuilding here
@@ -1286,13 +1360,13 @@ export class Actor {
       [appearance.offhandBaseId, appearance.offhandRarity, "left"],
     ];
     for (const [baseId, rarity, hand] of hands) {
-      if (!baseId) continue;
+      if (!baseId || !wants(HANDS_KEY)) continue;
       // A FIST WEAPON IS WORN, ON BOTH HANDS. It arrives as a piece per hand
       // bone rather than one object in a socket, so it rides the same rest-frame
       // holders armour does. See `buildHandPieces`.
       if (hand === "right") {
         void buildHandPieces(baseId, rarity ?? "honed").then(async (pieces) => {
-          if (!pieces.length || generation !== this.dressGeneration) return;
+          if (!pieces.length || !this.current(HANDS_KEY, handsGen)) return;
           for (const piece of pieces) {
             const bone = this.bones.get(piece.bone);
             // Rigidly, off the skeleton's own bind data rather than through a
@@ -1307,10 +1381,11 @@ export class Actor {
               continue;
             }
             await this.options.warmUp?.(piece.object);
-            if (generation !== this.dressGeneration) return; // swapped mid-compile
+            if (!this.current(HANDS_KEY, handsGen)) return; // swapped mid-compile
             piece.object.matrixAutoUpdate = false;
             piece.object.matrix.copy(onBone);
             bone.add(piece.object);
+            piece.object.userData.gearKey = HANDS_KEY;
             this.held.push(piece.object);
             this.trackMaterials(piece.object);
           }
@@ -1319,12 +1394,12 @@ export class Actor {
         });
       }
       void buildHeldItem(baseId, rarity ?? "honed", hand).then(async (held) => {
-        if (!held || generation !== this.dressGeneration) return;
+        if (!held || !this.current(HANDS_KEY, handsGen)) return;
         // See ActorOptions.warmUp — compiled before it ever touches the
         // scene graph, so it never draws on the frame that would have to
         // compile it inline.
         await this.options.warmUp?.(held.object);
-        if (generation !== this.dressGeneration) return; // swapped again mid-compile
+        if (!this.current(HANDS_KEY, handsGen)) return; // swapped again mid-compile
         const socket = this.bones.get(held.bone) ?? (hand === "right" ? this.weaponSocket : null);
         if (!socket) return;
         socket.add(held.object);
@@ -1334,6 +1409,7 @@ export class Actor {
           this.leftFist ??= fistCentre(this.instance.object, held.bone);
           if (this.leftFist) seatInFist(held.object, this.leftFist);
         }
+        held.object.userData.gearKey = HANDS_KEY;
         this.held.push(held.object);
         this.trackMaterials(held.object);
         // The old weapon's ghost is still on this bone until this runs, and the
@@ -1353,9 +1429,13 @@ export class Actor {
     // models) but PARENTED only after warming — same reasoning as the held
     // item above, just batched into one compile instead of one per piece
     // since a whole outfit can change in the same call.
-    const built: { object: THREE.Object3D; holder: THREE.Object3D }[] = [];
+    // The slot rides along so the batch below can be guarded per slot: one
+    // compile can carry pieces from two different layers, and a later change to
+    // one of them must not throw the other away.
+    const built: { object: THREE.Object3D; holder: THREE.Object3D; slot: ItemSlot; gen: number }[] = [];
     for (const [slot, layer] of layers) {
-      if (!layer) continue;
+      if (!layer || !wants(slot)) continue;
+      const slotGen = this.nextGen(slot);
       // A GARMENT IS THE PACK'S OWN OUTFIT, WORN. Checked first, because it is a
       // different kind of thing from everything below: not rigid pieces bolted
       // one per bone, but a single SKINNED mesh sharing this body's skeleton —
@@ -1401,6 +1481,7 @@ export class Actor {
           worn.castShadow = true;
           worn.receiveShadow = true;
           host.parent?.add(worn);
+          worn.userData.gearKey = slot;
           this.worn.push(worn);
           this.trackMaterials(worn);
 
@@ -1432,6 +1513,7 @@ export class Actor {
             part.castShadow = true;
             part.receiveShadow = true;
             bone.add(part);
+            part.userData.gearKey = slot;
             this.worn.push(part);
             this.trackMaterials(part);
           }
@@ -1447,7 +1529,7 @@ export class Actor {
       // seated with the skeleton's bind transform. See `buildArmourModel`.
       if (hasArmourModel(slot, layer.style)) {
         void buildArmourModel(slot, layer.style, layer.rarity, layer.palette).then(async (pieces) => {
-          if (!pieces.length || generation !== this.dressGeneration) return;
+          if (!pieces.length || !this.current(slot, slotGen)) return;
           // A CAPE HANGS, IT IS NOT BOLTED ON. Its links arrive as `Cape0/1/2`,
           // each carrying the point it hinges at, and they are threaded into a
           // chain: link 0 from the torso, link 1 from link 0. `swingCapes`
@@ -1456,7 +1538,7 @@ export class Actor {
             .filter((p) => p.link !== undefined)
             .sort((a, b) => (a.link ?? 0) - (b.link ?? 0));
           if (links.length) {
-            this.hangCape(links, generation);
+            this.hangCape(links, slot, slotGen);
           }
           for (const piece of pieces) {
             if (piece.link !== undefined) continue;
@@ -1467,10 +1549,11 @@ export class Actor {
               continue;
             }
             await this.options.warmUp?.(piece.object);
-            if (generation !== this.dressGeneration) return; // swapped mid-compile
+            if (!this.current(slot, slotGen)) return; // swapped mid-compile
             piece.object.matrixAutoUpdate = false;
             piece.object.matrix.copy(onBone);
             bone.add(piece.object);
+            piece.object.userData.gearKey = slot;
             this.worn.push(piece.object);
             this.trackMaterials(piece.object);
           }
@@ -1489,7 +1572,7 @@ export class Actor {
           ? (this.bones.get(piece.bone) ?? null)
           : this.holderFor(piece.bone);
         if (!holder) continue;
-        built.push({ object: piece.object, holder });
+        built.push({ object: piece.object, holder, slot, gen: slotGen });
       }
     }
     if (built.length === 0) return;
@@ -1503,9 +1586,14 @@ export class Actor {
         await this.options.warmUp(bundle);
         while (bundle.children.length > 0) bundle.remove(bundle.children[0]);
       }
-      if (generation !== this.dressGeneration) return; // swapped again mid-compile
+      // PER PIECE, NOT PER BATCH. One compile can carry pieces from two layers,
+      // and a change to one of them while this was warming must throw away only
+      // that one — a shared guard here would drop the other layer's armour on
+      // the floor and leave that slot bare until something else re-dressed it.
       for (const p of built) {
+        if (!this.current(p.slot, p.gen)) continue; // swapped again mid-compile
         p.holder.add(p.object);
+        p.object.userData.gearKey = p.slot;
         this.worn.push(p.object);
         this.trackMaterials(p.object);
       }
@@ -1585,7 +1673,7 @@ export class Actor {
    * hinge belongs. After that, rotating a joint swings everything below it —
    * which is what `swingCapes` does every frame.
    */
-  private hangCape(links: GearAttachment[], generation: number): void {
+  private hangCape(links: GearAttachment[], slot: ItemSlot, generation: number): void {
     const bone = this.bones.get(links[0].bone);
     const onBone = this.instance ? boneAttachMatrix(this.instance.object, links[0].bone) : null;
     if (!bone || !onBone) return;
@@ -1596,13 +1684,14 @@ export class Actor {
     root.matrixAutoUpdate = false;
     root.matrix.copy(onBone);
     bone.add(root);
+    root.userData.gearKey = slot;
     this.worn.push(root);
 
     let parent: THREE.Object3D = root;
     let parentPivot = new THREE.Vector3();
     this.capeLinks = [];
     for (const link of links) {
-      if (generation !== this.dressGeneration) return;
+      if (!this.current(slot, generation)) return;
       const pivot = new THREE.Vector3(...(link.pivot ?? [0, 0, 0]));
       const joint = new THREE.Group();
       joint.position.copy(pivot).sub(parentPivot);
@@ -2505,14 +2594,39 @@ export class Actor {
     this.emissiveApplied = -1;
   }
 
-  private clearGear(): void {
+  /**
+   * Strip gear off the character.
+   *
+   * `keys` names which gear to take off — worn slots, plus `hands`. Undefined
+   * means all of it, which is what a body rebuild wants.
+   *
+   * SELECTIVE, BECAUSE STRIPPING EVERYTHING IS WHAT THE "REFRESH" WAS. This
+   * used to take the whole outfit off on every appearance change, so equipping a
+   * ring removed the armour, cape, boots and helm and rebuilt them
+   * asynchronously — visible as the character flashing bare and the pieces
+   * popping back one at a time.
+   */
+  private clearGear(keys?: ReadonlySet<string> | null): void {
+    const dropping = (object: THREE.Object3D) =>
+      !keys || keys.has((object.userData?.gearKey as string) ?? "");
     // The cape's joints go with the gear they belong to — they are inside
     // `worn`, and keeping the array would leave the next frame swinging objects
-    // that are no longer in the scene.
-    this.capeLinks = [];
-    this.capeSwing = 0;
+    // that are no longer in the scene. Only when the cape is actually coming
+    // off: cleared on an unrelated swap, the cape stays on the body but stops
+    // swinging for the rest of the session.
+    if (!keys || keys.has("cape")) {
+      this.capeLinks = [];
+      this.capeSwing = 0;
+    }
+    const kept: { held: THREE.Object3D[]; worn: THREE.Object3D[] } = { held: [], worn: [] };
+    for (const [list, into] of [
+      [this.held, kept.held],
+      [this.worn, kept.worn],
+    ] as const) {
+      for (const object of list) if (object && !dropping(object)) into.push(object);
+    }
     for (const object of [...this.held, ...this.worn]) {
-      if (!object) continue;
+      if (!object || !dropping(object)) continue;
       const mats = new Set<THREE.Material>();
       // MATERIALS ONLY, AND DELIBERATELY SO.
       //
@@ -2560,8 +2674,8 @@ export class Actor {
       // The same for the silhouette ghosts, which are now children of gear too.
       this.silhouettes = this.silhouettes.filter((g) => g.parent !== null);
     }
-    this.held = [];
-    this.worn = [];
+    this.held = kept.held;
+    this.worn = kept.worn;
   }
 
   /** Brief emissive pop when a hit lands. Gold for crits, white otherwise. */
@@ -3403,6 +3517,15 @@ export class Actor {
     for (const skeleton of skeletons) skeleton.dispose();
   }
 }
+
+/**
+ * The gear key for both hands.
+ *
+ * Weapons and offhands are not worn in an `ItemSlot` the way armour is — they
+ * hang off hand bones and are rebuilt together — so they share one key, which
+ * cannot collide with a slot name.
+ */
+const HANDS_KEY = "hands";
 
 /** Cheap structural compare, so an ITEMS_UPDATE that only changed a ring does
  *  not rebuild a rig. */
