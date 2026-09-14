@@ -832,6 +832,30 @@ SKULL_Z = -7.0
 BROW_Y = 264.0
 CROWN_Y = 296.0
 
+# HOW FAR OUTSIDE THE SKULL A HELM HAS TO SIT, and the reason every head piece
+# kept leaking skin.
+#
+# `head_half_x` is 33. The skullcap's lower arc was built at `wide * 0.9` with
+# `wide` 36 — THIRTY-TWO POINT FOUR, narrower than the skull it is worn over, so
+# the temples came through the sides of it on every style built on this dome.
+# The `full` helm ran 29 at the jaw and 34 at the widest, one unit of clearance
+# on a mesh with faceted normals, and showed two bare slivers down its edges.
+#
+# Reported three times, each time as "parts of the head showing", and each time
+# answered by moving the piece or changing its height — because a gap on the
+# SIDE of a head looks, in a front view, exactly like a piece sitting too high.
+# It was never placement. The pieces were simply too small around.
+#
+# So the radius is not a taste number any more. Nothing worn on the head goes
+# below `HEAD_CLEAR` outside the skull's own half-width, and `over_skull` is
+# what enforces it.
+HEAD_CLEAR = 3.5
+
+
+def over_skull(r):
+    """A head-piece radius, never allowed inside the skull it is worn over."""
+    return max(r, BODY["head_half_x"] + HEAD_CLEAR)
+
 
 def skullcap(a, mat, y0=BROW_Y - 26.0, y1=CROWN_Y, wide=36.0, arc=0.70):
     """
@@ -854,12 +878,26 @@ def skullcap(a, mat, y0=BROW_Y - 26.0, y1=CROWN_Y, wide=36.0, arc=0.70):
     # face is. The first attempt used one arc for the whole height and traded the
     # forehead away for the ears: coverage went 37% to 36%, which is the
     # measurement telling you a change was lateral.
-    a.shell(BONE_HEAD, [(wide * 0.94, BROW_Y), (wide, BROW_Y + 8.0), (wide * 0.92, y1 - 10.0), (wide * 0.58, y1)],
+    # EVERY RADIUS THROUGH `over_skull`, except the one at the very crown. The
+    # proportions below are unchanged — they were never the problem — but three
+    # of the four were quietly INSIDE the skull at `wide` 36, which is why this
+    # dome leaked skin down both temples on every style built from it.
+    #
+    # The crown point keeps its 0.58 taper untouched: at `y1` the piece is
+    # closing over the top of the head, where the skull has already drawn in, and
+    # forcing it out to full width there would make a cylinder with a lid.
+    a.shell(BONE_HEAD, [(over_skull(wide * 0.94), BROW_Y), (over_skull(wide), BROW_Y + 8.0),
+                        (over_skull(wide * 0.92), y1 - 10.0), (wide * 0.58, y1)],
             mat, squash=(1.0, 1.16), z=SKULL_Z)
     # The cheeks and nape, hanging from the rim down past the ears. Turned to the
     # BACK: in this frame the lathe's angle runs from +x through -z, so pi/2 faces
     # away from the face and the gap that is left is the one you look out of.
-    a.shell(BONE_HEAD, [(wide * 0.9, y0), (wide * 0.96, y0 + 12.0), (wide * 0.94, BROW_Y)],
+    #
+    # THIS IS THE ARC THAT WAS SHOWING THE EARS. `wide * 0.9` = 32.4 against a
+    # skull half-width of 33: the cheek piece passed THROUGH the head it was
+    # meant to cover, so the temples stood proud of it down both sides.
+    a.shell(BONE_HEAD, [(over_skull(wide * 0.9), y0), (over_skull(wide * 0.96), y0 + 12.0),
+                        (over_skull(wide * 0.94), BROW_Y)],
             mat, squash=(1.0, 1.16), z=SKULL_Z, arc=arc, turn=math.pi / 2, cap=False)
 
 
@@ -901,13 +939,32 @@ def full_helm(a):
     # head occupies, deep enough at 1.20 squash to clear `head_front_z` in front
     # and `head_back_z` = -48 behind, and starting below `head_y0` = 206 so the
     # jaw is inside it.
-    # AND WIDTH WAS THE WRONG AXIS. The first correction widened every station to
-    # 39 and the helm came out broader than the character's shoulders — a bucket,
-    # which is the exact fault this style was rescued from in the first place. The
-    # chin was coming through the FRONT, not the sides. So the depth carries it:
-    # at 1.28 squash the shell's face sits at z 36.5 over a 33 face, while the
-    # silhouette stays the width of a head.
-    a.shell(BONE_HEAD, [(29.0, 210.0), (34.0, 230.0), (36.0, BROW_Y), (34.0, 284.0), (23.0, 297.0)],
+    # AND WIDTH WAS THE WRONG AXIS — for the CHIN, which is what was being fixed
+    # at the time. The chin came through the front, the depth carried it, and at
+    # 1.28 squash the shell's face sits at z 36.5 over a 33 face. That still
+    # holds and the squash stays.
+    #
+    # BUT WIDTH WAS A SEPARATE, REAL FAULT, and calling it the wrong axis once
+    # buried it for three more rounds of "parts of the head showing". The first
+    # correction widened EVERY station to 39, jaw included, and produced the
+    # bucket; the retreat from the bucket put every station back, including the
+    # ones that were genuinely too narrow.
+    #
+    # `tools/art/skull_profile.py` settles it by measuring the skull at every
+    # height instead of carrying one number for it:
+    #
+    #     y 213  half 25.4      y 258  half 33.5
+    #     y 228  half 29.7      y 273  half 33.4
+    #     y 243  half 31.6      y 288  half 31.6
+    #
+    # The head is narrow at the jaw and stays near its widest from the brow all
+    # the way to the crown. So 29 at y 210 was never the problem — it has four
+    # units of clearance over a 25.4 jaw — and 34 at y 284 had SIX TENTHS over a
+    # 33.4 skull, which is how two bare slivers came down the sides of a closed
+    # great helm. The stations below clear the measured profile by `HEAD_CLEAR`
+    # at every height, and the jaw keeps its taper, so the silhouette is still a
+    # head and not a bucket.
+    a.shell(BONE_HEAD, [(29.0, 210.0), (35.0, 230.0), (37.5, BROW_Y), (37.0, 284.0), (26.0, 297.0)],
             "Steel", squash=(1.0, 1.28), z=SKULL_Z)
     # The sight, at the eyes, where it belongs — this is the one band that should
     # be there — and a breath of slots under it.
@@ -1200,10 +1257,22 @@ def mantle_back(a):
     # folds to shape it; now that the cross-section curls round the shoulders
     # there is a form underneath them, so the cloth can carry four without
     # reading as ribbed plastic.
+    # AND IT HAS TO REACH SOMETHING. Reported on sight: "why is the left one so
+    # short." It ended at `chest_y0 - 2` = 153, the BOTTOM OF THE RIBS, while a
+    # cape falls to 85 and a cloak to 53. Fifty-three units of drop against the
+    # cape's hundred and twenty is not a short cape, it is a collar frill. Worse,
+    # it flared 24 to 44 across that stub, so the whole piece was taper — a bell
+    # hanging off the neck with no straight fall anywhere in it.
+    #
+    # A mantle is elbow-length, not rib-length. The hem goes to the hip at
+    # `waist_y0 - 8`, which is eighty-nine units of drop — three quarters of a
+    # cape, so it still reads as the SHORT one beside them — and the same flare
+    # now happens over enough height to look like cloth opening rather than a
+    # cone widening.
     a.hanging([(24.0, BODY["chest_y1"] + 5.0, -26.0),
-               (30.0, BODY["chest_y1"] - 10.0, -29.0),
-               (38.0, BODY["chest_y0"] + 14.0, -33.0),
-               (44.0, BODY["chest_y0"] - 2.0, -36.0)], CLOTH, thickness=5.0, segments=2,
+               (30.0, BODY["chest_y0"] + 16.0, -30.0),
+               (36.0, BODY["waist_y1"] - 8.0, -35.0),
+               (42.0, BODY["waist_y0"] - 8.0, -39.0)], CLOTH, thickness=5.0, segments=2,
               pleats=4, fold=0.13)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
@@ -1216,12 +1285,25 @@ def tabard_back(a):
     """A tabard: one panel down the front and one down the back, belted at the waist."""
     # The BACK panel hangs and swings; the front one is belted flat to the body,
     # so it stays a drape. A tabard that flapped at the chest would be wrong.
-    a.hanging([(15.0, BODY["chest_y1"] + 2.0, -24.0),
-               (16.0, BODY["chest_y0"] + 6.0, -28.0),
-               (17.0, BODY["waist_y0"] - 22.0, -30.0)], CLOTH, segments=2)
-    a.drape(BONE_CHEST, [(15.0, BODY["chest_y1"] + 2.0, BODY["chest_front_z"] - 1.0),
-                         (16.0, BODY["chest_y0"] + 6.0, BODY["chest_front_z"] + 2.0),
-                         (17.0, BODY["waist_y0"] - 22.0, BODY["chest_front_z"] + 2.0)], CLOTH)
+    # WIDE ENOUGH TO BE A PANEL. Reported on sight: "why is the right one so
+    # thin." It was built at half-width 15 to 17 while every other cape in the
+    # slot runs 30 to 52 — a strip thirty units across on a chest thirty-four
+    # wide, which is a stole, not a tabard.
+    #
+    # The front-and-back half of the same complaint is the one thing that was
+    # already right, and it stays: a tabard IS a panel down each side of the
+    # body. It only looked wrong because a strip that narrow reads as a sash
+    # slung over the shoulder, and a sash has no business being on both sides.
+    #
+    # Half-width 24 to 26 puts it a few units proud of the ribs on each side,
+    # which is how a tabard sits over armour, and the hem drops to
+    # `waist_y0 - 32` so the panel has length to match its new width.
+    a.hanging([(24.0, BODY["chest_y1"] + 2.0, -24.0),
+               (25.0, BODY["chest_y0"] + 6.0, -28.0),
+               (26.0, BODY["waist_y0"] - 32.0, -30.0)], CLOTH, segments=2)
+    a.drape(BONE_CHEST, [(24.0, BODY["chest_y1"] + 2.0, BODY["chest_front_z"] - 1.0),
+                         (25.0, BODY["chest_y0"] + 6.0, BODY["chest_front_z"] + 2.0),
+                         (26.0, BODY["waist_y0"] - 32.0, BODY["chest_front_z"] + 2.0)], CLOTH)
     a.band(BONE_WAIST, BODY["waist_y1"] - 2.0, 23.0, LEATHER, tube=4.0, squash=(1.0, 1.0), z=-6.0)
     collar(a, "Gold", r=20.0, tube=2.5)
 

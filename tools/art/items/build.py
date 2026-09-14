@@ -22,6 +22,11 @@ import gloves  # noqa: E402
 import weapons  # noqa: E402
 
 
+# Styles whose GLB is produced by a harvest script, not by a recipe here. See
+# the note at the export below.
+HARVESTED = {"hood": "tools/art/harvest_hood.py"}
+
+
 def parse():
     args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     sheet, export = None, None
@@ -180,7 +185,20 @@ def main():
         name, pieces = armour.build(style)
         tris = sum(sum(len(p.vertices) - 2 for p in obj.data.polygons) for _, obj in pieces)
         print(f"ITEM {name}: {tris} triangles over {len(pieces)} pieces {[n for n, _ in pieces]}")
-        if export_dir:
+        if export_dir and style in HARVESTED:
+            # NOT OURS TO WRITE. `hood` ships as art HARVESTED from the Ranger by
+            # `tools/art/harvest_hood.py`, because a lathe about a vertical axis
+            # IS a helmet and two attempts at modelling one produced exactly
+            # that: "it looks nothing like a hood, the design itself is
+            # completely bad."
+            #
+            # The recipe stays in `armour.RECIPES` — `tools/test/gearstyles.mjs`
+            # asserts every style an item can ask for has a builder, and the
+            # sheet still wants to draw one — but a plain `build.py -- helm`
+            # would otherwise overwrite the harvested GLB with the modelled dome
+            # and silently undo the fix. It did exactly that once.
+            print(f"SKIPPED {style}: harvested art, run {HARVESTED[style]}")
+        elif export_dir:
             os.makedirs(export_dir, exist_ok=True)
             export([obj for _, obj in pieces],
                    os.path.join(export_dir, f"{armour.SLOT_OF[style]}_{style}.glb"))

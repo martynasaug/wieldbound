@@ -26077,3 +26077,57 @@ tall. Suite green.
 
 STILL OUTSTANDING, unchanged: `DONOR_SCALE` in `hair.ts` is the last per-donor
 correction still applied at runtime, and belongs at harvest time.
+
+**Phase 70 M70.343 — the head is not a cylinder, and one number could not describe it.**
+Reported: "there are still spots of character's skin showing."
+
+Two hypotheses died before the right one. The first was a neck hole — every
+garment drops `Neck`-dominated vertices, so surely the collar was cut away.
+Measured: the cut removes ONE TO THREE vertices per donor. The second was the
+throat, from a catalogue crop that appeared to show bare chest above every
+collar. Photographed at a close held camera with the look pinned
+(`tools/soak/skinshow.mjs`): the throat is clean under every chest style, and the
+brown wedge in that crop was the CHIN, at the sheet's downward angle. Two
+diagnoses, no code changed, because the instrument was asked first.
+
+The skin was on the head, and the fault was WIDTH. `head_half_x` is 33; the
+skullcap's cheek arc was built at `wide * 0.9` = 32.4 — INSIDE the skull it is
+worn over — so the temples came through the sides of every style built on that
+dome. `full` ran 34 at y 284 against a 33.4 skull: six tenths of clearance, and
+two bare slivers down the edges of a closed great helm.
+
+This had been reported three times and answered three times as placement,
+because in a front view a gap at the SIDE of a head looks exactly like a piece
+sitting too high. Worse, the file carried a note saying width was "the wrong
+axis" — true of the CHIN, which was what that note was fixing, and it buried the
+real width fault for three more rounds.
+
+`tools/art/skull_profile.py` ends the guessing by measuring the skull at every
+height instead of carrying one number for it: half-width 25.4 at the jaw, 33.5 at
+the temples, still 31.6 at the crown. That immediately settles both past
+mistakes. 29 at the jaw was never too narrow — it has four units over a 25.4 jaw,
+which is why forcing every station to 39 produced the bucket. And the stations
+from the brow up were all within a unit or two of the skull, which is where the
+skin actually was. Six bands, not ten: at ten, one band caught a single vertex
+and reported a half-width of 0.0, so thin bands are flagged rather than believed.
+
+`over_skull` now floors every head-piece radius at `head_half_x + HEAD_CLEAR`,
+and `full`'s stations are cut to the measured profile with the jaw taper kept.
+Coverage: cap 44% to 49%, full 75% to 85%, horned 41% to 56%.
+
+AND A LANDMINE FOUND WHILE FIXING IT. `build.py -- helm` rebuilt `helm_hood.glb`
+from the modelled recipe, silently overwriting the harvested Ranger hood — the
+whole fix for "it looks nothing like a hood". The recipe stays, because
+`gearstyles.mjs` requires every style to have a builder, but `build.py` now skips
+exporting harvested styles and says so.
+
+Capes, reported in the same breath: "why is the left one so short and the right
+one so thin, and why does it go both on the back and the front?" Measured against
+the other capes, both complaints were arithmetic. The mantle's hem was at
+`chest_y0 - 2` = 153, the bottom of the RIBS, against a cape at 85 — a collar
+frill, not a short cape; it now falls to the hip. The tabard was half-width 15 to
+17 where every other cape runs 30 to 52 — a stole; it is 24 to 26 now. The
+front-and-back was the one thing already right: that is what a tabard is, and it
+only read as wrong because a strip that narrow looks like a sash.
+
+19 fitted, 0 not. Suite green. Rechecked on the sheets and in game.
