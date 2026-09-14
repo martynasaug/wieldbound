@@ -514,6 +514,46 @@ def pauldrons(a, mat, span=23.0, drop=15.0, lip=True):
 PROUD = 5.0
 
 
+# HOW WIDE THE TORSO ACTUALLY IS, and the reason three chest styles were a bib.
+#
+# Reported: "that empty space between the chest armor and armguards — there's
+# literally half of the body naked." Measured in the running game by
+# `tools/soak/coverwidth.mjs`, against the torso the body actually draws:
+#
+#     torso       width 0.318
+#     chain       width 0.279   88% of it
+#     scale       width 0.296   93%
+#     brigandine  width 0.265   83%
+#
+# Every modelled chest piece was NARROWER THAN THE CHEST, so the body's own
+# tunic showed down both sides between the breastplate and the sleeves, and the
+# armour read as a strip laid on a torso rather than as a chest piece.
+#
+# `BODY["chest_half_x"]` says 17 and is never read by anything — every shell in
+# this file carries its own literal — so the table being wrong cost nothing and
+# hid everything. Working back from the measurement, a shell cut at radius 20
+# spans 88% of the torso, so the torso's true half-width in these units is about
+# 23, not 17.
+#
+# This is the same fault as `over_skull`, one body part down: a single number
+# for a whole region, taken from the narrowest place it is true.
+CHEST_HALF_X = 23.0
+CHEST_CLEAR = 5.0
+
+
+def over_chest(r):
+    """A chest radius, never allowed inside the torso it is worn over."""
+    return max(r, CHEST_HALF_X + CHEST_CLEAR)
+
+
+# Where the surface of a widened chest shell actually is, so the rivets, scales
+# and bands that decorate it move out with it. Left at their old radii they sit
+# INSIDE the shell and vanish — which is the same fault one layer in, and it is
+# how the first pass at this produced a wider breastplate with no rivets on it.
+CHEST_SKIN = over_chest(0.0)
+CHEST_SKIN_Z = -3.0 + CHEST_SKIN * 1.15
+
+
 def plate_chest(a):
     """Plate: a shaped cuirass with a keel down the breast, a gorget, and tassets."""
     # The ribs are 17 wide and 23 deep, centred a little behind the middle: a
@@ -542,29 +582,29 @@ def plate_chest(a):
 
 def scale_chest(a):
     """Scale: overlapping rows of small plates, each row a little wider than the last."""
-    a.shell(BONE_CHEST, [(17.0 + PROUD * 0.5, BODY["chest_y0"] - 3.0),
-                         (20.0 + PROUD * 0.8, BODY["chest_y1"] - 8.0),
-                         (17.0 + PROUD * 0.4, BODY["chest_y1"] + 3.0)],
+    a.shell(BONE_CHEST, [(over_chest(17.0 + PROUD * 0.5), BODY["chest_y0"] - 3.0),
+                         (over_chest(20.0 + PROUD * 0.8), BODY["chest_y1"] - 8.0),
+                         (over_chest(17.0 + PROUD * 0.4), BODY["chest_y1"] + 3.0)],
             LEATHER, squash=(1.0, 1.15), z=-3.0)
     rows = 5
     for i in range(rows):
         y = BODY["chest_y0"] + 2.0 + i * (BODY["chest_y1"] - BODY["chest_y0"] - 6.0) / rows
         for k in range(9):
             angle = -math.pi * 0.62 + k * (math.pi * 1.24 / 8)
-            x = math.sin(angle) * 19.0
-            z = -3.0 + math.cos(angle) * 22.0
+            x = math.sin(angle) * CHEST_SKIN
+            z = -3.0 + math.cos(angle) * (CHEST_SKIN * 1.15)
             # The scales in the ACCENT, not in the same metal as the coat under
             # them: drawn in one colour, a field of scales measures and reads as
             # one flat surface.
             # Bigger scales in the accent: a field of small studs the same value
             # as the coat under them measured as one flat surface at 0.229.
             a.stud(BONE_CHEST, (x, y, z), (math.sin(angle), -0.35, math.cos(angle)), 6.0, 6.5, BRIGHT, sides=4)
-    a.band(BONE_CHEST, BODY["chest_y0"] - 1.0, 19.0, "DarkSteel", tube=2.5, squash=(1.0, 1.15), z=-3.0)
+    a.band(BONE_CHEST, BODY["chest_y0"] - 1.0, CHEST_SKIN, "DarkSteel", tube=2.5, squash=(1.0, 1.15), z=-3.0)
     # A BAND OF THE BRIGHT ACCENT ACROSS THE CHEST. Bronze scale measured 0.206
     # against a body at 0.186 — the same "just above the skin" value that reads
     # as merged — and a field of studs alone did not move it. The coat under the
     # scales carries the accent over real area instead.
-    a.shell(BONE_CHEST, [(18.0 + PROUD * 0.5, BODY["chest_y0"] + 6.0),
+    a.shell(BONE_CHEST, [(over_chest(18.0 + PROUD * 0.5), BODY["chest_y0"] + 6.0),
                          (20.0 + PROUD * 0.8, BODY["chest_y1"] - 12.0)],
             BRIGHT, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"]), (25.0, BODY["waist_y1"] - 28.0)],
@@ -578,21 +618,21 @@ def scale_chest(a):
 
 def brigandine_chest(a):
     """Brigandine: quilted cloth over plates, held by rows of rivets and two straps."""
-    a.shell(BONE_CHEST, [(18.0 + PROUD * 0.4, BODY["chest_y0"] - 4.0),
-                         (20.0 + PROUD * 0.9, BODY["chest_y0"] + 14.0),
-                         (20.0 + PROUD * 0.9, BODY["chest_y1"] - 10.0),
-                         (17.0 + PROUD * 0.4, BODY["chest_y1"] + 4.0)],
+    a.shell(BONE_CHEST, [(over_chest(18.0 + PROUD * 0.4), BODY["chest_y0"] - 4.0),
+                         (over_chest(20.0 + PROUD * 0.9), BODY["chest_y0"] + 14.0),
+                         (over_chest(20.0 + PROUD * 0.9), BODY["chest_y1"] - 10.0),
+                         (over_chest(17.0 + PROUD * 0.4), BODY["chest_y1"] + 4.0)],
             "Red", squash=(1.0, 1.15), z=-3.0)
     for y in (BODY["chest_y0"] + 6.0, BODY["chest_y0"] + 22.0, BODY["chest_y1"] - 9.0):
         for k in range(7):
             angle = -math.pi * 0.5 + k * (math.pi / 6)
-            a.stud(BONE_CHEST, (math.sin(angle) * 19.0, y, -3.0 + math.cos(angle) * 22.0),
+            a.stud(BONE_CHEST, (math.sin(angle) * CHEST_SKIN, y, -3.0 + math.cos(angle) * (CHEST_SKIN * 1.15)),
                    (math.sin(angle), 0.0, math.cos(angle)), 2.0, 1.8, "DarkSteel", sides=5)
     for side in (1, -1):
         a.plate(BONE_CHEST, [(side * 5.0, BODY["chest_y1"] + 1.0), (side * 14.0, BODY["chest_y1"] - 3.0),
                              (side * 11.0, BODY["chest_y0"] + 4.0), (side * 3.0, BODY["chest_y0"] + 6.0)],
-                LEATHER, z=BODY["chest_front_z"] + 1.0, thickness=3.5)
-    a.band(BONE_CHEST, BODY["chest_y0"] - 2.0, 19.0, LEATHER_TRIM, tube=3.5, squash=(1.0, 1.15), z=-3.0)
+                LEATHER, z=CHEST_SKIN_Z - 1.0, thickness=3.5)
+    a.band(BONE_CHEST, BODY["chest_y0"] - 2.0, CHEST_SKIN, LEATHER_TRIM, tube=3.5, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"]), (23.0, BODY["waist_y1"] - 20.0)],
             "Red", squash=(1.0, 1.0), z=-6.0)
     pauldrons(a, LEATHER_TRIM, span=12.0, drop=8.0, lip=False)
@@ -600,10 +640,10 @@ def brigandine_chest(a):
 
 def chain_chest(a):
     """Mail: a shirt that hangs, a collar that stands, and a skirt to the thigh."""
-    a.shell(BONE_CHEST, [(17.0 + PROUD * 0.4, BODY["chest_y0"] - 6.0),
-                         (20.0 + PROUD * 0.8, BODY["chest_y0"] + 12.0),
-                         (20.0 + PROUD * 0.8, BODY["chest_y1"] - 10.0),
-                         (16.0 + PROUD * 0.4, BODY["chest_y1"] + 6.0)],
+    a.shell(BONE_CHEST, [(over_chest(17.0 + PROUD * 0.4), BODY["chest_y0"] - 6.0),
+                         (over_chest(20.0 + PROUD * 0.8), BODY["chest_y0"] + 12.0),
+                         (over_chest(20.0 + PROUD * 0.8), BODY["chest_y1"] - 10.0),
+                         (over_chest(16.0 + PROUD * 0.4), BODY["chest_y1"] + 6.0)],
             GARMENT, squash=(1.0, 1.15), z=-3.0)
     # A standing collar, the piece that separates mail from a tabard at a glance.
     a.shell(BONE_CHEST, [(13.0, BODY["chest_y1"] + 3.0), (14.0, BODY["chest_y1"] + 12.0)],
@@ -613,7 +653,7 @@ def chain_chest(a):
     # Wide bands, not piping: iron's mail sits at 0.21 against a body at 0.27,
     # and a hairline of brighter metal does not change that.
     for y in (BODY["chest_y0"] + 4.0, BODY["chest_y0"] + 17.0, BODY["chest_y0"] + 30.0):
-        a.band(BONE_CHEST, y, 20.0 + PROUD * 0.8, BRIGHT, tube=4.5, squash=(1.0, 1.15), z=-3.0)
+        a.band(BONE_CHEST, y, over_chest(20.0 + PROUD * 0.8), BRIGHT, tube=4.5, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"] + 2.0), (26.0, BODY["waist_y1"] - 32.0)],
             GARMENT, squash=(1.0, 1.0), z=-6.0)
     a.band(BONE_WAIST, BODY["waist_y1"] - 32.0, 26.0, "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0)

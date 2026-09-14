@@ -26335,3 +26335,50 @@ side every cape is a rigid plane standing off the back rather than cloth
 following the body. Next.
 
 19 fitted, 0 not. Suite green, client typechecks.
+
+**Phase 70 M70.348 — the chest pieces were narrower than the chest.**
+Reported, after I had asked the wrong question twice: "omg I'm talking about
+that empty space between the chest armor and armguards, there's literally half
+of the body naked." And, fairly: "how are you not seeing these things yourself?"
+
+Because I was not looking. Every sheet before `wearlook.mjs` was front-and-back
+only, on a character whose hairstyle did not exist, at a size where a bare strip
+at the armpit is four pixels. The numbers said "fits" and I believed them.
+
+`tools/soak/coverwidth.mjs` asks the running game how wide each chest piece
+draws against the torso the body actually draws:
+
+    torso       width 0.318
+    chain       width 0.279    88% of it
+    scale       width 0.296    93%
+    brigandine  width 0.265    83%
+
+Every modelled chest piece was NARROWER THAN THE CHEST. The body's own tunic
+showed down both sides between the breastplate and the sleeves, and the armour
+read as a strip laid on a torso rather than as a chest piece.
+
+`BODY["chest_half_x"]` says 17, and grep says NOTHING IN THE PROJECT READS IT —
+every shell in the file carries its own literal. So the table being wrong cost
+nothing and hid everything. Working back from the measurement, a shell cut at
+radius 20 spans 88% of the torso, so the real half-width in these units is about
+23. `over_chest` floors every chest radius at 28, exactly as `over_skull` floors
+every head radius, and `CHEST_SKIN` carries the rivets, scales and bands out to
+the new surface with it — left behind they sit inside the shell and vanish,
+which is the same fault one layer in.
+
+    chain 88% -> 101%    scale 93% -> 120%    brigandine 83% -> 107%
+
+`tools/art/body_profile.py` is the general form of `skull_profile.py`: the body's
+real half-width, front and back, band by band, in the table's own units. It has
+to filter to SPINE-OWNED vertices, and that is not a refinement — the body is
+bound in a T-pose, so without it the widest vertex at chest height is a
+FINGERTIP and the profile reports a half-width of 155, which is an arm span.
+
+That is now three regions where one number stood for a whole body part and was
+taken from the narrowest place it is true: the skull, the chest, and the collar.
+
+19 fitted, 0 not. Suite green.
+
+STILL OUTSTANDING: the capes are flat boards from the side. Bare forearms and
+hands on every style, which is the empty glove slot rather than a fault, but
+reads as skin.
