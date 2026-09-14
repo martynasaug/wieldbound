@@ -48,6 +48,11 @@ import bmesh
 # What a garment is NOT: the parts of a costume that are the wearer's own body.
 SKIN_BONES = ("Fist", "Thumb", "Foot", "Head", "Neck")
 
+# Bone-parented meshes that are NOT armour, and must not travel with a garment.
+# A weapon is an item of its own and the face belongs to the wearer — the player
+# supplies both. Everything else parented to a bone is a fitting: see `cut`.
+DROP_MESHES = ("Sword", "Bow", "Arrow", "Staff", "Dagger", "Face", "Monk.001")
+
 # donor file, the skinned mesh inside it, the garment it becomes, its atlas.
 JOBS = (
     ("Wizard", "Wizard.001", "robe", "Wizard_Texture"),
@@ -108,12 +113,55 @@ def cut(donor, mesh_name, out_name, atlas, export_dir):
     me.name = "Garment"
     textured = dress(body, atlas)
 
-    # Only the garment and its rig travel: no props, no weapon, no face.
-    for o in [x for x in bpy.data.objects if x.type == "MESH" and x is not body]:
-        bpy.data.objects.remove(o, do_unlink=True)
+    # THE FITTINGS COME TOO, and leaving them behind is what made the plate look
+    # like a padded suit.
+    #
+    # Each of these characters wears its armour in two parts: a skinned body, and
+    # RIGID PIECES PARENTED TO BONES beside it — the Warrior's pauldrons on
+    # `UpperArm.L/R`, the Ranger's cloak on `Head`, its bracers on `LowerArm.L/R`,
+    # its pouch on `Abdomen`. This function used to delete every object but the
+    # body, on the reasoning that what remained was "props, weapon, face". Two of
+    # those three are right; the pauldrons are the armour.
+    #
+    # They are baked and re-parented to nothing, exactly as `look_pieces.py` bakes
+    # a beard: with the world transform in the vertices, `boneAttachMatrix` places
+    # them at runtime with no frame supplied anywhere. The bone is carried in the
+    # NAME, spelled the way three.js spells it — dots stripped — so the runtime
+    # can look it up without a translation table.
+    fittings = []
+    for obj in [x for x in bpy.data.objects if x.type == "MESH" and x is not body]:
+        # NOT ON THE HEAD, THE HANDS OR THE FEET — the same rule the skin cut
+        # above obeys, and for the same reason: those belong to the wearer and to
+        # other slots. The Ranger's cloak hangs off `Head`, and carrying it along
+        # gave a chest item a hood that covered the player's face and would fight
+        # every helm in the game; the Rogue's boots hang off `Foot` and would
+        # fight the boots slot. Photographed before this filter existed, which is
+        # the only reason it does.
+        on_skin = any(s in (obj.parent_bone or "") for s in SKIN_BONES)
+        keep = obj.parent_type == "BONE" and obj.parent_bone and not on_skin and not any(
+            drop in obj.name for drop in DROP_MESHES
+        )
+        if not keep:
+            bpy.data.objects.remove(obj, do_unlink=True)
+            continue
+        bone = obj.parent_bone.replace(".", "")
+        world = obj.matrix_world.copy()
+        obj.parent = None
+        obj.matrix_world = world
+        # `transform_apply` needs the object selected and active, and it is the
+        # step that turns "positioned by a parent" into "positioned by its own
+        # vertices" — which is the only form the runtime can place.
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+        dress(obj, atlas)
+        obj.name = f"fit_{bone}"
+        fittings.append(obj.name)
 
     print(f"GARMENT {out_name:<8} {len(me.polygons):>4} faces (cut {len(doomed)} skin) "
-          f"atlas={'attached' if textured else 'MISSING'}")
+          f"atlas={'attached' if textured else 'MISSING'} "
+          f"fittings={','.join(fittings) if fittings else 'none'}")
 
     if export_dir:
         os.makedirs(export_dir, exist_ok=True)

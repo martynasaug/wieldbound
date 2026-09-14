@@ -25526,3 +25526,46 @@ the harness's own constants do not exist. That is the third time in two days;
 `portrait.mjs` carries the original note.
 
 Suite 57/57.
+
+
+**Phase 70 M70.326 — the garments get their fittings back.** M70.325 found that
+`garments.py` cut each donor's BODY mesh and deleted every other object, on the
+reasoning that what remained was "props, weapon, face". Two of those three are
+right. The third is the armour: these characters wear rigid pieces parented to
+bones beside the skinned cloth, so the plate a player wore was the Warrior's
+padded suit with its pauldrons left in the source file, and the leather was the
+Ranger's tunic with no bracers.
+
+The cutter keeps them now — baked with their world transform in the vertices,
+exactly as `look_pieces.py` bakes a beard, and named `fit_<Bone>` in the
+runtime's own spelling so nothing needs a translation table. `wardrobe.ts`
+harvests them into the garment record and `Actor` hangs each on its bone with
+`boneAttachMatrix`, the same call that places hair and modelled armour. They need
+none of the Monk calibration: the Warrior, the Ranger and the Wizard never had
+their faces grafted onto this body.
+
+    robe     shoulder pads, pouch
+    plate    pauldrons
+    leather  bracers, pouch
+
+NOT ON THE HEAD, THE HANDS OR THE FEET, and that rule was learned by breaking it.
+The first cut carried everything bone-parented, which gave `leather` the Ranger's
+hood — a chest item that covered the player's face, hid the hairstyle four
+milestones went into fixing, and would fight every helm in the game — and gave
+`light` the Rogue's boots, which would fight the boots slot. `garments.py` already
+had the rule written down for the SKIN cut, one function above: hands, head and
+feet are the wearer's, and an item must never replace them. The fittings obey the
+same `SKIN_BONES` list now. It was caught by photographing the result, which took
+one render; reasoning about which bones a costume hangs things off would not have
+predicted a cloak on `Head`.
+
+A NOTE ON WHAT THIS DID NOT FIX. The garments still read darker than the
+procedural styles beside them, and M70.325 established why: the pack's atlases are
+photographic and dark (Rogue means 0.197, Warrior 0.233) where a palette style is
+painted one flat bright colour. The fittings make plate and leather read as
+ARMOUR rather than as a suit; they do not make them brighter, and brightening the
+atlases would be a separate decision about the game's look rather than a bug fix.
+
+Suite 56/57 on the batch run, with `throwers.mjs` passing on its own — it drives
+a live socket against whatever monsters have spawned, and it flakes. Nothing in
+this milestone touches combat.

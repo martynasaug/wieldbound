@@ -1389,6 +1389,39 @@ export class Actor {
           host.parent?.add(worn);
           this.worn.push(worn);
           this.trackMaterials(worn);
+
+          // AND THE FITTINGS THE COSTUME CAME WITH. A pack character wears its
+          // armour in two parts — skinned cloth, and rigid pieces bolted to
+          // bones — and until `garments.py` learned to cut the second, the plate
+          // was the Warrior's padded suit with the pauldrons left behind.
+          //
+          // They ride the bone the way hair does: baked in the donor's own space,
+          // placed by `boneAttachMatrix`, no offset supplied here. These come
+          // from the Warrior, the Ranger and the Wizard, none of whose faces were
+          // grafted onto this body, so they need none of the calibration the
+          // Monk's head pieces do.
+          for (const fitting of piece.fittings) {
+            const bone = this.bones.get(fitting.bone);
+            const onBone = this.instance
+              ? boneAttachMatrix(this.instance.object, fitting.bone)
+              : null;
+            if (!bone || !onBone) {
+              console.warn(
+                `gear: garment "${wantGarment}" fitting wants bone "${fitting.bone}", which this body ${bone ? "cannot bind" : "does not have"}`,
+              );
+              continue;
+            }
+            const part = new THREE.Mesh(fitting.geometry, fitting.material.clone());
+            part.name = `worn_${layer.style}_${fitting.bone}`;
+            part.matrixAutoUpdate = false;
+            part.matrix.copy(onBone);
+            part.castShadow = true;
+            part.receiveShadow = true;
+            bone.add(part);
+            this.worn.push(part);
+            this.trackMaterials(part);
+          }
+
           this.refreshOutlines();
           continue;
         }

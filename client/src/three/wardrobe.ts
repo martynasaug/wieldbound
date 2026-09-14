@@ -116,6 +116,23 @@ export type GarmentId = keyof typeof GARMENTS;
 export interface Garment {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
+  /**
+   * The rigid pieces that hang off bones beside the skinned cloth.
+   *
+   * A costume in this pack is two things: a skinned body, and armour parented to
+   * bones next to it — the Warrior's pauldrons, the Ranger's cloak and bracers.
+   * `garments.py` used to cut only the first, so the plate a player wore was the
+   * padded suit with its pauldrons left in the source file. Empty for a garment
+   * whose donor had none.
+   */
+  fittings: GarmentFitting[];
+}
+
+export interface GarmentFitting {
+  /** The bone it hangs from, in the runtime's spelling: `UpperArmL`, not `UpperArm.L`. */
+  bone: string;
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
 }
 
 const cache = new Map<DonorPartId, DonorPart | null>();
@@ -242,11 +259,36 @@ export function loadGarments(): Promise<void> {
           metalness: 0,
         });
         dressed.name = source?.name ?? id;
+
+        // THE FITTINGS, named `fit_<Bone>` by the cutter. Blender appends `.001`
+        // when two pieces hang off one bone — the Rogue has two on `Abdomen` —
+        // so the suffix is stripped rather than looked up and missed.
+        const fittings: GarmentFitting[] = [];
+        root.traverse((o) => {
+          const piece = o as THREE.Mesh;
+          if (!piece.isMesh || !piece.name.startsWith("fit_")) return;
+          const bone = piece.name.slice(4).split(".")[0];
+          if (!bone) return;
+          const src = (Array.isArray(piece.material) ? piece.material[0] : piece.material) as
+            THREE.MeshStandardMaterial;
+          // Dressed the same way the cloth is, and for the same reason: a GLB
+          // carries geometry, and the engine supplies the surface.
+          const mat = new THREE.MeshStandardMaterial({
+            map: src?.map ?? null,
+            color: src?.map ? new THREE.Color(0xffffff) : (src?.color?.clone() ?? new THREE.Color(0xffffff)),
+            roughness: 0.86,
+            metalness: 0,
+          });
+          mat.name = `${id}_${bone}`;
+          fittings.push({ bone, geometry: piece.geometry, material: mat });
+        });
+
         garments.set(id, {
           // Shared and never mutated, exactly as the rigid parts are: geometry
           // is style, and the wearer owns only its material.
           geometry: mesh.geometry,
           material: dressed,
+          fittings,
         });
       } catch (err) {
         // SAY WHY. A bare `catch` here cost a debugging round: all four garments
