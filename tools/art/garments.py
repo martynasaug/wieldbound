@@ -45,8 +45,25 @@ import sys
 import bpy
 import bmesh
 
-# What a garment is NOT: the parts of a costume that are the wearer's own body.
-SKIN_BONES = ("Fist", "Thumb", "Foot", "Head", "Neck")
+# What a garment is NOT: the parts of a costume that are the wearer's own body,
+# and the parts another SLOT owns.
+#
+# `Fist`, `Thumb`, `Foot`, `Head`, `Neck` are the wearer's — the player supplies
+# them and an item must never replace them.
+#
+# `LowerLeg` is the BOOTS SLOT'S, and it was not cut until now. Measured, every
+# garment covers the shin: plate 77 vertices a side, leather 230. So equipping a
+# chest item dressed the whole body down to the ankle and then a boot was pulled
+# on over cloth that was already there — which is the z-fighting between boots
+# and the body on the open list, and it is also why the costume reads as one
+# all-in-one item rather than as a chest piece.
+#
+# The cut stops at the KNEE and not at the hip. The plate's segmented skirt and
+# the robe's gown hang off `UpperLeg`, and they are the best things about both;
+# taking those would strip a garment back to a shirt. This game has no legs slot
+# (`ITEM_SLOTS` is weapon, offhand, helm, armor, cape, boots, ring), so the thigh
+# genuinely belongs to the chest item — the shin does not.
+SKIN_BONES = ("Fist", "Thumb", "Foot", "Head", "Neck", "LowerLeg")
 
 # Bone-parented meshes that are NOT armour, and must not travel with a garment.
 # A weapon is an item of its own and the face belongs to the wearer — the player

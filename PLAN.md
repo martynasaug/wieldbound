@@ -25687,3 +25687,29 @@ is banded cloth, plated is steel with a gold line.
 What the milestone is really about is the ROUTE. A design becomes gear by being
 fitted to landmarks and exported as a style; `bench.py` flattered these sketches,
 `onbody.py` caught that, and the game is where it settles. Suite 57/57.
+
+**Phase 70 M70.330 — a chest item stops at the knee, so the boots slot has
+something to own.** Reported: "the whole costume is a single body armor item in
+game." Measured and true — every garment covers the wearer from collar to ankle,
+plate 77 shin vertices a side and leather 230 — so equipping one chest item
+dressed the entire character, and a boot was then pulled on over cloth that was
+already there. That is the boots-against-body z-fighting on the open list, and it
+is the same fault as the complaint: one item was the whole outfit.
+
+`garments.py` cuts `LowerLeg` now, alongside the wearer's own hands, head and
+feet. The shin goes back to the base body — which wears its own trousers, so
+nothing is bared — and the boots slot owns the boot region outright.
+
+THE CUT STOPS AT THE KNEE, NOT THE HIP. The plate's segmented skirt and the
+robe's gown hang off `UpperLeg` and are the best things about either; taking those
+would strip a garment back to a shirt. This game has no legs slot — `ITEM_SLOTS`
+is weapon, offhand, helm, armor, cape, boots, ring — so the thigh genuinely
+belongs to the chest item. The shin does not, and that is the line the cut is
+drawn on rather than a number chosen for looking right.
+
+Photographed across all six chest styles: skirts and gowns intact, shins returned
+to the body, and no style dressing the character head to toe.
+
+A chest piece that is ONLY a chest piece means a legs slot, which is shared types,
+item data, the equip UI and the server. That is worth doing deliberately rather
+than arriving at it as the side effect of a cut. Suite 57/57.
