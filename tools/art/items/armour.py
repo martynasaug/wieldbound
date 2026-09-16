@@ -66,6 +66,26 @@ BONE_ARM_R = "UpperArmR"
 BONE_HEAD = "Head"
 
 
+# HOW MANY SIDES A LIMB SHELL IS TURNED WITH, and it is not a taste number.
+#
+# Reported, with a photograph: "look at the amount of skin showing through the
+# armor -- armour should be ON the body, not IN the body." Dark wedges of the
+# character breaking through the plates at the shoulders, the thighs and the
+# shins, on every style.
+#
+# A lathe is a POLYGON, not a circle. Between two facets its surface falls to
+# `r * cos(pi / sides)` -- at eight sides that is 92.4% of the radius, so a
+# shell nominally 8% clear of the limb is exactly flush with it halfway between
+# every pair of facets, and the body wins there. Every `over_*` scale in this
+# file was worked back from the NOMINAL radius and none of them knew about the
+# chord.
+#
+# Twelve sides puts the dip at 3.4%, which the clearances already cover, and it
+# costs fifty triangles a suit. It also reads rounder, which is the other half
+# of the barrel complaint.
+LIMB_SIDES = 12
+
+
 class Armour:
     """One armour style: a `Model` per bone, in rest-frame coordinates."""
 
@@ -106,7 +126,7 @@ class Armour:
         w, h, d = size
         self.part(bone).box((x * U, -z * U, y * U), (w * U, d * U, h * U), mat, taper=taper)
 
-    def sleeve(self, bone, side, out0, out1, r0, r1, mat, sides=8):
+    def sleeve(self, bone, side, out0, out1, r0, r1, mat, sides=LIMB_SIDES):
         """
         A tube round a HORIZONTAL limb — a bracer, a mail sleeve, a cloth cuff.
 
@@ -514,12 +534,12 @@ def pauldrons(a, mat, span=23.0, drop=15.0, lip=True):
         a.shell(bone, [(span * 0.6, BODY["shoulder_y"] + 11.0), (span, BODY["shoulder_y"] + 1.0),
                        (span * 0.98, BODY["shoulder_y"] - drop),
                        (span * 0.88, BODY["shoulder_y"] - drop - 12.0)],
-                mat, squash=(1.0, 0.95), sides=8, x=x, z=-2.0)
+                mat, squash=(1.0, 0.95), sides=LIMB_SIDES, x=x, z=-2.0)
         if lip:
             # On the SHOULDER, not on the body's axis: a band defaults to the
             # centre line, which for a pauldron is a ring round the chest.
             a.band(bone, BODY["shoulder_y"] - drop, span * 0.94, mat,
-                   tube=2.0, squash=(1.0, 0.95), sides=8, x=x, z=-2.0)
+                   tube=2.0, squash=(1.0, 0.95), sides=LIMB_SIDES, x=x, z=-2.0)
 
 
 # HOW FAR A PLATE STANDS OFF THE BODY.
@@ -576,7 +596,7 @@ CHEST_HALF_X = 23.0
 #
 # This is the same mistake `over_skull` made on the helms, where flooring every
 # station produced a flat-topped bucket, and the same answer.
-CHEST_SCALE = 1.28
+CHEST_SCALE = 1.46
 
 
 def over_chest(r):
@@ -611,14 +631,41 @@ CHEST_SKIN_Z = -3.0 + CHEST_SKIN * 1.15
 # The floors are worked back from the measurement the same way `CHEST_HALF_X`
 # was — a piece of known radius, the percentage it scored, and the arithmetic in
 # between — then given the same clearance the chest gets.
+# AND THE NUMBERS COME OFF THE BODY, not off the old radii.
+#
+# Reported with a photograph: "armour should be ON the body, not IN the body"
+# -- the character breaking through the plates at the shoulders, thighs and
+# shins on every style. Raising the facet count helped and did not fix it,
+# because the scales themselves were guesses worked back from coverage
+# percentages rather than from the limb.
+#
+# `tools/soak/limbaxis.mjs` asks the body directly: for each limb, the centre
+# of its own vertices and how far the furthest of them sits from that centre,
+# across the limb, in these units:
+#
+#     UpperArm  reaches 17.0      the sleeve was 15.2
+#     LowerArm          13.2      the bracer was 13.4
+#     UpperLeg          25.5      the cuisse was 15.7
+#     LowerLeg          15.5      the greave was 14.0
+#     Torso             27.3      the chest was 25.6
+#     Abdomen           31.4      the skirt was 33.0
+#
+# Four of the six were INSIDE the limb they cover. The scales below are worked
+# back from those reaches with a margin, which is why they jump: they were
+# never measured against anything before.
+#
+# The thigh is the exception worth naming. It reaches 25.5 because its
+# vertices include the HIP, and a cuisse is not a hip piece -- that is the
+# skirt`s, which clears at 33. The thigh scale covers the leg below the hip.
+#
 # SCALES, NOT FLOORS, for the same reason the chest uses one: a floor clamps a
 # tapered limb into a tube. Each is worked back from what `coverwidth.mjs`
 # measured at the authored size — abdomen 82-96%, thigh 99%, shin 95% — plus the
 # clearance a worn thing needs over the limb inside it.
 WAIST_SCALE = 1.27
-THIGH_SCALE = 1.16
-SHIN_SCALE = 1.12
-ARM_SCALE = 1.12
+THIGH_SCALE = 1.34
+SHIN_SCALE = 1.38
+ARM_SCALE = 1.38
 
 
 def over_waist(r):
@@ -659,7 +706,7 @@ def plate_chest(a):
                          (4.5, BODY["chest_y1"] - 7.0), (-4.5, BODY["chest_y1"] - 7.0)],
             "LightSteel", z=BODY["chest_front_z"] + 1.0, thickness=5.0)
     a.shell(BONE_CHEST, [(14.0, BODY["chest_y1"] + 1.0), (16.0, BODY["chest_y1"] + 7.0)],
-            "DarkSteel", squash=(1.0, 1.05), sides=8, z=-3.0)
+            "DarkSteel", squash=(1.0, 1.05), sides=LIMB_SIDES, z=-3.0)
     a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"] - 1.0), (over_waist(24.0), BODY["waist_y1"] - 11.0)],
             "Steel", squash=(1.0, 1.0), z=-6.0)
     for side in (1, -1):
@@ -741,7 +788,7 @@ def chain_chest(a):
             GARMENT, squash=(1.0, 1.15), z=-3.0)
     # A standing collar, the piece that separates mail from a tabard at a glance.
     a.shell(BONE_CHEST, [(13.0, BODY["chest_y1"] + 3.0), (14.0, BODY["chest_y1"] + 12.0)],
-            GARMENT, squash=(1.0, 1.1), sides=8, z=-3.0)
+            GARMENT, squash=(1.0, 1.1), sides=LIMB_SIDES, z=-3.0)
     # Banding across the shirt reads as rings at this size — in the accent, so
     # the rings are visible against the mail rather than a darker shade of it.
     # Wide bands, not piping: iron's mail sits at 0.21 against a body at 0.27,
@@ -759,7 +806,7 @@ def chain_chest(a):
                        (over_arm(13.4), BODY["shoulder_y"] + 1.0),
                        (over_arm(13.0), BODY["shoulder_y"] - 18.0),
                        (over_arm(11.6), BODY["shoulder_y"] - 30.0)],
-                GARMENT, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+                GARMENT, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
 
 
 def leather_chest(a):
@@ -787,7 +834,7 @@ def leather_chest(a):
     a.box(BONE_CHEST, (0.0, BODY["chest_y0"] - 1.0, BODY["chest_front_z"] + 2.0), (8.0, 8.0, 4.0), "Gold")
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(11.0, BODY["shoulder_y"] + 4.0), (10.0, BODY["shoulder_y"] - 8.0)],
-                LEATHER_TRIM, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+                LEATHER_TRIM, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
 
 
 def robe_chest(a):
@@ -835,7 +882,7 @@ def robe_chest(a):
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(12.0, BODY["shoulder_y"] + 6.0), (13.0, BODY["shoulder_y"] - 10.0),
                        (11.0, BODY["shoulder_y"] - 19.0)],
-                CLOTH, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+                CLOTH, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
 
 
 # --- limbs -----------------------------------------------------------------------------------
@@ -917,7 +964,7 @@ def dress_limbs(a, style):
         a.shell(bone, [(over_thigh(12.5), BODY["hip_y"] - 4.0),
                        (over_thigh(13.5), BODY["hip_y"] - 24.0),
                        (over_thigh(12.5), BODY["knee_y"] + 8.0)],
-                leg, squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
+                leg, squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * THIGH_X)
         # A BAND, OR IT IS TROUSERS. Flat palette metal over a thigh reads as
         # blue-grey cloth on the plate — the leg pieces were the only gear in the
         # catalogue with no internal structure at all, which is the same fault
@@ -931,20 +978,20 @@ def dress_limbs(a, style):
         # plate tassets is actually built.
         for y in (BODY["hip_y"] - 14.0, BODY["hip_y"] - 40.0):
             a.band(bone, y, over_thigh(13.6), kit["trim"], tube=3.0,
-                   squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
+                   squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * THIGH_X)
         # And a knee cop: the one piece of leg armour a player can actually name.
         a.shell(bone, [(over_thigh(11.0), BODY["knee_y"] + 12.0),
                        (over_thigh(14.6), BODY["knee_y"] + 5.0),
                        (over_thigh(11.5), BODY["knee_y"] - 1.0)],
-                kit["trim"], squash=(1.0, 0.92), sides=8, x=side * THIGH_X)
+                kit["trim"], squash=(1.0, 0.92), sides=LIMB_SIDES, x=side * THIGH_X)
     for bone, side in BONE_CALF:
         # And a greave over the shin, stopping above the boot.
         a.shell(bone, [(over_shin(12.5), BODY["knee_y"] + 2.0),
                        (over_shin(13.0), BODY["knee_y"] - 14.0),
                        (over_shin(11.5), BODY["ankle_y"] + 16.0)],
-                leg, squash=(1.0, 0.9), sides=8, x=side * CALF_X)
+                leg, squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * CALF_X)
         a.band(bone, BODY["knee_y"] - 1.0, over_shin(13.4), kit["trim"], tube=2.6,
-               squash=(1.0, 0.9), sides=8, x=side * CALF_X)
+               squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * CALF_X)
 
 
 # THREE OF SIX, BECAUSE THREE ARE WORN RATHER THAN BUILT.
@@ -1332,13 +1379,13 @@ def shoe(a, mat, toe=None, height=13.0):
         a.box(bone, (x, height * 0.5 + 1.0, 24.0), (18.0, height * 0.7, 12.0), toe or mat)
 
 
-def shin(a, mat, y0, y1, r0, r1, sides=8):
+def shin(a, mat, y0, y1, r0, r1, sides=LIMB_SIDES):
     """A cuff, a greave or a wrap up the lower leg."""
     for bone, side in BONE_SHIN:
         a.shell(bone, [(r0, y0), (r1, y1)], mat, squash=(1.0, 1.0), sides=sides, x=side * SHIN_X)
 
 
-def boot_shaft(a, mat, y0, y1, ankle, calf, sides=8):
+def boot_shaft(a, mat, y0, y1, ankle, calf, sides=LIMB_SIDES):
     """
     A boot, which is not a cone.
 
@@ -1360,7 +1407,7 @@ def boot_shaft(a, mat, y0, y1, ankle, calf, sides=8):
 
 def shin_band(a, mat, y, r, tube=2.5):
     for bone, side in BONE_SHIN:
-        a.band(bone, y, r, mat, tube=tube, squash=(1.0, 1.0), sides=8, x=side * SHIN_X)
+        a.band(bone, y, r, mat, tube=tube, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * SHIN_X)
 
 
 def low_boots(a):
@@ -1403,7 +1450,7 @@ def plated_boots(a):
     for bone, side in BONE_SHIN:
         # The knee, which is what separates a greave from a tall boot.
         a.shell(bone, [(13.0, 44.0), (15.0, 50.0), (11.0, 56.0)], "LightSteel",
-                squash=(1.0, 1.0), sides=8, x=side * SHIN_X)
+                squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * SHIN_X)
         # The ridge, standing proud of the greave's front from ankle to knee.
         # `plate` is thick towards the FACE, so its z puts it in front of the
         # shin rather than inside it.
@@ -1578,7 +1625,7 @@ def mantle_back(a):
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(over_arm(15.0), BODY["shoulder_y"] + 7.0),
                        (over_arm(17.0), BODY["shoulder_y"] - 6.0)],
-                CLOTH, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+                CLOTH, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
     collar(a, LEATHER, r=20.0, tube=3.0)
 
 

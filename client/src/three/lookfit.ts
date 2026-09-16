@@ -234,12 +234,26 @@ function reachOf(skull: Skull): number {
 }
 
 /**
- * The height a triangle has to clear, given how far back on the head it sits.
+ * The height a triangle has to clear, given where on the head it sits.
  *
- * `floor` at the face, falling to the bottom of the skull at the back. Measured
- * on the triangle's rearmost corner so a triangle straddling the ear is judged
- * by the part that needs covering — this skull is 75 vertices for a whole head,
- * so a single triangle can span from the temple to the nape.
+ * ONLY THE FACE IS HELD AT THE HAIRLINE. The first version interpolated on how
+ * far BEHIND centre a triangle sat, which is right at the front and at the back
+ * and wrong everywhere between: at the TEMPLE the depth is zero, so it scored
+ * as "not behind at all" and kept the brow-height floor — cutting the scalp
+ * away from the whole side of the head. Reported, looking at the bare figure
+ * from the right: "what is that bald spot?"
+ *
+ * A hairline does not run level round a head. It crosses the brow in front,
+ * dives past the temple, and reaches the nape behind. So the floor is driven by
+ * how far FORWARD a triangle is, not how far back: full hairline only where the
+ * face actually is, dropping to the bottom of the skull by the time it reaches
+ * the ears.
+ *
+ * Measured on the triangle's FRONTMOST corner, and that is the half that
+ * protects the face. This skull is 75 vertices for a whole head, so one
+ * triangle can span from the brow to the temple; judged by its rearmost corner
+ * such a triangle scores as side, drops its floor, and is kept — painting over
+ * the eyes, which is the failure this whole file keeps circling back to.
  */
 function slidingFloor(
   t: ArrayLike<number>,
@@ -249,17 +263,17 @@ function slidingFloor(
   floor: number,
   reach: number,
 ): number {
-  let back = Infinity;
+  let front = -Infinity;
   for (let k = 0; k < 9; k += 3) {
     const d =
       (t[j + k] - c.x) * forward.x +
       (t[j + k + 1] - c.y) * forward.y +
       (t[j + k + 2] - c.z) * forward.z;
-    if (d < back) back = d;
+    if (d > front) front = d;
   }
-  // 0 at the face and forward of it, 1 a full half-head behind centre.
-  const behind = Math.max(0, Math.min(1, -back / (reach || 1)));
-  return floor * (1 - behind) + -reach * behind;
+  // 1 where the face is, 0 at the temples and everywhere behind them.
+  const facing = Math.max(0, Math.min(1, front / (reach || 1)));
+  return floor * facing + -reach * (1 - facing);
 }
 
 export function scalpCap(

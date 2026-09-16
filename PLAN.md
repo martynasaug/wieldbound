@@ -26813,3 +26813,44 @@ failed before it existed, four of them on the wrong side of the head.
 
 Hood 83% of the skull, whole from four sides. 480 of 480 outfits clean. 19
 fitted, 0 not. Suite green, client typechecks.
+
+**Phase 70 M70.361 — the scales were never measured against a limb.**
+Two reported in one breath: "what is that bald spot?" and, with a photograph,
+"look at the amount of skin showing through the armor — armour should be ON the
+body, not IN the body," followed by "and every armor is the same problem."
+
+THE BALD SPOT was my own scalp fix being half right. `slidingFloor`
+interpolated on how far BEHIND centre a triangle sat, which is correct at the
+front and at the back and wrong everywhere between: at the TEMPLE the depth is
+zero, so it scored as "not behind at all", kept the brow-height floor, and cut
+the scalp away from the entire side of the head. A hairline does not run level
+round a head — it crosses the brow, dives past the temple and reaches the nape —
+so the floor is driven by how far FORWARD a triangle is now, and only where the
+face actually is. Measured on the FRONTMOST corner, which is the half that
+protects the face: judged by its rearmost corner a brow-to-temple triangle
+scores as side, drops its floor, and paints over the eyes.
+
+THE ARMOUR WAS INSIDE THE BODY, and there were two causes.
+
+A LATHE IS A POLYGON. Between two facets its surface falls to
+`r * cos(pi / sides)` — at eight sides, 92.4% of the radius — so a shell
+nominally 8% clear of a limb is exactly flush with it halfway between every
+pair of facets, and the body wins there. Every `over_*` scale was worked back
+from the NOMINAL radius and none knew about the chord. `LIMB_SIDES` is twelve
+now: a 3.4% dip, fifty triangles a suit, and it reads rounder besides.
+
+That helped and did not fix it, because THE SCALES THEMSELVES WERE GUESSES —
+worked back from coverage percentages rather than from the limb.
+`tools/soak/limbaxis.mjs` asks the body directly for each limb's own axis and
+how far its furthest vertex sits from it:
+
+    UpperArm 17.0 against a sleeve of 15.2      LowerLeg 15.5 against 14.0
+    UpperLeg 25.5 against a cuisse of 15.7      Torso    27.3 against 25.6
+
+FOUR OF SIX WERE INSIDE THE LIMB THEY COVER. The scales are worked back from
+those reaches now, which is why they jump — they had never been measured
+against anything. The thigh is the one exception worth naming: it reaches 25.5
+because its vertices include the HIP, and a cuisse is not a hip piece. That is
+the skirt's, and the skirt clears at 33.
+
+480 of 480 outfits clean. 19 fitted, 0 not. Suite green, client typechecks.
