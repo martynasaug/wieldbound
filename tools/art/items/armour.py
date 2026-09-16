@@ -30,6 +30,7 @@ import bpy
 from mathutils import Vector
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import bodyshape  # noqa: E402
 from kit import V, Model  # noqa: E402
 
 U = 0.01
@@ -86,6 +87,55 @@ BONE_HEAD = "Head"
 LIMB_SIDES = 12
 
 
+# HOW FAR A HUGGING PIECE MAY LOOK FOR THE BODY, per bone, in rest units.
+#
+# A ray fired across a limb has to stop somewhere. Fired sideways out of the
+# chest of a T-POSED body it never meets the chest at all — it runs straight
+# down the arm and reports a half-width of forty-six. Fired inward out of a
+# thigh at hip height it crosses the pelvis and comes out of the other hip, at
+# forty-eight. Both are real surfaces and neither is the limb this piece is on.
+#
+# Past this distance `bodyshape` treats the direction as unmeasured and fills it
+# in from the neighbours that did find the limb, which is how a breastplate gets
+# a sensible width at the armpit instead of an arm's length.
+HUG_LIMIT = {
+    "Torso": 44.0, "Abdomen": 44.0, "Hips": 44.0, "Neck": 24.0, "Head": 54.0,
+    "Shoulder": 42.0, "UpperArm": 20.0, "LowerArm": 17.0,
+    # A THIGH IS TWENTY, and that is a rejection threshold rather than a size:
+    # past twenty a ray fired inward out of the thigh is through the crotch and
+    # into the other leg, and a cuisse cut to that answer is a pair of shorts.
+    "UpperLeg": 20.0, "LowerLeg": 20.0, "Foot": 26.0,
+}
+
+# The arm's axis in the rest frame: a T-posed arm runs out along x at shoulder
+# height, a little behind the middle. `lathe`'s own (y, z) centre for axis "x".
+ARM_CENTRE = (-4.0, 186.0)
+
+
+# WHICH BONES MEASURE THE BODY WITH THE ARMS TAKEN OUT OF IT.
+#
+# The body is bound in a T-pose, so a ray fired sideways out of the chest exits
+# through the bicep and a cuirass built on it is a barrel. See `bodyshape.ARMS`.
+# A pauldron is deliberately NOT in here: it covers the shoulder and the top of
+# the arm, and it needs to know where the arm is.
+HUG_EXCLUDE = {"Torso": bodyshape.ARMS, "Abdomen": bodyshape.ARMS, "Neck": bodyshape.ARMS}
+
+
+def hug_bone(bone):
+    """A bone's name with the side dropped, for the tables above."""
+    return bone[:-1] if bone[-1:] in ("L", "R") else bone
+
+
+def hug_limit(bone):
+    """The ray limit for a bone, by name, sides folded together."""
+    return HUG_LIMIT.get(hug_bone(bone), HUG_LIMIT.get(bone, 32.0))
+
+
+def hug_exclude(bone):
+    """The regions a piece on this bone must not measure."""
+    return HUG_EXCLUDE.get(hug_bone(bone), ())
+
+
 class Armour:
     """One armour style: a `Model` per bone, in rest-frame coordinates."""
 
@@ -100,18 +150,94 @@ class Armour:
 
     # --- the body's own shapes ----------------------------------------------------------
 
-    def shell(self, bone, stations, mat, squash=None, sides=10, cap=True, x=0.0, z=0.0, arc=1.0, turn=0.0):
+    def shell(self, bone, stations, mat, squash=None, sides=10, cap=True, x=0.0, z=0.0,
+              arc=1.0, turn=0.0, hug=None, limit=None, step=9.0, recentre=False, keep=None):
         """
         A tapered sleeve round the body's axis: a cuirass, a mail skirt, a collar.
 
         `stations` are (half_width, y) in rest units, and `squash` is how deep the
         body is against how wide — a torso is an oval, not a tube.
+
+        `hug` IS THE ANSWER TO "I DON'T LIKE THIS BARREL STYLE ARMOUR". Given a
+        clearance, the piece stops being a turned circle and becomes the body's
+        own cross-section pushed out by that much: measured by `bodyshape.py`,
+        one radius per facet per station. The authored `stations` then set the
+        piece's EXTENT and its minimum — where a recipe wants a shape prouder
+        than the body, it still gets it — and the body sets everything else.
+        Without `hug` this is the old lathe, which is still right for a shape
+        that is not worn against anything.
         """
         depth = (1.0, 0.82) if squash is None else squash
+        if hug is not None:
+            rings, closed = self.hugged(bone, stations, hug, sides, (x, -z), arc, turn,
+                                        depth, limit, step, recentre, keep=keep)
+            if rings:
+                self.part(bone).loft(rings, mat, cap_start=cap and closed,
+                                     cap_end=cap and closed, closed=closed)
+                return
         self.part(bone).lathe(
             [(w * U, y * U) for w, y in stations], mat, sides=sides,
             centre=(x * U, -z * U), squash=depth, cap=cap, axis="z", arc=arc, turn=turn,
         )
+
+    def hugged(self, bone, stations, clear, sides, centre, arc, turn, squash,
+               limit, step, recentre, run="z", keep=None):
+        """
+        The rings of a body-following piece, ready for `Model.loft`.
+
+        Angles, spacing and winding are `kit.lathe`'s own, so a hugged piece and
+        a turned one are interchangeable and a band lands on the shell it
+        decorates. Stations are SUBDIVIDED to at most `step` apart: the loft
+        between two rings is a straight line and a body is not, so two stations
+        forty units apart cut the calf off however well each ring fits.
+        """
+        turned = 2 * math.pi * arc
+        closed = arc >= 0.999
+        steps = sides if closed else max(2, sides)
+        if closed:
+            angles = [turn + turned * k / sides + math.pi / sides for k in range(sides)]
+            wedge = math.pi / sides
+        else:
+            angles = [turn + turned * (k / steps) - turned / 2 for k in range(steps + 1)]
+            wedge = turned / (2 * steps)
+
+        # A CLEARANCE PER STATION, so a band can stand on the shell it decorates.
+        # One number for the whole piece would put a belt at the same distance
+        # from the body as the cuirass it is buckled over, and the two would
+        # fight for the same surface all the way round.
+        clears = [clear] * len(stations) if isinstance(clear, (int, float)) else list(clear)
+        rows = []
+        for j in range(len(stations) - 1):
+            (w0, y0), (w1, y1) = stations[j], stations[j + 1]
+            c0, c1 = clears[j], clears[j + 1]
+            n = max(1, int(math.ceil(abs(y1 - y0) / step)))
+            for i in range(n):
+                t = i / n
+                rows.append((w0 + (w1 - w0) * t, y0 + (y1 - y0) * t, c0 + (c1 - c0) * t))
+        rows.append((stations[-1][0], stations[-1][1], clears[-1]))
+        if len(rows) < 2 or any(w <= 0.0 for w, _, _ in rows):
+            return None, closed
+
+        reach = limit if limit is not None else hug_limit(bone)
+        # `keep` is what a pauldron says to be measured WITH the arm in place.
+        drop = () if keep else hug_exclude(bone)
+        rings = []
+        for i, (w, at, c) in enumerate(rows):
+            near = [abs(rows[j][1] - at) for j in (i - 1, i + 1) if 0 <= j < len(rows)]
+            band = max(near) / 2 if near else 0.0
+            floor = [w * math.hypot(math.cos(a) * squash[0], math.sin(a) * squash[1])
+                     for a in angles]
+            got = bodyshape.ring(at, centre, angles, wedge, run=run, clear=c,
+                                 band=band, limit=reach, floor=floor, recentre=recentre,
+                                 exclude=drop)
+            radii, found = got if got else (floor, centre)
+            ring = [(found[0] + math.cos(a) * r, found[1] + math.sin(a) * r)
+                    for a, r in zip(angles, radii)]
+            if run == "z":
+                rings.append([V(p * U, q * U, at * U) for p, q in ring])
+            else:
+                rings.append([V(at * U, p * U, q * U) for p, q in reversed(ring)])
+        return rings, closed
 
     def plate(self, bone, outline, mat, z, thickness=5.0, chamfer=2.0):
         """A plate standing off the chest or back: an outline in (x, y), thick towards the face."""
@@ -126,7 +252,8 @@ class Armour:
         w, h, d = size
         self.part(bone).box((x * U, -z * U, y * U), (w * U, d * U, h * U), mat, taper=taper)
 
-    def sleeve(self, bone, side, out0, out1, r0, r1, mat, sides=LIMB_SIDES):
+    def sleeve(self, bone, side, out0, out1, r0, r1, mat, sides=LIMB_SIDES, hug=None,
+               limit=None, step=9.0):
         """
         A tube round a HORIZONTAL limb — a bracer, a mail sleeve, a cloth cuff.
 
@@ -134,17 +261,37 @@ class Armour:
         and wrong for an arm: an arm runs out sideways, so its rings have to turn
         about x. Same construction `gloves.py` uses for a gauntlet's forearm, so a
         bracer and a gauntlet occupy the same space.
+
+        `hug` does here what it does on `shell`: the arm's own section, pushed
+        out by that clearance, instead of a tube big enough to swallow it.
         """
+        if hug is not None:
+            rings, _ = self.hugged(
+                bone, [(r0, side * out0), (r1, side * out1)], hug, sides,
+                ARM_CENTRE, 1.0, 0.0, (1.0, 1.0), limit, step, True, run="x")
+            if rings:
+                self.part(bone).loft(rings, mat)
+                return
         self.part(bone).lathe(
             [(r0 * U, side * out0 * U), (r1 * U, side * out1 * U)], mat, sides=sides,
-            centre=(-4.0 * U, 186.0 * U), axis="x",
+            centre=(ARM_CENTRE[0] * U, ARM_CENTRE[1] * U), axis="x",
         )
 
-    def band(self, bone, y, half_width, mat, tube=3.0, squash=None, sides=10, z=0.0, x=0.0):
-        """A belt, a rivet line, the lip of a cuff."""
+    def band(self, bone, y, half_width, mat, tube=3.0, squash=None, sides=10, z=0.0, x=0.0,
+             hug=None, step=9.0, keep=None):
+        """
+        A belt, a rivet line, the lip of a cuff.
+
+        Hugged, `hug` is how far the band stands off the BODY, so it is the shell
+        beneath it plus a little: the swell that makes it read as a belt comes
+        from standing a further `tube * 0.4` out at its middle, not from a wider
+        radius, because a wider radius on a body-shaped shell only bulges where
+        the body happens to be narrow.
+        """
         depth = (1.0, 0.82) if squash is None else squash
+        lift = None if hug is None else (hug, hug + tube * 0.4, hug)
         self.shell(bone, [(half_width, y - tube), (half_width + tube * 0.4, y), (half_width, y + tube)],
-                   mat, squash=depth, sides=sides, cap=False, z=z, x=x)
+                   mat, squash=depth, sides=sides, cap=False, z=z, x=x, hug=lift, step=step, keep=keep)
 
     def hanging(self, stations, mat, lining=None, thickness=4.0, segments=3, pleats=6, fold=0.18):
         """
@@ -439,6 +586,29 @@ class Armour:
             mesh(-w * 0.62, y, z + half - w * curl * 0.45),
         ]
 
+    def skin(self, bone, y, ang, clear, x=0.0, z=0.0, sides=LIMB_SIDES, limit=None, run="z"):
+        """
+        WHERE A HUGGED SHELL'S SURFACE ACTUALLY IS, as (x, y, z) and the way out.
+
+        A turned shell has one radius, so a rivet could be placed at that radius
+        and be on it. A hugged one has a different radius at every facet, so the
+        rows of rivets, scales and studs have to ask where the surface came out
+        — otherwise they sink into the chest at the sides and float off it at
+        the front, which is the same fault as the armour itself, one layer up.
+
+        `ang` is the recipes' own angle round the body: 0 at the face, turning
+        towards +x. `clear` is how far out from the BODY the surface being stood
+        on sits, so a stud on a cuirass passes the cuirass's own clearance.
+        """
+        a = ang - math.pi / 2
+        centre = (x, -z)
+        got = bodyshape.ring(y, centre, [a], math.pi / sides, run=run, clear=clear,
+                             limit=limit if limit is not None else hug_limit(bone),
+                             exclude=hug_exclude(bone))
+        r = got[0][0] if got else clear + 20.0
+        return ((centre[0] + math.cos(a) * r, y, -(centre[1] + math.sin(a) * r)),
+                (math.sin(ang), 0.0, math.cos(ang)))
+
     def stud(self, bone, at, direction, length, width, mat, sides=4):
         """A rivet, a spike, a scale's point."""
         x, y, z = at
@@ -596,7 +766,7 @@ CHEST_HALF_X = 23.0
 #
 # This is the same mistake `over_skull` made on the helms, where flooring every
 # station produced a flat-topped bucket, and the same answer.
-CHEST_SCALE = 1.46
+CHEST_SCALE = 1.0
 
 
 def over_chest(r):
@@ -609,8 +779,13 @@ def over_chest(r):
 # INSIDE the shell and vanish — which is the same fault one layer in, and it is
 # how the first pass at this produced a wider breastplate with no rivets on it.
 # Taken from the widest station a chest recipe uses, which is 20.
-CHEST_SKIN = 20.0 * CHEST_SCALE
-CHEST_SKIN_Z = -3.0 + CHEST_SKIN * 1.15
+# WHERE THE FRONT OF THE CHEST IS, for the flat plates that stand on it — a
+# keel, a placket, a stole. Those are slabs at one depth rather than shells, so
+# they cannot hug; what they can do is start from the body's own measurement
+# rather than from a shell radius that no longer exists. The breast measures
+# z 18 at the bottom of the ribs and 23 at the collar, which is what
+# `BODY["chest_front_z"]` has said all along.
+CHEST_FACE = BODY["chest_front_z"]
 
 
 # THE SAME FLOOR FOR EVERY OTHER LIMB, and the same reason.
@@ -662,10 +837,33 @@ CHEST_SKIN_Z = -3.0 + CHEST_SKIN * 1.15
 # tapered limb into a tube. Each is worked back from what `coverwidth.mjs`
 # measured at the authored size — abdomen 82-96%, thigh 99%, shin 95% — plus the
 # clearance a worn thing needs over the limb inside it.
-WAIST_SCALE = 1.27
-THIGH_SCALE = 1.34
-SHIN_SCALE = 1.38
+# AND THEY ARE ALL ONE NOW, because the pieces they grew no longer need
+# growing. `hug` gives each of them the body's own section plus a clearance, and
+# a scale on top of that would only put the barrel back. What the authored radii
+# still do is set a FLOOR: where a recipe wants a shape prouder than the body —
+# a tasset flaring, a collar standing — it says so and gets it.
+#
+# Kept as functions rather than deleted from thirty call sites, because the call
+# sites still say which part of the body each radius belongs to.
+WAIST_SCALE = 1.0
+THIGH_SCALE = 1.0
+SHIN_SCALE = 1.0
 ARM_SCALE = 1.38
+
+# HOW FAR A HUGGED PIECE STANDS OFF THE BODY, which is now the whole
+# specification of its size.
+CLEAR_PLATE = 3.4    # a cuirass, a tasset, a greave: rigid, over padding
+CLEAR_COAT = 2.4     # mail, a jerkin, a robe: cloth, which lies closer
+CLEAR_LIMB = 2.2     # a cuisse or a greave, against the leg
+# A BOOT GOES ON OVER THE GREAVE, and this number is what stops the two from
+# trying to occupy the same surface. The boots slot and the armour slot both
+# dress the shin — a mail chausse from the chest piece, a boot shaft from the
+# footwear — and at equal clearance the two shells interleave facet by facet and
+# photograph as brown-and-grey camouflage down both legs. Reported in general
+# terms once already: "I don't want any overlappings or one item removing part
+# of another." The boot is the outer layer, by two and a half units.
+CLEAR_BOOT = 4.8
+LAYER = 1.8          # what a band or a panel adds on top of what it decorates
 
 
 def over_waist(r):
@@ -695,20 +893,20 @@ def plate_chest(a):
     # barrel with a character inside it; the second hugged so close it read as
     # paint. This one stands about three units off the body and carries the
     # shoulder line, which is what makes a cuirass a garment rather than a skin.
-    a.shell(BONE_CHEST, [(19.0 + PROUD * 0.4, BODY["chest_y0"] - 6.0),
-                         (22.0 + PROUD, BODY["chest_y0"] + 14.0),
-                         (22.5 + PROUD, BODY["chest_y1"] - 14.0),
-                         (20.0 + PROUD * 0.5, BODY["chest_y1"] + 7.0)],
-            "Steel", squash=(1.0, 1.15), z=-3.0)
+    a.shell(BONE_CHEST, [(19.0, BODY["chest_y0"] - 6.0),
+                         (22.0, BODY["chest_y0"] + 14.0),
+                         (22.5, BODY["chest_y1"] - 14.0),
+                         (20.0, BODY["chest_y1"] + 7.0)],
+            "Steel", squash=(1.0, 1.15), z=-3.0, hug=CLEAR_PLATE, sides=LIMB_SIDES)
     # The keel: a raised ridge down the front, which is what makes a breastplate
     # read as forged rather than as a barrel.
     a.plate(BONE_CHEST, [(-3.5, BODY["chest_y0"] + 1.0), (3.5, BODY["chest_y0"] + 1.0),
                          (4.5, BODY["chest_y1"] - 7.0), (-4.5, BODY["chest_y1"] - 7.0)],
-            "LightSteel", z=BODY["chest_front_z"] + 1.0, thickness=5.0)
+            "LightSteel", z=CHEST_FACE + CLEAR_PLATE + 1.0, thickness=5.0)
     a.shell(BONE_CHEST, [(14.0, BODY["chest_y1"] + 1.0), (16.0, BODY["chest_y1"] + 7.0)],
-            "DarkSteel", squash=(1.0, 1.05), sides=LIMB_SIDES, z=-3.0)
+            "DarkSteel", squash=(1.0, 1.05), sides=LIMB_SIDES, z=-3.0, hug=CLEAR_PLATE + LAYER)
     a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"] - 1.0), (over_waist(24.0), BODY["waist_y1"] - 11.0)],
-            "Steel", squash=(1.0, 1.0), z=-6.0)
+            "Steel", squash=(1.0, 1.0), z=-6.0, hug=CLEAR_PLATE, sides=LIMB_SIDES)
     for side in (1, -1):
         a.box(BONE_WAIST, (side * 13.0, BODY["waist_y1"] - 24.0, -4.0), (18.0, 24.0, 26.0), "Steel", taper=0.85)
     pauldrons(a, "Steel")
@@ -716,90 +914,92 @@ def plate_chest(a):
 
 def scale_chest(a):
     """Scale: overlapping rows of small plates, each row a little wider than the last."""
-    a.shell(BONE_CHEST, [(over_chest(17.0 + PROUD * 0.5), BODY["chest_y0"] - 3.0),
-                         (over_chest(20.0 + PROUD * 0.8), BODY["shoulder_y"] - 2.0),
-                         (over_chest(18.6 + PROUD * 0.6), BODY["chest_y1"] - 8.0),
-                         (over_chest(17.0 + PROUD * 0.4), BODY["chest_y1"] + 3.0)],
-            LEATHER, squash=(1.0, 1.15), z=-3.0)
+    a.shell(BONE_CHEST, [(over_chest(17.0), BODY["chest_y0"] - 3.0),
+                         (over_chest(20.0), BODY["shoulder_y"] - 2.0),
+                         (over_chest(18.6), BODY["chest_y1"] - 8.0),
+                         (over_chest(17.0), BODY["chest_y1"] + 3.0)],
+            LEATHER, squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
     rows = 5
     for i in range(rows):
         y = BODY["chest_y0"] + 2.0 + i * (BODY["chest_y1"] - BODY["chest_y0"] - 6.0) / rows
         for k in range(9):
             angle = -math.pi * 0.62 + k * (math.pi * 1.24 / 8)
-            x = math.sin(angle) * CHEST_SKIN
-            z = -3.0 + math.cos(angle) * (CHEST_SKIN * 1.15)
+            at, out = a.skin(BONE_CHEST, y, angle, CLEAR_COAT + LAYER, z=-3.0)
             # The scales in the ACCENT, not in the same metal as the coat under
             # them: drawn in one colour, a field of scales measures and reads as
             # one flat surface.
             # Bigger scales in the accent: a field of small studs the same value
             # as the coat under them measured as one flat surface at 0.229.
-            a.stud(BONE_CHEST, (x, y, z), (math.sin(angle), -0.35, math.cos(angle)), 6.0, 6.5, BRIGHT, sides=4)
-    a.band(BONE_CHEST, BODY["chest_y0"] - 1.0, CHEST_SKIN, "DarkSteel", tube=2.5, squash=(1.0, 1.15), z=-3.0)
+            a.stud(BONE_CHEST, at, (out[0], -0.35, out[2]), 6.0, 6.5, BRIGHT, sides=4)
+    a.band(BONE_CHEST, BODY["chest_y0"] - 1.0, 20.0, "DarkSteel", tube=2.5, squash=(1.0, 1.15), z=-3.0,
+           hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
     # A BAND OF THE BRIGHT ACCENT ACROSS THE CHEST. Bronze scale measured 0.206
     # against a body at 0.186 — the same "just above the skin" value that reads
     # as merged — and a field of studs alone did not move it. The coat under the
     # scales carries the accent over real area instead.
-    a.shell(BONE_CHEST, [(over_chest(18.0 + PROUD * 0.5), BODY["chest_y0"] + 6.0),
-                         (20.0 + PROUD * 0.8, BODY["chest_y1"] - 12.0)],
-            BRIGHT, squash=(1.0, 1.15), z=-3.0)
+    a.shell(BONE_CHEST, [(over_chest(18.0), BODY["chest_y0"] + 6.0),
+                         (20.0, BODY["chest_y1"] - 12.0)],
+            BRIGHT, squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT + LAYER * 0.5, sides=LIMB_SIDES)
     a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"]), (over_waist(24.5), BODY["hip_y"] - 6.0),
                          (over_waist(23.0), BODY["hip_y"] - 24.0)],
-            LEATHER, squash=(1.0, 1.0), z=-6.0)
+            LEATHER, squash=(1.0, 1.0), z=-6.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
     for k in range(8):
         angle = -math.pi * 0.6 + k * (math.pi * 1.2 / 7)
-        a.stud(BONE_WAIST, (math.sin(angle) * over_waist(23.0), BODY["waist_y1"] - 14.0,
-                            -6.0 + math.cos(angle) * over_waist(23.0)),
-               (math.sin(angle), -0.4, math.cos(angle)), 4.0, 4.0, CLOTH_TRIM, sides=4)
+        at, out = a.skin(BONE_WAIST, BODY["waist_y1"] - 14.0, angle, CLEAR_COAT + LAYER, z=-6.0)
+        a.stud(BONE_WAIST, at, (out[0], -0.4, out[2]), 4.0, 4.0, CLOTH_TRIM, sides=4)
     pauldrons(a, "Steel", span=12.0, drop=9.0)
 
 
 def brigandine_chest(a):
     """Brigandine: quilted cloth over plates, held by rows of rivets and two straps."""
-    a.shell(BONE_CHEST, [(over_chest(18.0 + PROUD * 0.4), BODY["chest_y0"] - 4.0),
-                         (over_chest(20.0 + PROUD * 0.9), BODY["chest_y0"] + 14.0),
-                         (over_chest(20.0 + PROUD * 0.9), BODY["shoulder_y"] - 2.0),
-                         (over_chest(18.8 + PROUD * 0.6), BODY["chest_y1"] - 6.0),
-                         (over_chest(17.0 + PROUD * 0.4), BODY["chest_y1"] + 4.0)],
-            "Red", squash=(1.0, 1.15), z=-3.0)
+    a.shell(BONE_CHEST, [(over_chest(18.0), BODY["chest_y0"] - 4.0),
+                         (over_chest(20.0), BODY["chest_y0"] + 14.0),
+                         (over_chest(20.0), BODY["shoulder_y"] - 2.0),
+                         (over_chest(18.8), BODY["chest_y1"] - 6.0),
+                         (over_chest(17.0), BODY["chest_y1"] + 4.0)],
+            "Red", squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
     for y in (BODY["chest_y0"] + 6.0, BODY["chest_y0"] + 22.0, BODY["chest_y1"] - 9.0):
         for k in range(7):
             angle = -math.pi * 0.5 + k * (math.pi / 6)
-            a.stud(BONE_CHEST, (math.sin(angle) * CHEST_SKIN, y, -3.0 + math.cos(angle) * (CHEST_SKIN * 1.15)),
-                   (math.sin(angle), 0.0, math.cos(angle)), 2.0, 1.8, "DarkSteel", sides=5)
+            at, out = a.skin(BONE_CHEST, y, angle, CLEAR_COAT + LAYER * 0.4, z=-3.0)
+            a.stud(BONE_CHEST, at, out, 2.0, 1.8, "DarkSteel", sides=5)
     for side in (1, -1):
         a.plate(BONE_CHEST, [(side * 5.0, BODY["chest_y1"] + 1.0), (side * 14.0, BODY["chest_y1"] - 3.0),
                              (side * 11.0, BODY["chest_y0"] + 4.0), (side * 3.0, BODY["chest_y0"] + 6.0)],
-                LEATHER, z=CHEST_SKIN_Z - 1.0, thickness=3.5)
-    a.band(BONE_CHEST, BODY["chest_y0"] - 2.0, CHEST_SKIN, LEATHER_TRIM, tube=3.5, squash=(1.0, 1.15), z=-3.0)
+                LEATHER, z=CHEST_FACE + CLEAR_COAT + LAYER, thickness=3.5)
+    a.band(BONE_CHEST, BODY["chest_y0"] - 2.0, 20.0, LEATHER_TRIM, tube=3.5, squash=(1.0, 1.15), z=-3.0,
+           hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
     a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"]),
                          (over_waist(23.0), BODY["hip_y"] - 6.0),
                          (over_waist(21.5), BODY["hip_y"] - 24.0)],
-            "Red", squash=(1.0, 1.0), z=-6.0)
+            "Red", squash=(1.0, 1.0), z=-6.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
     pauldrons(a, LEATHER_TRIM, span=12.0, drop=8.0, lip=False)
 
 
 def chain_chest(a):
     """Mail: a shirt that hangs, a collar that stands, and a skirt to the thigh."""
-    a.shell(BONE_CHEST, [(over_chest(17.0 + PROUD * 0.4), BODY["chest_y0"] - 6.0),
-                         (over_chest(20.0 + PROUD * 0.8), BODY["chest_y0"] + 12.0),
-                         (over_chest(20.0 + PROUD * 0.8), BODY["shoulder_y"] - 2.0),
-                         (over_chest(18.5 + PROUD * 0.6), BODY["chest_y1"] - 6.0),
-                         (over_chest(16.0 + PROUD * 0.4), BODY["chest_y1"] + 6.0)],
-            GARMENT, squash=(1.0, 1.15), z=-3.0)
+    a.shell(BONE_CHEST, [(over_chest(17.0), BODY["chest_y0"] - 6.0),
+                         (over_chest(20.0), BODY["chest_y0"] + 12.0),
+                         (over_chest(20.0), BODY["shoulder_y"] - 2.0),
+                         (over_chest(18.5), BODY["chest_y1"] - 6.0),
+                         (over_chest(16.0), BODY["chest_y1"] + 6.0)],
+            GARMENT, squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
     # A standing collar, the piece that separates mail from a tabard at a glance.
     a.shell(BONE_CHEST, [(13.0, BODY["chest_y1"] + 3.0), (14.0, BODY["chest_y1"] + 12.0)],
-            GARMENT, squash=(1.0, 1.1), sides=LIMB_SIDES, z=-3.0)
+            GARMENT, squash=(1.0, 1.1), sides=LIMB_SIDES, z=-3.0, hug=CLEAR_COAT + LAYER)
     # Banding across the shirt reads as rings at this size — in the accent, so
     # the rings are visible against the mail rather than a darker shade of it.
     # Wide bands, not piping: iron's mail sits at 0.21 against a body at 0.27,
     # and a hairline of brighter metal does not change that.
     for y in (BODY["chest_y0"] + 4.0, BODY["chest_y0"] + 17.0, BODY["chest_y0"] + 30.0):
-        a.band(BONE_CHEST, y, over_chest(20.0 + PROUD * 0.8), BRIGHT, tube=4.5, squash=(1.0, 1.15), z=-3.0)
+        a.band(BONE_CHEST, y, 20.0, BRIGHT, tube=4.5, squash=(1.0, 1.15), z=-3.0,
+               hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
     a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"] + 2.0),
                          (over_waist(25.0), BODY["hip_y"] - 6.0),
                          (over_waist(23.5), BODY["hip_y"] - 26.0)],
-            GARMENT, squash=(1.0, 1.0), z=-6.0)
-    a.band(BONE_WAIST, BODY["hip_y"] - 26.0, over_waist(23.5), "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0)
+            GARMENT, squash=(1.0, 1.0), z=-6.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
+    a.band(BONE_WAIST, BODY["hip_y"] - 26.0, 23.5, "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0,
+           hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
     # Short sleeves of mail rather than pauldrons: mail drapes, it does not plate.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(over_arm(12.0), BODY["shoulder_y"] + 9.0),
@@ -813,16 +1013,16 @@ def leather_chest(a):
     """A jerkin: a short sleeveless coat, a wide belt, and a strap across the chest."""
     # Proud of the body and darker than its tunic: hugged at 17 it read as the
     # same torso in another shade.
-    a.shell(BONE_CHEST, [(18.5 + PROUD * 0.35, BODY["chest_y0"] - 5.0),
-                         (21.0 + PROUD * 0.7, BODY["chest_y0"] + 14.0),
-                         (21.0 + PROUD * 0.7, BODY["chest_y1"] - 12.0),
-                         (17.0 + PROUD * 0.35, BODY["chest_y1"] + 5.0)],
-            GARMENT, squash=(1.0, 1.15), z=-3.0)
+    a.shell(BONE_CHEST, [(18.5, BODY["chest_y0"] - 5.0),
+                         (21.0, BODY["chest_y0"] + 14.0),
+                         (21.0, BODY["chest_y1"] - 12.0),
+                         (17.0, BODY["chest_y1"] + 5.0)],
+            GARMENT, squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
     # A broad panel of the palette's bright accent down the chest, so a jerkin
     # is not one mid-tone surface at the body's own value.
     a.plate(BONE_CHEST, [(-13.0, BODY["chest_y0"] - 2.0), (13.0, BODY["chest_y0"] - 2.0),
                          (11.0, BODY["chest_y1"] - 6.0), (-11.0, BODY["chest_y1"] - 6.0)],
-            BRIGHT, z=BODY["chest_front_z"] + PROUD * 0.35, thickness=5.0)
+            BRIGHT, z=CHEST_FACE + CLEAR_COAT + LAYER * 0.5, thickness=5.0)
     # The coat is open down the front, which is what makes it a jerkin.
     a.plate(BONE_CHEST, [(-2.5, BODY["chest_y0"] + 2.0), (2.5, BODY["chest_y0"] + 2.0),
                          (2.5, BODY["chest_y1"] - 7.0), (-2.5, BODY["chest_y1"] - 7.0)],
@@ -830,7 +1030,8 @@ def leather_chest(a):
     a.plate(BONE_CHEST, [(-16.0, BODY["chest_y1"] - 17.0), (-5.0, BODY["chest_y1"] + 1.0),
                          (-1.0, BODY["chest_y1"] - 5.0), (-13.0, BODY["chest_y1"] - 22.0)],
             "Wood", z=BODY["chest_front_z"] + 1.0, thickness=3.0)
-    a.band(BONE_CHEST, BODY["chest_y0"] - 1.0, 19.0, "Wood", tube=4.0, squash=(1.0, 1.15), z=-3.0)
+    a.band(BONE_CHEST, BODY["chest_y0"] - 1.0, 19.0, "Wood", tube=4.0, squash=(1.0, 1.15), z=-3.0,
+           hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
     a.box(BONE_CHEST, (0.0, BODY["chest_y0"] - 1.0, BODY["chest_front_z"] + 2.0), (8.0, 8.0, 4.0), "Gold")
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(11.0, BODY["shoulder_y"] + 4.0), (10.0, BODY["shoulder_y"] - 8.0)],
@@ -846,14 +1047,17 @@ def robe_chest(a):
     # body at 0.220 however wide the placket got. The garment itself is cut from
     # the palette's accent (0.672) and the darker metal becomes its trim, which
     # is the same relationship the other five have, the other way up.
-    a.shell(BONE_CHEST, [(17.0 + PROUD * 0.3, BODY["chest_y0"] - 3.0),
-                         (19.0 + PROUD * 0.6, BODY["chest_y0"] + 16.0),
-                         (19.0 + PROUD * 0.6, BODY["chest_y1"] - 10.0),
-                         (15.0 + PROUD * 0.3, BODY["chest_y1"] + 8.0)],
-            BRIGHT, squash=(1.0, 1.15), z=-3.0)
+    a.shell(BONE_CHEST, [(17.0, BODY["chest_y0"] - 3.0),
+                         (19.0, BODY["chest_y0"] + 16.0),
+                         (19.0, BODY["chest_y1"] - 10.0),
+                         (15.0, BODY["chest_y1"] + 8.0)],
+            BRIGHT, squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
     # The skirt falls from the waist and widens to the knee: the robe's whole shape.
-    a.shell(BONE_WAIST, [(22.0, BODY["waist_y1"] + 2.0), (25.0, BODY["waist_y1"] - 20.0),
-                         (29.0, BODY["waist_y1"] - 58.0), (27.0, BODY["waist_y1"] - 76.0)],
+    # THE FALL IS NOT HUGGED. A robe leaves the hip and goes its own way, and a
+    # skirt that follows the thighs is a pair of trousers. Only its top has to
+    # clear the body, and it starts wide enough to.
+    a.shell(BONE_WAIST, [(30.0, BODY["waist_y1"] + 2.0), (32.0, BODY["waist_y1"] - 20.0),
+                         (34.0, BODY["waist_y1"] - 58.0), (31.0, BODY["waist_y1"] - 76.0)],
             BRIGHT, squash=(1.0, 1.0), z=-6.0)
     # A ROBE IS ONE UNBROKEN SURFACE, and measured against the body it sat
     # within a hundredth of it: 0.138 against 0.127. Shape cannot fix that —
@@ -868,14 +1072,15 @@ def robe_chest(a):
     # accent body, so the robe still reads as two materials rather than one.
     a.plate(BONE_CHEST, [(-11.0, BODY["chest_y0"] + 2.0), (11.0, BODY["chest_y0"] + 2.0),
                          (12.0, BODY["chest_y1"] - 2.0), (-12.0, BODY["chest_y1"] - 2.0)],
-            CLOTH, z=BODY["chest_front_z"] + PROUD * 0.3, thickness=5.0)
+            CLOTH, z=CHEST_FACE + CLEAR_COAT + LAYER * 0.6, thickness=5.0)
     for side in (1, -1):
         a.plate(BONE_CHEST, [(side * 8.0, BODY["chest_y1"] + 2.0), (side * 20.0, BODY["chest_y1"] - 2.0),
                              (side * 18.0, BODY["chest_y0"] + 10.0), (side * 7.0, BODY["chest_y0"] + 12.0)],
-                CLOTH, z=BODY["chest_front_z"] + PROUD * 0.25, thickness=4.0)
+                CLOTH, z=CHEST_FACE + CLEAR_COAT + LAYER * 0.4, thickness=4.0)
     a.shell(BONE_CHEST, [(17.0, BODY["chest_y1"] - 2.0), (19.0, BODY["chest_y1"] + 9.0)],
-            CLOTH_TRIM, squash=(1.0, 1.15), sides=10, z=-3.0)
-    a.band(BONE_WAIST, BODY["waist_y1"] - 4.0, 23.0, CLOTH_TRIM, tube=4.0, squash=(1.0, 1.0), z=-6.0)
+            CLOTH_TRIM, squash=(1.0, 1.15), sides=LIMB_SIDES, z=-3.0, hug=CLEAR_COAT + LAYER)
+    a.band(BONE_WAIST, BODY["waist_y1"] - 4.0, 23.0, CLOTH_TRIM, tube=4.0, squash=(1.0, 1.0), z=-6.0,
+           hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
     # A knot and two hanging ends, so the sash reads as tied.
     a.box(BONE_WAIST, (11.0, BODY["waist_y1"] - 6.0, BODY["waist_front_z"] + 2.0), (8.0, 8.0, 5.0), CLOTH_TRIM)
     a.box(BONE_WAIST, (11.0, BODY["waist_y1"] - 21.0, BODY["waist_front_z"] + 1.0), (5.0, 22.0, 3.5), CLOTH_TRIM)
@@ -964,7 +1169,8 @@ def dress_limbs(a, style):
         a.shell(bone, [(over_thigh(12.5), BODY["hip_y"] - 4.0),
                        (over_thigh(13.5), BODY["hip_y"] - 24.0),
                        (over_thigh(12.5), BODY["knee_y"] + 8.0)],
-                leg, squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * THIGH_X)
+                leg, squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * THIGH_X,
+                hug=CLEAR_LIMB, recentre=True)
         # A BAND, OR IT IS TROUSERS. Flat palette metal over a thigh reads as
         # blue-grey cloth on the plate — the leg pieces were the only gear in the
         # catalogue with no internal structure at all, which is the same fault
@@ -978,20 +1184,25 @@ def dress_limbs(a, style):
         # plate tassets is actually built.
         for y in (BODY["hip_y"] - 14.0, BODY["hip_y"] - 40.0):
             a.band(bone, y, over_thigh(13.6), kit["trim"], tube=3.0,
-                   squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * THIGH_X)
+                   squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * THIGH_X,
+                   hug=CLEAR_LIMB + LAYER)
         # And a knee cop: the one piece of leg armour a player can actually name.
         a.shell(bone, [(over_thigh(11.0), BODY["knee_y"] + 12.0),
                        (over_thigh(14.6), BODY["knee_y"] + 5.0),
                        (over_thigh(11.5), BODY["knee_y"] - 1.0)],
-                kit["trim"], squash=(1.0, 0.92), sides=LIMB_SIDES, x=side * THIGH_X)
+                kit["trim"], squash=(1.0, 0.92), sides=LIMB_SIDES, x=side * THIGH_X,
+                hug=(CLEAR_LIMB + LAYER, CLEAR_LIMB + LAYER * 2.4, CLEAR_LIMB + LAYER),
+                recentre=True)
     for bone, side in BONE_CALF:
         # And a greave over the shin, stopping above the boot.
         a.shell(bone, [(over_shin(12.5), BODY["knee_y"] + 2.0),
                        (over_shin(13.0), BODY["knee_y"] - 14.0),
                        (over_shin(11.5), BODY["ankle_y"] + 16.0)],
-                leg, squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * CALF_X)
+                leg, squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * CALF_X,
+                hug=CLEAR_LIMB, recentre=True)
         a.band(bone, BODY["knee_y"] - 1.0, over_shin(13.4), kit["trim"], tube=2.6,
-               squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * CALF_X)
+               squash=(1.0, 0.9), sides=LIMB_SIDES, x=side * CALF_X,
+               hug=CLEAR_LIMB + LAYER)
 
 
 # THREE OF SIX, BECAUSE THREE ARE WORN RATHER THAN BUILT.
@@ -1379,13 +1590,14 @@ def shoe(a, mat, toe=None, height=13.0):
         a.box(bone, (x, height * 0.5 + 1.0, 24.0), (18.0, height * 0.7, 12.0), toe or mat)
 
 
-def shin(a, mat, y0, y1, r0, r1, sides=LIMB_SIDES):
+def shin(a, mat, y0, y1, r0, r1, sides=LIMB_SIDES, hug=CLEAR_BOOT):
     """A cuff, a greave or a wrap up the lower leg."""
     for bone, side in BONE_SHIN:
-        a.shell(bone, [(r0, y0), (r1, y1)], mat, squash=(1.0, 1.0), sides=sides, x=side * SHIN_X)
+        a.shell(bone, [(r0, y0), (r1, y1)], mat, squash=(1.0, 1.0), sides=sides,
+                x=side * SHIN_X, hug=hug, recentre=True)
 
 
-def boot_shaft(a, mat, y0, y1, ankle, calf, sides=LIMB_SIDES):
+def boot_shaft(a, mat, y0, y1, ankle, calf, sides=LIMB_SIDES, hug=CLEAR_BOOT):
     """
     A boot, which is not a cone.
 
@@ -1402,12 +1614,14 @@ def boot_shaft(a, mat, y0, y1, ankle, calf, sides=LIMB_SIDES):
                        (ankle * 0.97, y0 + span * 0.16),
                        (calf, y0 + span * 0.55),
                        (calf * 0.94, y1)],
-                mat, squash=(1.0, 1.0), sides=sides, x=side * SHIN_X)
+                mat, squash=(1.0, 1.0), sides=sides, x=side * SHIN_X,
+                hug=hug, recentre=True)
 
 
-def shin_band(a, mat, y, r, tube=2.5):
+def shin_band(a, mat, y, r, tube=2.5, hug=CLEAR_BOOT + LAYER):
     for bone, side in BONE_SHIN:
-        a.band(bone, y, r, mat, tube=tube, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * SHIN_X)
+        a.band(bone, y, r, mat, tube=tube, squash=(1.0, 1.0), sides=LIMB_SIDES,
+               x=side * SHIN_X, hug=hug)
 
 
 def low_boots(a):
@@ -1450,13 +1664,15 @@ def plated_boots(a):
     for bone, side in BONE_SHIN:
         # The knee, which is what separates a greave from a tall boot.
         a.shell(bone, [(13.0, 44.0), (15.0, 50.0), (11.0, 56.0)], "LightSteel",
-                squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * SHIN_X)
+                squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * SHIN_X,
+                hug=(CLEAR_BOOT + LAYER, CLEAR_BOOT + LAYER * 2.4, CLEAR_BOOT + LAYER),
+                recentre=True)
         # The ridge, standing proud of the greave's front from ankle to knee.
         # `plate` is thick towards the FACE, so its z puts it in front of the
         # shin rather than inside it.
         a.plate(bone, [(side * SHIN_X - 4.0, 13.0), (side * SHIN_X + 4.0, 13.0),
                        (side * SHIN_X + 3.0, 43.0), (side * SHIN_X - 3.0, 43.0)],
-                "LightSteel", z=17.5, thickness=5.0, chamfer=1.5)
+                "LightSteel", z=17.5 + CLEAR_BOOT, thickness=5.0, chamfer=1.5)
 
 
 def wrapped_boots(a):
@@ -1503,12 +1719,13 @@ def collar(a, mat, y=None, r=21.0, tube=3.5):
     # nothing, with a gap between the cloth and the shoulder. Same fault as the
     # chest shells; same floor fixes it.
     at = BODY["chest_y1"] - 4.0 if y is None else y
-    a.band(BONE_CHEST, at, over_chest(r), mat, tube=tube, squash=(1.0, 1.15), z=-3.0)
+    a.band(BONE_CHEST, at, over_chest(r), mat, tube=tube, squash=(1.0, 1.15), z=-3.0,
+           hug=CLEAR_PLATE + LAYER, sides=LIMB_SIDES)
     for side in (1, -1):
         a.plate(BONE_CHEST,
                 [(side * 6.0, at + 6.0), (side * 22.0, at + 1.0),
                  (side * 22.0, at - 6.0), (side * 6.0, at - 3.0)],
-                mat, z=CHEST_SKIN_Z - 2.0, thickness=4.0, chamfer=1.0)
+                mat, z=CHEST_FACE + CLEAR_PLATE, thickness=4.0, chamfer=1.0)
 
 
 def cape_back(a):

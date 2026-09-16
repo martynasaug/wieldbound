@@ -26879,3 +26879,72 @@ is what this milestone fixed; the swing is a different question and the
 measurement cannot separate them.
 
 480 of 480 outfits clean. 19 fitted, 0 not. Suite green.
+
+**Phase 70 M70.363 — the armour is the body's own shape now, not a lathe round it.**
+Reported twice in one breath, and I said at the time that both complaints had
+one cause: "there's still a lot of skin showing on the legs, hips, butt, arms"
+and "I don't like this barrel style armour, make it better."
+
+EVERY PROCEDURAL PIECE IN THE FILE WAS A LATHE — a circle turned about an axis.
+A circle can only clear a body by exceeding that body's WIDEST point, so the
+only way to stop the character showing through was to inflate it until it was a
+barrel. Those were never two faults to trade off. They were one fault, and the
+whole history of this phase is the trade being made back and forth: five scales
+(`CHEST_SCALE` 1.46, `WAIST_SCALE` 1.27, `THIGH_SCALE` 1.34, `SHIN_SCALE` 1.38,
+`ARM_SCALE` 1.38) each raised when skin showed and lowered when it read as a
+barrel. There was no number that satisfied both and there could not be.
+
+`tools/art/items/bodyshape.py` measures the wearer's own surface and hands back,
+for any station along a limb and any direction round it, how far the body
+reaches there. `Armour.shell` takes a `hug` clearance and builds its rings from
+that instead of from a radius, so a piece is the body's section pushed out by
+the clearance — narrow at the waist, full at the ribs, flat across the shin,
+and clear of the figure everywhere BY CONSTRUCTION. All five scales are 1.0
+now; the authored radii survive only as a floor, for where a recipe wants a
+shape prouder than the body.
+
+FOUR THINGS HAD TO BE RIGHT BEFORE ANY OF IT MEASURED ANYTHING, and each was
+wrong first:
+
+  THE FRAME     The first version centred x and y on the spine's bounding box,
+                which put the body 7.9 units in front of where `armour.mesh()`
+                puts it. A measurement in the wrong frame is worse than none,
+                because every piece built on it is confidently and uniformly
+                wrong. The frame is the model's own now; only HEIGHT is anchored,
+                to the skull, which is what the `BODY` table's 206 means.
+
+  THE VERTICES  It sampled vertices and could not work: this body has SEVENTEEN
+                on the whole torso and sixteen on the whole abdomen, so a
+                cross-section has four or five points in it and a ring through
+                them describes where the vertices happen to be. It raycasts the
+                surface instead.
+
+  THE DIRECTION Fired outward from the axis, a ray hits the forearm's own
+                internal septum four hundredths of a unit from where it started
+                and reports a forearm of radius nothing — a sleeve collapsed
+                onto the bone. Fired INWARD from outside there is no such trap:
+                the first surface met on the way in is the one the armour has to
+                clear, which is the definition of the thing being measured.
+
+  THE T-POSE    A ray fired sideways out of the chest never reaches the chest.
+                The arm is hanging in the way, so it exits through the bicep and
+                reports a half-width of 43 where the torso is 20 — a barrel
+                again, arrived at from the opposite direction. A torso piece
+                measures with the arms taken out of the mesh; a pauldron, which
+                covers the arm, measures with them in.
+
+A facet is sized by the furthest the body reaches anywhere in the WEDGE that
+facet spans, each sample pushed out onto the facet's chord — the `LIMB_SIDES`
+lesson stated once in arithmetic instead of paid for again in screenshots.
+
+AND THE BOOTS WERE WEARING THE GREAVE. Photographed, both legs came out in
+brown-and-grey camouflage: the boots slot and the armour slot both dress the
+shin — a mail chausse from the chest piece, a boot shaft from the footwear —
+and at equal clearance the two shells interleave facet by facet. "I don't want
+any overlappings or one item removing part of another" is exactly this, and it
+had been there since before the hug. The boot is the outer layer by two and a
+half units now, and it photographs as leather over armour.
+
+480 of 480 outfits clean. 19 fitted, 0 not. Suite green — one flake in
+`throwers.mjs`, which passes on three re-runs and has nothing to do with gear.
+Client typechecks.
