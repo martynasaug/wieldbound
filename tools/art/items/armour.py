@@ -695,7 +695,8 @@ def scale_chest(a):
     a.shell(BONE_CHEST, [(over_chest(18.0 + PROUD * 0.5), BODY["chest_y0"] + 6.0),
                          (20.0 + PROUD * 0.8, BODY["chest_y1"] - 12.0)],
             BRIGHT, squash=(1.0, 1.15), z=-3.0)
-    a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"]), (over_waist(25.0), BODY["hip_y"] - 6.0)],
+    a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"]), (over_waist(24.5), BODY["hip_y"] - 6.0),
+                         (over_waist(23.0), BODY["hip_y"] - 24.0)],
             LEATHER, squash=(1.0, 1.0), z=-6.0)
     for k in range(8):
         angle = -math.pi * 0.6 + k * (math.pi * 1.2 / 7)
@@ -724,7 +725,8 @@ def brigandine_chest(a):
                 LEATHER, z=CHEST_SKIN_Z - 1.0, thickness=3.5)
     a.band(BONE_CHEST, BODY["chest_y0"] - 2.0, CHEST_SKIN, LEATHER_TRIM, tube=3.5, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"]),
-                         (over_waist(23.0), BODY["hip_y"] - 6.0)],
+                         (over_waist(23.0), BODY["hip_y"] - 6.0),
+                         (over_waist(21.5), BODY["hip_y"] - 24.0)],
             "Red", squash=(1.0, 1.0), z=-6.0)
     pauldrons(a, LEATHER_TRIM, span=12.0, drop=8.0, lip=False)
 
@@ -747,9 +749,10 @@ def chain_chest(a):
     for y in (BODY["chest_y0"] + 4.0, BODY["chest_y0"] + 17.0, BODY["chest_y0"] + 30.0):
         a.band(BONE_CHEST, y, over_chest(20.0 + PROUD * 0.8), BRIGHT, tube=4.5, squash=(1.0, 1.15), z=-3.0)
     a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"] + 2.0),
-                         (over_waist(26.0), BODY["hip_y"] - 6.0)],
+                         (over_waist(25.0), BODY["hip_y"] - 6.0),
+                         (over_waist(23.5), BODY["hip_y"] - 26.0)],
             GARMENT, squash=(1.0, 1.0), z=-6.0)
-    a.band(BONE_WAIST, BODY["hip_y"] - 6.0, over_waist(26.0), "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0)
+    a.band(BONE_WAIST, BODY["hip_y"] - 26.0, over_waist(23.5), "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0)
     # Short sleeves of mail rather than pauldrons: mail drapes, it does not plate.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         a.shell(bone, [(over_arm(12.0), BODY["shoulder_y"] + 9.0),
@@ -890,11 +893,11 @@ def dress_limbs(a, style):
         a.sleeve(bone, side, 40.0, FOREARM_OUT0 + 2.0, over_arm(r0 + 1.6), over_arm(r0 + 0.4), mat)
     for bone, side in BONE_FOREARM:
         # A bracer: a tube round the forearm, flaring a little at the wrist.
-        a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT1, over_arm(r0), over_arm(r1), mat)
+        a.sleeve(bone, side, FOREARM_OUT0 - 10.0, FOREARM_OUT1, over_arm(r0), over_arm(r1), mat)
         a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, over_arm(r1 + 2.0), over_arm(r1 + 1.4), kit["trim"])
         # And a band where the bracer meets the elbow, so the two sleeves read as
         # one arm rather than two tubes that happen to touch.
-        a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT0 + 3.0, over_arm(r0 + 1.8), over_arm(r0 + 1.3), kit["trim"])
+        a.sleeve(bone, side, FOREARM_OUT0 - 10.0, FOREARM_OUT0 - 6.0, over_arm(r0 + 1.8), over_arm(r0 + 1.3), kit["trim"])
     # NO GAUNTLET, AND THIS IS A REVERSAL.
     #
     # A tapered sleeve on the hand bone covered the bare hand and was rejected
@@ -926,8 +929,8 @@ def dress_limbs(a, style):
         # Brigandine still photographed with blue-grey trousers, so the thigh gets
         # three bands with space between them, the way a mail chausse or a set of
         # plate tassets is actually built.
-        for y in (BODY["hip_y"] - 12.0, BODY["hip_y"] - 28.0, BODY["hip_y"] - 44.0):
-            a.band(bone, y, over_thigh(13.6), kit["trim"], tube=3.2,
+        for y in (BODY["hip_y"] - 14.0, BODY["hip_y"] - 40.0):
+            a.band(bone, y, over_thigh(13.6), kit["trim"], tube=3.0,
                    squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
         # And a knee cop: the one piece of leg armour a player can actually name.
         a.shell(bone, [(over_thigh(11.0), BODY["knee_y"] + 12.0),
@@ -1335,6 +1338,26 @@ def shin(a, mat, y0, y1, r0, r1, sides=8):
         a.shell(bone, [(r0, y0), (r1, y1)], mat, squash=(1.0, 1.0), sides=sides, x=side * SHIN_X)
 
 
+def boot_shaft(a, mat, y0, y1, ankle, calf, sides=8):
+    """
+    A boot, which is not a cone.
+
+    Reported: "why do boots look like a pair of cylinders on legs?" Because they
+    were two stations — one radius at the ankle, one at the top, lofted straight
+    between. A leg is not straight and neither is a boot: it grips at the ankle,
+    swells over the calf about a third of the way up, and eases off again under
+    the cuff. Four stations cost eight triangles and are the difference between
+    a boot and a pipe.
+    """
+    span = y1 - y0
+    for bone, side in BONE_SHIN:
+        a.shell(bone, [(ankle, y0),
+                       (ankle * 0.97, y0 + span * 0.16),
+                       (calf, y0 + span * 0.55),
+                       (calf * 0.94, y1)],
+                mat, squash=(1.0, 1.0), sides=sides, x=side * SHIN_X)
+
+
 def shin_band(a, mat, y, r, tube=2.5):
     for bone, side in BONE_SHIN:
         a.band(bone, y, r, mat, tube=tube, squash=(1.0, 1.0), sides=8, x=side * SHIN_X)
@@ -1343,7 +1366,7 @@ def shin_band(a, mat, y, r, tube=2.5):
 def low_boots(a):
     """A shoe and a turned-down ankle cuff. The one that gets out of the way."""
     shoe(a, BOOT_HIDE, toe=BOOT_TRIM)
-    shin(a, BOOT_HIDE, 11.0, BOOT_TOP, over_shin(12.4), over_shin(14.2))
+    boot_shaft(a, BOOT_HIDE, 11.0, BOOT_TOP, over_shin(12.4), over_shin(14.2))
     # The turned-down cuff is what makes this the plain one, not its height.
     shin_band(a, LEATHER_TRIM, BOOT_TOP - 3.0, 13.6, tube=3.0)
     shin_band(a, LEATHER_TRIM, 21.0, 14.2, tube=2.5)
@@ -1352,7 +1375,7 @@ def low_boots(a):
 def tall_boots(a):
     """To the knee, with the top turned over — the silhouette that says riding boot."""
     shoe(a, BOOT_HIDE, toe=BOOT_TRIM)
-    shin(a, BOOT_HIDE, 11.0, BOOT_TOP, over_shin(12.5), over_shin(14.4))
+    boot_shaft(a, BOOT_HIDE, 11.0, BOOT_TOP, over_shin(12.5), over_shin(14.4))
     # The fold at the top is the riding boot's whole silhouette.
     shin_band(a, LEATHER_TRIM, BOOT_TOP - 2.0, 14.6, tube=3.8)
     shin_band(a, LEATHER_TRIM, 24.0, 13.8, tube=2.0)
@@ -1371,7 +1394,7 @@ def plated_boots(a):
     where an overhead camera can catch it, not on the sides.
     """
     shoe(a, "Steel", toe="LightSteel")
-    shin(a, "Steel", 11.0, BOOT_TOP, over_shin(12.6), over_shin(14.5))
+    boot_shaft(a, "Steel", 11.0, BOOT_TOP, over_shin(12.6), over_shin(14.5))
     shin_band(a, "DarkSteel", 22.0, 15.0, tube=2.5)
     # Gold at the ankle: one warm line low down, which is the pack's own habit —
     # every reference item has a brass or gold fitting somewhere on it, and ours
@@ -1395,7 +1418,7 @@ def wrapped_boots(a):
     # the style; both were the metal role before, so it read as a pale boot with
     # pale rings on it rather than as cloth over leather.
     shoe(a, BOOT_HIDE, height=11.0)
-    shin(a, CLOTH, 11.0, BOOT_TOP, over_shin(12.8), over_shin(14.6))
+    boot_shaft(a, CLOTH, 11.0, BOOT_TOP, over_shin(12.8), over_shin(14.6))
     for y in (16.0, 25.0, 34.0, 43.0, 52.0):
         shin_band(a, CLOTH, y, 13.8, tube=2.2)
 

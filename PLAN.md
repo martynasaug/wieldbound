@@ -26716,3 +26716,32 @@ correspond to where that geometry lands in game. Ruled out by measurement: the
 rim hull, the silhouette hull, `Face_nose` and `Face_brow1/2`.
 
 480 of 480 outfits clean. 19 fitted, 0 not.
+
+**Phase 70 M70.358 — boots stop being cylinders, and the inner thigh gets covered.**
+Three reported: "why do boots look like a pair of cylinders on legs? make them
+normal boots", "the armour on arms look terrible, they need to cover arms", and
+"look how badly the leg part of armour is displayed."
+
+THE BOOTS WERE TWO STATIONS. One radius at the ankle, one at the top, lofted
+straight between — which is a cone, and at this size a cone reads as a pipe. A
+boot has a shape: it grips at the ankle, swells over the calf about a third of
+the way up, and eases off again under the cuff. `boot_shaft` gives all four
+styles those four stations; it costs eight triangles each.
+
+THE INNER THIGH is the one place no per-leg shell can cover, because each cuisse
+is a lathe about its own leg and the space between the legs belongs to neither.
+That is what the dark wedges in the photograph were — not a gap in the cuisse,
+a region nothing was ever going to reach from the leg. What covers it on a real
+harness is the SKIRT, and ours stopped at the hip. All three procedural skirts
+fall to `hip_y - 26` now.
+
+THE THIGH BANDS were three evenly spaced rings on a smooth cuisse, which reads
+as ribbed pipe rather than as armour — the "no internal structure" note that put
+them there is answered by TWO bands with a plate between them, the way a tasset
+is actually built.
+
+THE ELBOW. The upper sleeve ended at `FOREARM_OUT0 + 2` and the bracer began at
+`FOREARM_OUT0` — an overlap on the OUTSIDE of a straight arm that opens at the
+back of the joint the moment it bends. The bracer starts ten units further up.
+
+480 of 480 outfits clean. 19 fitted, 0 not. Suite green.
