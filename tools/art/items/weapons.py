@@ -312,17 +312,22 @@ def halberd(m):
 
 
 def headsman(m):
-    """A headsman's axe: one enormous crescent on a short haft, and nothing else on it."""
-    haft(m, 0.0, 0.74, 0.03)
-    m.wrap(0.05, 0.3, 0.032, "DarkBrown", "DarkSteel", bands=4)
-    m.box((0, 0, 0.62), (0.085, 0.07, 0.28), "DarkSteel")
+    """A headsman's axe: one enormous bit, two hands of haft, and nothing else on it."""
+    # A LONGER HAFT THAN THE FIRST DRAFT, and the reason is proportion rather
+    # than reach. At 0.74 the bit was a third of the whole weapon and it
+    # photographed on the character as an axe head on a stick, covering the
+    # chest. The bit is the same size; there is simply more handle under it now,
+    # which is also what makes it a two-hander.
+    haft(m, 0.0, 0.98, 0.03)
+    m.wrap(0.05, 0.42, 0.032, "DarkBrown", "DarkSteel", bands=5)
+    m.box((0, 0, 0.84), (0.085, 0.07, 0.28), "DarkSteel")
     # 0.25 wide against 0.52 tall: a headsman's bit is DEEP rather than broad,
     # and the horns reach past the haft at both ends.
-    m.slab([(0.035, 0.84), (0.16, 0.88), (0.26, 0.8),
-            (0.28, 0.62), (0.26, 0.44), (0.16, 0.36), (0.035, 0.4)],
+    m.slab([(0.035, 1.06), (0.16, 1.1), (0.26, 1.02),
+            (0.28, 0.84), (0.26, 0.66), (0.16, 0.58), (0.035, 0.62)],
            0.044, "Steel", chamfer=0.008)
-    m.shard(V(-0.05, 0, 0.62), V(-1, 0, 0), 0.09, 0.03, "DarkSteel")
-    m.shard(V(0, 0, 0.78), V(0, 0, 1), 0.11, 0.026, "DarkSteel")
+    m.shard(V(-0.05, 0, 0.84), V(-1, 0, 0), 0.09, 0.03, "DarkSteel")
+    m.shard(V(0, 0, 1.0), V(0, 0, 1), 0.11, 0.026, "DarkSteel")
 
 
 AXES = {

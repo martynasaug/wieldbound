@@ -1912,7 +1912,7 @@ async function makeHeldItem(
       grip: base.art.grip,
       flip: base.art.flip ?? false,
       roll: base.art.roll ?? (generated ? 180 : 0),
-      clearance: SHIELD_CLEARANCE / (base.art.scale ?? 1),
+      clearance: (base.art.clearance ?? SHIELD_CLEARANCE) / (base.art.scale ?? 1),
       point: donor.grip,
       onAxis: generated,
     };
@@ -2098,7 +2098,7 @@ const SHIELD_CLEARANCE = 0.13;
 function fitToGrip(
   source: THREE.BufferGeometry,
   box: THREE.Box3,
-  lay: "along" | "flat" | "upright" = "along",
+  lay: "along" | "flat" = "along",
   hold: HoldOptions = {},
 ): THREE.BufferGeometry {
   const geo = source.clone();
@@ -2130,12 +2130,23 @@ function fitToGrip(
   // through the fist exactly as a sword's does, limbs out of either end — the
   // Ranger's own bow is held that way on its own rig.)
   //
-  // A QUIVER OR A FOCUS STANDS UP IN THE OFF HAND. Down the left grip they
-  // stuck out of the fist level with the ground, a quiver like a plank and a
-  // focus aimed at the shin. The left grip's +Y is up — the same axis a shield
-  // stands along — so the length goes there, head up. (Measured the hard way:
-  // -Y hung the focus orb-down by the ankle.)
-  if (lay === "upright") then(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+  // THERE WAS A THIRD LAY CALLED "upright" AND IT DID NOT STAND ANYTHING UP.
+  //
+  // It turned an off-hand a further -90 degrees about x, on the reasoning that
+  // the left grip's +Y is up. Measured on the character by
+  // `tools/soak/grips.mjs`, every item using it reported its length pointing
+  // `up +0.04 fwd -1.00` — dead level, straight out in front — and photographed
+  // as a quiver like a baton and a warhorn driven through the forearm.
+  //
+  // The left grip is not the right grip mirrored: an off-hand is strapped to
+  // the FOREARM at the character's side, and that forearm hangs down and a
+  // little forward. So the plain lay already lies an item along the arm, which
+  // is how a torch, a horn or a lantern is actually carried. Which END is at
+  // the hand is what needed saying, and `flip` and `grip` already say it.
+  //
+  // Reported: "look at how the character is holding these items, make it make
+  // sense." Removed rather than repaired, because there is no rotation here
+  // that stands a thing upright — the arm decides, and the arm is down.
 
   // SCALE BY THE LARGEST EXTENT, ALWAYS — orientation and size are separate
   // questions and conflating them was a real bug. Scaling by whatever ends up

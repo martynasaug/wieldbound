@@ -27157,3 +27157,48 @@ the bench every item is drawn at the same height. Only the catalogue harness,
 which puts them on the character, shows it.
 
 Suite green. Client typechecks. 168 base items.
+
+**Phase 70 M70.370 — "look at how the character is holding these items."**
+Three reports in a row, each one right, and the first of them turned out to be
+about a rendering option rather than about any item.
+
+THERE WAS A LAY CALLED "upright" AND IT DID NOT STAND ANYTHING UP. It turned an
+off-hand a further ninety degrees about x, on the reasoning — written in the
+code — that the left grip's +Y is up. Measured on the character by
+`tools/soak/grips.mjs`, every item using it reported its length pointing
+`up +0.04 fwd -1.00`: dead level, straight out in front. A quiver like a baton,
+a warhorn driven through the forearm, a censer floating at the shoulder.
+
+The left grip is not the right grip mirrored. An off-hand is strapped to the
+FOREARM at the character's side, and that forearm hangs down and a little
+forward — so the plain lay already lies an item along the arm, which is how a
+torch, a horn or a lantern is actually carried. There is no rotation available
+here that stands a thing upright: the arm decides, and the arm is down. So the
+option is deleted rather than repaired, and what needed saying all along —
+WHICH END is at the hand — is what `grip` and `flip` already say.
+
+AND THE BOOK WAS STRAPPED ON LIKE A SHIELD. "Look at how the character is
+holding the book, tell me if that makes sense." It did not: `lay: "flat"` puts
+an item's face outward and stands it off the fist by a hand's breadth, which is
+correct for a tower shield and absurd for a grimoire — a signboard hovering
+0.102m off the hip, edge-on, not touching the hand. Carried along the arm with
+the hand at the middle of its spine it reads as a book: 0.009m, which is
+contact. `clearance` is authorable now, because a book and a tower shield do
+not want the same stand-off.
+
+It was also twice the size of the character's torso. Scale 0.6 to 0.34.
+
+THE TORCH burned at the end that was nearest the ground. Held by its shaft with
+the flame above the hand now.
+
+THE HEADSMAN'S AXE was an axe head on a stick: the bit was a third of the whole
+weapon and covered the chest. The bit is unchanged; there is simply more haft
+under it, which is also what makes it a two-hander.
+
+EVERY OTHER NEW ITEM WAS CHECKED AND WAS ALREADY RIGHT. All twenty-one new
+weapons grip where they should — daggers, wands, axes and maces at the butt
+(0.09 to 0.13), the halberd a third up, bows at the middle, staves at 0.37 —
+and all three new fist weapons sit on the hand. The numbers and the pictures
+agree, which after this phase is worth stating explicitly.
+
+Suite green. Client typechecks.

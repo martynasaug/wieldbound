@@ -203,12 +203,11 @@ export interface ItemArt {
    * which is what a sword, an axe and a staff all want. "flat" points its
    * SHORTEST axis down the grip instead, turning the face outward — which is
    * what a shield wants, and the one thing a bounding box cannot work out on
-   * its own. "upright" stands an OFF-HAND item on end in the fist, head up — a
-   * quiver, a focus — where "along" would point it level out of the left hand.
-   * (A bow is "along": its handle goes through the fist like a sword's. Where
-   * on it the fist closes is authored in the model — see `grip` below.)
+   * its own. (A bow is "along" too: its handle goes through the fist exactly
+   * as a sword's does, and where on it the fist closes is authored in the model
+   * — see `grip` below.)
    */
-  lay?: "along" | "flat" | "upright";
+  lay?: "along" | "flat";
   /**
    * HOW IT IS HELD — see `HoldOptions` in `client/src/three/gear.ts`. Reported:
    * axes held with the blade towards the character, staves held at the bottom,
@@ -225,6 +224,13 @@ export interface ItemArt {
   grip?: number;
   flip?: boolean;
   roll?: number;
+  /**
+   * How far a "flat" item's back stands off the fist, in fitted lengths. A
+   * tower shield wants a hand's breadth, which is the default; a book held
+   * against the hip wants almost none, and at the shield's figure it floats a
+   * fifth of a metre out in front of the character.
+   */
+  clearance?: number;
 }
 
 /**
@@ -508,7 +514,7 @@ const WEAPON_BASES: ItemBase[] = [
     "Three weapons on one stick, and the argument is which one you meant.",
     { mods: { range: 1.5, speed: 1.3, damage: 1.35 }, twoHanded: true }),
   w("headsman", "Headsman's Axe", 4, "axe",
-    { model: "items/headsman.glb", palette: "obsidian", scale: 1.05 },
+    { model: "items/headsman.glb", palette: "obsidian", scale: 1.2 },
     "Kept sharp by someone whose whole job was keeping it sharp.",
     { mods: { speed: 1.25, damage: 1.4 }, twoHanded: true }),
   w("reaperscythe", "Reaper's Scythe", 5, "axe",
@@ -795,10 +801,10 @@ const OFFHAND_BASES: ItemBase[] = [
     { art: { model: "items/kiteshield.glb", palette: "steel", scale: 0.6, ...SHIELD_HOLD } }),
   g("wardingfocus", "Warding Focus", "offhand", 3, null, "offhand-focus", "arcane",
     "Not a shield. It simply occupies the same argument.",
-    { art: { model: "items/wardingfocus.glb", palette: "arcane", scale: 0.42, lay: "upright", grip: 0.2 }, guard: 1.4 }),
+    { art: { model: "items/wardingfocus.glb", palette: "arcane", scale: 0.42, grip: 0.24 }, guard: 1.4 }),
   g("hunterquiver", "Hunter's Quiver", "offhand", 2, null, "offhand-quiver", "bone",
     "Twenty arrows and room for the ones you get back.",
-    { art: { model: "items/hunterquiver.glb", palette: "bone", scale: 0.55, lay: "upright", grip: 0.45 }, power: 0.6, guard: 1.6 }),
+    { art: { model: "items/hunterquiver.glb", palette: "bone", scale: 0.55, grip: 0.4, flip: true }, power: 0.6, guard: 1.6 }),
   g("bulwark", "Bulwark", "offhand", 4, null, "offhand-shield", "iron",
     "Heavy enough that standing still becomes a tactic.",
     { art: { model: "items/bulwark.glb", palette: "iron", scale: 0.65, ...SHIELD_HOLD }, power: 1.25, guard: 0.7,
@@ -820,23 +826,23 @@ const OFFHAND_BASES: ItemBase[] = [
   // the hip, which is where the game actually draws it.
   g("pitchtorch", "Pitch Torch", "offhand", 1, null, "offhand-focus", "wood",
     "It will not last the night, and it is the reason you can see at all.",
-    { art: { model: "items/pitchtorch.glb", palette: "wood", scale: 0.8, lay: "upright", grip: 0.18 },
+    { art: { model: "items/pitchtorch.glb", palette: "wood", scale: 0.8, grip: 0.12, flip: true },
       power: 1.1, guard: 0.85 }),
   g("grimoire", "Travelling Grimoire", "offhand", 2, null, "offhand-focus", "bone",
     "Annotated by three owners, two of whom disagreed.",
-    { art: { model: "items/grimoire.glb", palette: "bone", scale: 0.6, ...SHIELD_HOLD },
+    { art: { model: "items/grimoire.glb", palette: "bone", scale: 0.34, grip: 0.5, roll: 90 },
       power: 1.2, guard: 0.8 }),
   g("warhorn", "Warhorn", "offhand", 3, null, "offhand-quiver", "bone",
     "One note, carried further than any of the shouting.",
-    { art: { model: "items/warhorn.glb", palette: "bone", scale: 0.68, lay: "upright", grip: 0.12 },
+    { art: { model: "items/warhorn.glb", palette: "bone", scale: 0.68, grip: 0.16, flip: true },
       power: 0.8, guard: 1.3 }),
   g("embercenser", "Ember Censer", "offhand", 4, null, "offhand-focus", "crimson",
     "Swung on its chain, and the smoke goes where it likes.",
-    { art: { model: "items/embercenser.glb", palette: "crimson", scale: 0.78, lay: "upright", grip: 0.1 },
+    { art: { model: "items/embercenser.glb", palette: "crimson", scale: 0.78, grip: 0.12 },
       power: 1.25, guard: 0.7 }),
   g("stormlantern", "Storm Lantern", "offhand", 5, null, "offhand-focus", "storm",
     "The light in it is not fire, and it does not go out in rain.",
-    { art: { model: "items/stormlantern.glb", palette: "storm", scale: 0.66, lay: "upright", grip: 0.86 },
+    { art: { model: "items/stormlantern.glb", palette: "storm", scale: 0.66, grip: 0.86 },
       power: 1.2, guard: 0.85 }),
 ];
 
@@ -1093,7 +1099,7 @@ const KIT_BASES: ItemBase[] = [
     // Not 0.5: a band-1 off-hand at half power rounds to 1, and a stat of 1 is
     // a stat that cannot get worse — which makes Broken indistinguishable from
     // Honed on it, and the bottom of the ladder meaningless for that one item.
-    { art: { model: "items/woodoffhand.glb", palette: "wood", scale: 0.5, lay: "upright", grip: 0.45 }, power: 0.9, guard: 1.4 }),
+    { art: { model: "items/woodoffhand.glb", palette: "wood", scale: 0.5, grip: 0.45 }, power: 0.9, guard: 1.4 }),
 
   // --- Relics: the three things you cannot find, only make -------------------
   //
