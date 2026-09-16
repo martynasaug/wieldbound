@@ -27088,3 +27088,38 @@ parse errors. The three node processes holding 8080, 5173 and 5174 were found by
 port, checked by command line, and stopped BY PID.
 
 Suite green. Client typechecks. 160 base items, up from 139.
+
+**Phase 70 M70.368 — the fist weapons were built for a boxing glove.**
+Found by checking before adding, which is the only reason it was found.
+
+The plan was three more fist weapons. Before drawing them I read the file they
+would go in, and `gloves.py`'s `HAND` table says in its own header that it was
+measured from **Monk.fbx**. That is the same stale source that put `ARM_CENTRE`
+seven and a half units in front of the arm two milestones ago — and here it is
+wrong twice over, because the Monk's fists are BOXING GLOVES modelled into its
+mesh. Its hand box is three times the size of a hand:
+
+                       Monk (was)   Rogue (is)
+    across mid            -4.0         +3.8     7.8 out, the same axis as the arm
+    up mid               186.0        182.0
+    back of the hand     209.0        190.0     nineteen units of daylight
+    the underside        158.0        173.0
+    half thickness        19.0         15.0
+    fingertip            164.0        155.0
+
+Photographed on the character, all seven pairs are grey tubes swallowing the
+forearms: a piece built for a hand three times too big, offset off the hand it
+was built for, and made large enough to cover it anyway. That last clause is
+this phase's whole thesis for the third time.
+
+AND A HAND IS A SLAB. Thirty across, seventeen deep — so everything turned about
+the arm here took a `squash`, and `Glove.band` stopped being a torus, because a
+ring wide enough to clear the knuckles stands eight units clear of the back and
+the palm. Same reason `armour.py` builds its bands as three-station lathes.
+
+`tools/art/items/probe_hand.py` measures the landmarks on the body the game
+actually puts in front of the player, and prints the old table underneath for
+comparison. `hands.py` keeps the Monk's numbers and is correct to: it builds
+`hands.glb`, which `buildBareHands` only ever puts on a Monk.
+
+Suite green. Client typechecks.
