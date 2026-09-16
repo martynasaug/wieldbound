@@ -26984,3 +26984,52 @@ a unit over its whole length. `ARM_SCALE`, the last of the five, is 1.0.
 gated on `bodyModel === "Monk"`, so `hands.glb` never goes on the player.
 
 480 of 480 outfits clean. 19 fitted, 0 not.
+
+**Phase 70 M70.366 — every cape in the game swung the wrong way.**
+Three reports in one line: "not all capes are long, I don't like those short
+ones. Also one cape appears both on front and back for some reason. Also the
+walking animation is backwards (goes into character when walking)."
+
+THE SWING. `swingCapes` leans each link of the fall by how fast the character
+is moving. A link's frame is the BODY's, because `hangCape` puts the chain
+under the bone's own attach matrix — x across, y away from the face, z up — so
+a point on the fall sits at +y and -z from its hinge, and a POSITIVE rotation
+about x carries it further back and lifts it. That is a cape trailing. The line
+read `joint.rotation.x = -(...)`, so every cape in the game swept FORWARD
+through the legs of the character wearing it.
+
+It has been that way since the swing was written, through a milestone that
+photographed capes across five frames of a run and printed each link's angle.
+The pictures are of a character seen from behind at three metres, where forward
+and back differ by a few pixels of hem, and the numbers were printed as
+magnitudes with the sign right there in them. Nobody reads a sign.
+
+`tools/soak/capelean.mjs` asks the only question that matters — does the hem
+move further behind the character when it swings — and it CHECKS ITS OWN SIGN
+before answering: a cape hangs off the back, so every hinge must already read
+negative-forward at rest, and the harness says so out loud when it does not.
+That guard is the actual lesson of this phase, not the minus sign.
+
+    cape     at rest -0.198, -0.274    swinging -0.090, -0.299   trails
+    cloak    at rest -0.193, -0.315    swinging -0.094, -0.312   trails
+    mantle   at rest -0.200, -0.298    swinging -0.081, -0.250   trails
+    tabard   at rest -0.172, -0.283    swinging -0.066, -0.322   trails
+
+THE LENGTHS. The four hems were at 85, 53, 117 and 93 against a knee at 61, so
+one fell below the knee and one stopped at the hip: the slot read as two capes
+and two collars. All four reach the knee or past it now, and the cloak is still
+the longest because that is the one thing length is allowed to say here. What
+separates them is the clasp, the standing collar, the shoulder caps and the
+belt. Every added station also leans further back than the one above it, or a
+fall that keeps its angle and then runs out of stations ends against the calves.
+
+THE ONE ON BOTH SIDES is the tabard, and it was deliberate — a tabard IS a
+panel down each side of the body, and the comment in that recipe defended
+exactly this when the panels were called too thin two milestones ago. The
+defence was about historical dress and the complaint is about the game: the
+cape slot holds four things that hang off the back, so one of them also
+covering the chest reads as a bug, and it fights whatever breastplate is under
+it for the same surface. The front panel is gone; the belt and the gold clasp
+are what make it a tabard.
+
+480 of 480 outfits clean. 19 fitted, 0 not. Client typechecks.

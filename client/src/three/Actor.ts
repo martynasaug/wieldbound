@@ -1737,7 +1737,16 @@ export class Actor {
       // Further down the fall swings further, which is what makes it cloth
       // rather than a plank on a hinge.
       const share = 0.6 + i * 0.5;
-      joint.rotation.x = -(this.capeSwing * share + drift * (i + 1));
+      // AND IT SWINGS BACKWARDS, WHICH IS THE WHOLE POINT. Reported: "the
+      // walking animation is backwards (goes into character when walking)."
+      //
+      // A link's frame is the body's, because `hangCape` puts the chain under
+      // the bone's own attach matrix: x across, y AWAY from the face, z up. The
+      // fall hangs down and behind — a point on it sits at +y, -z from its
+      // hinge — and a POSITIVE rotation about x carries +y further out and lifts
+      // it, which is a cape trailing. This was negated, so every cape in the
+      // game swept forward through the legs of the character wearing it.
+      joint.rotation.x = this.capeSwing * share + drift * (i + 1);
     }
   }
 

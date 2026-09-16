@@ -1772,7 +1772,8 @@ def cape_back(a):
     a.hanging([(30.0, BODY["chest_y1"] + 4.0, -26.0),
                (26.0, BODY["chest_y0"] + 10.0, -28.0),
                (34.0, BODY["waist_y0"] - 6.0, -38.0),
-               (46.0, BODY["waist_y0"] - 40.0, -46.0)], CLOTH)
+               (46.0, BODY["waist_y0"] - 40.0, -46.0),
+               (52.0, BODY["waist_y0"] - 66.0, -52.0)], CLOTH)
     collar(a, "Gold")
 
 
@@ -1797,7 +1798,7 @@ def cloak_back(a):
                (27.0, BODY["chest_y0"] + 10.0, -28.0),
                (38.0, BODY["waist_y0"] - 16.0, -39.0),
                (48.0, BODY["waist_y0"] - 50.0, -47.0),
-               (52.0, BODY["waist_y0"] - 72.0, -51.0)], GARMENT, thickness=5.0)
+               (54.0, BODY["waist_y0"] - 80.0, -53.0)], GARMENT, thickness=5.0)
     a.shell(BONE_CHEST, [(20.0, BODY["chest_y1"] - 2.0), (23.0, BODY["chest_y1"] + 8.0),
                          (20.0, BODY["chest_y1"] + 14.0)],
             GARMENT, squash=(1.0, 1.15), sides=10, z=-3.0)
@@ -1850,7 +1851,9 @@ def mantle_back(a):
     a.hanging([(26.0, BODY["chest_y1"] + 5.0, -26.0),
                (30.0, BODY["chest_y0"] + 16.0, -29.0),
                (36.0, BODY["waist_y1"] - 8.0, -36.0),
-               (42.0, BODY["waist_y0"] - 8.0, -42.0)], CLOTH, thickness=5.0, segments=2,
+               (42.0, BODY["waist_y0"] - 8.0, -42.0),
+               (48.0, BODY["waist_y0"] - 38.0, -48.0),
+               (52.0, BODY["waist_y0"] - 62.0, -53.0)], CLOTH, thickness=5.0, segments=3,
               pleats=4, fold=0.13)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
@@ -1861,28 +1864,28 @@ def mantle_back(a):
 
 
 def tabard_back(a):
-    """A tabard: one panel down the front and one down the back, belted at the waist."""
-    # The BACK panel hangs and swings; the front one is belted flat to the body,
-    # so it stays a drape. A tabard that flapped at the chest would be wrong.
+    """A tabard: a narrow fall down the back, belted at the waist."""
     # WIDE ENOUGH TO BE A PANEL. Reported on sight: "why is the right one so
     # thin." It was built at half-width 15 to 17 while every other cape in the
     # slot runs 30 to 52 — a strip thirty units across on a chest thirty-four
-    # wide, which is a stole, not a tabard.
+    # wide, which is a stole, not a tabard. Half-width 24 to 30 puts it a few
+    # units proud of the ribs on each side, which is how a tabard sits over
+    # armour.
     #
-    # The front-and-back half of the same complaint is the one thing that was
-    # already right, and it stays: a tabard IS a panel down each side of the
-    # body. It only looked wrong because a strip that narrow reads as a sash
-    # slung over the shoulder, and a sash has no business being on both sides.
+    # AND IT IS NOT WORN ON BOTH SIDES ANY MORE. Reported: "one cape appears
+    # both on front and back for some reason." It was deliberate — a tabard IS
+    # a panel down each side of the body, and this comment defended that when
+    # the panels were called too thin. The defence was about historical dress
+    # and the complaint is about the game: the cape slot holds four things that
+    # hang off the back, so one of them also covering the chest reads as a bug,
+    # on top of fighting whatever breastplate is under it for the same surface.
     #
-    # Half-width 24 to 26 puts it a few units proud of the ribs on each side,
-    # which is how a tabard sits over armour, and the hem drops to
-    # `waist_y0 - 32` so the panel has length to match its new width.
+    # The belt and the gold clasp are what make it a tabard now, and it keeps
+    # the narrowest fall of the four, which is the other half of what it was.
     a.hanging([(24.0, BODY["chest_y1"] + 2.0, -25.0),
                (25.0, BODY["chest_y0"] + 6.0, -30.0),
-               (26.0, BODY["waist_y0"] - 32.0, -37.0)], CLOTH, segments=2)
-    a.drape(BONE_CHEST, [(24.0, BODY["chest_y1"] + 2.0, BODY["chest_front_z"] - 1.0),
-                         (25.0, BODY["chest_y0"] + 6.0, BODY["chest_front_z"] + 2.0),
-                         (26.0, BODY["waist_y0"] - 32.0, BODY["chest_front_z"] + 2.0)], CLOTH)
+               (26.0, BODY["waist_y0"] - 32.0, -40.0),
+               (30.0, BODY["waist_y0"] - 62.0, -47.0)], CLOTH, segments=3)
     a.band(BONE_WAIST, BODY["waist_y1"] - 2.0, 23.0, LEATHER, tube=4.0, squash=(1.0, 1.0), z=-6.0)
     collar(a, "Gold", r=20.0, tube=2.5)
 
