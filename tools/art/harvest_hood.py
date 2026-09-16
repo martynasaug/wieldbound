@@ -66,14 +66,14 @@ MESH = "Cloak"
 # How far above the crown the cloth sits. The skull is 0.890 tall, so this is
 # about three per cent of it: enough that the head does not come through the top
 # under animation, small enough that the hood does not float.
-CROWN_MARGIN = 0.060
+CROWN_MARGIN = 0.090
 
 # And a little larger than the head all round. The head-ratio scale gives the
 # hood the Ranger’s own clearance, and his was barely enough on his own skull:
 # lifting alone left facets of this crown piercing the cloth, because a lift
 # moves a shape without making it roomier. Ten per cent about the cowl’s own
 # centre is the thickness of a hood over a head.
-HOOD_CLEAR = 1.22
+HOOD_CLEAR = 1.09
 
 
 def main():
