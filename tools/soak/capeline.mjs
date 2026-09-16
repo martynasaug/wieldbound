@@ -58,7 +58,13 @@ const rows = await page.evaluate(async ({ styles, bands }) => {
     const cp = [];
     const seen = new Set();
     a.root.traverse((o) => {
-      if (!o.isMesh || !o.visible || !/^gear_cape_/.test(o.name) || seen.has(o.uuid)) return;
+      // THE FALL ONLY. A cape is two things on two bones: the CHAIN of links
+      // that hangs (`Cape0/1/2`) and a COLLAR ring on the torso that carries
+      // it. The collar encircles the chest, so its front face is a long way in
+      // front of the back line by design -- counted in, it reported every cape
+      // as buried a third of a unit inside the figure, which is the collar
+      // doing exactly its job.
+      if (!o.isMesh || !o.visible || !/_Cape[0-9]/.test(o.name) || seen.has(o.uuid)) return;
       seen.add(o.uuid);
       const p = o.geometry.attributes.position, m = o.matrixWorld.elements;
       for (let i = 0; i < p.count; i++) cp.push(xf(m, p.getX(i), p.getY(i), p.getZ(i)));

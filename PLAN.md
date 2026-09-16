@@ -26854,3 +26854,28 @@ because its vertices include the HIP, and a cuisse is not a hip piece. That is
 the skirt's, and the skirt clears at 33.
 
 480 of 480 outfits clean. 19 fitted, 0 not. Suite green, client typechecks.
+
+**Phase 70 M70.362 — the capes were passing through the buttocks.**
+Flagged in my own report and then measured properly.
+
+`tools/soak/capeline.mjs` samples the fall against the body's own back line by
+height. Its first answer said every cape was buried a third of a unit inside
+the figure, which was the COLLAR: a ring round the chest whose front face is a
+long way in front of the back line by design. Excluded, the real picture:
+
+    upper back   +0.14 to +0.17    clear, correctly
+    lower back   -0.00 to -0.03    inside the figure
+
+M70.349 pulled the upper stations in against the back and that was right — a
+cape leaves the shoulder against the body. What was wrong is the MIDDLE: it
+stayed against a back that curves out at the hips, so the cloth passed through
+them. The lean starts lower and goes further now, and in profile the fall reads
+as cloth leaving the shoulders rather than a plank held against the spine.
+
+A RESIDUAL IS LEFT AND IT IS NOT AN AUTHORING ERROR. A cape is a hinged chain
+driven by `swingCapes` every frame, so a frozen shot catches it wherever the
+swing left it — the last few hundredths move between runs. The authored profile
+is what this milestone fixed; the swing is a different question and the
+measurement cannot separate them.
+
+480 of 480 outfits clean. 19 fitted, 0 not. Suite green.

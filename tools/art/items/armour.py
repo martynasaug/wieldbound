@@ -1539,9 +1539,9 @@ def cape_back(a):
     # stations come in against the body and the flare is pushed down into the
     # last third, which is where a cape actually swings.
     a.hanging([(30.0, BODY["chest_y1"] + 4.0, -26.0),
-               (26.0, BODY["chest_y0"] + 10.0, -27.5),
-               (34.0, BODY["waist_y0"] - 6.0, -31.0),
-               (46.0, BODY["waist_y0"] - 40.0, -41.0)], CLOTH)
+               (26.0, BODY["chest_y0"] + 10.0, -28.0),
+               (34.0, BODY["waist_y0"] - 6.0, -38.0),
+               (46.0, BODY["waist_y0"] - 40.0, -46.0)], CLOTH)
     collar(a, "Gold")
 
 
@@ -1563,10 +1563,10 @@ def cloak_back(a):
     tan drape on a pale grey character — not a piece that merges with anything.
     """
     a.hanging([(31.0, BODY["chest_y1"] + 5.0, -26.0),
-               (27.0, BODY["chest_y0"] + 10.0, -27.5),
-               (38.0, BODY["waist_y0"] - 16.0, -32.0),
-               (48.0, BODY["waist_y0"] - 50.0, -42.0),
-               (52.0, BODY["waist_y0"] - 72.0, -47.0)], GARMENT, thickness=5.0)
+               (27.0, BODY["chest_y0"] + 10.0, -28.0),
+               (38.0, BODY["waist_y0"] - 16.0, -39.0),
+               (48.0, BODY["waist_y0"] - 50.0, -47.0),
+               (52.0, BODY["waist_y0"] - 72.0, -51.0)], GARMENT, thickness=5.0)
     a.shell(BONE_CHEST, [(20.0, BODY["chest_y1"] - 2.0), (23.0, BODY["chest_y1"] + 8.0),
                          (20.0, BODY["chest_y1"] + 14.0)],
             GARMENT, squash=(1.0, 1.15), sides=10, z=-3.0)
@@ -1617,9 +1617,9 @@ def mantle_back(a):
     # now happens over enough height to look like cloth opening rather than a
     # cone widening.
     a.hanging([(26.0, BODY["chest_y1"] + 5.0, -26.0),
-               (30.0, BODY["chest_y0"] + 16.0, -28.0),
-               (36.0, BODY["waist_y1"] - 8.0, -32.0),
-               (42.0, BODY["waist_y0"] - 8.0, -38.0)], CLOTH, thickness=5.0, segments=2,
+               (30.0, BODY["chest_y0"] + 16.0, -29.0),
+               (36.0, BODY["waist_y1"] - 8.0, -36.0),
+               (42.0, BODY["waist_y0"] - 8.0, -42.0)], CLOTH, thickness=5.0, segments=2,
               pleats=4, fold=0.13)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
@@ -1646,9 +1646,9 @@ def tabard_back(a):
     # Half-width 24 to 26 puts it a few units proud of the ribs on each side,
     # which is how a tabard sits over armour, and the hem drops to
     # `waist_y0 - 32` so the panel has length to match its new width.
-    a.hanging([(24.0, BODY["chest_y1"] + 2.0, -24.0),
-               (25.0, BODY["chest_y0"] + 6.0, -28.0),
-               (26.0, BODY["waist_y0"] - 32.0, -30.0)], CLOTH, segments=2)
+    a.hanging([(24.0, BODY["chest_y1"] + 2.0, -25.0),
+               (25.0, BODY["chest_y0"] + 6.0, -30.0),
+               (26.0, BODY["waist_y0"] - 32.0, -37.0)], CLOTH, segments=2)
     a.drape(BONE_CHEST, [(24.0, BODY["chest_y1"] + 2.0, BODY["chest_front_z"] - 1.0),
                          (25.0, BODY["chest_y0"] + 6.0, BODY["chest_front_z"] + 2.0),
                          (26.0, BODY["waist_y0"] - 32.0, BODY["chest_front_z"] + 2.0)], CLOTH)
