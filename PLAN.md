@@ -26777,3 +26777,39 @@ and both outline builders were drawing the hood's own hull through its face
 opening.
 
 480 of 480 outfits clean. 19 fitted, 0 not. Client typechecks.
+
+**Phase 70 M70.360 — the thing in the hood, found twice over.**
+"What the hell is that on a face when wearing a hood?" Two separate causes, and
+seven passes went by because each hid the other.
+
+THE FIRST WAS AN EXCLUSION THAT NEVER RAN. `buildRim` and `buildSilhouette`
+walk the rig and filter what they outline — and `trackMaterials` calls `rimFor`
+and `ghostFor` DIRECTLY for every worn and held piece, so a rule written in a
+builder is silently skipped for all gear. Excluding the hood from both builders
+therefore did nothing at all: `trackMaterials` put the hull straight back, and
+two rounds went looking for the cause in the hood's own geometry. The check
+lives in `outlineable` now, which both `rimFor` and `ghostFor` call, so there is
+one place and every route goes through it.
+
+Why a hood needs excluding: an outline is an inflated copy drawn BACK FACES
+ONLY, and a ghost is drawn where it is BEHIND something. Both are correct on a
+CLOSED shape. A hood is open at the face, so through that opening you see the
+inside of the far side of its own hulls.
+
+THE SECOND WAS A TAB OF CLOTH, and the rule that finally caught it is not a
+measured box. Nothing of a hood may be INSIDE THE SKULL — a hood goes round a
+head, so any face whose centre is well inside the head is hanging in the void
+where the head is and can only ever show through the opening. That took 31
+faces and missed one more thing, because the last of it is not inside the skull:
+it hangs UNDER it. Measured in the mesh's own local space, y -0.285 against a
+head front of -0.329 and z 1.923..2.194 against a head bottom of 2.056 — a
+tongue at the very front, from the chin down over the throat. Both rules now
+run; together they take 36 faces and the opening is clear.
+
+`tools/soak/postprobe.mjs` is what made either of them findable: it reads the
+offending vertices back out of the RUNNING GAME in the mesh's own local space,
+which is the space the harvest script writes. Five hand-measured boxes had
+failed before it existed, four of them on the wrong side of the head.
+
+Hood 83% of the skull, whole from four sides. 480 of 480 outfits clean. 19
+fitted, 0 not. Suite green, client typechecks.

@@ -47,8 +47,8 @@ const rows = await page.evaluate(async () => {
   for (let i = 0; i < hp.count; i++) {
     const lx = hp.getX(i), ly = hp.getY(i), lz = hp.getZ(i);
     const q = xf(hm, lx, ly, lz);
-    if (Math.abs(q[0] - midX) > 0.10) continue;      // centred
-    if (q[1] < 0.95 || q[1] > 1.40) continue;        // the post's height
+    if (Math.abs(q[0] - midX) > 0.06) continue;      // centred
+    if (q[1] < 1.10 || q[1] > 1.40) continue;        // the post's height
     n++;
     const l = [lx, ly, lz];
     for (let k = 0; k < 3; k++) { llo[k] = Math.min(llo[k], l[k]); lhi[k] = Math.max(lhi[k], l[k]); }

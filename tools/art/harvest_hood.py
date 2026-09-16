@@ -221,32 +221,54 @@ def main():
     # The box a face occupies: the front 45% of the head*s depth, inside its
     # own width and between chin and crown. A hood never has geometry here --
     # that space is the opening.
-    # ONE TAB OF CLOTH AT THE THROAT, cut to where it actually is.
+    # NOTHING OF THE HOOD MAY BE INSIDE THE HEAD.
     #
     # Reported: "what the hell is that on a face when wearing a hood?" -- a pale
-    # post standing in front of the throat. Four cuts missed it because the
-    # bounds were on the WRONG SIDE: the game`s forward is this frame`s -y, the
-    # same inversion `assets.ts` applies standing a Z-up file upright, and every
-    # one of those passes was deleting faces off the BACK of the hood. Widening
-    # them on the correct side then took the whole front off.
+    # post standing in the face opening. Five passes chased it with hand-measured
+    # boxes and the first four were on the WRONG SIDE, because the game`s forward
+    # is this frame`s -y (the same inversion `assets.ts` applies standing a Z-up
+    # file upright) and every one of them tested `c.y >= face_y`.
     #
-    # So it is not a heuristic any more. `tools/soak/postprobe.mjs` reads the
-    # offending vertices back out of the running game in the hood`s own local
-    # space -- x 0.063..0.089, y -0.285..-0.207, z 2.091..2.123 against a head
-    # spanning x -0.335..0.335, y -0.329..0.485, z 2.056..2.945 -- and this is
-    # that box, written against the head so it moves with it.
-    mid_x = (wlo.x + whi.x) / 2
-    lo_x = mid_x - (whi.x - wlo.x) * 0.24
-    hi_x = mid_x + (whi.x - wlo.x) * 0.24
-    lo_y, hi_y = wlo.y, wlo.y + (whi.y - wlo.y) * 0.20
-    lo_z, hi_z = wlo.z - (whi.z - wlo.z) * 0.20, wlo.z + (whi.z - wlo.z) * 0.14
+    # `tools/soak/postprobe.mjs` read the offending vertices back out of the
+    # running game in this mesh`s own local space -- x 0.063..0.089, y
+    # -0.285..-0.207, z 2.091..2.123 -- and what that says is not `in front of
+    # the face`. It is INSIDE THE HEAD: the head spans x -0.335..0.335, y
+    # -0.329..0.485, z 2.056..2.945, and the post is within all three.
+    #
+    # That is the rule, and it needs no tuning. A hood goes round a head; any
+    # face of it whose centre is well inside the skull is geometry hanging in
+    # the void where the head is, and it can only ever show through the opening.
+    # The inset keeps the cowl`s own rim, which hugs the head and legitimately
+    # grazes the boundary.
+    inset = 0.12
+    ilo = mathutils.Vector((
+        wlo[i] + (whi[i] - wlo[i]) * inset for i in range(3)))
+    ihi = mathutils.Vector((
+        whi[i] - (whi[i] - wlo[i]) * inset for i in range(3)))
     bm = bmesh.new()
     bm.from_mesh(hood.data)
     bm.faces.ensure_lookup_table()
     doomed = []
+    # AND THE TAB THAT HANGS BELOW THE CHIN.
+    #
+    # The rule above catches anything inside the skull and misses this, because
+    # it is not inside the skull -- it hangs UNDER it. Measured out of the
+    # running game in this mesh`s local space: y -0.285 against a head front of
+    # -0.329, z 1.923..2.194 against a head bottom of 2.056. A tongue of cloth
+    # at the very front, from the chin down over the throat.
+    #
+    # The z window stops well above head height, so the cowl`s own front rim --
+    # which is at the same depth but up at the face -- is untouched.
+    span = mathutils.Vector((whi[i] - wlo[i] for i in range(3)))
+    tab_y = wlo.y + span.y * 0.10
+    tab_lo_z, tab_hi_z = wlo.z - span.z * 0.22, wlo.z + span.z * 0.20
+    tab_half = span.x * 0.28
     for f in bm.faces:
         c = f.calc_center_median()
-        if lo_x <= c.x <= hi_x and lo_y <= c.y <= hi_y and lo_z <= c.z <= hi_z:
+        if all(ilo[i] <= c[i] <= ihi[i] for i in range(3)):
+            doomed.append(f)
+        elif (c.y <= tab_y and tab_lo_z <= c.z <= tab_hi_z
+              and abs(c.x - (wlo.x + whi.x) / 2) <= tab_half):
             doomed.append(f)
     if doomed:
         bmesh.ops.delete(bm, geom=doomed, context="FACES")

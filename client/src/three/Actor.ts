@@ -1836,8 +1836,43 @@ export class Actor {
    * `clearGear` already skipped `silhouetteMaterial` "shared by every hull it
    * owns", so the tear-down for this was written before the build-up was.
    */
+  /**
+   * Does this mesh get an outline and a through-walls ghost?
+   *
+   * THE CHECK LIVES HERE AND NOT IN THE BUILDERS, because there are two ways in
+   * and only one of them goes through a builder. `buildRim` and
+   * `buildSilhouette` walk the rig, but `trackMaterials` calls `rimFor` and
+   * `ghostFor` DIRECTLY for every worn and held piece — so an exclusion written
+   * in a builder is silently skipped for all gear. That is exactly why removing
+   * the hood from both builders did not remove the pale post standing in its
+   * face opening: `trackMaterials` put the hull straight back, and two more
+   * rounds went looking for the cause in the hood's own geometry.
+   *
+   * What is excluded, and why each one:
+   *
+   *   look_   a hairstyle is dozens of overlapping locks in one mesh and a hull
+   *           outlines every one of them — white lines laced through the fringe
+   *           and the hair reading as plastic pieces.
+   *   Face_   a forty-triangle brow inflated into a hull is a spike, and a
+   *           ten-triangle nose is a post.
+   *   hood    an outline is an inflated copy drawn BACK FACES ONLY, and a ghost
+   *           is drawn where it is BEHIND something. Both are correct on a
+   *           CLOSED shape. A hood is open at the face, so through that opening
+   *           you see the inside of the far side of its own hulls.
+   *
+   * The figure keeps its outline in every case: the body's own hull rings it.
+   */
+  private outlineable(mesh: THREE.Mesh): boolean {
+    if (mesh.material === this.silhouetteMaterial || mesh.material === this.outlineMaterial) {
+      return false;
+    }
+    if (mesh.name.startsWith("look_") || mesh.name.startsWith("Face_")) return false;
+    if (/^gear_helm_hood_/.test(mesh.name)) return false;
+    return true;
+  }
+
   private ghostFor(mesh: THREE.Mesh): void {
-    if (!this.silhouetteMaterial) return;
+    if (!this.silhouetteMaterial || !this.outlineable(mesh)) return;
     const skinned = mesh as THREE.SkinnedMesh;
     let ghost: THREE.Mesh;
     if (skinned.isSkinnedMesh) {
@@ -2605,7 +2640,7 @@ export class Actor {
    * ever in its `sources`.
    */
   private rimFor(mesh: THREE.Mesh): void {
-    if (!this.outlineMaterial) return;
+    if (!this.outlineMaterial || !this.outlineable(mesh)) return;
     const skinned = mesh as THREE.SkinnedMesh;
     let out: THREE.Mesh;
     if (skinned.isSkinnedMesh) {
