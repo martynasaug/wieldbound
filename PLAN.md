@@ -26629,3 +26629,36 @@ scene and inflating first carried the plate's pauldrons 0.060 off the arm.
 
 480 of 480 outfits clean. 19 fitted, 0 not. Suite green, `gearchurn` accumulates
 nothing over 40 changes, client typechecks.
+
+**Phase 70 M70.355 — a floor is not a fit: every clearance becomes a scale.**
+Reported: "I don't like those barrel looking armours, make them better fit the
+body." Correct, and the cause is in the fix that came before it.
+
+`over_chest` and its siblings were written as `max(r, half_width + clearance)`.
+That clears the body and it destroys the SHAPE. A chest profile runs 17, 20, 20,
+16 — narrow at the waist, full at the ribs, drawing in at the collar — and a
+floor clamps every one of those to the same number. Four identical stations is a
+cylinder. Every piece in the game that went through one of those helpers came
+out a tube: the chests, the skirts, the cuisses, the greaves, the sleeves, and
+the helms, where the same mistake had already produced a flat-topped bucket and
+been blamed on the crown taper.
+
+The authored profiles were never the wrong SHAPE, only the wrong SIZE — cut
+against a `chest_half_x` of 17 when the torso measures 23. A SCALE keeps every
+ratio between stations and only makes the whole thing big enough to go over the
+body:
+
+    CHEST_SCALE 1.28   WAIST_SCALE 1.27   THIGH_SCALE 1.16
+    SHIN_SCALE  1.21   ARM_SCALE   1.12   HEAD_SCALE  1.17
+
+Each is worked back from what `coverwidth.mjs` measured at the authored size —
+chests at 88%, 93% and 83% of the torso, abdomen 82-96%, thigh 99%, shin 95% —
+plus the clearance a worn thing needs. The head's is larger than it looks
+because the body's own RIM OUTLINE is an inflated copy that needs about six
+units to hide under, which is what the tan spikes through the cap were.
+
+Photographed, the chest now draws in at the collar, fills at the ribs and flares
+at the skirt, and the cap is a rounded dome rather than a lid on a tube.
+
+480 of 480 outfits clean. 19 fitted, 0 not. Suite green, `gearchurn` accumulates
+nothing over 40 changes, client typechecks.

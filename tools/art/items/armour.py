@@ -555,19 +555,39 @@ PROUD = 5.0
 # This is the same fault as `over_skull`, one body part down: a single number
 # for a whole region, taken from the narrowest place it is true.
 CHEST_HALF_X = 23.0
-CHEST_CLEAR = 5.0
+
+# A SCALE, NOT A FLOOR — and this is a correction to the correction.
+#
+# The first version of this was `max(r, CHEST_HALF_X + CLEAR)`. It cleared the
+# torso and it destroyed the SHAPE: a chest profile runs 17, 20, 20, 16 — narrow
+# at the waist, full at the ribs, drawing in at the collar — and a floor clamps
+# every one of those to the same number. Four identical stations is a cylinder.
+# Reported, exactly: "I don't like those barrel looking armours."
+#
+# The authored profiles were never the wrong SHAPE, only the wrong SIZE: they
+# were cut against a `chest_half_x` of 17 when the torso measures 23. Scaling
+# them keeps every ratio between stations — the taper, the draw at the collar,
+# the flare at the hem — and only makes the whole thing big enough to go over
+# the body. Worked back from `coverwidth.mjs`: the procedural chests measured
+# 88%, 93% and 83% of the torso at their authored size, so a shade over a
+# quarter more takes the narrowest of them clear with room for cloth.
+#
+# This is the same mistake `over_skull` made on the helms, where flooring every
+# station produced a flat-topped bucket, and the same answer.
+CHEST_SCALE = 1.28
 
 
 def over_chest(r):
-    """A chest radius, never allowed inside the torso it is worn over."""
-    return max(r, CHEST_HALF_X + CHEST_CLEAR)
+    """A chest radius, grown to clear the torso without losing its taper."""
+    return r * CHEST_SCALE
 
 
-# Where the surface of a widened chest shell actually is, so the rivets, scales
-# and bands that decorate it move out with it. Left at their old radii they sit
+# Where the surface of a chest shell actually is, so the rivets, scales and
+# bands that decorate it move out with it. Left at their old radii they sit
 # INSIDE the shell and vanish — which is the same fault one layer in, and it is
 # how the first pass at this produced a wider breastplate with no rivets on it.
-CHEST_SKIN = over_chest(0.0)
+# Taken from the widest station a chest recipe uses, which is 20.
+CHEST_SKIN = 20.0 * CHEST_SCALE
 CHEST_SKIN_Z = -3.0 + CHEST_SKIN * 1.15
 
 
@@ -589,31 +609,34 @@ CHEST_SKIN_Z = -3.0 + CHEST_SKIN * 1.15
 # The floors are worked back from the measurement the same way `CHEST_HALF_X`
 # was — a piece of known radius, the percentage it scored, and the arithmetic in
 # between — then given the same clearance the chest gets.
-WAIST_HALF_X = 27.0
-THIGH_HALF_X = 13.6
-SHIN_HALF_X = 13.4
-ARM_HALF_X = 12.7
-LIMB_CLEAR = 2.4
+# SCALES, NOT FLOORS, for the same reason the chest uses one: a floor clamps a
+# tapered limb into a tube. Each is worked back from what `coverwidth.mjs`
+# measured at the authored size — abdomen 82-96%, thigh 99%, shin 95% — plus the
+# clearance a worn thing needs over the limb inside it.
+WAIST_SCALE = 1.27
+THIGH_SCALE = 1.16
+SHIN_SCALE = 1.21
+ARM_SCALE = 1.12
 
 
 def over_waist(r):
-    """A waist or skirt radius, never inside the abdomen it hangs on."""
-    return max(r, WAIST_HALF_X + LIMB_CLEAR)
+    """A waist or skirt radius, grown clear of the abdomen it hangs on."""
+    return r * WAIST_SCALE
 
 
 def over_thigh(r):
-    """A cuisse radius, never inside the thigh."""
-    return max(r, THIGH_HALF_X + LIMB_CLEAR)
+    """A cuisse radius, grown clear of the thigh."""
+    return r * THIGH_SCALE
 
 
 def over_shin(r):
-    """A greave radius, never inside the shin."""
-    return max(r, SHIN_HALF_X + LIMB_CLEAR)
+    """A greave radius, grown clear of the shin."""
+    return r * SHIN_SCALE
 
 
 def over_arm(r):
-    """A sleeve or pauldron radius, never inside the arm."""
-    return max(r, ARM_HALF_X + LIMB_CLEAR)
+    """A sleeve or pauldron radius, grown clear of the arm."""
+    return r * ARM_SCALE
 
 
 def plate_chest(a):
@@ -861,10 +884,10 @@ def dress_limbs(a, style):
     for bone, side in BONE_FOREARM:
         # A bracer: a tube round the forearm, flaring a little at the wrist.
         a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT1, over_arm(r0), over_arm(r1), mat)
-        a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, over_arm(r1 + 1.2) + 0.8, over_arm(r1 + 0.6) + 0.4, kit["trim"])
+        a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, over_arm(r1 + 2.0), over_arm(r1 + 1.4), kit["trim"])
         # And a band where the bracer meets the elbow, so the two sleeves read as
         # one arm rather than two tubes that happen to touch.
-        a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT0 + 3.0, over_arm(r0 + 1.0) + 0.8, over_arm(r0 + 0.5) + 0.4, kit["trim"])
+        a.sleeve(bone, side, FOREARM_OUT0, FOREARM_OUT0 + 3.0, over_arm(r0 + 1.8), over_arm(r0 + 1.3), kit["trim"])
     # NO GAUNTLET, AND THIS IS A REVERSAL.
     #
     # A tapered sleeve on the hand bone covered the bare hand and was rejected
@@ -900,9 +923,9 @@ def dress_limbs(a, style):
             a.band(bone, y, over_thigh(13.6), kit["trim"], tube=3.2,
                    squash=(1.0, 0.9), sides=8, x=side * THIGH_X)
         # And a knee cop: the one piece of leg armour a player can actually name.
-        a.shell(bone, [(over_thigh(11.0) - 2.0, BODY["knee_y"] + 12.0),
-                       (over_thigh(13.8) + 1.0, BODY["knee_y"] + 5.0),
-                       (over_thigh(11.5) - 1.5, BODY["knee_y"] - 1.0)],
+        a.shell(bone, [(over_thigh(11.0), BODY["knee_y"] + 12.0),
+                       (over_thigh(14.6), BODY["knee_y"] + 5.0),
+                       (over_thigh(11.5), BODY["knee_y"] - 1.0)],
                 kit["trim"], squash=(1.0, 0.92), sides=8, x=side * THIGH_X)
     for bone, side in BONE_CALF:
         # And a greave over the shin, stopping above the boot.
@@ -970,12 +993,23 @@ CROWN_Y = 296.0
 # So the radius is not a taste number any more. Nothing worn on the head goes
 # below `HEAD_CLEAR` outside the skull's own half-width, and `over_skull` is
 # what enforces it.
-HEAD_CLEAR = 6.0
+# A SCALE, NOT A FLOOR, for the reason the chest records at length: flooring
+# every station clamps them all to one number, and a dome whose stations are
+# all equal is a cylinder with a lid. That is what made every helm in this game
+# a box -- the note on `skullcap` blames the crown taper, and the taper was only
+# half of it.
+#
+# Worked back the same way. `skull_profile.py` puts the skull at 33.5 half-width
+# at the temples, and the body`s own RIM OUTLINE is an inflated copy that needs
+# about six units to hide under -- that is what the tan spikes through the cap
+# were. The widest station a head piece authors is 36, so a little over a
+# seventh takes it clear while every other station keeps its proportion.
+HEAD_SCALE = 1.17
 
 
 def over_skull(r):
-    """A head-piece radius, never allowed inside the skull it is worn over."""
-    return max(r, BODY["head_half_x"] + HEAD_CLEAR)
+    """A head-piece radius, grown clear of the skull without losing its dome."""
+    return r * HEAD_SCALE
 
 
 def skullcap(a, mat, y0=BROW_Y - 26.0, y1=CROWN_Y, wide=36.0, arc=0.70):
