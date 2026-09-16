@@ -9,7 +9,7 @@ await page.evaluate(() => window.__wieldbound.localActor.setLook(
 await page.waitForTimeout(1500);
 const rows = await page.evaluate(async () => {
   const a = window.__wieldbound.localActor;
-  a.setAppearance({ layers: { helm: { style: "cap", rarity: "honed", palette: "steel" } } });
+  a.setAppearance({ layers: { helm: { style: "hood", rarity: "honed", palette: "steel" } } });
   await new Promise((r) => setTimeout(r, 1600));
   a.root.updateMatrixWorld(true);
   const out = [];

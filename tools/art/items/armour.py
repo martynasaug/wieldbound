@@ -511,8 +511,10 @@ def pauldrons(a, mat, span=23.0, drop=15.0, lip=True):
     """
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
         x = side * (BODY["shoulder_x"] + 1.0)
-        a.shell(bone, [(span * 0.6, BODY["shoulder_y"] + 8.0), (span, BODY["shoulder_y"] + 1.0),
-                       (span * 0.94, BODY["shoulder_y"] - drop)], mat, squash=(1.0, 0.95), sides=8, x=x, z=-2.0)
+        a.shell(bone, [(span * 0.6, BODY["shoulder_y"] + 11.0), (span, BODY["shoulder_y"] + 1.0),
+                       (span * 0.98, BODY["shoulder_y"] - drop),
+                       (span * 0.88, BODY["shoulder_y"] - drop - 12.0)],
+                mat, squash=(1.0, 0.95), sides=8, x=x, z=-2.0)
         if lip:
             # On the SHOULDER, not on the body's axis: a band defaults to the
             # centre line, which for a pauldron is a ring round the chest.
@@ -668,7 +670,8 @@ def plate_chest(a):
 def scale_chest(a):
     """Scale: overlapping rows of small plates, each row a little wider than the last."""
     a.shell(BONE_CHEST, [(over_chest(17.0 + PROUD * 0.5), BODY["chest_y0"] - 3.0),
-                         (over_chest(20.0 + PROUD * 0.8), BODY["chest_y1"] - 8.0),
+                         (over_chest(20.0 + PROUD * 0.8), BODY["shoulder_y"] - 2.0),
+                         (over_chest(18.6 + PROUD * 0.6), BODY["chest_y1"] - 8.0),
                          (over_chest(17.0 + PROUD * 0.4), BODY["chest_y1"] + 3.0)],
             LEATHER, squash=(1.0, 1.15), z=-3.0)
     rows = 5
@@ -706,7 +709,8 @@ def brigandine_chest(a):
     """Brigandine: quilted cloth over plates, held by rows of rivets and two straps."""
     a.shell(BONE_CHEST, [(over_chest(18.0 + PROUD * 0.4), BODY["chest_y0"] - 4.0),
                          (over_chest(20.0 + PROUD * 0.9), BODY["chest_y0"] + 14.0),
-                         (over_chest(20.0 + PROUD * 0.9), BODY["chest_y1"] - 10.0),
+                         (over_chest(20.0 + PROUD * 0.9), BODY["shoulder_y"] - 2.0),
+                         (over_chest(18.8 + PROUD * 0.6), BODY["chest_y1"] - 6.0),
                          (over_chest(17.0 + PROUD * 0.4), BODY["chest_y1"] + 4.0)],
             "Red", squash=(1.0, 1.15), z=-3.0)
     for y in (BODY["chest_y0"] + 6.0, BODY["chest_y0"] + 22.0, BODY["chest_y1"] - 9.0):
@@ -729,7 +733,8 @@ def chain_chest(a):
     """Mail: a shirt that hangs, a collar that stands, and a skirt to the thigh."""
     a.shell(BONE_CHEST, [(over_chest(17.0 + PROUD * 0.4), BODY["chest_y0"] - 6.0),
                          (over_chest(20.0 + PROUD * 0.8), BODY["chest_y0"] + 12.0),
-                         (over_chest(20.0 + PROUD * 0.8), BODY["chest_y1"] - 10.0),
+                         (over_chest(20.0 + PROUD * 0.8), BODY["shoulder_y"] - 2.0),
+                         (over_chest(18.5 + PROUD * 0.6), BODY["chest_y1"] - 6.0),
                          (over_chest(16.0 + PROUD * 0.4), BODY["chest_y1"] + 6.0)],
             GARMENT, squash=(1.0, 1.15), z=-3.0)
     # A standing collar, the piece that separates mail from a tabard at a glance.
@@ -747,8 +752,10 @@ def chain_chest(a):
     a.band(BONE_WAIST, BODY["hip_y"] - 6.0, over_waist(26.0), "DarkSteel", tube=2.0, squash=(1.0, 1.0), z=-6.0)
     # Short sleeves of mail rather than pauldrons: mail drapes, it does not plate.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
-        a.shell(bone, [(over_arm(13.0), BODY["shoulder_y"] + 5.0),
-                       (over_arm(12.0), BODY["shoulder_y"] - 15.0)],
+        a.shell(bone, [(over_arm(12.0), BODY["shoulder_y"] + 9.0),
+                       (over_arm(13.4), BODY["shoulder_y"] + 1.0),
+                       (over_arm(13.0), BODY["shoulder_y"] - 18.0),
+                       (over_arm(11.6), BODY["shoulder_y"] - 30.0)],
                 GARMENT, squash=(1.0, 1.0), sides=8, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
 
 
@@ -1225,6 +1232,42 @@ def circlet_helm(a):
                         (0.0, BROW_Y + 19.0), (-8.0, BROW_Y + 13.0)],
             "Gold", z=front - 1.0, thickness=3.5)
     a.stud(BONE_HEAD, (0.0, BROW_Y + 11.0, front + 1.5), (0.0, 0.0, 1.0), 6.0, 4.5, "Red", sides=6)
+
+    # AND IT IS A CORONET, NOT A HOOP.
+    #
+    # At 11% of the skull this is by a wide margin the least of the five, and it
+    # was a band, a plate and one stone — the only head piece in the game with no
+    # internal structure, which is the same fault the chest pieces were fixed for
+    # and the leg pieces after them.
+    #
+    # What a circlet has instead of coverage is WORK: a second rail under the
+    # first so the band reads as made rather than extruded, points rising off it
+    # round the head, and a stone at each temple to answer the one at the front.
+    # None of it touches the face or the crown, which is what the style is for.
+    a.band(BONE_HEAD, BROW_Y + 4.0, band_r - 1.0, "DarkSteel",
+           tube=1.6, squash=(1.0, 1.16), z=SKULL_Z)
+
+    # THE POINTS ARE PLACED ROUND THE BAND, not across a flat line: the band is
+    # an ellipse — radius `band_r`, and `band_r * 1.16` deep — so a point at a
+    # given angle has to be put on that ellipse or it floats off the side of the
+    # head. The same arithmetic `scale_chest` uses for its rows of scales.
+    #
+    # The front sixty degrees are left to the ornament, and the back is left
+    # alone: a coronet's points are what you see from in front and the side.
+    for k in range(10):
+        angle = math.pi * 0.28 + k * (math.pi * 1.44 / 9)
+        x = math.sin(angle) * band_r
+        z = SKULL_Z + math.cos(angle) * band_r * 1.16
+        tall = 7.0 if k % 2 else 4.0
+        a.stud(BONE_HEAD, (x, BROW_Y + 12.0, z), (math.sin(angle), 0.35, math.cos(angle)),
+               2.2, tall, "Gold", sides=4)
+
+    # A stone over each temple, level with the one at the front.
+    for side in (1, -1):
+        angle = side * math.pi * 0.5
+        a.stud(BONE_HEAD, (math.sin(angle) * band_r, BROW_Y + 10.0,
+                           SKULL_Z + math.cos(angle) * band_r * 1.16),
+               (math.sin(angle), 0.0, math.cos(angle)), 3.4, 2.6, "Red", sides=6)
 
 
 def hood_helm(a):

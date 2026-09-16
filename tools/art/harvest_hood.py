@@ -50,6 +50,7 @@ import os
 import sys
 
 import bpy
+import bmesh
 import mathutils
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -199,6 +200,57 @@ def main():
     print(f"scaled ({scale.x:.3f},{scale.y:.3f},{scale.z:.3f}), "
           f"cowl centred by ({shift.x:+.3f},{shift.y:+.3f})")
 
+    # AND NOTHING IS LEFT HANGING IN THE FACE OPENING.
+    #
+    # Reported: "what the hell is that on a face when wearing a hood?" — a grey
+    # bar down the middle of the face, inside the cowl.
+    #
+    # It is not a clasp the Ranger wears there. Measured on him, ALL EIGHT of
+    # this mesh's loose parts have their centre BEHIND his head's own centre;
+    # there is nothing in front of his face at all. It is the centring shift
+    # above: moving the cowl forward onto this body's head carries the front
+    # edge of the drape with it, and on a skull a fifth taller than the one it
+    # was cut for, that edge lands across the nose.
+    #
+    # Dropped by LOOSE PART rather than by face, so a piece is removed whole and
+    # no hole is opened in the cowl. A part goes only if its centre is inside
+    # the wearer's own face box — in front of the cheekbones, within the width
+    # of the head and between the chin and the brow — which nothing that is
+    # actually hood can be.
+    wlo, whi = wearer
+    # The box a face occupies: the front 45% of the head*s depth, inside its
+    # own width and between chin and crown. A hood never has geometry here --
+    # that space is the opening.
+    face_y = wlo.y + (whi.y - wlo.y) * 0.30
+    bm = bmesh.new()
+    bm.from_mesh(hood.data)
+    bm.faces.ensure_lookup_table()
+    doomed = []
+    for f in bm.faces:
+        c = f.calc_center_median()
+        # DOWN THROUGH THE NECK, not just the head box. The first pass bounded
+        # this at the chin and missed the thing entirely: what hangs in the
+        # opening reaches BELOW the jaw, so its faces sat under `wlo.z` and
+        # escaped. A quarter of a head lower catches the neck without reaching
+        # the drape on the chest.
+        # DOWN THE THROAT, AND ONLY THE MIDDLE OF IT. Two passes missed this
+        # by bounding it too high: what hangs in the opening is the hood`s own
+        # front TIP, and it reaches a full head`s length below the chin -- in
+        # game, world y 1.14 to 1.34 against a nose at 1.44. It read as a grey
+        # post standing in front of the throat.
+        #
+        # Narrowed to the centre strip so the side drapes, which are the hood
+        # falling onto the shoulders, are untouched.
+        mid_x = (wlo.x + whi.x) / 2
+        half = (whi.x - wlo.x) * 0.45
+        if c.y >= face_y and abs(c.x - mid_x) <= half \
+                and (wlo.z - (whi.z - wlo.z) * 1.15) <= c.z <= whi.z:
+            doomed.append(f)
+    if doomed:
+        bmesh.ops.delete(bm, geom=doomed, context="FACES")
+        print(f"dropped {len(doomed)} faces sitting in the face opening")
+    bm.to_mesh(hood.data)
+    bm.free()
     # NAMED FOR THE BONE. `build.py` exports armour as one object per bone and the
     # loader reads the object name to decide what to hang it on, so this has to be
     # `Head` and not `Face`.

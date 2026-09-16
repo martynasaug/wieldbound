@@ -26676,3 +26676,43 @@ passes of that were too thin — `everycombo` caught the shin back at 99% and th
 at exactly 100% — which is the guard doing its job on a change made for looks.
 
 480 of 480 outfits clean. 19 fitted, 0 not. Suite green.
+
+**Phase 70 M70.357 — the armpit closes, the circlet becomes a coronet.**
+Two faults I had flagged myself and one reported.
+
+THE ARMPIT. The chest shell is a lathe about the BODY's axis and the shoulder
+piece is a lathe about the ARM's, and they were cut to meet at a point rather
+than to overlap — with the armpit hollow between them, concave, so neither
+surface reached into it. The body's own tunic showed there as a dark wedge on
+both sides of every procedural style. The shoulder pieces drop past the hollow
+onto the arm now and start higher, and the chest shells hold full width to the
+shoulder line instead of drawing in below it, so the two surfaces cross.
+
+THE CIRCLET was a band, a plate and one stone — at 11% of the skull the least of
+the five, and the only head piece with no internal structure, which is the fault
+the chests were fixed for and the legs after them. What a circlet has instead of
+coverage is WORK: a rail under the band, points rising off it round the head,
+and a stone at each temple. The points are placed on the band's ELLIPSE rather
+than across a flat line, the same arithmetic `scale_chest` uses for its rows —
+put on a circle they float off the sides of the head.
+
+THE NOSE was not being tinted. `Face_nose` carries the atlas under its own
+material instance, so `applyTone` recoloured the body around it and left the
+nose at the untinted tone. Only the nose: the note it sits under is about the
+piece the Monk's BROWS are modelled in, and tinting that turned a white beard
+brown.
+
+AND TWO OUTLINE EXCLUSIONS. An outline is an inflated copy drawn BACK FACES
+ONLY, and a silhouette is drawn where it is BEHIND something — both of which
+work on a closed shape and neither of which works on a hood. Through the face
+opening you see the inside of the far side of its own hulls. Both builders skip
+the hood now; the body's own hull still rings the figure.
+
+STILL UNRESOLVED, and stated plainly rather than quietly dropped: a pale post
+stands in front of the throat when the hood is worn. Hiding the hood MESH
+removes it, so it is hood geometry — but four geometric cuts in the harvest
+frame have not caught it, which means the bounds I am cutting against do not
+correspond to where that geometry lands in game. Ruled out by measurement: the
+rim hull, the silhouette hull, `Face_nose` and `Face_brow1/2`.
+
+480 of 480 outfits clean. 19 fitted, 0 not.

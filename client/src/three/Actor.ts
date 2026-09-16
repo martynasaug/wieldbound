@@ -1806,6 +1806,13 @@ export class Actor {
       // silhouette is for reading a FIGURE through a wall, and a nose is not
       // part of a figure at that distance.
       if (mesh.name.startsWith("Face_") || mesh.name.startsWith("look_")) return;
+      // AND NOT THE HOOD, for the same reason `buildRim` skips it one layer on.
+      // A through-walls ghost draws where it is BEHIND something — that is what
+      // `GreaterDepth` means — so inside the hood's face opening the far side
+      // of its own ghost is behind the near side and paints, in the silhouette
+      // blue. Removing the rim hull alone did not fix the pale post at the
+      // throat; this is the other half of it.
+      if (/^gear_helm_hood_/.test(mesh.name)) return;
       sources.push(mesh);
     });
 
@@ -2277,6 +2284,24 @@ export class Actor {
       if (!mesh.isSkinnedMesh) return;
       for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) skinned.add(m);
     });
+    // AND THE NOSE, WHICH IS SKIN AND WAS NOT BEING TINTED.
+    //
+    // Reported: "what the hell is that on a face when wearing a hood?" — a pale
+    // grey post down the middle of the face. It is `Face_nose`: ten triangles
+    // carrying the atlas under its OWN material instance, so `applyTone`
+    // recoloured the body around it and left the nose at the untinted tone. On
+    // an open face that reads as a highlight; inside a hood, against cloth and
+    // shadow, it reads as a pipe.
+    //
+    // Only the nose. The note above this is about the piece the Monk's BROWS
+    // and beard are modelled in, and tinting that turned a white beard brown on
+    // every darker tone — brows are hair and take the hair's colour, a nose is
+    // face and takes the face's.
+    this.instance.object.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh || mesh.name !== "Face_nose") return;
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) skinned.add(m);
+    });
     this.bodyMaterials = this.litMaterials.map((e) => e.mat).filter((m) => skinned.has(m));
     this.applyTone();
   }
@@ -2544,6 +2569,18 @@ export class Actor {
       // And the face's own detail, for the reason `buildSilhouette` gives: a
       // forty-triangle brow with a hull round it is a spike, not an eyebrow.
       if (mesh.name.startsWith("look_") || mesh.name.startsWith("Face_")) return;
+      // AND NOT THE HOOD. An outline is an inflated copy drawn BACK FACES ONLY,
+      // which works because a closed shape hides its own far side. A hood is
+      // not closed: through the face opening you see the inside of the far side
+      // of its hull, and `RIM_COLOR` on shadow reads as a pale post standing in
+      // front of the throat. Reported as "what the hell is that on a face when
+      // wearing a hood?" — and chased through three cuts of the hood's own
+      // geometry before the hull was measured at 214 triangles, `side=1`,
+      // colour #ffe6bd, sitting exactly where the post was.
+      //
+      // The figure keeps its outline: the body's own hull still rings it, which
+      // is the same argument the hair skip above makes.
+      if (/^gear_helm_hood_/.test(mesh.name)) return;
       if (!mesh.visible) return;
       sources.push(mesh);
     });
