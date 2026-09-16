@@ -26662,3 +26662,17 @@ at the skirt, and the cap is a rounded dome rather than a lid on a tube.
 
 480 of 480 outfits clean. 19 fitted, 0 not. Suite green, `gearchurn` accumulates
 nothing over 40 changes, client typechecks.
+
+**Phase 70 M70.356 — boots get a leg, not a bucket.**
+The scale that fixed the armours made the boots worse, and for a reason worth
+writing down: they were cut WIDEST AT THE ANKLE and drew in as they climbed.
+That is the profile of a bucket. A leg is the other way round — narrow at the
+ankle, full at the calf — and with `SHIN_SCALE` on top of a backwards profile,
+all four came out as chunky pale blocks on the feet.
+
+Reversed, and slimmed: the scale is 1.12 rather than 1.21, and each boot runs
+about 12.5 at the ankle to 14.4 at the calf over a shin of 13.4 half-width. Two
+passes of that were too thin — `everycombo` caught the shin back at 99% and then
+at exactly 100% — which is the guard doing its job on a change made for looks.
+
+480 of 480 outfits clean. 19 fitted, 0 not. Suite green.

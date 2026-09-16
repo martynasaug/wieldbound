@@ -615,7 +615,7 @@ CHEST_SKIN_Z = -3.0 + CHEST_SKIN * 1.15
 # clearance a worn thing needs over the limb inside it.
 WAIST_SCALE = 1.27
 THIGH_SCALE = 1.16
-SHIN_SCALE = 1.21
+SHIN_SCALE = 1.12
 ARM_SCALE = 1.12
 
 
@@ -1300,7 +1300,7 @@ def shin_band(a, mat, y, r, tube=2.5):
 def low_boots(a):
     """A shoe and a turned-down ankle cuff. The one that gets out of the way."""
     shoe(a, BOOT_HIDE, toe=BOOT_TRIM)
-    shin(a, BOOT_HIDE, 11.0, BOOT_TOP, over_shin(15.0), over_shin(13.6))
+    shin(a, BOOT_HIDE, 11.0, BOOT_TOP, over_shin(12.4), over_shin(14.2))
     # The turned-down cuff is what makes this the plain one, not its height.
     shin_band(a, LEATHER_TRIM, BOOT_TOP - 3.0, 13.6, tube=3.0)
     shin_band(a, LEATHER_TRIM, 21.0, 14.2, tube=2.5)
@@ -1309,7 +1309,7 @@ def low_boots(a):
 def tall_boots(a):
     """To the knee, with the top turned over — the silhouette that says riding boot."""
     shoe(a, BOOT_HIDE, toe=BOOT_TRIM)
-    shin(a, BOOT_HIDE, 11.0, BOOT_TOP, over_shin(14.5), over_shin(12.8))
+    shin(a, BOOT_HIDE, 11.0, BOOT_TOP, over_shin(12.5), over_shin(14.4))
     # The fold at the top is the riding boot's whole silhouette.
     shin_band(a, LEATHER_TRIM, BOOT_TOP - 2.0, 14.6, tube=3.8)
     shin_band(a, LEATHER_TRIM, 24.0, 13.8, tube=2.0)
@@ -1328,7 +1328,7 @@ def plated_boots(a):
     where an overhead camera can catch it, not on the sides.
     """
     shoe(a, "Steel", toe="LightSteel")
-    shin(a, "Steel", 11.0, BOOT_TOP, over_shin(15.0), over_shin(13.5))
+    shin(a, "Steel", 11.0, BOOT_TOP, over_shin(12.6), over_shin(14.5))
     shin_band(a, "DarkSteel", 22.0, 15.0, tube=2.5)
     # Gold at the ankle: one warm line low down, which is the pack's own habit —
     # every reference item has a brass or gold fitting somewhere on it, and ours
@@ -1352,7 +1352,7 @@ def wrapped_boots(a):
     # the style; both were the metal role before, so it read as a pale boot with
     # pale rings on it rather than as cloth over leather.
     shoe(a, BOOT_HIDE, height=11.0)
-    shin(a, CLOTH, 11.0, BOOT_TOP, over_shin(13.5), over_shin(12.2))
+    shin(a, CLOTH, 11.0, BOOT_TOP, over_shin(12.8), over_shin(14.6))
     for y in (16.0, 25.0, 34.0, 43.0, 52.0):
         shin_band(a, CLOTH, y, 13.8, tube=2.2)
 
