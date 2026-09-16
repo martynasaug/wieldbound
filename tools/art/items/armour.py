@@ -865,8 +865,6 @@ CHEST_FACE = BODY["chest_front_z"]
 WAIST_SCALE = 1.0
 THIGH_SCALE = 1.0
 SHIN_SCALE = 1.0
-ARM_SCALE = 1.0
-
 # HOW FAR A HUGGED PIECE STANDS OFF THE BODY, which is now the whole
 # specification of its size.
 CLEAR_PLATE = 3.4    # a cuirass, a tasset, a greave: rigid, over padding
@@ -896,11 +894,6 @@ def over_thigh(r):
 def over_shin(r):
     """A greave radius, grown clear of the shin."""
     return r * SHIN_SCALE
-
-
-def over_arm(r):
-    """A sleeve or pauldron radius, grown clear of the arm."""
-    return r * ARM_SCALE
 
 
 def plate_chest(a):
@@ -1019,12 +1012,11 @@ def chain_chest(a):
            hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
     # Short sleeves of mail rather than pauldrons: mail drapes, it does not plate.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
-        a.shell(bone, [(over_arm(12.0), BODY["shoulder_y"] + 9.0),
-                       (over_arm(13.4), BODY["shoulder_y"] + 1.0),
-                       (over_arm(13.0), BODY["shoulder_y"] - 18.0),
-                       (over_arm(11.6), BODY["shoulder_y"] - 30.0)],
-                GARMENT, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0,
-                hug=CLEAR_COAT, limit=24.0)
+        a.shell(bone, [(16.6, BODY["shoulder_y"] + 9.0),
+                       (18.5, BODY["shoulder_y"] + 1.0),
+                       (17.9, BODY["shoulder_y"] - 18.0),
+                       (16.0, BODY["shoulder_y"] - 30.0)],
+                GARMENT, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
 
 
 def leather_chest(a):
@@ -1160,17 +1152,17 @@ def dress_limbs(a, style):
     # hovering below a bare arm, worst on the robes and Blackglass Mail. A sleeve
     # here joins pauldron to bracer so the arm is one covered limb.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
-        a.sleeve(bone, side, 40.0, FOREARM_OUT0 + 2.0, over_arm(r0 + 1.6), over_arm(r0 + 0.4), mat,
+        a.sleeve(bone, side, 40.0, FOREARM_OUT0 + 2.0, r0 + 1.6, r0 + 0.4, mat,
                  hug=CLEAR_LIMB)
     for bone, side in BONE_FOREARM:
         # A bracer: a tube round the forearm, flaring a little at the wrist.
-        a.sleeve(bone, side, FOREARM_OUT0 - 10.0, FOREARM_OUT1, over_arm(r0), over_arm(r1), mat,
+        a.sleeve(bone, side, FOREARM_OUT0 - 10.0, FOREARM_OUT1, r0, r1, mat,
                  hug=CLEAR_LIMB)
-        a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, over_arm(r1 + 2.0), over_arm(r1 + 1.4),
+        a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, r1 + 2.0, r1 + 1.4,
                  kit["trim"], hug=CLEAR_LIMB + LAYER)
         # And a band where the bracer meets the elbow, so the two sleeves read as
         # one arm rather than two tubes that happen to touch.
-        a.sleeve(bone, side, FOREARM_OUT0 - 10.0, FOREARM_OUT0 - 6.0, over_arm(r0 + 1.8), over_arm(r0 + 1.3),
+        a.sleeve(bone, side, FOREARM_OUT0 - 10.0, FOREARM_OUT0 - 6.0, r0 + 1.8, r0 + 1.3,
                  kit["trim"], hug=CLEAR_LIMB + LAYER)
     # NO GAUNTLET, AND THIS IS A REVERSAL.
     #
@@ -1862,8 +1854,8 @@ def mantle_back(a):
               pleats=4, fold=0.13)
     # Over the shoulders as well, or it is a bib worn backwards.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
-        a.shell(bone, [(over_arm(15.0), BODY["shoulder_y"] + 7.0),
-                       (over_arm(17.0), BODY["shoulder_y"] - 6.0)],
+        a.shell(bone, [(20.7, BODY["shoulder_y"] + 7.0),
+                       (23.5, BODY["shoulder_y"] - 6.0)],
                 CLOTH, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
     collar(a, LEATHER, r=20.0, tube=3.0)
 
