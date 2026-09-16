@@ -221,30 +221,32 @@ def main():
     # The box a face occupies: the front 45% of the head*s depth, inside its
     # own width and between chin and crown. A hood never has geometry here --
     # that space is the opening.
-    face_y = wlo.y + (whi.y - wlo.y) * 0.30
+    # ONE TAB OF CLOTH AT THE THROAT, cut to where it actually is.
+    #
+    # Reported: "what the hell is that on a face when wearing a hood?" -- a pale
+    # post standing in front of the throat. Four cuts missed it because the
+    # bounds were on the WRONG SIDE: the game`s forward is this frame`s -y, the
+    # same inversion `assets.ts` applies standing a Z-up file upright, and every
+    # one of those passes was deleting faces off the BACK of the hood. Widening
+    # them on the correct side then took the whole front off.
+    #
+    # So it is not a heuristic any more. `tools/soak/postprobe.mjs` reads the
+    # offending vertices back out of the running game in the hood`s own local
+    # space -- x 0.063..0.089, y -0.285..-0.207, z 2.091..2.123 against a head
+    # spanning x -0.335..0.335, y -0.329..0.485, z 2.056..2.945 -- and this is
+    # that box, written against the head so it moves with it.
+    mid_x = (wlo.x + whi.x) / 2
+    lo_x = mid_x - (whi.x - wlo.x) * 0.24
+    hi_x = mid_x + (whi.x - wlo.x) * 0.24
+    lo_y, hi_y = wlo.y, wlo.y + (whi.y - wlo.y) * 0.20
+    lo_z, hi_z = wlo.z - (whi.z - wlo.z) * 0.20, wlo.z + (whi.z - wlo.z) * 0.14
     bm = bmesh.new()
     bm.from_mesh(hood.data)
     bm.faces.ensure_lookup_table()
     doomed = []
     for f in bm.faces:
         c = f.calc_center_median()
-        # DOWN THROUGH THE NECK, not just the head box. The first pass bounded
-        # this at the chin and missed the thing entirely: what hangs in the
-        # opening reaches BELOW the jaw, so its faces sat under `wlo.z` and
-        # escaped. A quarter of a head lower catches the neck without reaching
-        # the drape on the chest.
-        # DOWN THE THROAT, AND ONLY THE MIDDLE OF IT. Two passes missed this
-        # by bounding it too high: what hangs in the opening is the hood`s own
-        # front TIP, and it reaches a full head`s length below the chin -- in
-        # game, world y 1.14 to 1.34 against a nose at 1.44. It read as a grey
-        # post standing in front of the throat.
-        #
-        # Narrowed to the centre strip so the side drapes, which are the hood
-        # falling onto the shoulders, are untouched.
-        mid_x = (wlo.x + whi.x) / 2
-        half = (whi.x - wlo.x) * 0.45
-        if c.y >= face_y and abs(c.x - mid_x) <= half \
-                and (wlo.z - (whi.z - wlo.z) * 1.15) <= c.z <= whi.z:
+        if lo_x <= c.x <= hi_x and lo_y <= c.y <= hi_y and lo_z <= c.z <= hi_z:
             doomed.append(f)
     if doomed:
         bmesh.ops.delete(bm, geom=doomed, context="FACES")

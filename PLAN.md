@@ -26745,3 +26745,35 @@ THE ELBOW. The upper sleeve ended at `FOREARM_OUT0 + 2` and the bracer began at
 back of the joint the moment it bends. The bracer starts ten units further up.
 
 480 of 480 outfits clean. 19 fitted, 0 not. Suite green.
+
+**Phase 70 M70.359 — the hood's cut was on the wrong side of the head.**
+Four passes at the thing standing in front of the throat had deleted faces and
+never touched it, which is the tell that the bounds were not describing the
+region I thought they were.
+
+`tools/soak/postprobe.mjs` settles it by reading the offending vertices back out
+of the RUNNING GAME in the hood's own local space: x 0.063..0.089, y
+-0.285..-0.207, z 2.091..2.123, against a head spanning x -0.335..0.335, y
+-0.329..0.485, z 2.056..2.945.
+
+The y tells the whole story. THE FACE IS AT LOW Y IN THIS FRAME. The game's
+forward is the harvest frame's -y — the same inversion `assets.ts` applies when
+it stands a Z-up file upright — and every one of those four cuts tested
+`c.y >= face_y`, so all four were deleting cloth off the BACK of the hood while
+the thing in front stayed. Flipping the comparison with the old generous bounds
+then took the entire front of the hood off in one go: 161 faces, and a bald head
+looking out of two side flaps.
+
+So the bounds are not a heuristic any more. They are the measured box, written
+against the head so it moves with it, and they remove four faces.
+
+WHAT REMAINS, measured rather than waved at: a smaller grey remnant still sits
+low in the opening, outside that box — extending the box downward changes
+nothing, so it is at an x or y the probe has not pinned yet. The hood itself is
+whole from all four sides and covers 83% of the skull.
+
+Two real fixes came out of chasing it: `Face_nose` was never being skin-tinted,
+and both outline builders were drawing the hood's own hull through its face
+opening.
+
+480 of 480 outfits clean. 19 fitted, 0 not. Client typechecks.
