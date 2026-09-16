@@ -258,6 +258,42 @@ def stormfists(g):
         g.stud(BONE_FINGERS, 153.0, 186.0, across, 6.0, 2.4, "LightBlue", sides=4)
 
 
+def splintguard(g):
+    """Ash splints lashed along the back of the hand, and cord at the wrist."""
+    g.sleeve(BONE_HAND, 115.0, 144.0, 15.6, 15.6, "DarkBrown", sides=8)
+    for across in (-8.0, 0.0, 8.0, 16.0):
+        g.box(BONE_HAND, (131.0, 189.0, across), (30.0, 5.0, 6.5), "Wood")
+    for out in (120.0, 142.0):
+        g.band(BONE_HAND, out, 16.6, "DarkBrown", tube=2.0)
+    g.sleeve(BONE_WRIST, 98.0, 113.0, 10.6, 12.0, "Wood", sides=6, squash=ARM_SQUASH)
+    g.band(BONE_WRIST, 100.0, 12.4, "DarkBrown", tube=2.0, squash=ARM_SQUASH)
+
+
+def boneknuckles(g):
+    """Four knuckle bones set into a leather backing, and a thong round the wrist."""
+    g.sleeve(BONE_HAND, 115.0, 144.0, 15.8, 15.8, "DarkBrown", sides=8)
+    g.plate(BONE_HAND, 121.0, 144.0, HAND["back_y"] - 2.0, 3.0, "DarkBrown", half_z=12.0)
+    for across in (-7.0, 0.5, 8.0, 15.0):
+        g.box(BONE_FINGERS, (149.0, 187.0, across), (7.0, 7.0, 6.0), "White", taper=0.8)
+        g.stud(BONE_FINGERS, 152.0, 187.0, across, 5.0, 2.6, "White", sides=5)
+    g.band(BONE_FINGERS, 147.0, 16.0, "DarkBrown", tube=2.2)
+    g.sleeve(BONE_WRIST, 100.0, 113.0, 10.6, 12.0, "DarkBrown", sides=8, squash=ARM_SQUASH)
+    g.band(BONE_WRIST, 102.0, 12.4, "White", tube=2.0, squash=ARM_SQUASH)
+
+
+def obsidianfists(g):
+    """Black glass knapped into plates and bound on: it chips, and it does not blunt."""
+    g.sleeve(BONE_WRIST, 90.0, 113.0, 10.8, 13.0, "DarkBrown", sides=8, squash=ARM_SQUASH)
+    g.band(BONE_WRIST, 92.0, 13.4, "Black", tube=2.4, squash=ARM_SQUASH)
+    g.sleeve(BONE_HAND, 114.0, 146.0, 16.0, 16.0, "DarkBrown", sides=8)
+    g.plate(BONE_HAND, 116.0, 146.0, HAND["back_y"] - 1.0, 5.0, "Black", half_z=13.0)
+    g.box(BONE_FINGERS, (149.0, 185.0, HAND["mid_z"]), (8.0, 10.0, 26.0), "Black", taper=0.9)
+    for across in (-8.0, 4.0, 15.0):
+        g.stud(BONE_FINGERS, 151.0, 187.0, across, 11.0, 4.0, "Black", sides=3)
+    for across in (-6.0, 12.0):
+        g.spike(BONE_HAND, 128.0, HAND["back_y"] + 3.0, across, V(0, 0, 1), 6.0, 3.0, "Black", sides=3)
+
+
 RECIPES = {
     "handwraps": ("Hand Wraps", handwraps),
     "studdedcestus": ("Studded Cestus", studdedcestus),
@@ -266,6 +302,9 @@ RECIPES = {
     "tigerclaws": ("Tiger Claws", tigerclaws),
     "warplategauntlets": ("Warplate Gauntlets", warplategauntlets),
     "stormfists": ("Stormfists", stormfists),
+    "splintguard": ("Splint Guard", splintguard),
+    "boneknuckles": ("Bone Knuckles", boneknuckles),
+    "obsidianfists": ("Obsidian Fists", obsidianfists),
 }
 
 

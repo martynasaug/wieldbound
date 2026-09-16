@@ -1162,6 +1162,79 @@ def woodoffhand(m):
         m.lathe([(0.058, z - 0.012), (0.062, z), (0.058, z + 0.012)], "DarkBrown", sides=8)
 
 
+def pitchtorch(m):
+    """A brand: a split stick soaked in pitch, burning at one end."""
+    m.wrap(0.0, 0.16, 0.024, "DarkBrown", "DarkWood", bands=3)
+    m.lathe([(0.022, 0.16), (0.026, 0.44)], "DarkWood", sides=6)
+    m.lathe([(0.03, 0.44), (0.05, 0.48), (0.046, 0.56)], "Black", sides=7)
+    for k in range(5):
+        a = k * 2 * math.pi / 5 + 0.3
+        lean = 0.35 if k % 2 else 0.18
+        m.shard(V(math.cos(a) * 0.03, math.sin(a) * 0.03, 0.54),
+                V(math.cos(a) * lean, math.sin(a) * lean, 1.0),
+                0.13 if k % 2 else 0.18, 0.026, "Red", sides=5)
+    m.shard(V(0, 0, 0.6), V(0, 0, 1), 0.12, 0.022, "Gold", sides=5)
+
+
+def grimoire(m):
+    """A travelling book, held open on the forearm: a clasp, a ribbon, and a lot of pages."""
+    # The boards, opening away from the body, with the block of pages between.
+    for sy in (-1, 1):
+        m.slab([(-0.19, 0.02), (0.19, 0.02), (0.19, 0.46), (-0.19, 0.46)],
+               0.022, "DarkBrown", chamfer=0.006, y=sy * 0.045)
+    m.box((0, 0, 0.24), (0.35, 0.07, 0.4), "White", taper=0.99)
+    m.box((0, 0, 0.24), (0.06, 0.1, 0.44), "DarkBrown")
+    for z in (0.1, 0.38):
+        m.box((0.14, 0, z), (0.09, 0.115, 0.028), "Gold")
+    m.tube([V(0.0, 0.052, 0.04), V(0.04, 0.062, -0.08)], 0.008, "Red", sides=4)
+
+
+def warhorn(m):
+    """A horn, banded and slung: it curls away from the hand and opens wide."""
+    curl = [V(0, 0, 0.0), V(0.02, 0, 0.14), V(0.07, 0, 0.27),
+            V(0.15, 0, 0.37), V(0.25, 0, 0.43), V(0.34, 0, 0.45)]
+    m.tube(curl, [0.028, 0.034, 0.043, 0.056, 0.072, 0.086], "White", sides=8)
+    for i, r in ((1, 0.042), (3, 0.064)):
+        m.torus(curl[i], (curl[i + 1] - curl[i - 1]).normalized(), r, 0.011, "Gold", segments=10)
+    # The bell's rim, standing in the plane the horn opens into.
+    m.torus(curl[-1], (curl[-1] - curl[-2]).normalized(), 0.092, 0.013, "Gold", segments=10)
+    m.torus(curl[0], (curl[1] - curl[0]).normalized(), 0.032, 0.009, "Gold", segments=8)
+    m.tube([V(0.02, 0.035, 0.12), V(0.15, 0.055, 0.31)], 0.008, "DarkBrown", sides=4)
+
+
+def embercenser(m):
+    """A pierced iron ball on a chain, with something still alight inside it."""
+    m.lathe([(0.0, 0.0), (0.03, 0.02), (0.022, 0.06)], "DarkSteel", sides=6)
+    m.tube([V(0, 0, 0.06), V(0.008, 0, 0.16), V(-0.008, 0, 0.26), V(0, 0, 0.34)],
+           0.007, "DarkSteel", sides=4)
+    # A CAGE, NOT A BALL WITH LINES ON IT. The shell is a lid and a floor with six
+    # ribs between them, so the ember inside is what fills the gaps.
+    m.lathe([(0.0, 0.34), (0.05, 0.39), (0.075, 0.45)], "DarkSteel", sides=9)
+    m.lathe([(0.075, 0.55), (0.05, 0.61), (0.0, 0.65)], "DarkSteel", sides=9)
+    m.lathe([(0.0, 0.4), (0.056, 0.47), (0.062, 0.52), (0.04, 0.58), (0.0, 0.62)], "Red", sides=9)
+    for k in range(6):
+        a = k * math.pi / 3
+        m.tube([V(math.cos(a) * 0.072, math.sin(a) * 0.072, 0.45),
+                V(math.cos(a) * 0.082, math.sin(a) * 0.082, 0.5),
+                V(math.cos(a) * 0.072, math.sin(a) * 0.072, 0.55)],
+               0.008, "DarkSteel", sides=4)
+    m.lathe([(0.026, 0.64), (0.036, 0.67), (0.026, 0.7)], "DarkSteel", sides=8)
+
+
+def stormlantern(m):
+    """A crystal caged in iron, carried by a ring: the light in it is not fire."""
+    m.torus(V(0, 0, 0.62), V(0, 1, 0), 0.05, 0.01, "DarkSteel", segments=10)
+    m.lathe([(0.03, 0.5), (0.045, 0.54), (0.038, 0.58)], "DarkSteel", sides=8)
+    m.box((0, 0, 0.47), (0.15, 0.15, 0.028), "DarkSteel")
+    m.lathe([(0.0, 0.14), (0.05, 0.22), (0.058, 0.33), (0.045, 0.42), (0.0, 0.47)], "LightBlue", sides=8)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            m.tube([V(sx * 0.062, sy * 0.062, 0.1), V(sx * 0.062, sy * 0.062, 0.47)],
+                   0.009, "DarkSteel", sides=4)
+    m.box((0, 0, 0.09), (0.16, 0.16, 0.03), "DarkSteel")
+    m.shard(V(0, 0, 0.06), V(0, 0, -1), 0.05, 0.03, "LightBlue", sides=6)
+
+
 OFFHANDS = {
     "plankshield": ("Plank Shield", plankshield),
     "roundshield": ("Round Shield", roundshield),
@@ -1173,6 +1246,11 @@ OFFHANDS = {
     "wardingfocus": ("Warding Focus", wardingfocus),
     "hunterquiver": ("Hunter's Quiver", hunterquiver),
     "woodoffhand": ("Bundled Kindling", woodoffhand),
+    "pitchtorch": ("Pitch Torch", pitchtorch),
+    "grimoire": ("Travelling Grimoire", grimoire),
+    "warhorn": ("Warhorn", warhorn),
+    "embercenser": ("Ember Censer", embercenser),
+    "stormlantern": ("Storm Lantern", stormlantern),
 }
 
 RECIPES = {**SWORDS, **AXES, **MACES, **DAGGERS, **BOWS, **STAVES, **WANDS, **OFFHANDS}

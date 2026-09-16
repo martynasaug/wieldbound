@@ -27123,3 +27123,37 @@ comparison. `hands.py` keeps the Monk's numbers and is correct to: it builds
 `hands.glb`, which `buildBareHands` only ever puts on a Monk.
 
 Suite green. Client typechecks.
+
+**Phase 70 M70.369 — eight more: three fists and five off-hands, four of which
+are not shields.**
+
+The fist ladder had one entry each at bands 1, 2 and 5 — Splint Guard, Bone
+Knuckles and Obsidian Fists fill them, and all three are plain materials, which
+the school ratio wanted anyway.
+
+THE OFF-HAND SLOT HELD TEN THINGS AND SIX OF THEM WERE SHIELDS. Two per band
+was never the problem; the problem is that choosing an off-hand meant choosing a
+board to hide behind, and a board is one idea. A Pitch Torch, a Travelling
+Grimoire, a Warhorn, an Ember Censer and a Storm Lantern are five more, one per
+band, and each is a different silhouette at the hip where the game draws it.
+
+TWO THINGS THE BENCH CAUGHT, both about placement rather than shape:
+
+  A BAND ROUND A CURVED THING IS A TORUS WITH A NORMAL. The warhorn's two gold
+  bands were lathed about z with their profile heights given as offsets from the
+  ORIGIN rather than from the point being banded — so both landed in a heap at
+  the horn's foot, and even placed right they would have been horizontal rings
+  round a horn that curls away from vertical. `Model.torus` takes the plane it
+  should stand in, and the horn's own path supplies it.
+
+  A CAGE, NOT A BALL WITH LINES ON IT. The censer's ember could not be seen
+  through its own shell, because the shell was a solid sphere with thin ribs
+  drawn on top of it. A lid, a floor and six ribs leaves gaps for the ember to
+  fill, which is the whole point of a censer.
+
+AND TWO OF THEM WERE DRAWN TOO SMALL TO SEE. The torch and the censer at scale
+0.5 are specks at the hip — which the bench sheet cannot tell you, because on
+the bench every item is drawn at the same height. Only the catalogue harness,
+which puts them on the character, shows it.
+
+Suite green. Client typechecks. 168 base items.

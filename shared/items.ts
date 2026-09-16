@@ -758,6 +758,20 @@ const WEAPON_BASES: ItemBase[] = [
     { hands: "items/stormfists.glb", palette: "storm" },
     "The air tastes of iron before the blow lands.",
     { mods: { damage: 1.3, speed: 0.95 } }),
+  // Bands 1, 2 and 5 had one fist each. All three are plain materials, which
+  // the school ratio also wanted — see the note above the axes.
+  w("splintguard", "Splint Guard", 1, "fist",
+    { hands: "items/splintguard.glb", palette: "wood" },
+    "Four bits of ash and a lot of cord. It is better than nothing.",
+    { mods: { speed: 0.94 } }),
+  w("boneknuckles", "Bone Knuckles", 2, "fist",
+    { hands: "items/boneknuckles.glb", palette: "bone" },
+    "Somebody else's knuckles, over yours.",
+    { mods: { damage: 1.08 } }),
+  w("obsidianfists", "Obsidian Fists", 5, "fist",
+    { hands: "items/obsidianfists.glb", palette: "obsidian" },
+    "Black glass, knapped to an edge. It chips, and it does not blunt.",
+    { mods: { damage: 1.24, speed: 0.98 } }),
 ];
 
 // --- Off-hand ---------------------------------------------------------------
@@ -796,6 +810,34 @@ const OFFHAND_BASES: ItemBase[] = [
   g("verdantaegis", "Verdant Aegis", "offhand", 5, null, "offhand-shield", "gold",
     "The green stone in the boss is warm, and nobody will say why.",
     { art: { model: "items/verdantaegis.glb", palette: "gold", scale: 0.6, ...SHIELD_HOLD } }),
+
+  // FIVE MORE, AND FOUR OF THEM ARE NOT SHIELDS.
+  //
+  // The slot held ten things: six shields, two focuses, two quivers. Two per
+  // band was never the problem — the problem is that choosing an off-hand meant
+  // choosing a board to hide behind, and a board is one idea. A torch, a book,
+  // a horn and a censer are four more, and each is a different silhouette at
+  // the hip, which is where the game actually draws it.
+  g("pitchtorch", "Pitch Torch", "offhand", 1, null, "offhand-focus", "wood",
+    "It will not last the night, and it is the reason you can see at all.",
+    { art: { model: "items/pitchtorch.glb", palette: "wood", scale: 0.8, lay: "upright", grip: 0.18 },
+      power: 1.1, guard: 0.85 }),
+  g("grimoire", "Travelling Grimoire", "offhand", 2, null, "offhand-focus", "bone",
+    "Annotated by three owners, two of whom disagreed.",
+    { art: { model: "items/grimoire.glb", palette: "bone", scale: 0.6, ...SHIELD_HOLD },
+      power: 1.2, guard: 0.8 }),
+  g("warhorn", "Warhorn", "offhand", 3, null, "offhand-quiver", "bone",
+    "One note, carried further than any of the shouting.",
+    { art: { model: "items/warhorn.glb", palette: "bone", scale: 0.68, lay: "upright", grip: 0.12 },
+      power: 0.8, guard: 1.3 }),
+  g("embercenser", "Ember Censer", "offhand", 4, null, "offhand-focus", "crimson",
+    "Swung on its chain, and the smoke goes where it likes.",
+    { art: { model: "items/embercenser.glb", palette: "crimson", scale: 0.78, lay: "upright", grip: 0.1 },
+      power: 1.25, guard: 0.7 }),
+  g("stormlantern", "Storm Lantern", "offhand", 5, null, "offhand-focus", "storm",
+    "The light in it is not fire, and it does not go out in rain.",
+    { art: { model: "items/stormlantern.glb", palette: "storm", scale: 0.66, lay: "upright", grip: 0.86 },
+      power: 1.2, guard: 0.85 }),
 ];
 
 // --- Head -------------------------------------------------------------------
