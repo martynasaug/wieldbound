@@ -381,6 +381,26 @@ const WEAPON_BASES: ItemBase[] = [
     { model: "items/venomkiss.glb", palette: "verdant" },
     "The groove down the blade is not decorative.",
     { mods: { speed: 0.88, damage: 1.1 } }),
+  // FOUR MORE, AND THE REASON IS THE SHAPE OF THE CATALOGUE RATHER THAN ANY ONE
+  // ITEM. Counted by family and band, this was a wall with holes in it: wands
+  // had exactly one item per band, daggers and staves six each, bows seven —
+  // against twelve swords. A band is meant to be a CHOICE about what to be, and
+  // a family with one entry in a ring offers none.
+  w("guttingknife", "Gutting Knife", 1, "dagger",
+    { model: "items/guttingknife.glb", palette: "iron", scale: 0.95 },
+    "Not made for this. Used for it anyway.",
+    { mods: { damage: 1.08, speed: 1.08 } }),
+  w("harrowspike", "Harrow Spike", 3, "dagger",
+    { model: "items/harrowspike.glb", palette: "steel" },
+    "No edge worth the name. It was never meant to cut.",
+    { mods: { damage: 1.14, speed: 1.06 } }),
+  w("frostshiv", "Frostshiv", 4, "dagger",
+    { model: "items/frostshiv.glb", palette: "frost", scale: 0.97 },
+    "It grows back overnight, a little wider each time."),
+  w("stormneedle", "Stormneedle", 5, "dagger",
+    { model: "items/stormneedle.glb", palette: "storm", scale: 0.98 },
+    "Thin enough that the flash arrives before the wound does.",
+    { mods: { speed: 0.84, damage: 0.96 } }),
 
   // ----------------------------------------------------------------- swords
   // EVERY SWORD IS ITS OWN MODEL, from `tools/art/items/weapons.py`. They were
@@ -467,6 +487,30 @@ const WEAPON_BASES: ItemBase[] = [
     { model: "items/moonglaive.glb", palette: "silver", scale: 1.3, grip: 0.35 },
     "Reach enough that the first thing most people learn about it is the sound.",
     { mods: { range: 1.35, speed: 1.2, damage: 1.3 }, twoHanded: true }),
+  // AND FIVE PLAIN ONES, BECAUSE THE RATIO IS PART OF THE DESIGN.
+  //
+  // `tools/test/schools.mjs` holds a rule worth keeping: more than half the
+  // weapon catalogue must deal plain physical damage, or "elemental" becomes
+  // the default and stops meaning anything. Adding sixteen items tipped it to
+  // 36 of 74 — because a staff or a wand is ARCANE whatever it is made of, so
+  // nine of those sixteen counted as elemental on the day they were written.
+  //
+  // The fix is not to weaken the rule. It is that the axe and mace ladders had
+  // their own holes — axe band 1, 3 and 4 with one entry each, mace band 1 and
+  // 2 with one — and filling them with iron and steel is what those rings are
+  // supposed to be made of anyway.
+  w("stoneaxe", "Stone Axe", 1, "axe",
+    { model: "items/stoneaxe.glb", palette: "iron", scale: 0.92 },
+    "Older than the smithy, and it has outlasted three of them.",
+    { mods: { speed: 1.08, damage: 1.06 } }),
+  w("halberd", "Halberd", 3, "axe",
+    { model: "items/halberd.glb", palette: "steel", scale: 1.42, grip: 0.32 },
+    "Three weapons on one stick, and the argument is which one you meant.",
+    { mods: { range: 1.5, speed: 1.3, damage: 1.35 }, twoHanded: true }),
+  w("headsman", "Headsman's Axe", 4, "axe",
+    { model: "items/headsman.glb", palette: "obsidian", scale: 1.05 },
+    "Kept sharp by someone whose whole job was keeping it sharp.",
+    { mods: { speed: 1.25, damage: 1.4 }, twoHanded: true }),
   w("reaperscythe", "Reaper's Scythe", 5, "axe",
     { model: "items/reaperscythe.glb", palette: "obsidian", scale: 1.2, grip: 0.45 },
     "A farm tool that stopped pretending.",
@@ -487,6 +531,14 @@ const WEAPON_BASES: ItemBase[] = [
   w("quarrymaul", "Quarry Maul", 2, "mace",
     { model: "items/quarrymaul.glb", palette: "bronze", scale: 1.02 },
     "Made for splitting stone, and never told the difference."),
+  w("boundclub", "Bound Club", 1, "mace",
+    { model: "items/boundclub.glb", palette: "iron", scale: 0.86 },
+    "Someone spent an afternoon hammering nails into it. It shows.",
+    { mods: { speed: 1.06 } }),
+  w("morningstar", "Morning Star", 2, "mace",
+    { model: "items/morningstar.glb", palette: "iron", scale: 0.98 },
+    "The most direct idea anybody has had, executed without embellishment.",
+    { mods: { damage: 1.1, speed: 1.05 } }),
   w("warhammer", "Warhammer", 3, "mace",
     { model: "items/warhammer.glb", palette: "steel", scale: 1.07 },
     "Armour does not have to be cut to stop working."),
@@ -553,6 +605,18 @@ const WEAPON_BASES: ItemBase[] = [
     { model: "items/ruinstring.glb", palette: "crimson", scale: 1.05 },
     "The string hums a half-tone flat and never goes slack.",
     { mods: { range: 1.15, damage: 1.2 }, twoHanded: true }),
+  w("hornbow", "Horn Bow", 3, "bow",
+    { model: "items/hornbow.glb", palette: "bone", scale: 0.92 },
+    "Short, and stores far more than its length has any right to.",
+    { mods: { range: 0.92, speed: 0.88, damage: 1.06 }, twoHanded: true }),
+  w("emberbow", "Emberbow", 4, "bow",
+    { model: "items/emberbow.glb", palette: "crimson" },
+    "The nocks stay warm. Nobody has explained the nocks.",
+    { mods: { damage: 1.12 }, twoHanded: true }),
+  w("heartwood", "Heartwood Bow", 5, "bow",
+    { model: "items/heartwood.glb", palette: "verdant", scale: 1.1 },
+    "Cut green and never seasoned, because seasoning would kill it.",
+    { mods: { range: 1.1, damage: 1.18 }, twoHanded: true }),
 
   // ----------------------------------------------------------------- staves
   w("apprenticestaff", "Apprentice's Staff", 1, "staff",
@@ -584,6 +648,22 @@ const WEAPON_BASES: ItemBase[] = [
     { model: "items/starcaller.glb", palette: "frost", scale: 1.55, ...STAFF_HOLD },
     "Cold light, and it answers before you finish asking.",
     { mods: { range: 1.15, damage: 1.25 }, twoHanded: true }),
+  w("reedstaff", "Reed Staff", 1, "staff",
+    { model: "items/reedstaff.glb", palette: "wood", scale: 1.28, ...STAFF_HOLD },
+    "Light enough to carry all day, which is the only claim it makes.",
+    { mods: { speed: 0.9, damage: 0.94 }, twoHanded: true }),
+  w("lanternstaff", "Lantern Staff", 3, "staff",
+    { model: "items/lanternstaff.glb", palette: "gold", scale: 1.38, ...STAFF_HOLD },
+    "The flame in it has never been lit and has never gone out.",
+    { mods: { damage: 1.06 }, twoHanded: true }),
+  w("ossuarystaff", "Ossuary Staff", 4, "staff",
+    { model: "items/ossuarystaff.glb", palette: "bone", scale: 1.42, ...STAFF_HOLD },
+    "Six fingers, and the hand they came from had five.",
+    { mods: { damage: 1.16 }, twoHanded: true }),
+  w("tidecaller", "Tidecaller", 5, "staff",
+    { model: "items/tidecaller.glb", palette: "frost", scale: 1.45, ...STAFF_HOLD },
+    "The wave at the head of it has been breaking for a hundred years.",
+    { mods: { range: 1.12, damage: 1.2 }, twoHanded: true }),
 
   // ------------------------------------------------------------------ wands
   w("birchrod", "Birch Rod", 1, "wand",
@@ -608,6 +688,28 @@ const WEAPON_BASES: ItemBase[] = [
   // whose top end was somebody else's weapon. It is a lightning one because
   // that is the gap being filled, and because the fastest weapon in the game is
   // the right shape for the school that hits and is gone.
+  // The wand family had ONE item per band, which is a ladder rather than a
+  // choice. A caster picking up the fifth ring should be choosing between a
+  // sunburst and a bolt, not accepting the only rod that exists.
+  w("tallowwand", "Tallow Wand", 1, "wand",
+    { model: "items/tallowwand.glb", palette: "wood", scale: 0.52 },
+    "Burns down and is replaced. The socket is the wand.",
+    { mods: { speed: 0.94 } }),
+  w("knucklewand", "Knuckle Wand", 2, "wand",
+    { model: "items/knucklewand.glb", palette: "bone", scale: 0.54 },
+    "A finger. It is not clear whose, and the seller would not say."),
+  w("moonhook", "Moonhook", 3, "wand",
+    { model: "items/moonhook.glb", palette: "silver", scale: 0.56 },
+    "The horns fill and empty on their own schedule.",
+    { mods: { range: 1.1 } }),
+  w("cinderspiral", "Cinderspiral", 4, "wand",
+    { model: "items/cinderspiral.glb", palette: "crimson", scale: 0.55 },
+    "Wound while hot and left to cool around what it caught.",
+    { mods: { damage: 1.12 } }),
+  w("sunspire", "Sunspire", 5, "wand",
+    { model: "items/sunspire.glb", palette: "gold", scale: 0.56 },
+    "It throws a shadow in the wrong direction and nobody mentions it.",
+    { mods: { damage: 1.22, speed: 1.05 } }),
   w("stormrod", "Stormrod", 5, "wand",
     { model: "items/stormrod.glb", palette: "storm", scale: 0.58 },
     "It hums between castings, which the apprentices are told is normal.",

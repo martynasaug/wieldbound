@@ -281,6 +281,50 @@ def reaperscythe(m):
             (-0.1, 1.4), (0.02, 1.41)], 0.024, "DarkSteel", chamfer=0.005)
 
 
+def stoneaxe(m):
+    """A flint head lashed into a split haft: older than the smithy, and it still works."""
+    haft(m, 0.0, 0.64, 0.026, mat="Wood")
+    m.wrap(0.05, 0.22, 0.028, "DarkBrown", "Wood", bands=3)
+    m.box((0, 0, 0.56), (0.06, 0.05, 0.17), "Wood")
+    # Chipped, not turned: every point is a flake off the last one.
+    m.slab([(0.0, 0.44), (0.07, 0.435), (0.125, 0.5),
+            (0.15, 0.59), (0.14, 0.68), (0.1, 0.72),
+            (0.04, 0.7), (0.0, 0.63)],
+           0.048, "DarkSteel", chamfer=0.006)
+    for z in (0.5, 0.62):
+        m.tube([V(-0.015, -0.045, z), V(0.055, 0.0, z + 0.014), V(-0.015, 0.045, z)], 0.008, "DarkBrown", sides=4)
+
+
+def halberd(m):
+    """A bit on one side, a fluke on the other, and a spike that outreaches both."""
+    m.lathe([(0.0, -0.04), (0.042, -0.01), (0.036, 0.05), (0.024, 0.09)], "DarkSteel", sides=8)
+    m.lathe([(0.023, 0.09), (0.021, 1.22)], "DarkWood", sides=6)
+    m.wrap(0.3, 0.62, 0.024, "DarkBrown", "DarkSteel", bands=4)
+    for sy in (-1, 1):
+        m.box((0, sy * 0.026, 1.02), (0.028, 0.008, 0.22), "DarkSteel")
+    m.slab([(0.03, 0.92), (0.13, 0.9), (0.2, 0.98),
+            (0.215, 1.09), (0.19, 1.19), (0.11, 1.24), (0.03, 1.21)],
+           0.032, "Steel", chamfer=0.007)
+    m.slab([(-0.03, 0.99), (-0.12, 1.01), (-0.21, 1.13), (-0.13, 1.13), (-0.05, 1.07)],
+           0.026, "Steel", chamfer=0.006)
+    m.lathe([(0.032, 1.19), (0.038, 1.23), (0.022, 1.27)], "DarkSteel", sides=8)
+    m.blade([(1.27, 0.03, 0.03, 0.012, 0), (1.4, 0.024, 0.024, 0.01, 0)], (0, 1.53), "Steel")
+
+
+def headsman(m):
+    """A headsman's axe: one enormous crescent on a short haft, and nothing else on it."""
+    haft(m, 0.0, 0.74, 0.03)
+    m.wrap(0.05, 0.3, 0.032, "DarkBrown", "DarkSteel", bands=4)
+    m.box((0, 0, 0.62), (0.085, 0.07, 0.28), "DarkSteel")
+    # 0.25 wide against 0.52 tall: a headsman's bit is DEEP rather than broad,
+    # and the horns reach past the haft at both ends.
+    m.slab([(0.035, 0.84), (0.16, 0.88), (0.26, 0.8),
+            (0.28, 0.62), (0.26, 0.44), (0.16, 0.36), (0.035, 0.4)],
+           0.044, "Steel", chamfer=0.008)
+    m.shard(V(-0.05, 0, 0.62), V(-1, 0, 0), 0.09, 0.03, "DarkSteel")
+    m.shard(V(0, 0, 0.78), V(0, 0, 1), 0.11, 0.026, "DarkSteel")
+
+
 AXES = {
     "handaxe": ("Hand Axe", handaxe),
     "woodcutter": ("Woodcutter's Axe", woodcutter),
@@ -289,6 +333,9 @@ AXES = {
     "twinbite": ("Twinbite", twinbite),
     "moonglaive": ("Moon Glaive", moonglaive),
     "reaperscythe": ("Reaper's Scythe", reaperscythe),
+    "stoneaxe": ("Stone Axe", stoneaxe),
+    "halberd": ("Halberd", halberd),
+    "headsman": ("Headsman's Axe", headsman),
 }
 
 
@@ -388,6 +435,38 @@ def thunderhead(m):
     m.shard(V(0, 0, 1.07), V(0, 0, 1), 0.15, 0.04, "LightBlue", sides=5)
 
 
+def boundclub(m):
+    """A knot of oak with iron driven into it: the first thing anyone picks up."""
+    haft(m, 0.0, 0.42, 0.028, mat="Wood")
+    m.wrap(0.04, 0.2, 0.03, "DarkBrown", "Wood", bands=3)
+    m.lathe([(0.03, 0.4), (0.062, 0.49), (0.07, 0.62), (0.056, 0.72), (0.03, 0.78)], "Wood", sides=7)
+    for k in range(7):
+        a = k * 2 * math.pi / 7
+        z = 0.5 + (k % 3) * 0.08
+        r = 0.065 if k % 3 == 0 else 0.058
+        m.shard(V(math.cos(a) * r, math.sin(a) * r, z), V(math.cos(a), math.sin(a), 0.15),
+                0.038, 0.014, "DarkSteel", sides=4)
+    m.lathe([(0.03, 0.78), (0.042, 0.8), (0.0, 0.85)], "DarkSteel", sides=7)
+
+
+def morningstar(m):
+    """A spiked ball on a haft, which is the most direct idea anybody has had."""
+    haft(m, 0.0, 0.78, 0.026)
+    m.wrap(0.05, 0.28, 0.028, "DarkBrown", "DarkSteel", bands=4)
+    m.lathe([(0.03, 0.62), (0.043, 0.66), (0.043, 0.72), (0.03, 0.76)], "DarkSteel", sides=8)
+    m.lathe([(0.0, 0.67), (0.046, 0.73), (0.061, 0.81), (0.046, 0.89), (0.0, 0.95)], "Steel", sides=9)
+    for k in range(6):
+        a = k * math.pi / 3
+        m.shard(V(math.cos(a) * 0.056, math.sin(a) * 0.056, 0.81), V(math.cos(a), math.sin(a), 0.0),
+                0.078, 0.018, "DarkSteel", sides=4, roll=a)
+    for z, out in ((0.88, 1), (0.74, -1)):
+        for k in range(3):
+            a = k * 2 * math.pi / 3 + 0.5
+            m.shard(V(math.cos(a) * 0.04, math.sin(a) * 0.04, z),
+                    V(math.cos(a) * 0.6, math.sin(a) * 0.6, out), 0.07, 0.016, "DarkSteel", sides=4)
+    m.shard(V(0, 0, 0.95), V(0, 0, 1), 0.08, 0.02, "DarkSteel", sides=4)
+
+
 MACES = {
     "smithhammer": ("Smith's Hammer", smithhammer),
     "quarrymaul": ("Quarry Maul", quarrymaul),
@@ -397,6 +476,8 @@ MACES = {
     "chainfall": ("Chainfall", chainfall),
     "dawnbreaker": ("Dawnbreaker", dawnbreaker),
     "thunderhead": ("Thunderhead", thunderhead),
+    "boundclub": ("Bound Club", boundclub),
+    "morningstar": ("Morning Star", morningstar),
 }
 
 # --- daggers --------------------------------------------------------------------------------
@@ -465,6 +546,47 @@ def venomkiss(m):
     m.blade([(0.225, 0.018, 0.018, 0.012, 0), (0.4, 0.012, 0.012, 0.01, 0)], (0, 0.56), "LightSteel", fuller=0.6)
 
 
+def guttingknife(m):
+    """A broad squared blade with a clipped point: a tool that kept getting used."""
+    m.lathe([(0.0, 0.0), (0.034, 0.014), (0.03, 0.04)], "DarkWood", sides=6)
+    m.wrap(0.04, 0.2, 0.025, "DarkWood", "DarkSteel", bands=3)
+    m.box((0, 0, 0.212), (0.1, 0.055, 0.022), "DarkSteel")
+    m.blade([(0.225, 0.055, 0.032, 0.013, 0), (0.36, 0.058, 0.032, 0.013, 0),
+             (0.46, 0.05, 0.03, 0.012, 0.012)],
+            (0.035, 0.5), "Steel", back_sharp=False)
+
+
+def harrowspike(m):
+    """A rondel: two discs and a spike of square section, made for the gap in a plate."""
+    m.lathe([(0.0, 0.0), (0.046, 0.012), (0.046, 0.03), (0.0, 0.042)], "DarkSteel", sides=10)
+    m.lathe([(0.021, 0.042), (0.025, 0.12), (0.021, 0.2)], "DarkBrown", sides=6)
+    m.lathe([(0.0, 0.2), (0.05, 0.214), (0.05, 0.232), (0.0, 0.246)], "DarkSteel", sides=10)
+    # Square in section all the way down, which is what a rondel is for: no edge
+    # to speak of and nothing that can bend.
+    m.blade([(0.246, 0.028, 0.028, 0.028, 0), (0.42, 0.017, 0.017, 0.017, 0)], (0, 0.56), "Steel")
+
+
+def frostshiv(m):
+    """A blade that is one shard of ice, still growing sideways out of itself."""
+    m.wrap(0.0, 0.17, 0.023, "DarkBrown", "LightBlue", bands=3)
+    m.lathe([(0.026, 0.17), (0.036, 0.19), (0.026, 0.212)], "LightSteel", sides=6)
+    m.blade([(0.212, 0.05, 0.042, 0.018, 0), (0.3, 0.058, 0.03, 0.016, 0.006),
+             (0.42, 0.04, 0.022, 0.012, 0.014)],
+            (0.035, 0.55), "LightBlue", back_sharp=False)
+    for z, out in ((0.27, -1), (0.35, 1), (0.43, -1)):
+        m.shard(V(out * 0.032, 0, z), V(out, 0, 0.7), 0.07, 0.015, "LightBlue", sides=4)
+
+
+def stormneedle(m):
+    """A needle of charged steel, its guard forked like the strike it came out of."""
+    m.lathe([(0.0, 0.0), (0.024, 0.015), (0.018, 0.04)], "Gold", sides=6)
+    m.wrap(0.04, 0.18, 0.019, "Black", "Gold", bands=4)
+    for sx in (-1, 1):
+        bolt = [V(0, 0, 0.19), V(sx * 0.05, 0, 0.212), V(sx * 0.03, 0, 0.236), V(sx * 0.085, 0, 0.275)]
+        m.tube(bolt, [0.013, 0.011, 0.01, 0.004], "Gold", sides=4)
+    m.blade([(0.2, 0.016, 0.016, 0.014, 0), (0.4, 0.011, 0.011, 0.009, 0)], (0, 0.58), "LightSteel", fuller=0.5)
+
+
 DAGGERS = {
     "dirk": ("Notched Dirk", dirk),
     "thiefknife": ("Thief's Knife", thiefknife),
@@ -472,6 +594,10 @@ DAGGERS = {
     "nightedge": ("Nightedge", nightedge),
     "adderfang": ("Adderfang", adderfang),
     "venomkiss": ("Venomkiss", venomkiss),
+    "guttingknife": ("Gutting Knife", guttingknife),
+    "harrowspike": ("Harrow Spike", harrowspike),
+    "frostshiv": ("Frostshiv", frostshiv),
+    "stormneedle": ("Stormneedle", stormneedle),
 }
 
 
@@ -581,6 +707,45 @@ def ruinstring(m):
         m.shard(p, V(0.8, 0, 0.8 if p.z > 0.5 else -0.8), 0.08, 0.018, "Black")
 
 
+def hornbow(m):
+    """A short bow of horn and sinew, curling hard away from the archer at the tips."""
+    path = bow_path(0.86, 0.11, recurve=0.05)
+    limbs(m, path, 0.027, 0.013, "White")
+    string(m, path)
+    grip(m, 0.43, 0.031, "DarkBrown", "DarkSteel", x=0.11)
+    for tip, inner in ((path[0], path[1]), (path[-1], path[-2])):
+        m.shard(tip, tip - inner, 0.075, 0.018, "DarkSteel", sides=5)
+
+
+def emberbow(m):
+    """Blackened limbs ending in flame, and a coal set into the back of the grip."""
+    path = bow_path(1.0, 0.13)
+    limbs(m, path, 0.027, 0.012, "Black")
+    string(m, path)
+    grip(m, 0.5, 0.032, "Black", "Red", x=0.13)
+    for tip, inner in ((path[0], path[1]), (path[-1], path[-2])):
+        run = tip - inner
+        m.shard(tip, run, 0.115, 0.026, "Red", sides=5)
+        for sy in (-1, 1):
+            m.shard(tip, run + V(0, sy * 0.4, 0), 0.07, 0.015, "Gold", sides=4)
+    m.shard(V(0.16, 0, 0.5), V(1, 0, 0), 0.045, 0.026, "Red", sides=6)
+
+
+def heartwood(m):
+    """A bow still alive: thick limbs, thorns down their backs, leaves at the nocks."""
+    path = bow_path(1.15, 0.14, recurve=0.03)
+    limbs(m, path, 0.033, 0.015, "Wood")
+    string(m, path)
+    grip(m, 0.575, 0.035, "DarkWood", "Green", x=0.14)
+    for i in (2, 4, 6, 8):
+        p = path[i]
+        m.shard(p, V(1, 0, 0), 0.05, 0.013, "DarkWood", sides=4)
+    for tip, inner in ((path[0], path[1]), (path[-1], path[-2])):
+        run = tip - inner
+        for sy in (-1, 1):
+            m.shard(tip, run + V(0.15, sy * 0.5, 0), 0.1, 0.027, "Green", sides=4)
+
+
 BOWS = {
     "shortbow": ("Shortbow", shortbow),
     "hunterbow": ("Hunter's Bow", hunterbow),
@@ -589,6 +754,9 @@ BOWS = {
     "yewlongbow": ("Yew Longbow", yewlongbow),
     "gildedbow": ("Gilded Bow", gildedbow),
     "ruinstring": ("Ruinstring", ruinstring),
+    "hornbow": ("Horn Bow", hornbow),
+    "emberbow": ("Emberbow", emberbow),
+    "heartwood": ("Heartwood Bow", heartwood),
 }
 
 
@@ -670,6 +838,65 @@ def starcaller(m):
         m.shard(V(0, 0, 1.58), V(math.cos(a), 0, math.sin(a)), 0.07, 0.022, "LightBlue", sides=4)
 
 
+def reedstaff(m):
+    """A river reed, cut and dried: light, bound in three places, splitting at the head."""
+    ferrule(m, 0.022)
+    m.lathe([(0.021, 0.05), (0.02, 0.7), (0.018, 1.28)], "LightWood", sides=6)
+    for z in (0.35, 0.72, 1.06):
+        m.lathe([(0.021, z - 0.02), (0.025, z), (0.021, z + 0.02)], "DarkBrown", sides=6)
+    for k, run in enumerate((0.21, 0.15, 0.24, 0.17, 0.19)):
+        a = k * 2 * math.pi / 5 + 0.35
+        out = 0.105
+        m.tube([V(0, 0, 1.27),
+                V(math.cos(a) * out * 0.3, math.sin(a) * out * 0.3, 1.27 + run * 0.4),
+                V(math.cos(a) * out, math.sin(a) * out, 1.27 + run)],
+               [0.014, 0.011, 0.003], "LightWood", sides=4)
+
+
+def lanternstaff(m):
+    """A staff that carries a light: a little glazed lantern in a gold cage."""
+    ferrule(m)
+    m.lathe([(0.024, 0.05), (0.023, 1.2)], "DarkWood", sides=6)
+    m.lathe([(0.03, 1.2), (0.046, 1.24), (0.04, 1.285)], "Gold", sides=6)
+    m.box((0, 0, 1.3), (0.14, 0.14, 0.026), "Gold")
+    m.box((0, 0, 1.385), (0.092, 0.092, 0.15), "LightGold")
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            m.tube([V(sx * 0.058, sy * 0.058, 1.3), V(sx * 0.058, sy * 0.058, 1.47)], 0.009, "Gold", sides=4)
+    m.box((0, 0, 1.482), (0.15, 0.15, 0.026), "Gold")
+    m.lathe([(0.052, 1.495), (0.0, 1.58)], "Gold", sides=4, turn=math.pi / 4)
+
+
+def ossuarystaff(m):
+    """A crown of finger bones round a black core, on a shaft wound in two places."""
+    ferrule(m, 0.03)
+    m.lathe([(0.026, 0.05), (0.025, 1.24)], "Black", sides=6)
+    for z in (0.4, 0.82):
+        m.wrap(z, z + 0.16, 0.027, "DarkBrown", "White", bands=2)
+    m.lathe([(0.03, 1.24), (0.052, 1.28), (0.046, 1.335)], "White", sides=8)
+    for k in range(6):
+        a = k * math.pi / 3
+        m.shard(V(math.cos(a) * 0.042, math.sin(a) * 0.042, 1.32),
+                V(math.cos(a) * 0.35, math.sin(a) * 0.35, 1), 0.17, 0.019, "White", sides=5, roll=a)
+    m.shard(V(0, 0, 1.335), V(0, 0, 1), 0.13, 0.032, "Black", sides=6)
+
+
+def tidecaller(m):
+    """A wave breaking at the head of a staff, with a pale bead caught in the curl."""
+    ferrule(m, 0.028)
+    m.lathe([(0.024, 0.05), (0.023, 1.2)], "LightSteel", sides=6)
+    m.wrap(0.45, 0.63, 0.026, "DarkBrown", "LightBlue", bands=3)
+    curl = [V(0, 0, 1.2), V(0, 0, 1.3), V(0.05, 0, 1.4), V(0.12, 0, 1.45),
+            V(0.18, 0, 1.39), V(0.17, 0, 1.31), V(0.11, 0, 1.285)]
+    m.tube(curl, [0.026, 0.029, 0.031, 0.028, 0.023, 0.017, 0.009], "LightBlue", sides=6)
+    for at, out, run in ((V(0.05, 0, 1.4), V(-0.5, 0, 1), 0.09),
+                         (V(0.11, 0, 1.45), V(-0.1, 0, 1), 0.12),
+                         (V(0.17, 0, 1.42), V(0.5, 0, 1), 0.08)):
+        m.shard(at, out, run, 0.018, "White", sides=4)
+    m.shard(V(0.135, 0, 1.345), V(0, 0, 1), 0.045, 0.021, "White", sides=6)
+    m.shard(V(0.135, 0, 1.345), V(0, 0, -1), 0.045, 0.021, "White", sides=6)
+
+
 STAVES = {
     "apprenticestaff": ("Apprentice's Staff", apprenticestaff),
     "oakenstave": ("Oaken Stave", oakenstave),
@@ -677,6 +904,10 @@ STAVES = {
     "thornstave": ("Thornstave", thornstave),
     "runewood": ("Runewood Staff", runewood),
     "starcaller": ("Starcaller", starcaller),
+    "reedstaff": ("Reed Staff", reedstaff),
+    "lanternstaff": ("Lantern Staff", lanternstaff),
+    "ossuarystaff": ("Ossuary Staff", ossuarystaff),
+    "tidecaller": ("Tidecaller", tidecaller),
 }
 
 
@@ -730,12 +961,90 @@ def stormrod(m):
         m.tube(bolt, [0.012, 0.011, 0.01, 0.008, 0.001], "Gold", sides=4)
 
 
+def tallowwand(m):
+    """A candle socketed onto a stub of rod, still burning, still dripping."""
+    m.wrap(0.0, 0.16, 0.021, "DarkBrown", "DarkWood", bands=3)
+    m.lathe([(0.02, 0.16), (0.031, 0.2), (0.028, 0.232)], "DarkSteel", sides=6)
+    m.lathe([(0.027, 0.232), (0.029, 0.34), (0.024, 0.52)], "White", sides=7)
+    for k, run in enumerate((0.13, 0.08, 0.17, 0.1)):
+        a = k * math.pi / 2 + 0.5
+        m.shard(V(math.cos(a) * 0.031, math.sin(a) * 0.031, 0.5), V(0, 0, -1), run, 0.013, "White", sides=4)
+    m.shard(V(0, 0, 0.52), V(0, 0, 1), 0.1, 0.023, "Red", sides=5)
+    m.shard(V(0, 0, 0.56), V(0, 0, 1), 0.05, 0.012, "Gold", sides=5)
+
+
+def knucklewand(m):
+    """A finger bone: two swollen joints up the shaft and a knuckle for a head."""
+    m.lathe([(0.0, 0.0), (0.021, 0.008), (0.029, 0.03), (0.022, 0.055), (0.019, 0.07)], "White", sides=6)
+    m.wrap(0.07, 0.17, 0.018, "DarkBrown", "DarkSteel", bands=2)
+    m.lathe([(0.016, 0.17), (0.015, 0.5)], "White", sides=6)
+    for z in (0.24, 0.37):
+        m.lathe([(0.016, z - 0.03), (0.028, z), (0.016, z + 0.03)], "White", sides=6)
+    for sx in (-1, 1):
+        m.lathe([(0.0, 0.5), (0.033, 0.545), (0.031, 0.59), (0.0, 0.625)], "White", sides=7,
+                centre=(sx * 0.027, 0))
+    m.shard(V(0, 0, 0.5), V(0, 0, 1), 0.06, 0.02, "DarkSteel", sides=4)
+
+
+def moonhook(m):
+    """A crescent of pale metal on a slim shaft, a bead held in its mouth."""
+    m.wrap(0.0, 0.15, 0.019, "DarkBrown", "LightSteel", bands=3)
+    m.lathe([(0.015, 0.15), (0.012, 0.44)], "LightSteel", sides=6)
+    m.lathe([(0.019, 0.44), (0.027, 0.465), (0.017, 0.49)], "LightSteel", sides=6)
+    # The horns open UPWARD, so the sweep runs from the upper left round the
+    # bottom to the upper right and the gap is where a bead can sit.
+    cz, outer, inner = 0.6, 0.107, 0.073
+    ring = [math.radians(125 + 29 * i) for i in range(11)]
+    m.slab([(math.cos(a) * outer, cz + math.sin(a) * outer) for a in ring]
+           + [(math.cos(a) * inner, cz + math.sin(a) * inner) for a in reversed(ring)],
+           0.022, "LightSteel", chamfer=0.005)
+    m.shard(V(0, 0, cz + 0.085), V(0, 0, 1), 0.04, 0.019, "LightBlue", sides=6)
+    m.shard(V(0, 0, cz + 0.085), V(0, 0, -1), 0.04, 0.019, "LightBlue", sides=6)
+
+
+def cinderspiral(m):
+    """A scroll of hot iron coiled flat around the ember at its heart."""
+    m.wrap(0.0, 0.15, 0.021, "Black", "Red", bands=3)
+    m.lathe([(0.017, 0.15), (0.014, 0.44)], "Black", sides=6)
+    cz = 0.555
+    path, radii = [], []
+    for i in range(19):
+        t = i / 18
+        a = -math.pi / 2 + 2.25 * 2 * math.pi * t
+        r = 0.115 - 0.086 * t
+        path.append(V(math.cos(a) * r, 0.0, cz + math.sin(a) * r))
+        radii.append(0.013 - 0.005 * t)
+    m.tube(path, radii, "DarkSteel", sides=4)
+    m.shard(V(0, 0, cz), V(0, 0, 1), 0.062, 0.028, "Red", sides=6)
+    m.shard(V(0, 0, cz), V(0, 0, -1), 0.062, 0.028, "Red", sides=6)
+
+
+def sunspire(m):
+    """A burst of gold rays around a white core, on a fluted gold shaft."""
+    m.lathe([(0.0, 0.0), (0.028, 0.02), (0.022, 0.05)], "Gold", sides=8)
+    m.wrap(0.05, 0.17, 0.02, "DarkBrown", "Gold", bands=3)
+    m.lathe([(0.016, 0.17), (0.013, 0.42)], "Gold", sides=8)
+    m.lathe([(0.021, 0.42), (0.033, 0.45), (0.022, 0.48)], "Gold", sides=8)
+    cz = 0.6
+    for k in range(12):
+        a = k * math.pi / 6
+        long = k % 3 == 0
+        m.shard(V(0, 0, cz), V(math.cos(a), 0.0, math.sin(a)),
+                0.15 if long else 0.09, 0.017 if long else 0.011, "Gold", sides=4)
+    m.lathe([(0.0, cz - 0.046), (0.044, cz), (0.0, cz + 0.046)], "White", sides=8)
+
+
 WANDS = {
     "birchrod": ("Birch Rod", birchrod),
     "iciclerod": ("Icicle Rod", iciclerod),
     "emberwand": ("Ember Wand", emberwand),
     "arcwand": ("Arcwand", arcwand),
     "stormrod": ("Stormrod", stormrod),
+    "tallowwand": ("Tallow Wand", tallowwand),
+    "knucklewand": ("Knuckle Wand", knucklewand),
+    "moonhook": ("Moonhook", moonhook),
+    "cinderspiral": ("Cinderspiral", cinderspiral),
+    "sunspire": ("Sunspire", sunspire),
 }
 
 

@@ -27033,3 +27033,58 @@ it for the same surface. The front panel is gone; the belt and the gold clasp
 are what make it a tabard.
 
 480 of 480 outfits clean. 19 fitted, 0 not. Client typechecks.
+
+**Phase 70 M70.367 — twenty-one new weapons, and the shape of the catalogue.**
+Asked for: "let's make a lot more items. Make an actual good art for them."
+
+WHERE THEY WENT WAS NOT A TASTE DECISION. Counted by family and band, the
+catalogue was a wall with holes in it: twelve swords against six daggers, six
+staves, seven bows — and wands with EXACTLY ONE ITEM PER BAND. A band is meant
+to be a choice about what to be rather than a rung on a ladder, and a family
+with one entry in a ring offers no choice at all. The four thinnest families are
+now ten each:
+
+    dagger   Gutting Knife 1, Harrow Spike 3, Frostshiv 4, Stormneedle 5
+    wand     Tallow Wand 1, Knuckle Wand 2, Moonhook 3, Cinderspiral 4, Sunspire 5
+    staff    Reed Staff 1, Lantern Staff 3, Ossuary Staff 4, Tidecaller 5
+    bow      Horn Bow 3, Emberbow 4, Heartwood Bow 5
+
+THEN THE SUITE PUSHED BACK, and it was right. `tools/test/schools.mjs` holds a
+rule that more than half the weapon catalogue must deal plain physical damage,
+or "elemental" becomes the default and stops meaning anything. Sixteen new items
+tipped it to 36 of 74 — because a staff or a wand is ARCANE whatever it is made
+of, so nine of the sixteen counted as elemental the moment they were written.
+The answer was not to weaken the rule: the axe and mace ladders had their own
+holes, and iron and steel are what those rings are made of.
+
+    axe      Stone Axe 1, Halberd 3, Headsman's Axe 4
+    mace     Bound Club 1, Morning Star 2
+
+THE ART, AND THE THREE THINGS THE BENCH CAUGHT. No two items in this file may
+share a silhouette, so each was drawn and then looked at, and three came back
+wrong for reasons worth writing down:
+
+  A HELIX IS NOT A SILHOUETTE. Cinderspiral's coil wound up the rod and
+  photographed as a bent wire flicking off one side. A helix only reads from an
+  angle that shows its depth and a weapon is seen flat. A FLAT spiral — a scroll
+  in the plane the viewer is looking at, growing out of the shaft and winding in
+  to the ember — reads immediately.
+
+  RAYS IN THE WRONG PLANE ARE STUBS. Sunspire's burst radiated in XY, out of the
+  page, so every ray was foreshortened to nothing and the head read as a winged
+  nut. In XZ they are the shape being looked at.
+
+  AN AXE BIT IS A RATIO. Stone Axe and Headsman's Axe came off the bench as grey
+  hexagons, twice, because their outlines put every point about equally far from
+  their middles — the definition of a regular polygon, which chamfering then
+  rounds further. The two bits in this file that already read as axes are 1.6
+  and 2.0 times taller than they are wide, with a straight run down the edge.
+  Cut to that, and socketed on a box the way those two are, they read.
+
+AND THE DEV SERVER HAD TO BE RESTARTED, which is the same lesson as last time
+in a new place: Vite caches its public directory at startup, so all sixteen new
+GLBs came back as the SPA's HTML and the catalogue harness reported sixteen
+parse errors. The three node processes holding 8080, 5173 and 5174 were found by
+port, checked by command line, and stopped BY PID.
+
+Suite green. Client typechecks. 160 base items, up from 139.
