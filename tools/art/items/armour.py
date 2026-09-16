@@ -107,9 +107,26 @@ HUG_LIMIT = {
     "UpperLeg": 20.0, "LowerLeg": 20.0, "Foot": 26.0,
 }
 
-# The arm's axis in the rest frame: a T-posed arm runs out along x at shoulder
-# height, a little behind the middle. `lathe`'s own (y, z) centre for axis "x".
-ARM_CENTRE = (-4.0, 186.0)
+# THE ARM'S OWN AXIS, and it was seven and a half units out.
+#
+# A T-posed arm runs along x at shoulder height, and a sleeve is turned about
+# this line. It was `(-4.0, 186.0)`, which is the number in `gloves.py`'s `HAND`
+# table — measured, that table says, from **Monk.fbx**. The player's body is the
+# stripped **Rogue**, and the Rogue's arm runs at y +3.6:
+#
+#     UpperArm   y -11.2 .. 17.9   mid  +3.35     z 172.5..199.6   mid 186.0
+#     LowerArm   y  -6.5 .. 14.4   mid  +3.95     z 175.5..194.2   mid 184.9
+#
+# Every sleeve and bracer in the game was therefore turned about a line seven
+# and a half units in FRONT of the arm inside it. It still covered the arm, and
+# that is the whole reason it survived: it covered by being fat enough to reach
+# an arm it was not centred on. Photographed from the side it is unmistakable —
+# a pale slab hanging off the front of the arm, level with the chest.
+#
+# It is also the clearest possible case of the fault this whole milestone is
+# about. A piece that does not know where the body is can only be made to cover
+# it by being made bigger, and bigger is the barrel.
+ARM_CENTRE = (3.6, 185.6)
 
 
 # WHICH BONES MEASURE THE BODY WITH THE ARMS TAKEN OUT OF IT.
@@ -848,7 +865,7 @@ CHEST_FACE = BODY["chest_front_z"]
 WAIST_SCALE = 1.0
 THIGH_SCALE = 1.0
 SHIN_SCALE = 1.0
-ARM_SCALE = 1.38
+ARM_SCALE = 1.0
 
 # HOW FAR A HUGGED PIECE STANDS OFF THE BODY, which is now the whole
 # specification of its size.
@@ -1006,7 +1023,8 @@ def chain_chest(a):
                        (over_arm(13.4), BODY["shoulder_y"] + 1.0),
                        (over_arm(13.0), BODY["shoulder_y"] - 18.0),
                        (over_arm(11.6), BODY["shoulder_y"] - 30.0)],
-                GARMENT, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+                GARMENT, squash=(1.0, 1.0), sides=LIMB_SIDES, x=side * (BODY["shoulder_x"] + 1.0), z=-2.0,
+                hug=CLEAR_COAT, limit=24.0)
 
 
 def leather_chest(a):
@@ -1142,14 +1160,18 @@ def dress_limbs(a, style):
     # hovering below a bare arm, worst on the robes and Blackglass Mail. A sleeve
     # here joins pauldron to bracer so the arm is one covered limb.
     for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
-        a.sleeve(bone, side, 40.0, FOREARM_OUT0 + 2.0, over_arm(r0 + 1.6), over_arm(r0 + 0.4), mat)
+        a.sleeve(bone, side, 40.0, FOREARM_OUT0 + 2.0, over_arm(r0 + 1.6), over_arm(r0 + 0.4), mat,
+                 hug=CLEAR_LIMB)
     for bone, side in BONE_FOREARM:
         # A bracer: a tube round the forearm, flaring a little at the wrist.
-        a.sleeve(bone, side, FOREARM_OUT0 - 10.0, FOREARM_OUT1, over_arm(r0), over_arm(r1), mat)
-        a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, over_arm(r1 + 2.0), over_arm(r1 + 1.4), kit["trim"])
+        a.sleeve(bone, side, FOREARM_OUT0 - 10.0, FOREARM_OUT1, over_arm(r0), over_arm(r1), mat,
+                 hug=CLEAR_LIMB)
+        a.sleeve(bone, side, FOREARM_OUT1 - 3.0, FOREARM_OUT1, over_arm(r1 + 2.0), over_arm(r1 + 1.4),
+                 kit["trim"], hug=CLEAR_LIMB + LAYER)
         # And a band where the bracer meets the elbow, so the two sleeves read as
         # one arm rather than two tubes that happen to touch.
-        a.sleeve(bone, side, FOREARM_OUT0 - 10.0, FOREARM_OUT0 - 6.0, over_arm(r0 + 1.8), over_arm(r0 + 1.3), kit["trim"])
+        a.sleeve(bone, side, FOREARM_OUT0 - 10.0, FOREARM_OUT0 - 6.0, over_arm(r0 + 1.8), over_arm(r0 + 1.3),
+                 kit["trim"], hug=CLEAR_LIMB + LAYER)
     # NO GAUNTLET, AND THIS IS A REVERSAL.
     #
     # A tapered sleeve on the hand bone covered the bare hand and was rejected

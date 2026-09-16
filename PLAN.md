@@ -26948,3 +26948,39 @@ half units now, and it photographs as leather over armour.
 480 of 480 outfits clean. 19 fitted, 0 not. Suite green — one flake in
 `throwers.mjs`, which passes on three re-runs and has nothing to do with gear.
 Client typechecks.
+
+**Phase 70 M70.364 — every sleeve in the game was turned about the wrong arm.**
+Found by finishing the job, which is the only reason it was found at all.
+
+The arms were the one region M70.363 left as lathes, because `bodyshape` kept
+reporting a forearm of radius nothing in most directions and I would not build
+on a measurement I could not explain. The explanation is not in the measuring
+code. It is in `ARM_CENTRE`:
+
+    UpperArm   y -11.2 .. 17.9   mid +3.35      authored axis: -4.0
+    LowerArm   y  -6.5 .. 14.4   mid +3.95
+
+A sleeve is a tube turned about that line, and the line was SEVEN AND A HALF
+UNITS IN FRONT OF THE ARM — far enough that it sits outside the limb entirely,
+which is why rays fired from it found nothing: they were fired from open air
+beside the arm rather than from inside it. The number came from `gloves.py`'s
+`HAND` table, which says in its own header that it was measured from
+**Monk.fbx**. The player's body has been the stripped **Rogue** since M69.
+
+It survived because it still COVERED. A tube of radius 16.6 turned about a line
+7.6 out from an arm of half-depth 8 does contain that arm, barely — and that is
+this milestone's own thesis stated by accident. A piece that does not know where
+the body is can only be made to cover it by being made bigger, and bigger is the
+barrel. Photographed from the side it is unmistakable: a pale slab standing off
+the front of the arm at chest level, which is in every side-view sheet this
+phase has produced and which I looked straight past every time, because a
+picture only shows you what you know how to see.
+
+On its own axis and hugging, the forearm measures 13.9 at the elbow down to 6.1
+at the wrist, with no direction unmeasured and the recentred axis stable within
+a unit over its whole length. `ARM_SCALE`, the last of the five, is 1.0.
+
+`gloves.py` keeps the Monk's number and that is correct: `buildBareHands` is
+gated on `bodyModel === "Monk"`, so `hands.glb` never goes on the player.
+
+480 of 480 outfits clean. 19 fitted, 0 not.
