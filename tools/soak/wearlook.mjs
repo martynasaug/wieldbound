@@ -68,12 +68,20 @@ const COMBOS = {
   })),
   // THE BACK AND SHOULDERS: a cape hangs from the torso and the armour has
   // pauldrons on the same bones.
-  backs: CAPE.map((cape) => ({
-    label: `${cape} + chain`,
-    layers: { armor: worn("chain"), cape: worn(cape) },
-  })),
+  backs: [
+    ...CAPE.map((cape) => ({
+      label: `${cape} + chain`,
+      layers: { armor: worn("chain"), cape: worn(cape) },
+    })),
+    // AND A TABARD OVER A GARMENT, which is the one pairing `overlap.mjs`
+    // flags: a tabard is a panel worn ON the chest, so it shares space with
+    // the chest piece by definition. The question a box cannot answer is
+    // whether it is in FRONT of the plate or inside it.
+    { label: "tabard + plate", layers: { armor: worn("plate"), cape: worn("tabard") } },
+  ],
   // THE HEM AND THE SHIN: the plate skirt and the robe's gown reach the thigh,
   // and a tall boot comes up to meet them.
+  check: [{ label: "plate + hood", layers: { armor: worn("plate"), helm: worn("hood") } }, { label: "robe + hood", layers: { armor: worn("robe"), helm: worn("hood") } }],
   hems: BOOTS.map((boots) => ({
     label: `${boots} + plate`,
     layers: { armor: worn("plate"), boots: worn(boots) },

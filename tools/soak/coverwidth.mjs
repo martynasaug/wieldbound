@@ -50,14 +50,21 @@ const rows = await page.evaluate(async ({ styles, regions }) => {
   ];
   // The widest extent across the two axes perpendicular to the limb's run —
   // a girth, not a length, so a short sleeve is not credited for being long.
-  const girth = (pts) => {
+  // ACROSS THE LIMB, NOT ALONG IT. The body is bound in a T-POSE, so X runs
+  // down the arms: measuring an arm across x and z measures how LONG a sleeve
+  // is, not how far round the arm it goes. Reported as forearm 97%, which
+  // read as a bare arm and was in fact a bracer stopping short of the wrist,
+  // exactly as it should. The axes to measure are the two the limb does not
+  // run along.
+  const girth = (pts, axes) => {
     if (!pts.length) return 0;
     let best = 0;
-    for (const k of [0, 2]) {
+    for (const k of axes) {
       best = Math.max(best, Math.max(...pts.map((p) => p[k])) - Math.min(...pts.map((p) => p[k])));
     }
     return best;
   };
+  const acrossOf = (region) => (/arm/.test(region) ? [1, 2] : [0, 2]);
   const regionOf = (bone) => {
     for (const [name, re] of res) if (re.test(bone)) return name;
     return null;
@@ -114,8 +121,8 @@ const rows = await page.evaluate(async ({ styles, regions }) => {
     });
 
     const cells = res.map(([name]) => {
-      const b = girth(bodyPts.get(name));
-      const g = girth(gearPts.get(name));
+      const b = girth(bodyPts.get(name), acrossOf(name));
+      const g = girth(gearPts.get(name), acrossOf(name));
       const pct = b > 0 ? Math.round((g / b) * 100) : 0;
       return `${name} ${String(pct).padStart(3)}%`;
     });

@@ -63,6 +63,18 @@ OUT = "client/public/models/armour/helm_hood.glb"
 DONOR = "Ranger.fbx"
 MESH = "Cloak"
 
+# How far above the crown the cloth sits. The skull is 0.890 tall, so this is
+# about three per cent of it: enough that the head does not come through the top
+# under animation, small enough that the hood does not float.
+CROWN_MARGIN = 0.060
+
+# And a little larger than the head all round. The head-ratio scale gives the
+# hood the Ranger’s own clearance, and his was barely enough on his own skull:
+# lifting alone left facets of this crown piercing the cloth, because a lift
+# moves a shape without making it roomier. Ten per cent about the cowl’s own
+# centre is the thickness of a hood over a head.
+HOOD_CLEAR = 1.22
+
 
 def main():
     root = os.getcwd()
@@ -150,6 +162,10 @@ def main():
         vert.co = mathutils.Vector((
             donor_mid[i] + (vert.co[i] - donor_mid[i]) * scale[i] for i in range(3)
         ))
+    for vert in hood.data.vertices:
+        vert.co = mathutils.Vector((
+            donor_mid[i] + (vert.co[i] - donor_mid[i]) * HOOD_CLEAR for i in range(3)
+        ))
 
     # THEN THE COWL — not the mesh — IS PUT ON THE HEAD. Re-measured after the
     # scaling, because scaling about the donor's head centre moves it.
@@ -162,6 +178,24 @@ def main():
     shift = mathutils.Vector((wearer_mid.x - cowl_mid.x, wearer_mid.y - cowl_mid.y, 0.0))
     for vert in hood.data.vertices:
         vert.co += shift
+    # AND LIFTED CLEAR OF THE CROWN.
+    #
+    # The Ranger's hood only just covers his own head, and his skull is a fifth
+    # shorter than this one, so registering it faithfully leaves the top of the
+    # head standing through the cloth. That went unseen for four milestones
+    # because the HAIR was filling the gap: the moment `HELM_COVERS_HAIR.hood`
+    # became true — because the hair was coming through the cloth — the bare
+    # crown underneath it appeared.
+    #
+    # A lift, not more scale: the hood is the right size everywhere else, and
+    # growing it until the crown cleared would widen and lengthen it too.
+    top = max(v.co.z for v in hood.data.vertices)
+    want = wearer[1].z + CROWN_MARGIN
+    if top < want:
+        for vert in hood.data.vertices:
+            vert.co.z += want - top
+        print(f"lifted {want - top:+.3f} to clear the crown")
+
     print(f"scaled ({scale.x:.3f},{scale.y:.3f},{scale.z:.3f}), "
           f"cowl centred by ({shift.x:+.3f},{shift.y:+.3f})")
 

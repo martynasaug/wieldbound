@@ -26564,3 +26564,68 @@ rest. That is a real decision with a real cost and it is the user's call, not
 mine to reverse quietly.
 
 19 fitted, 0 not. Suite green, client typechecks.
+
+**Phase 70 M70.353 — every item with every other item, and 480 of 480 clean.**
+Asked for in those words, with the standing complaint attached: no unfinished
+items, no bald spots, no character base over the armour.
+
+`tools/soak/everycombo.mjs` wears all 480 outfits — six armours by five helms by
+four boots by four capes — and prints only what fails. Two questions a box can
+honestly answer: is any region narrower than the body under it, and is any
+region left with a BARE BAND across it. Coverage composes across slots, so a
+garment ending at the knee is not bare if a boot starts there.
+
+WHAT IT FOUND, AND WHAT EACH ONE WAS:
+
+  360x shin bare band   No boot reached the knee. The shin runs from the ankle
+                        at 10 to the knee at 61 and the four boots stopped at
+                        21, 46, 44 and 42, so everything above the boot was the
+                        character's own trousers. `garments.py` cuts `LowerLeg`
+                        out of every costume because the shin is the BOOTS
+                        SLOT'S — so the boots have to cover it. All four reach
+                        `BOOT_TOP` now and carry their identity in material and
+                        trim instead of height.
+  320x abdomen bare     The skirts stopped at `waist_y1 - 32` = 121, five units
+                        ABOVE the hip at 116. They reach `hip_y - 6` now.
+  240x forearm bare     A metric fault, not an art one: see below.
+   32x two hoods        The Wizard's gown and the Warrior's collar rise over the
+                        skull while staying weighted to the TORSO, so the
+                        `Head`/`Neck` bone cut never saw them — a chest item put
+                        a hood on the player, and worn with the hood helm that
+                        is two hoods on one head. `garments.py` cuts anything
+                        wholly above the jaw now, whichever bone it follows.
+        bare crown      Hiding hair under the hood uncovered a gap that hair had
+                        been filling for four milestones: the Ranger's hood
+                        barely clears his own skull and ours is a fifth taller.
+                        `HOOD_CLEAR` and `CROWN_MARGIN` size it over this head.
+
+AND THE INSTRUMENT WAS WRONG THREE TIMES BEFORE IT WAS RIGHT, which is the part
+worth keeping:
+
+  * It filtered gear by HEIGHT BAND and reported the torso at 680% covered. The
+    body is bound in a T-pose, so both sleeves lie inside the torso's band.
+    Bucketed by bone now.
+  * It measured arm girth across x and z — and X RUNS DOWN THE ARM in a T-pose,
+    so it was measuring how LONG a sleeve is. 97% read as a bare arm and was a
+    bracer correctly stopping short of the wrist.
+  * It counted VERTICES per band. A shell with a ring at each end has no
+    vertices in between and covers everything between them, so a fully covered
+    shin read as bare on 360 outfits while the boot was measured spanning it.
+    By span now.
+
+THE BURIAL CHECK IS GONE, and that is a conclusion. Raw overlap flagged a tabard
+worn ON a breastplate; a depth threshold flagged a hood draping onto shoulders;
+containment flagged every cape at 100%, because a cape hangs BEHIND a full-body
+garment and their boxes nest. A bounding box cannot tell BEHIND from INSIDE —
+`overlap.mjs` says so in its own header. Every hit was checked by eye and every
+one was correct art, so the question goes back to `wearlook.mjs` and four sides.
+
+THE GARMENTS ARE INFLATED OFF THE BODY, 0.055 along the vertex normal. A costume
+cut from a character the same size as its wearer lands exactly on the player's
+skin, and at 100% two surfaces coincide and the winner is decided per pixel —
+which is what the base showing through armour actually is. AFTER the fittings,
+because `register.bone_box` measures the donor limb from whatever is in the
+scene and inflating first carried the plate's pauldrons 0.060 off the arm.
+
+480 of 480 outfits clean. 19 fitted, 0 not. Suite green, `gearchurn` accumulates
+nothing over 40 changes, client typechecks.

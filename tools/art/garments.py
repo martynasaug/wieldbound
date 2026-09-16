@@ -66,6 +66,12 @@ import register  # noqa: E402
 # taking those would strip a garment back to a shirt. This game has no legs slot
 # (`ITEM_SLOTS` is weapon, offhand, helm, armor, cape, boots, ring), so the thigh
 # genuinely belongs to the chest item — the shin does not.
+# How far a garment is pushed off the body it is worn over, in the donor's own
+# units. These bodies are about 2.9 tall, so this is roughly half a per cent of a
+# figure -- the thickness of cloth, and enough to take a surface from 99% of the
+# limb under it to comfortably over 100%.
+INFLATE = 0.055
+
 SKIN_BONES = ("Fist", "Thumb", "Foot", "Head", "Neck", "LowerLeg")
 
 # Bone-parented meshes that are NOT armour, and must not travel with a garment.
@@ -138,9 +144,29 @@ def cut(donor, mesh_name, out_name, atlas, export_dir, wearer_limbs, wearer_join
     # A face goes if ANY of its vertices follows a skin bone: the seam ring at a
     # wrist or a collar is mixed, and keeping it leaves a cuff of costume
     # standing on the player's own arm.
+    # AND NOTHING ABOVE THE JAW, WHICHEVER BONE IT FOLLOWS.
+    #
+    # The bone cut above takes `Head` and `Neck`, and two of these costumes put
+    # a hood on the player anyway: the Wizard's gown and the Warrior's standing
+    # collar rise over the skull while staying weighted to the TORSO, so the
+    # bone rule never saw them. Worn with the hood helm that is two hoods on one
+    # head — `everycombo.mjs` measured them sharing 0.46 — and the crown shows
+    # tan between the two.
+    #
+    # This file already states the rule in the fittings filter: "carrying it
+    # along gave a chest item a hood that covered the player's face and would
+    # fight every helm in the game." It just was not enforced on the SKINNED
+    # half. A chest item stops at the collarbone.
+    #
+    # The whole face has to be above the line, not just one vertex of it, or the
+    # shoulder seam goes with the hood.
+    head_lo, _head_hi = register.head_box()
+    jaw = head_lo.z
+
     doomed = [
         p.index for p in me.polygons
         if any(any(s in dominant(me.vertices[i]) for s in SKIN_BONES) for i in p.vertices)
+        or all((body.matrix_world @ me.vertices[i].co).z >= jaw for i in p.vertices)
     ]
     bm = bmesh.new()
     bm.from_mesh(me)
@@ -227,6 +253,28 @@ def cut(donor, mesh_name, out_name, atlas, export_dir, wearer_limbs, wearer_join
     print(f"GARMENT {out_name:<8} {len(me.polygons):>4} faces (cut {len(doomed)} skin) "
           f"atlas={'attached' if textured else 'MISSING'} "
           f"fittings={','.join(fittings) if fittings else 'none'}")
+
+    # AND THE GARMENT IS PUSHED OUT OFF THE BODY IT IS WORN OVER — LAST.
+    #
+    # A garment is cut from a character the same size as the one wearing it, so
+    # every surface lands EXACTLY on the player's own skin. Measured across all
+    # 480 outfits by `tools/soak/everycombo.mjs`, the garments covered 88% to
+    # 99% of the limb under them and never more; at 100% two surfaces coincide
+    # and the winner is decided per pixel, which is what the base body showing
+    # through armour actually is.
+    #
+    # ALONG THE VERTEX NORMAL, so a sleeve grows round the arm rather than the
+    # whole garment scaling away from the shoulders.
+    #
+    # AFTER THE FITTINGS, and that ordering is a regression this already caused
+    # once. `register.bone_box` measures the DONOR limb from whatever is in the
+    # scene, and the pauldrons are registered against that box — so inflating
+    # the body first moved the limb they were measured against and carried the
+    # plate's pauldrons 0.060 off the arm, which `fitcheck.mjs` caught. The
+    # fittings are their own objects and want no inflation: they already sit
+    # outside the costume.
+    for v in me.vertices:
+        v.co += v.normal * INFLATE
 
     if export_dir:
         os.makedirs(export_dir, exist_ok=True)
