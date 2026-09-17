@@ -324,12 +324,85 @@ const SHIELD_HOLD = { lay: "flat", flip: true } as const;
 /** Staves are held a third of the way up, not by the ferrule. */
 const STAFF_HOLD = { grip: 0.36 } as const;
 
+/**
+ * ONE PICTURE PER ITEM, where there is one.
+ *
+ * The bag draws an ICON, not a model. Eighty-two weapons shared eight pictures
+ * between them, so the catalogue was varied on the body and identical in the
+ * one place a player reads items as a list: a Notched Dirk and a Stormneedle
+ * were the same drawing. That is the same complaint as "armours look pretty
+ * similar", one level up and in a different medium.
+ *
+ * A TABLE RATHER THAN A FIELD ON NINETY-SEVEN ROWS. Every row could carry its
+ * own `icon`, and then every row would have to, and a row that forgot would
+ * fall back silently. Here the exceptions are in one place where they can be
+ * read down, the family icon is still the default, and
+ * `tools/test/itemicons.mjs` fails on a name the icon set does not have.
+ *
+ * Keys are item ids; values are `ICON_MAP` keys from `tools/art/icon-map.mjs`.
+ */
+export const ITEM_ICON: Record<string, string> = {
+  dirk: "item-dirk", thiefknife: "item-thiefknife", fangtooth: "item-fangtooth",
+  nightedge: "item-nightedge", adderfang: "item-adderfang", venomkiss: "item-venomkiss",
+  guttingknife: "item-guttingknife", harrowspike: "item-harrowspike",
+  frostshiv: "item-frostshiv", stormneedle: "item-stormneedle",
+
+  recruitblade: "item-recruitblade", armingsword: "item-armingsword", falchion: "item-falchion",
+  boarspear: "item-boarspear", longsword: "item-longsword", rimeblade: "item-rimeblade",
+  greatsword: "item-greatsword", gildedblade: "item-gildedblade", levinbrand: "item-levinbrand",
+  frostbrand: "item-frostbrand", claymore: "item-claymore", wyrmtooth: "item-wyrmtooth",
+
+  handaxe: "item-handaxe", stoneaxe: "item-stoneaxe", woodcutter: "item-woodcutter",
+  cinderbite: "item-cinderbite", beardedaxe: "item-beardedaxe", halberd: "item-halberd",
+  twinbite: "item-twinbite", headsman: "item-headsman", moonglaive: "item-moonglaive",
+  reaperscythe: "item-reaperscythe",
+
+  smithhammer: "item-smithhammer", boundclub: "item-boundclub", quarrymaul: "item-quarrymaul",
+  morningstar: "item-morningstar", warhammer: "item-warhammer", sparkhead: "item-sparkhead",
+  deepsledge: "item-deepsledge", chainfall: "item-chainfall", dawnbreaker: "item-dawnbreaker",
+  thunderhead: "item-thunderhead",
+
+  shortbow: "item-shortbow", hunterbow: "item-hunterbow", recurve: "item-recurve",
+  hoarstring: "item-hoarstring", yewlongbow: "item-yewlongbow", hornbow: "item-hornbow",
+  gildedbow: "item-gildedbow", emberbow: "item-emberbow", ruinstring: "item-ruinstring",
+  heartwood: "item-heartwood",
+
+  apprenticestaff: "item-apprenticestaff", reedstaff: "item-reedstaff",
+  oakenstave: "item-oakenstave", pilgrimstaff: "item-pilgrimstaff",
+  thornstave: "item-thornstave", lanternstaff: "item-lanternstaff",
+  runewood: "item-runewood", ossuarystaff: "item-ossuarystaff",
+  starcaller: "item-starcaller", tidecaller: "item-tidecaller",
+
+  birchrod: "item-birchrod", tallowwand: "item-tallowwand", iciclerod: "item-iciclerod",
+  knucklewand: "item-knucklewand", emberwand: "item-emberwand", moonhook: "item-moonhook",
+  arcwand: "item-arcwand", cinderspiral: "item-cinderspiral", sunspire: "item-sunspire",
+  stormrod: "item-stormrod",
+
+  handwraps: "item-handwraps", splintguard: "item-splintguard",
+  studdedcestus: "item-studdedcestus", boneknuckles: "item-boneknuckles",
+  ironknuckles: "item-ironknuckles", emberfists: "item-emberfists",
+  tigerclaws: "item-tigerclaws", warplategauntlets: "item-warplategauntlets",
+  obsidianfists: "item-obsidianfists", stormfists: "item-stormfists",
+
+  plankshield: "item-plankshield", woodoffhand: "item-woodoffhand",
+  pitchtorch: "item-pitchtorch", roundshield: "item-roundshield",
+  hunterquiver: "item-hunterquiver", grimoire: "item-grimoire",
+  kiteshield: "item-kiteshield", wardingfocus: "item-wardingfocus",
+  warhorn: "item-warhorn", bulwark: "item-bulwark", silverbuckler: "item-silverbuckler",
+  embercenser: "item-embercenser", stillwardglass: "item-stillwardglass",
+  verdantaegis: "item-verdantaegis", stormlantern: "item-stormlantern",
+};
+
 function w(
   id: string, name: string, band: ItemBand, weaponType: WeaponType,
   art: ItemArt, flavour: string,
   extra: Partial<ItemBase> = {},
 ): ItemBase {
-  return { id, name, slot: "weapon", band, weaponType, icon: weaponType, art, flavour, ...extra };
+  return {
+    id, name, slot: "weapon", band, weaponType,
+    icon: ITEM_ICON[id] ?? weaponType,
+    art, flavour, ...extra,
+  };
 }
 
 // `style` is null for the two slots with nothing to draw on the body: a ring is
@@ -340,7 +413,7 @@ function g(
   extra: Partial<ItemBase> = {},
 ): ItemBase {
   return {
-    id, name, slot, band, icon, flavour,
+    id, name, slot, band, icon: ITEM_ICON[id] ?? icon, flavour,
     ...(style ? { style } : {}),
     art: { palette },
     ...extra,

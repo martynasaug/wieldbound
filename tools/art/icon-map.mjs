@@ -13,6 +13,135 @@ export const ICON_MAP = {
   "class-ranger": "lorc/bowman",
   "class-mage": "delapouite/wizard-face",
 
+  // --- ONE PICTURE PER ITEM ------------------------------------------------
+  //
+  // The bag draws an icon, not a model. Eighty-two weapons shared eight
+  // pictures between them, so on the body the catalogue was varied and in the
+  // one place a player reads items as a LIST a Notched Dirk and a Stormneedle
+  // were the same drawing. That is the "they all look the same" complaint one
+  // level up, in a different medium.
+  //
+  // Names were chosen by searching the real index (`icon-search.mjs`) rather
+  // than guessed and then corrected: 4239 icons exist, and picking from what is
+  // there beats proposing a name and reading a validator's list of failures.
+  // The family icons above stay — they still title the equipment panel and
+  // anything that has no picture of its own falls back to them.
+
+  // daggers
+  "item-dirk": "lorc/plain-dagger",
+  "item-thiefknife": "lorc/thrown-knife",
+  "item-fangtooth": "delapouite/bone-knife",
+  "item-nightedge": "lorc/curvy-knife",
+  "item-adderfang": "lorc/sacrificial-dagger",
+  "item-venomkiss": "lorc/dripping-knife",
+  "item-guttingknife": "lorc/bowie-knife",
+  "item-harrowspike": "lorc/spiral-thrust",
+  "item-frostshiv": "lorc/shard-sword",
+  "item-stormneedle": "lorc/piercing-sword",
+
+  // swords
+  "item-recruitblade": "delapouite/rusty-sword",
+  "item-armingsword": "lorc/broadsword",
+  "item-falchion": "lorc/sword-hilt",
+  "item-boarspear": "lorc/spear-hook",
+  "item-longsword": "lorc/pointy-sword",
+  "item-rimeblade": "lorc/striped-sword",
+  "item-greatsword": "delapouite/two-handed-sword",
+  "item-gildedblade": "lorc/shining-sword",
+  "item-levinbrand": "lorc/thunder-blade",
+  "item-frostbrand": "lorc/energy-sword",
+  "item-claymore": "delapouite/ancient-sword",
+  "item-wyrmtooth": "lorc/croc-sword",
+
+  // axes
+  "item-handaxe": "lorc/wood-axe",
+  "item-stoneaxe": "lorc/stone-axe",
+  "item-woodcutter": "delapouite/axe-in-log",
+  "item-cinderbite": "lorc/fire-axe",
+  "item-beardedaxe": "lorc/battle-axe",
+  "item-halberd": "delapouite/sharp-halberd",
+  "item-twinbite": "lorc/crossed-axes",
+  "item-headsman": "delapouite/war-axe",
+  "item-moonglaive": "lorc/crescent-blade",
+  "item-reaperscythe": "lorc/scythe",
+
+  // maces
+  "item-smithhammer": "lorc/flat-hammer",
+  "item-boundclub": "delapouite/wood-club",
+  "item-quarrymaul": "lorc/claw-hammer",
+  "item-morningstar": "lorc/spiked-mace",
+  "item-warhammer": "delapouite/warhammer",
+  "item-sparkhead": "delapouite/flanged-mace",
+  "item-deepsledge": "delapouite/3d-hammer",
+  "item-chainfall": "delapouite/flail",
+  "item-dawnbreaker": "delapouite/thor-hammer",
+  "item-thunderhead": "lorc/heavy-lightning",
+
+  // bows
+  "item-shortbow": "lorc/pocket-bow",
+  "item-hunterbow": "delapouite/bow-arrow",
+  "item-recurve": "delapouite/bow-string",
+  "item-hoarstring": "lorc/arrow-flights",
+  "item-yewlongbow": "lorc/bowman",
+  "item-hornbow": "lorc/broadhead-arrow",
+  "item-gildedbow": "lorc/arrow-cluster",
+  "item-emberbow": "lorc/flaming-arrow",
+  "item-ruinstring": "lorc/barbed-arrow",
+  "item-heartwood": "lorc/thorned-arrow",
+
+  // staves
+  "item-apprenticestaff": "lorc/wizard-staff",
+  "item-reedstaff": "delapouite/wood-stick",
+  "item-oakenstave": "lorc/tree-branch",
+  "item-pilgrimstaff": "generalace135/shepherds-crook",
+  "item-thornstave": "lorc/thorny-vine",
+  "item-lanternstaff": "lorc/lantern",
+  "item-runewood": "lorc/rune-stone",
+  "item-ossuarystaff": "delapouite/skull-staff",
+  "item-starcaller": "lorc/star-swirl",
+  "item-tidecaller": "lorc/wave-crest",
+
+  // wands
+  "item-birchrod": "lorc/fairy-wand",
+  "item-tallowwand": "lorc/candle-flame",
+  "item-iciclerod": "lorc/frozen-orb",
+  "item-knucklewand": "lorc/bone-knife",
+  "item-emberwand": "lorc/smoking-orb",
+  "item-moonhook": "delapouite/crescent-staff",
+  "item-arcwand": "willdabeast/orb-wand",
+  "item-cinderspiral": "lorc/bowl-spiral",
+  "item-sunspire": "lorc/sundial",
+  "item-stormrod": "lorc/lightning-branches",
+
+  // fists
+  "item-handwraps": "lorc/fist",
+  "item-splintguard": "skoll/bracers",
+  "item-studdedcestus": "lorc/mailed-fist",
+  "item-boneknuckles": "delapouite/brass-knuckles",
+  "item-ironknuckles": "skoll/fist",
+  "item-emberfists": "lorc/fulguro-punch",
+  "item-tigerclaws": "lorc/steel-claws",
+  "item-warplategauntlets": "delapouite/gauntlet",
+  "item-obsidianfists": "lorc/plate-claw",
+  "item-stormfists": "lorc/thor-fist",
+
+  // off-hands
+  "item-plankshield": "lorc/wooden-door",
+  "item-woodoffhand": "delapouite/wood-pile",
+  "item-pitchtorch": "delapouite/torch",
+  "item-roundshield": "willdabeast/round-shield",
+  "item-hunterquiver": "delapouite/quiver",
+  "item-grimoire": "delapouite/spell-book",
+  "item-kiteshield": "sbed/shield",
+  "item-wardingfocus": "lorc/crystal-ball",
+  "item-warhorn": "lorc/hunting-horn",
+  "item-bulwark": "lorc/shield-echoes",
+  "item-silverbuckler": "lorc/bordered-shield",
+  "item-embercenser": "lorc/smoking-orb",
+  "item-stillwardglass": "lorc/crystal-shine",
+  "item-verdantaegis": "lorc/edged-shield",
+  "item-stormlantern": "lorc/lantern-flame",
+
   // --- weapon families -----------------------------------------------------
   fist: "lorc/fist",
   sword: "lorc/broadsword",

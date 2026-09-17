@@ -7,6 +7,7 @@
 // renderer swap is not an excuse to change the trust model.
 
 import * as THREE from "three";
+import { ICON_PATHS } from "../ui/icons";
 import {
   INTERACTION_RANGE_PX,
   gatherRangeToNode,
@@ -1615,6 +1616,13 @@ export class Game {
     // a harness that guesses at it from a screenshot answers a different and
     // much weaker question.
     (window as unknown as Record<string, unknown>).__wieldboundLook = lookFor;
+    // THE ICON PATHS, for the same reason one layer up. An item's picture is a
+    // baked SVG path inside a bundled module, so "do these hundred and eighty
+    // items look alike in the bag" was a question nothing outside the bundle
+    // could ask. `tools/soak/bagicons.mjs` draws them all on one grid and
+    // photographs it; a test can prove the names are distinct and cannot say
+    // whether the drawings read as different things at the size a bag uses.
+    (window as unknown as Record<string, unknown>).__wieldboundIcons = ICON_PATHS;
     // The profiler beside it, for the same reason and one it earned: it already
     // times every model parse as `loaderParse:<name>` and every dress pass, and
     // none of that was reachable from outside the module. The load's long frames

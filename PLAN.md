@@ -27341,3 +27341,41 @@ place a player reads items as a list — a Notched Dirk and a Stormneedle are th
 same drawing. That is the same complaint as "armours look pretty similar", one
 level up, and it is a different medium: the icons are hand-authored SVG paths in
 `client/src/ui/icons.ts`, not models.
+
+**Phase 70 M70.374 — one picture per item.**
+The tally from the last milestone said the remaining "they all look the same"
+surface was not the body but the BAG: **35 distinct icons for 182 items**, with
+all twelve swords behind one drawing and all ten daggers behind another. On the
+character the catalogue was varied; in the one place a player reads items as a
+LIST, a Notched Dirk and a Stormneedle were the same picture.
+
+It is 121 icons now, and every weapon and off-hand has its own — 97 of them.
+What still shares is gear by STYLE, which is honest: a Chain Mail and a Ring
+Mail are the same garment in different metal.
+
+SEARCH THE INDEX, DO NOT GUESS AT IT. `icons.mjs` already validates every name
+against the real game-icons tree before it fetches anything, which makes a typo
+loud instead of silent — but loud AFTER the guess. `tools/art/icon-search.mjs`
+searches the same index, so a name is chosen from the 4239 that exist rather
+than proposed and then corrected. 86 of the first 97 were right, and the
+validator named the correct author for most of the rest.
+
+AND THEN LOOKED AT THEM, which caught what no validator could: three names that
+exist, pass every check, and are the wrong picture. The Pilgrim's Staff was a
+walking BOOT, the Silvered Buckler a running figure, the Tidecaller a crown.
+`tools/soak/bagicons.mjs` draws every held item on one grid and photographs it —
+a test can prove the names are distinct and cannot say whether the drawings read
+as different things at the size a bag uses.
+
+TWO GUARDS, because `ItemBase.icon` is typed `string` and always was:
+`tools/test/itemicons.mjs` fails on an icon the baked set does not have, on an
+`ITEM_ICON` entry pointing at no item, and on any weapon family falling back
+behind a single picture. That last one is the rule this milestone exists to
+hold, stated so it cannot quietly come undone.
+
+A table rather than a field on ninety-seven rows: every row COULD carry its own
+icon, and then every row would have to, and a row that forgot would fall back
+silently. The exceptions live in one place, the family icon is still the
+default, and the guard covers the gap.
+
+Suite green. Client typechecks. 121 icons for 182 items.

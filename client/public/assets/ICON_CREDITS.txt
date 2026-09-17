@@ -1,7 +1,7 @@
 Interface icons
 ===============
 
-201 icons from game-icons.net, baked into client/src/ui/icons.ts by
+298 icons from game-icons.net, baked into client/src/ui/icons.ts by
 tools/art/icons.mjs. Licensed CC BY 3.0 (some contributors release CC0); see
 https://github.com/game-icons/icons/blob/master/license.txt for the per-author
 terms.
@@ -12,6 +12,7 @@ Contributors whose work is used here:
   - darkzaitzev
   - delapouite
   - faithtoken
+  - generalace135
   - lorc
   - lucasms
   - sbed
@@ -24,6 +25,103 @@ Icon key -> source file:
   class-warrior          cathelineau/swordman.svg
   class-ranger           lorc/bowman.svg
   class-mage             delapouite/wizard-face.svg
+  item-dirk              lorc/plain-dagger.svg
+  item-thiefknife        lorc/thrown-knife.svg
+  item-fangtooth         delapouite/bone-knife.svg
+  item-nightedge         lorc/curvy-knife.svg
+  item-adderfang         lorc/sacrificial-dagger.svg
+  item-venomkiss         lorc/dripping-knife.svg
+  item-guttingknife      lorc/bowie-knife.svg
+  item-harrowspike       lorc/spiral-thrust.svg
+  item-frostshiv         lorc/shard-sword.svg
+  item-stormneedle       lorc/piercing-sword.svg
+  item-recruitblade      delapouite/rusty-sword.svg
+  item-armingsword       lorc/broadsword.svg
+  item-falchion          lorc/sword-hilt.svg
+  item-boarspear         lorc/spear-hook.svg
+  item-longsword         lorc/pointy-sword.svg
+  item-rimeblade         lorc/striped-sword.svg
+  item-greatsword        delapouite/two-handed-sword.svg
+  item-gildedblade       lorc/shining-sword.svg
+  item-levinbrand        lorc/thunder-blade.svg
+  item-frostbrand        lorc/energy-sword.svg
+  item-claymore          delapouite/ancient-sword.svg
+  item-wyrmtooth         lorc/croc-sword.svg
+  item-handaxe           lorc/wood-axe.svg
+  item-stoneaxe          lorc/stone-axe.svg
+  item-woodcutter        delapouite/axe-in-log.svg
+  item-cinderbite        lorc/fire-axe.svg
+  item-beardedaxe        lorc/battle-axe.svg
+  item-halberd           delapouite/sharp-halberd.svg
+  item-twinbite          lorc/crossed-axes.svg
+  item-headsman          delapouite/war-axe.svg
+  item-moonglaive        lorc/crescent-blade.svg
+  item-reaperscythe      lorc/scythe.svg
+  item-smithhammer       lorc/flat-hammer.svg
+  item-boundclub         delapouite/wood-club.svg
+  item-quarrymaul        lorc/claw-hammer.svg
+  item-morningstar       lorc/spiked-mace.svg
+  item-warhammer         delapouite/warhammer.svg
+  item-sparkhead         delapouite/flanged-mace.svg
+  item-deepsledge        delapouite/3d-hammer.svg
+  item-chainfall         delapouite/flail.svg
+  item-dawnbreaker       delapouite/thor-hammer.svg
+  item-thunderhead       lorc/heavy-lightning.svg
+  item-shortbow          lorc/pocket-bow.svg
+  item-hunterbow         delapouite/bow-arrow.svg
+  item-recurve           delapouite/bow-string.svg
+  item-hoarstring        lorc/arrow-flights.svg
+  item-yewlongbow        lorc/bowman.svg
+  item-hornbow           lorc/broadhead-arrow.svg
+  item-gildedbow         lorc/arrow-cluster.svg
+  item-emberbow          lorc/flaming-arrow.svg
+  item-ruinstring        lorc/barbed-arrow.svg
+  item-heartwood         lorc/thorned-arrow.svg
+  item-apprenticestaff   lorc/wizard-staff.svg
+  item-reedstaff         delapouite/wood-stick.svg
+  item-oakenstave        lorc/tree-branch.svg
+  item-pilgrimstaff      generalace135/shepherds-crook.svg
+  item-thornstave        lorc/thorny-vine.svg
+  item-lanternstaff      lorc/lantern.svg
+  item-runewood          lorc/rune-stone.svg
+  item-ossuarystaff      delapouite/skull-staff.svg
+  item-starcaller        lorc/star-swirl.svg
+  item-tidecaller        lorc/wave-crest.svg
+  item-birchrod          lorc/fairy-wand.svg
+  item-tallowwand        lorc/candle-flame.svg
+  item-iciclerod         lorc/frozen-orb.svg
+  item-knucklewand       lorc/bone-knife.svg
+  item-emberwand         lorc/smoking-orb.svg
+  item-moonhook          delapouite/crescent-staff.svg
+  item-arcwand           willdabeast/orb-wand.svg
+  item-cinderspiral      lorc/bowl-spiral.svg
+  item-sunspire          lorc/sundial.svg
+  item-stormrod          lorc/lightning-branches.svg
+  item-handwraps         lorc/fist.svg
+  item-splintguard       skoll/bracers.svg
+  item-studdedcestus     lorc/mailed-fist.svg
+  item-boneknuckles      delapouite/brass-knuckles.svg
+  item-ironknuckles      skoll/fist.svg
+  item-emberfists        lorc/fulguro-punch.svg
+  item-tigerclaws        lorc/steel-claws.svg
+  item-warplategauntlets delapouite/gauntlet.svg
+  item-obsidianfists     lorc/plate-claw.svg
+  item-stormfists        lorc/thor-fist.svg
+  item-plankshield       lorc/wooden-door.svg
+  item-woodoffhand       delapouite/wood-pile.svg
+  item-pitchtorch        delapouite/torch.svg
+  item-roundshield       willdabeast/round-shield.svg
+  item-hunterquiver      delapouite/quiver.svg
+  item-grimoire          delapouite/spell-book.svg
+  item-kiteshield        sbed/shield.svg
+  item-wardingfocus      lorc/crystal-ball.svg
+  item-warhorn           lorc/hunting-horn.svg
+  item-bulwark           lorc/shield-echoes.svg
+  item-silverbuckler     lorc/bordered-shield.svg
+  item-embercenser       lorc/smoking-orb.svg
+  item-stillwardglass    lorc/crystal-shine.svg
+  item-verdantaegis      lorc/edged-shield.svg
+  item-stormlantern      lorc/lantern-flame.svg
   fist                   lorc/fist.svg
   sword                  lorc/broadsword.svg
   axe                    delapouite/war-axe.svg
