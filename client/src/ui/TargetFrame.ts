@@ -26,6 +26,22 @@ export interface TargetLook {
    */
   knownFor?: string;
   /**
+   * The fabled things this creature is the only source of.
+   *
+   * ON THE FRAME BECAUSE THAT IS WHERE IT IS ANY USE. An item's tooltip already
+   * names its keeper, and a tooltip is something you can only read once you
+   * ALREADY HAVE THE ITEM — which is precisely too late for a line whose whole
+   * job is to send you somewhere. This is the same argument the signature was
+   * moved for: it was in the loot table from the start and nowhere on the
+   * screen, so nobody could act on it.
+   *
+   * Separate from `knownFor` because the two say different things. A signature
+   * is RELIABLE — a third of a boss's drops — and this is the opposite: the
+   * dragon is known for Dragonscale Plate, and it is the only thing alive that
+   * carries Wyrmtooth.
+   */
+  keeps?: string[];
+  /**
    * What hurts it and what it shrugs off.
    *
    * On the FRAME and not the nameplate, the same call M2.3 made about a boss's
@@ -89,7 +105,8 @@ export class TargetFrame {
       "/" +
       (look?.weakTo ?? []).map((r) => r.school).join(",");
     const key =
-      `${look?.band ?? 0}|${look?.elite ? 1 : 0}|${look?.icon ?? ""}|${look?.knownFor ?? ""}|${schoolKey}`;
+      `${look?.band ?? 0}|${look?.elite ? 1 : 0}|${look?.icon ?? ""}|${look?.knownFor ?? ""}` +
+      `|${(look?.keeps ?? []).join(",")}|${schoolKey}`;
     if (key !== this.lastLook) {
       this.lastLook = key;
       this.root.className =
@@ -97,7 +114,8 @@ export class TargetFrame {
         (look?.band ? ` band-${look.band}` : "") +
         (look?.elite ? " elite" : "");
       this.portrait.innerHTML = look?.icon ? iconSvg(look.icon, "icon") : "";
-      this.known.classList.toggle("shown", !!look?.knownFor);
+      const keeps = look?.keeps ?? [];
+      this.known.classList.toggle("shown", !!look?.knownFor || keeps.length > 0);
       this.known.innerHTML = "";
       if (look?.knownFor) {
         this.known.append("Known for ");
@@ -105,6 +123,16 @@ export class TargetFrame {
         what.className = "k-what";
         what.textContent = look.knownFor;
         this.known.appendChild(what);
+      }
+      if (keeps.length) {
+        const line = document.createElement("div");
+        line.className = "k-keeps";
+        line.append("Only source of ");
+        const what = document.createElement("span");
+        what.className = "k-what fabled";
+        what.textContent = keeps.join(", ");
+        line.appendChild(what);
+        this.known.appendChild(line);
       }
 
       // Weakness first. It is the actionable half — a player reads this to

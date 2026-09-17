@@ -1266,6 +1266,17 @@
       }
       #target-known.shown { display: block; }
       #target-known .k-what { color: #f0d89a; font-weight: bold; }
+      /* The keeper line wraps where the signature line does not: a signature is
+         one item and this is up to four, and a clipped list of the only things
+         in the world that carry a fabled item is worse than no list. */
+      #target-known .k-keeps {
+        margin-top: 2px;
+        white-space: normal;
+        overflow: visible;
+        line-height: 1.35;
+        color: #b9905a;
+      }
+      #target-known .k-what.fabled { color: #d6b06a; }
 
       /* What hurts it. Under the signature and above the wind-up bar, which is
          the order you want them in: what it drops is a reason to come back,
@@ -1761,6 +1772,10 @@
       }
       /* Its always-on half, on the same rail so the two read as one block. */
       #item-tooltip .tt-trait.bonus { color: #cbbb95; }
+      /* A fabled row on the forge shelf is absent for a different reason than a
+         locked one, and has to read that way rather than as a dimmer version of
+         the same thing. */
+      .craft-row-cost.short.fabled { color: #a8894f; font-style: italic; }
       /* Affixes are the part of an item that is not true of every copy of it,
          so they are set apart rather than listed among the rolls. */
       /* What a weapon deals. Its own line under the quality, coloured the same

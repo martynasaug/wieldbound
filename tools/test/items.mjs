@@ -62,6 +62,7 @@ import {
   reforgeCost,
   maxRarityFor,
   rarityIndex,
+  scarcityOf,
   reforgeItem,
   reforgePreview,
   rollAffixes,
@@ -289,14 +290,34 @@ console.log(`  ${prefixes} prefixes, ${AFFIXES.length - prefixes} suffixes`);
 
 // --- 6. rolling -------------------------------------------------------------
 section("6. rolling");
+// mulberry32, not the classic LCG this used to use. `seed * 1103515245` leaves
+// what a double can hold on the very first multiply, so the low bits are gone
+// before the mask and what comes back cycles short. It showed up here as
+// coverage: twenty-six thousand rolls, evenly spread over every creature, and
+// five perfectly reachable items never once turned up. Anything sampling a
+// distribution wants a generator that stays inside 32-bit integer ops.
 let seed = 12345;
-const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+const rand = () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
 
+// THROUGH A CREATURE, not through a bare band. A fabled base comes off a keeper
+// and off nothing else, so `rollBase(band)` with no kind cannot reach eighteen
+// of these — which is the rule working, and used to read here as eighteen
+// unreachable items.
+const allKinds = Object.keys(MONSTER_STATS);
 const seenBases = new Set();
 const seenRarities = new Set();
-for (let i = 0; i < 20000; i++) {
-  const band = (1 + Math.floor(rand() * 5));
-  const base = rollBase(band, rand);
+// Every kind gets the same number of rolls rather than a random kind per roll:
+// coverage is the question here, and drawing the CREATURE from the same weak
+// generator being sampled left three of the thirteen thin and reported six
+// perfectly reachable items as unreachable.
+for (let i = 0; i < 26000; i++) {
+  const kind = allKinds[i % allKinds.length];
+  const base = rollBase(MONSTER_STATS[kind].band, kind, rand);
   seenBases.add(base.id);
   const rarity = rollRarity(rand);
   seenRarities.add(rarity);
@@ -318,8 +339,8 @@ for (let i = 0; i < 20000; i++) {
     check(`affix ${id} is legal at band ${base.band}`, a.minBand <= base.band);
   }
 }
-console.log(`  ${seenBases.size}/${bases.length} bases and ${seenRarities.size}/${RARITY_ORDER.length} qualities seen in 20k rolls`);
-check("every base is reachable from some band", seenBases.size === bases.length,
+console.log(`  ${seenBases.size}/${bases.length} bases and ${seenRarities.size}/${RARITY_ORDER.length} qualities seen in 26k rolls`);
+check("every base is reachable from some creature", seenBases.size === bases.length,
   bases.filter((b) => !seenBases.has(b.id)).map((b) => b.id).join(", "));
 check("every quality is reachable", seenRarities.size === RARITY_ORDER.length);
 
@@ -567,19 +588,30 @@ check("and what they know is exactly the band-1 catalogue",
   `${fresh.length} vs ${bases.filter((b) => b.band === 1).length}`);
 check("every starting recipe is band 1", STARTING_RECIPES.every((id) => ITEM_BASES[id].band === 1));
 
-// Learning one adds exactly one.
-const afterOne = forgeableBases(["claymore"]);
+// Learning one adds exactly one. On a LOCKED, FORGEABLE base — the sample used
+// to be a claymore, which is fabled now and which no anvil will make at any
+// price, so learning its recipe correctly adds nothing.
+const lockable = bases.find((b) => b.band > 1 && scarcityOf(b) !== "fabled");
+const afterOne = forgeableBases([lockable.id]);
 check("learning a recipe adds exactly that recipe",
-  afterOne.length === fresh.length + 1 && afterOne.some((b) => b.id === "claymore"),
-  `${fresh.length} -> ${afterOne.length}`);
+  afterOne.length === fresh.length + 1 && afterOne.some((b) => b.id === lockable.id),
+  `${fresh.length} -> ${afterOne.length} (${lockable.id})`);
 check("learning a band-1 recipe changes nothing, since it was never locked",
   forgeableBases(["armingsword"]).length === fresh.length);
 
 // And everything is reachable: a base nobody can ever learn is content that
-// does not exist.
+// does not exist — EXCEPT the fabled tier, which is deliberately not content
+// the anvil reaches. Those are found and kept; a recipe for one would mean a
+// single lucky drop, salvaged, turns the rarest thing in the game into
+// something you order with wood and ore.
+const forgeable = bases.filter((b) => scarcityOf(b) !== "fabled");
 const everything = forgeableBases(bases.map((b) => b.id));
-check("knowing every recipe unlocks the whole catalogue",
-  everything.length === bases.length, `${everything.length}/${bases.length}`);
+check("knowing every recipe unlocks everything the anvil makes",
+  everything.length === forgeable.length, `${everything.length}/${forgeable.length}`);
+check("and the fabled tier is not among it",
+  everything.every((b) => scarcityOf(b) !== "fabled"));
+console.log(`  the anvil reaches ${forgeable.length} of ${bases.length}; the other ` +
+  `${bases.length - forgeable.length} are found or not had`);
 
 // --- 9b. the reforge preview ------------------------------------------------
 // The bench shows what a step up would produce, and a preview that disagrees

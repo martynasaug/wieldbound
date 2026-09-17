@@ -131,5 +131,38 @@ for (const r of forge.rows) console.log(`    row:  ${r}`);
 const panel = await page.$("#craft-panel");
 if (panel) writeFileSync(`${OUT}/drops-forge.png`, await panel.screenshot());
 
+// --- and the FORGE tab, which is where a player plans ------------------------
+//
+// The locked list is the closest thing the game has to a catalogue of its own
+// items, and it carries one promise: "salvage one to learn it". For the fabled
+// tier that promise is false and no amount of salvaging will make it true, so
+// those rows have to sit under their own heading saying the other thing.
+await page.evaluate(() => {
+  const g = window.__wieldbound;
+  g.craftPanel.tab = "forge";
+  g.craftPanel.slotFilter = "weapon";
+  g.craftPanel.open("probe");
+});
+await page.waitForTimeout(700);
+const shelf = await page.evaluate(() => ({
+  sections: [...document.querySelectorAll(".craft-section-title")].map((n) => n.textContent),
+  refusals: [...new Set([...document.querySelectorAll(".craft-row-cost.short")].map((n) => n.textContent))],
+}));
+console.log("");
+console.log("  forge, forge tab (weapons):");
+for (const n of shelf.sections) console.log(`    section: ${n}`);
+for (const r of shelf.refusals) console.log(`    says:    ${r}`);
+// Scrolled to the shelf under review. The panel is taller than its box, so a
+// plain screenshot of it photographs the consumables at the top and tells you
+// nothing about the section three hundred pixels below the fold.
+await page.evaluate(() => {
+  const titles = [...document.querySelectorAll(".craft-section-title")];
+  const target = titles.find((n) => /no forge will make/.test(n.textContent ?? ""));
+  target?.scrollIntoView({ block: "start" });
+});
+await page.waitForTimeout(400);
+const forgePanel = await page.$("#craft-panel");
+if (forgePanel) writeFileSync(`${OUT}/drops-forgetab.png`, await forgePanel.screenshot());
+
 if (errors.length) console.log("  page errors:", errors.slice(0, 3));
 await browser.close();

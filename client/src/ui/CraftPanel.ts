@@ -73,6 +73,7 @@ import {
   itemBase,
   nextRarity,
   nextRarityFor,
+  scarcityOf,
   reforgeCost,
   reforgePreview,
   salvageYield,
@@ -344,9 +345,17 @@ export class CraftPanel {
       .filter((b) => b.slot === this.slotFilter)
       .sort((a, b) => a.band - b.band || a.name.localeCompare(b.name));
     const available = all.filter((b) => canForge(b, known).ok);
-    const locked = all.filter((b) => !canForge(b, known).ok);
+    // THE FABLED ONES ARE NOT "NOT YET LEARNED", and lumping them in with the
+    // locked rows made this list say something false: the heading promises that
+    // salvaging one teaches it, and for these no salvage ever will. They are a
+    // different kind of absent — not a recipe you have yet to meet, but a thing
+    // no anvil makes at any price — so they get their own shelf and their own
+    // sentence. The row already names the creature that carries it, which is
+    // exactly the lead a player wants once "make one" is off the table.
+    const fabled = all.filter((b) => scarcityOf(b) === "fabled");
+    const locked = all.filter((b) => !canForge(b, known).ok && scarcityOf(b) !== "fabled");
 
-    this.section(`${SLOT_LABEL[this.slotFilter]} — ${available.length} of ${all.length} known`);
+    this.section(`${SLOT_LABEL[this.slotFilter]} — ${available.length} of ${all.length - fabled.length} known`);
     for (const base of available) this.renderForgeRow(base, true);
     if (locked.length) {
       // Shown rather than hidden, because "salvage one to learn it" is the
@@ -356,14 +365,20 @@ export class CraftPanel {
       this.section(`${locked.length} not yet learned — salvage one to learn it`);
       for (const base of locked) this.renderForgeRow(base, false);
     }
+    if (fabled.length) {
+      this.section(`${fabled.length} no forge will make — found, or not had`);
+      for (const base of fabled) this.renderForgeRow(base, false, true);
+    }
   }
 
-  private renderForgeRow(base: ItemBase, unlocked: boolean): void {
+  private renderForgeRow(base: ItemBase, unlocked: boolean, fabled = false): void {
     const cost = forgeCost(base);
     const sub = unlocked ? this.costLine(cost) : document.createElement("div");
     if (!unlocked) {
-      sub.className = "craft-row-cost short";
-      sub.textContent = "Unknown — salvage one to learn it";
+      sub.className = fabled ? "craft-row-cost short fabled" : "craft-row-cost short";
+      sub.textContent = fabled
+        ? "No anvil makes one of these"
+        : "Unknown — salvage one to learn it";
     } else {
       // What it makes, in the same shape the reforge rows use. The forge always
       // outputs Honed, so this is exactly the base's authored numbers — which
@@ -395,7 +410,7 @@ export class CraftPanel {
     this.row(
       base.icon,
       base.name,
-      unlocked ? "#dfe6e4" : "#6f6a62",
+      unlocked ? "#dfe6e4" : fabled ? "#a8894f" : "#6f6a62",
       sub,
       "Forge",
       unlocked && canAfford(cost, this.materials).ok && !!this.stationId,

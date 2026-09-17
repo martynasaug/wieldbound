@@ -22,6 +22,7 @@
 //   node tools/test/drops.mjs
 
 import {
+  MONSTER_LABELS,
   MONSTER_STATS,
   RARITY_ORDER,
   STATUSES,
@@ -30,9 +31,12 @@ import {
 } from "../../shared/protocol-types.ts";
 import {
   ITEM_BASES,
+  MONSTER_LOOT,
   SCARCITIES,
   TRAITS,
   atCeiling,
+  canForge,
+  describeDropSources,
   maxRarityFor,
   nextRarityFor,
   rarityIndex,
@@ -85,12 +89,29 @@ check("every tier has its own colour",
 // The tiers have to be ordered on BOTH axes or the second axis says nothing:
 // a rarer tier that stopped lower would be strictly worse than a common one,
 // and nobody would want to find it.
-const byWeight = [...tiers].sort((a, b) => SCARCITIES[b].weight - SCARCITIES[a].weight);
+//
+// ORDER IS DECLARED, NOT SORTED BY WEIGHT. `weight` is a share of the ORDINARY
+// pool and fabled's is zero, because a fabled base never enters that pool — it
+// comes off a keeper at its own fixed count. Sorting by the field put fabled
+// between common and scarce and failed, which is the field telling the truth:
+// the two numbers are not on one scale and must not be compared.
+const ORDER = ["common", "scarce", "fabled"];
+check("the declared order covers every tier",
+  ORDER.length === tiers.length && ORDER.every((t) => !!SCARCITIES[t]));
 check("rarer means a higher ceiling",
-  byWeight.every((t, i) =>
+  ORDER.every((t, i) =>
     i === 0 ||
-    rarityIndex(SCARCITIES[t].ceiling) > rarityIndex(SCARCITIES[byWeight[i - 1]].ceiling)),
-  byWeight.map((t) => `${t}:${SCARCITIES[t].ceiling}`).join(" > "));
+    rarityIndex(SCARCITIES[t].ceiling) > rarityIndex(SCARCITIES[ORDER[i - 1]].ceiling)),
+  ORDER.map((t) => `${t}:${SCARCITIES[t].ceiling}`).join(" < "));
+// And on the pool axis, over the tiers that actually use it.
+const pooled = ORDER.filter((t) => SCARCITIES[t].weight > 0);
+check("a rarer pooled tier is a smaller share of the pool",
+  pooled.every((t, i) => i === 0 || SCARCITIES[t].weight < SCARCITIES[pooled[i - 1]].weight),
+  pooled.map((t) => `${t}:${SCARCITIES[t].weight}`).join(" > "));
+// The zero is the rule, not an oversight: it is what says "this tier is not in
+// the ordinary pool at all".
+check("fabled takes no share of the ordinary pool", SCARCITIES.fabled.weight === 0,
+  `${SCARCITIES.fabled.weight}`);
 check("exactly one tier reaches the top of the ladder",
   tiers.filter((t) => SCARCITIES[t].ceiling === RARITY_ORDER[RARITY_ORDER.length - 1]).length === 1);
 
@@ -207,29 +228,102 @@ for (const [id, t] of Object.entries(TRAITS)) {
   }
 }
 
-// --- 4. and it is actually rare ---------------------------------------------
-section("4. what a hundred thousand kills look like");
+// --- 4. every fabled item has a keeper ---------------------------------------
+section("4. keepers");
+
+const keeperOf = {};
+for (const [kind, loot] of Object.entries(MONSTER_LOOT)) {
+  for (const id of loot.keeps ?? []) (keeperOf[id] ??= []).push(kind);
+}
+
+// The rule the tier rests on. Without it a fabled base is a lottery ticket, and
+// four of them were worse than that: frost and verdant are carried by nothing
+// at band 4 or 5, so the game's own answer to "where do I find this" was "the
+// far corners" and nothing else.
+for (const b of fabled) {
+  check(`${b.id} has a keeper`, (keeperOf[b.id] ?? []).length > 0);
+}
+// And the other way, which is the failure a rename causes: a keeps entry that
+// names nothing is a creature keeping a ghost, and nothing throws.
+for (const [kind, loot] of Object.entries(MONSTER_LOOT)) {
+  for (const id of loot.keeps ?? []) {
+    check(`${kind} keeps something real`, !!ITEM_BASES[id], id);
+    check(`${kind} only keeps fabled things`, scarcityOf(ITEM_BASES[id] ?? {}) === "fabled", id);
+  }
+}
+// ONLY BOSSES KEEP, and this is the rule the rate depends on rather than a
+// matter of taste. A boss always drops; everything else drops one kill in
+// eight. Let an ordinary creature keep something and the two multiply: the
+// first cut of this had a dragon handing over something fabled every 18 kills
+// and a ghost every 685, with three of each standing in the world.
+for (const [kind, loot] of Object.entries(MONSTER_LOOT)) {
+  if (!(loot.keeps ?? []).length) continue;
+  check(`${kind} keeps things, so it had better always drop`,
+    MONSTER_STATS[kind].guaranteedDrop === true);
+}
+
+// A keeper has to be within reach of the item it keeps, or it keeps it in a
+// band `rollBase` never pools — which is a promise the tooltip makes and the
+// roller cannot honour.
+for (const [id, kinds] of Object.entries(keeperOf)) {
+  for (const kind of kinds) {
+    check(`the ${kind} can actually reach ${id}`,
+      Math.abs(MONSTER_STATS[kind].band - ITEM_BASES[id].band) <= 1,
+      `band ${MONSTER_STATS[kind].band} vs item band ${ITEM_BASES[id].band}`);
+  }
+}
+
+// What a player is TOLD. The sentence has to be definite for a fabled base and
+// has to name a creature, because "the far corners" is what it said before and
+// that is not something anybody can act on.
+for (const b of fabled) {
+  const said = describeDropSources(b.id);
+  check(`${b.id} says where it comes from`, /nothing else alive/.test(said), said);
+}
+
+// And it cannot be ordered at the anvil. The recipe gate is "salvage one to
+// learn it", which for every other tier is a good loop and for this one undoes
+// the tier: one lucky drop, taken apart, and the rarest item in the game
+// becomes something you buy with wood and ore.
+for (const b of fabled) {
+  check(`${b.id} cannot be forged even knowing it`, !canForge(b, [b.id]).ok);
+}
+check("everything else still forges the way it did",
+  bases.filter((b) => scarcityOf(b) !== "fabled").every((b) => canForge(b, [b.id]).ok));
+
+// --- 5. and it is actually rare ---------------------------------------------
+section("5. what a hundred thousand kills look like");
 
 // The table the server rolls, at the band a fabled item can appear in.
-const bands = [...new Set(Object.values(MONSTER_STATS).map((m) => m.band))].sort();
-for (const band of bands) {
+// PER KIND, not per band, which is how the server calls it: a fabled base comes
+// off a keeper, and `rollBase(band, null)` has no keeper to ask. Rolling it
+// without a kind measured a table the game never uses.
+const kinds = Object.keys(MONSTER_STATS);
+for (const kind of kinds) {
+  const band = MONSTER_STATS[kind].band;
   const counts = { common: 0, scarce: 0, fabled: 0 };
   const N = 100000;
-  for (let i = 0; i < N; i++) counts[scarcityOf(rollBase(band, null, rand))]++;
+  for (let i = 0; i < N; i++) counts[scarcityOf(rollBase(band, kind, rand))]++;
   const pct = (n) => ((n / N) * 100).toFixed(2).padStart(5);
+  const keeps = (MONSTER_LOOT[kind].keeps ?? []).length;
   console.log(
-    `  band ${band}  common ${pct(counts.common)}%  scarce ${pct(counts.scarce)}%  fabled ${pct(counts.fabled)}%`,
+    `  ${kind.padEnd(10)} band ${band}  common ${pct(counts.common)}%  scarce ${pct(counts.scarce)}%` +
+    `  fabled ${pct(counts.fabled)}%  (keeps ${keeps})`,
   );
   // Not a fixed mix — it depends on what exists at that band, and the outer
   // rings genuinely have no plain kit in reach, which is the world being laid
   // out as bands rather than a fault. What must hold everywhere is that the
   // rarest tier is never the one you mostly get.
-  check(`band ${band} is not mostly fabled`, counts.fabled / N < 0.5, pct(counts.fabled));
-  check(`band ${band} drops something ordinary more often than something fabled`,
+  check(`${kind} is not mostly fabled`, counts.fabled / N < 0.5, pct(counts.fabled));
+  check(`${kind} drops something ordinary more often than something fabled`,
     counts.common + counts.scarce > counts.fabled);
-  if (fabled.some((b) => b.band === band)) {
-    check(`band ${band} can produce a fabled item`, counts.fabled > 0);
-    check(`band ${band}'s fabled items stay rare`, counts.fabled / N < 0.05, pct(counts.fabled));
+  // A creature that keeps nothing must never produce a fabled item, which is
+  // the rule the whole section exists to hold.
+  if (keeps === 0) {
+    check(`${kind} keeps nothing, so it drops nothing fabled`, counts.fabled === 0, pct(counts.fabled));
+  } else {
+    check(`${kind} can produce what it keeps`, counts.fabled > 0);
+    check(`${kind}'s fabled drops stay rare`, counts.fabled / N < 0.06, pct(counts.fabled));
   }
 }
 
@@ -243,17 +337,42 @@ for (const band of bands) {
   check("the first ring is all plain kit", plain === N, `${plain}/${N}`);
 }
 
-// What a drop actually comes out as, end to end, at the outermost band.
-const outer = Math.max(...bands);
+// What a drop actually comes out as, end to end, off the hardest thing in the
+// world. Through a real kind, because that is the only way a fabled base can
+// enter the pool at all now.
+const outer = kinds.reduce((a, b) => (MONSTER_STATS[b].band > MONSTER_STATS[a].band ? b : a));
 const quality = {};
 for (let i = 0; i < 100000; i++) {
-  const got = rollRarityFor(rollBase(outer, null, rand), rand);
+  const got = rollRarityFor(rollBase(MONSTER_STATS[outer].band, outer, rand), rand);
   quality[got] = (quality[got] ?? 0) + 1;
 }
 console.log(
-  "  band " + outer + " quality  " +
+  `  ${outer} quality  ` +
   RARITY_ORDER.map((r) => `${r} ${(((quality[r] ?? 0) / 100000) * 100).toFixed(2)}%`).join("  "),
 );
+
+// What it takes to get a NAMED one, which is the question the keeper system
+// exists to give an answer to. Printed rather than asserted: the right number
+// is a matter of taste, and an assertion here would only encode today's.
+for (const kind of kinds.filter((k) => (MONSTER_LOOT[k].keeps ?? []).length)) {
+  const band = MONSTER_STATS[kind].band;
+  const N = 200000;
+  const hits = {};
+  for (let i = 0; i < N; i++) {
+    const b = rollBase(band, kind, rand);
+    if (scarcityOf(b) === "fabled") hits[b.id] = (hits[b.id] ?? 0) + 1;
+  }
+  const each = Object.entries(hits).sort((a, b) => b[1] - a[1]);
+  const total = each.reduce((s, [, n]) => s + n, 0);
+  // A boss always drops, so a roll IS a kill for these three.
+  console.log(
+    `  ${MONSTER_LABELS[kind]}: something fabled every ${Math.round(N / total)} kills; ` +
+    `a named one every ${Math.round(N / (each[each.length - 1]?.[1] ?? 1))} at worst`,
+  );
+  check(`every one of the ${kind}'s keeps actually turns up`,
+    each.length === (MONSTER_LOOT[kind].keeps ?? []).length,
+    `${each.length} of ${(MONSTER_LOOT[kind].keeps ?? []).length} seen in ${N} rolls`);
+}
 check("the top of the ladder is something you almost never just find",
   (quality.enchanted ?? 0) / 100000 < 0.005,
   `${(((quality.enchanted ?? 0) / 100000) * 100).toFixed(3)}%`);

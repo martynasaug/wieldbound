@@ -32,6 +32,7 @@ import {
   isTwoHanded,
   itemBase,
   salvageYield,
+  scarcityOf,
   type Material,
   type MaterialCost,
 } from "../../shared/items.ts";
@@ -746,7 +747,13 @@ export function salvageItem(
   // in the catalogue leaves it unset and learns itself, which is the ordinary
   // rule and the one the whole recipe economy runs on.
   const taught = itemBase(item.baseId).teaches ?? item.baseId;
-  const learned = !isBasicRecipe(taught) && learnRecipe(characterId, taught);
+  // AND A FABLED RECIPE IS NOT A RECIPE. No anvil makes one of those at any
+  // price, so recording it would hand the player a line they can never use —
+  // and, worse, would make taking the rarest item in the game apart look like
+  // it bought something. The salvage still pays in materials and a rune; it
+  // just does not pretend to have taught anything.
+  const teachable = scarcityOf(itemBase(taught)) !== "fabled";
+  const learned = teachable && !isBasicRecipe(taught) && learnRecipe(characterId, taught);
   deleteItemStmt.run(itemId);
   // Whatever `salvageYield` decided, paid generically — three named calls is
   // three places a new material would have to be remembered in, and it never

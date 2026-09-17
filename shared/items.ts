@@ -1353,7 +1353,20 @@ export type Scarcity = "common" | "scarce" | "fabled";
 export interface ScarcityDef {
   id: Scarcity;
   name: string;
-  /** How much of the drop pool this class gets, against the others. */
+  /**
+   * How much of the ordinary drop pool this tier gets, against the others.
+   *
+   * ZERO FOR FABLED, and that zero is load-bearing rather than a placeholder:
+   * a fabled base never enters the ordinary pool at all. It comes off a keeper,
+   * at `FABLED_KEEP_WEIGHT`, outside the band-distance and affinity multipliers
+   * these weights are scaled by.
+   *
+   * Collapsing the two into this one field was tried and was worse than the
+   * duplication it removed — it made one number mean a relative share for two
+   * tiers and an absolute count for the third, which is exactly the kind of
+   * quiet double meaning that makes a table impossible to reason about. The
+   * test that sorts the tiers by weight caught it immediately.
+   */
   weight: number;
   /** The best this base can ever be, found or forged. */
   ceiling: ItemRarity;
@@ -1372,7 +1385,7 @@ export const SCARCITIES: Record<Scarcity, ScarcityDef> = {
     blurb: "Not many of these. It can be forged, but not runed.",
   },
   fabled: {
-    id: "fabled", name: "Fabled", weight: 1, ceiling: "enchanted", color: "#d6b06a",
+    id: "fabled", name: "Fabled", weight: 0, ceiling: "enchanted", color: "#d6b06a",
     blurb: "There are stories about this one. Nothing caps what it can become.",
   },
 };
@@ -1966,12 +1979,32 @@ export function rollRarityForWithFloor(
 //   kill that" — and the game had nothing like it: every drop was equally
 //   likely to come from anywhere. Weighted rather than guaranteed, because a
 //   certainty is a shopping trip.
+//
+//   AND `keeps` IS THE THIRD, for the fabled tier alone. A signature is
+//   RELIABLE — a third of a boss's drops — which is the opposite of what the
+//   rarest tier wants. So the two say different things about the same creature:
+//   the dragon is KNOWN FOR Dragonscale Plate, and it is the only thing in the
+//   world that carries Wyrmtooth.
+//
+//   A fabled base drops from its keepers and from nothing else. Without that
+//   the tier was a lottery — one roll in a couple of hundred at the outermost
+//   ring, spread over eighteen items, so no player could ever go and LOOK for
+//   one. Four of them were worse than a lottery: frost and verdant are carried
+//   by nothing at band 4 or 5, so `dropSources` derived no creature at all and
+//   the game's own answer to "where do I find this" was "the far corners".
+//
+//   EDITORIAL, NOT DERIVED, and that is the point. Affinity is derived because
+//   "what is this creature made of" is a fact about the creature. "What is this
+//   creature the keeper of" is a story, and the four items no palette can reach
+//   are exactly the ones that need one told about them.
 
 export interface MonsterLoot {
   /** Materials this kind tends to carry. Weighted, never exclusive. */
   palettes: PaletteId[];
   /** The one thing it is known for. Bosses only — see `guaranteedDrop`. */
   signature?: string;
+  /** The fabled bases this kind is the keeper of. They drop from nothing else. */
+  keeps?: string[];
 }
 
 export const MONSTER_LOOT: Record<MonsterKind, MonsterLoot> = {
@@ -1991,7 +2024,14 @@ export const MONSTER_LOOT: Record<MonsterKind, MonsterLoot> = {
 
   // band 4
   ghost: { palettes: ["bone", "obsidian"] },
-  troll: { palettes: ["iron", "bone"], signature: "bulwark" },
+  troll: {
+    palettes: ["iron", "bone"],
+    signature: "bulwark",
+    // The cold and the wild. Three of these are frost or verdant, which nothing
+    // in the bestiary is MADE of — which is exactly why they need a keeper
+    // named rather than derived.
+    keeps: ["frostbrand", "rimerobe", "starcaller", "heartwood", "direshell", "reaperscythe"],
+  },
   demon: { palettes: ["crimson", "obsidian"] },
 
   // band 5 — the far corners, and the three things worth going for
@@ -1999,8 +2039,18 @@ export const MONSTER_LOOT: Record<MonsterKind, MonsterLoot> = {
   // one creature in the world with lightning as a seam is the one thing you can
   // take lightning off. It also makes the counter to a golem a thing you get by
   // killing golems the slow way first, which is the oldest good loop there is.
-  golem: { palettes: ["steel", "storm"], signature: "deepsledge" },
-  dragon: { palettes: ["crimson", "gold"], signature: "dragonscale" },
+  golem: {
+    palettes: ["steel", "storm"],
+    signature: "deepsledge",
+    // Storm, stone and black glass.
+    keeps: ["thunderhead", "stormfists", "stormmail", "levinbrand", "obsidianfists", "blackglassmail"],
+  },
+  dragon: {
+    palettes: ["crimson", "gold"],
+    signature: "dragonscale",
+    // Fire, gold and blood.
+    keeps: ["wyrmtooth", "claymore", "dawnbreaker", "sunspire", "archmagerobe", "ruinstring"],
+  },
 };
 
 // --- Which creature carries this ---------------------------------------------
@@ -2022,6 +2072,9 @@ export interface DropSource {
   kind: MonsterKind;
   /** The one thing this kind is known for. Bosses only, by construction. */
   signature: boolean;
+  /** This kind is a KEEPER of the item: it is the only sort of creature that
+   *  carries it at all, rather than the likeliest. Fabled bases only. */
+  keeper?: boolean;
 }
 
 /**
@@ -2043,11 +2096,29 @@ export function dropSources(baseId: string): DropSource[] {
       out.push({ kind, signature: true });
       continue;
     }
+    // A keeper is not a bias, it is the ONLY place this one comes from, so it
+    // outranks a palette match and is worth saying in the same breath as a
+    // signature. For a fabled base this list is now exhaustive rather than a
+    // hint — which is why the sentence it builds can be definite.
+    if (loot.keeps?.includes(baseId)) {
+      out.push({ kind, signature: true, keeper: true });
+      continue;
+    }
+    // A fabled base drops from its keepers and nowhere else, so a palette match
+    // on one would be the tooltip naming a creature that cannot give it to you.
+    if (scarcityOf(base) === "fabled") continue;
     const band = MONSTER_STATS[kind]?.band;
     if (band === undefined || Math.abs(base.band - band) > 1) continue;
     if (loot.palettes.includes(base.art.palette)) out.push({ kind, signature: false });
   }
   return out.sort((a, b) => Number(b.signature) - Number(a.signature));
+}
+
+/** The fabled bases this kind is the only source of. Empty for most things. */
+export function keepsOf(kind: MonsterKind): ItemBase[] {
+  return (MONSTER_LOOT[kind]?.keeps ?? [])
+    .map((id) => ITEM_BASES[id])
+    .filter((b): b is ItemBase => !!b);
 }
 
 /** The one item a kind is known for, if it is a boss. */
@@ -2091,6 +2162,19 @@ export function describeDropSources(baseId: string): string {
   const sources = dropSources(baseId);
   const name = (k: MonsterKind) => MONSTER_LABELS[k].toLowerCase();
 
+  // A KEEPER IS A DEFINITE SENTENCE, because for a fabled base the list is
+  // exhaustive: nothing else in the world carries it. That is the difference
+  // this is here to say — "often carried by" is a hint, and a hint is no use
+  // for something you will see once.
+  const keepers = sources.filter((s) => s.keeper).map((s) => name(s.kind));
+  if (keepers.length) {
+    const list =
+      keepers.length === 1
+        ? `the ${keepers[0]}`
+        : `${keepers.slice(0, -1).map((n) => `the ${n}`).join(", ")} and the ${keepers[keepers.length - 1]}`;
+    return `Carried by ${list}, and by nothing else alive.`;
+  }
+
   const signature = sources.find((s) => s.signature);
   if (signature) return `The ${name(signature.kind)}'s own.`;
 
@@ -2116,6 +2200,22 @@ const AFFINITY_WEIGHT = 3;
 /** How much of a boss's drop is its signature. A third: often enough to be a
  *  reason to go, rare enough that going is still a decision. */
 const SIGNATURE_CHANCE = 0.34;
+
+/**
+ * How many pool entries one kept fabled base gets.
+ *
+ * Its own constant rather than `SCARCITIES.fabled.weight`, because it is not
+ * the same KIND of number: the scarcity weights are relative shares that band
+ * distance and material affinity then scale, and this is an absolute count that
+ * nothing scales. Sharing a field between the two made the tier table unsortable
+ * and said nothing true about either.
+ *
+ * Tuned against the measured table rather than reasoned about: at 20 this is
+ * about one fabled drop in twenty-six boss kills, and one in a hundred and sixty
+ * for a NAMED one — a hunt you can finish if you know where to go, and never if
+ * you do not.
+ */
+const FABLED_KEEP_WEIGHT = 20;
 
 /**
  * Which base item a kill drops.
@@ -2153,20 +2253,43 @@ export function rollBase(
   }
 
   const affinity = new Set(loot?.palettes ?? []);
+  const keeps = new Set(loot?.keeps ?? []);
   const pool: ItemBase[] = [];
   for (const base of Object.values(ITEM_BASES)) {
     const distance = Math.abs(base.band - band);
     if (distance > 1) continue;
+    // A FABLED BASE COMES OFF ITS KEEPER OR OFF NOTHING. Everything else in
+    // this loop is a bias — anything in the band can fall out of anything, so a
+    // camp is never a vending machine — and for the rarest tier that was
+    // exactly wrong: eighteen items spread thinly over every late creature is
+    // a lottery, and a lottery is not something a player can go and DO.
+    if (scarcityOf(base) === "fabled") {
+      if (!keeps.has(base.id)) continue;
+      // FLAT, and outside every other multiplier in this loop. Band distance
+      // and affinity are biases that make sense for a tier spread across the
+      // whole catalogue; applied to a keeper they only punish the troll for
+      // standing one ring in from the items it is the guardian of. How rare a
+      // fabled thing is should be a property of the tier, not of where its
+      // keeper happens to live.
+      for (let i = 0; i < FABLED_KEEP_WEIGHT; i++) pool.push(base);
+      continue;
+    }
     // Three entries for the band itself, one for each neighbour, times three
     // again for anything made of what this creature is made of.
     let weight = distance === 0 ? 3 : 1;
     if (affinity.has(base.art.palette)) weight *= AFFINITY_WEIGHT;
     // AND HOW RARE THE THING ITSELF IS, which the pool used not to know: every
     // base in range was equally likely, so the best sword in the game fell out
-    // of a slime at the same rate as the worst one. Forty to twelve to one —
-    // and at the outermost ring, where eighteen fabled bases sit and nothing
-    // plain is in reach, that is what keeps "fabled" down to a few drops in a
-    // hundred rather than one in twelve.
+    // of a slime at the same rate as the worst one. Forty to twelve here; the
+    // fabled tier never reaches this line, because it is not a bias on a pool
+    // but a fixed share of one creature's — see the keeper branch above.
+    //
+    // ONLY BOSSES KEEP, which is what lets that share be a plain number. When
+    // keepers included ordinary creatures it had to argue with
+    // `LOOT_DROP_CHANCE` and lost: with three of every kind standing in the
+    // world, a dragon handed over something fabled every eighteenth kill and a
+    // ghost every six hundred and eighty-fifth, purely because one of the two
+    // always drops. That was an artifact wearing the clothes of a design.
     weight *= SCARCITIES[scarcityOf(base)].weight;
     for (let i = 0; i < weight; i++) pool.push(base);
   }
@@ -3251,6 +3374,14 @@ export function canForge(
   base: ItemBase,
   known: ReadonlySet<string> | string[],
 ): { ok: boolean; reason?: string } {
+  // NOT AT ANY PRICE. The recipe gate is "salvage one to learn it", which for
+  // every other tier is a good loop — find one, take it apart, make more. For
+  // the fabled tier it quietly undid the whole thing: one lucky drop, salvaged,
+  // and the rarest item in the game becomes something you order at the anvil.
+  // These are found and kept. That is the entire tier.
+  if (scarcityOf(base) === "fabled") {
+    return { ok: false, reason: "no anvil makes one of these — it has to be found" };
+  }
   if (isBasicRecipe(base.id)) return { ok: true };
   const has = Array.isArray(known) ? known.includes(base.id) : known.has(base.id);
   if (!has) return { ok: false, reason: "salvage one to learn it" };

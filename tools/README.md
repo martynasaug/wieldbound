@@ -558,3 +558,20 @@ from that list and a missing row reads as a bug rather than as the rule.
 ```powershell
 node tools/soak/dropslook.mjs
 ```
+
+`soak/keeperlook.mjs` — needs the server. Walks out to each of the three bosses
+and photographs its target frame, which is where the keeper line lives: an
+item's tooltip naming its keeper is no use for FINDING one, since you can only
+read it once you already have the item. Reports the line's text and whether it
+clipped — six item names behind the frame's `white-space: nowrap` is exactly how
+a list of the only places a thing comes from turns into three names and an
+ellipsis.
+
+It walks rather than teleports, and reports progress rather than motion: the
+first version watched for "did not move" and a bot grinding along a palisade is
+moving the whole time, so two of the three "walked" for seventy seconds and
+finished further from the camp than they started.
+
+```powershell
+node tools/soak/keeperlook.mjs
+```

@@ -240,6 +240,7 @@ import {
   reforgeCost,
   salvageYield,
   signatureOf,
+  keepsOf,
   describeResists,
   weaponSchool,
   swingIntervalOf,
@@ -6577,6 +6578,10 @@ export class Game {
         // the frame cannot promise something the roller does not carry. Only
         // bosses have one, which is why this needs no `elite` check of its own.
         knownFor: signatureOf(t.kind)?.name,
+        // The fabled things this kind is the ONLY source of. Same argument as
+        // the signature one line up — it was in the loot table and nowhere a
+        // player could read it before they already owned the item.
+        keeps: keepsOf(t.kind).map((b) => b.name),
         // Derived from the same profile the server resolves damage against, so
         // the frame cannot tell a player to bring fire to something that does
         // not mind it. Mapped to names and colours here because the frame is a

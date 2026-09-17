@@ -27465,3 +27465,101 @@ base and keeping the longsword as the ceiling case, which is a better test than
 either was.
 
 Suite green. Client and server typecheck. 182 items, 33 with a rule of their own.
+
+**Phase 70 M70.376 — the rarest things have a keeper, and no anvil makes one.**
+The last milestone made the fabled tier rare. This one makes it FINDABLE, which
+is not the same thing and turned out to be the half that was missing.
+
+WHAT THE DATA SAID WHEN ASKED. Eighteen fabled bases, and the game's own answer
+to "where do I get this" for four of them — Frostbrand, Starcaller, the Rimeward
+Robe, the Heartwood Bow — was `The far corners.` and nothing else. `dropSources`
+derives a carrier from palette affinity, and no creature at band 4 or 5 is made
+of frost or verdant, so it derived none. The other fourteen got a hint at best.
+Meanwhile all three boss signatures pointed at SCARCE items: the oldest hook in
+the genre was aimed at the second-best tier.
+
+`MONSTER_LOOT.keeps` is the third axis beside `palettes` and `signature`, and
+the three say different things about the same creature. Affinity is a bias.
+A signature is RELIABLE — a third of a boss's drops. A keeper is EXCLUSIVE: a
+fabled base drops from its keeper and from nothing else in the world. So the
+dragon is known for Dragonscale Plate, and it is the only thing alive that
+carries Wyrmtooth. Six fabled items each, on the three bosses, by material:
+troll the cold and the wild, golem storm and stone and black glass, dragon fire
+and gold and blood.
+
+EDITORIAL RATHER THAN DERIVED, and that is the point. "What is this creature
+made of" is a fact and belongs in a derivation. "What is this creature the
+keeper of" is a story, and the four items no palette could reach are exactly the
+ones that needed one told about them.
+
+ONLY BOSSES KEEP, and the first cut got that wrong. Keepers were spread over
+five creatures including the ghost and the demon, and the measured result was a
+38x spread: a dragon handed over something fabled every 18 kills and a ghost
+every 685, with three of each standing in the world. Nothing about that was
+designed — it is `guaranteedDrop`, one of the two always drops. Restricting
+keeping to the three bosses removes the artifact instead of papering over it.
+The keep weight is also FLAT, outside the band-distance and affinity multipliers
+every other base goes through: those are biases that make sense across a whole
+catalogue and, applied to a keeper, only punish the troll for standing one ring
+in from the things it guards.
+
+Measured: something fabled every 26 boss kills off the golem or the dragon, 40
+off the troll; a NAMED one every 162, 251 at worst. Quality off a golem is
+14/30/26/16/14/0.16/0.04 — an Enchanted drop is about one in two and a half
+thousand, and only a fabled base can be one.
+
+AND NO ANVIL MAKES ONE. The recipe gate is "salvage one to learn it", which is a
+good loop for every other tier and quietly undid this one: a single lucky drop,
+taken apart, and the rarest item in the game becomes something you order with
+wood and ore. `canForge` refuses the whole tier now, and salvaging one no longer
+records a recipe that could never be used — it still pays in materials and a
+rune, it just does not pretend to have taught anything.
+
+THE LINE LIVES ON THE TARGET FRAME, and that placement is the whole feature. An
+item's tooltip naming its keeper is no use for finding one: you can only read it
+once you already have the item. So a boss's frame says what it is known for and,
+under it, the fabled things it is the only source of — the same argument the
+signature was surfaced under, one tier up. `tools/soak/keeperlook.mjs` walks out
+to all three and photographs the frame, because a list of six names behind
+`white-space: nowrap` is a clipped list, and a clipped list of the only places a
+thing comes from is worse than no list.
+
+THREE STALE ASSERTIONS IN `items.mjs`, all correct before this and wrong after:
+the ladder sample was a claymore (fabled now, so learning its recipe adds
+nothing), "knowing every recipe unlocks the whole catalogue" is now 164 of 182
+by design, and "every base is reachable from some band" is false on purpose —
+reachability is a property of creatures now, not bands.
+
+AND THE LCG AGAIN. Rewriting that last check to roll through creatures left five
+perfectly reachable items never turning up in twenty-six thousand evenly spread
+rolls. Same generator, same fault as `drops.mjs` found: `seed * 1103515245`
+leaves what a double can hold on the first multiply. `items.mjs` runs on
+mulberry32 now and sees 182 of 182.
+
+TWO NUMBERS THAT LOOK LIKE ONE. The keep weight started as its own constant,
+which left `SCARCITIES.fabled.weight` dead — the keeper branch returns before
+anything reads it. Collapsing the two into the one field looked like the tidy
+fix and was worse: it made a single number mean a relative share for two tiers
+and an absolute count for the third. The test that sorts the tiers by weight
+failed on the next run with `common:tempered > fabled:enchanted > scarce:forged`,
+which is the field saying plainly that the two are not on one scale. So they are
+two constants again, and `weight: 0` on fabled is now load-bearing rather than a
+placeholder: it says this tier is not in the ordinary pool at all. The ordering
+check asserts a DECLARED order on the ceiling axis and compares pool shares only
+across the tiers that have one.
+
+THE OPENING CHECK DID NOT RUN, and is owed. `firstminutes.mjs` was started twice
+to see whether 0.12 leaves the first minutes too dry, and both times the bot saw
+monsters 500-odd times, never closed past 612px, and swung nothing — its own
+guard says so: "it never swung at anything — this run says nothing about
+progression". The drop rate is still unmeasured in play. The harness needs to
+actually engage before it can answer anything, and that is its own fix.
+
+A CONTENT GAP UNDER ALL OF THIS, worth naming: nothing in the bestiary is made
+of frost or verdant at band 4 or 5, which is why four of the best items in the
+game had no carrier to derive. The troll is their keeper now and that works, but
+a troll guarding Starcaller is editorial cover for a missing creature. A frost
+thing at band 5 would give those items a natural home and give the frost school
+a late-game carrier at the same time.
+
+Suite green. Client and server typecheck. 18 fabled items, 3 keepers, 0 anvils.
