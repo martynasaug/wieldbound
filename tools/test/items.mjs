@@ -372,6 +372,24 @@ for (const kind of Object.keys(MONSTER_LOOT)) {
   const isBoss = MONSTER_STATS[kind].guaranteedDrop;
   check(`${kind}: only bosses have a signature`, isBoss || !loot.signature,
     `${kind} boss=${isBoss} signature=${loot.signature ?? "none"}`);
+
+  // A CREATURE'S MATERIALS HAVE TO COVER THE THING IT IS KNOWN FOR. A boss
+  // returns its signature a third of the time, BEFORE the pool is built, so a
+  // signature made of something the creature is not made of puts a third of
+  // every drop off-theme by construction and no amount of affinity weight can
+  // pull it back.
+  //
+  // Stated here rather than left to the odds ratio below. The ratio did catch
+  // it — the troll fell from 3.1x to 1.4x the day it stopped being made of iron
+  // while its iron shield stayed its signature — but it reported a failure
+  // about materials "far more than chance would" appearing, which is three
+  // inferences away from "you changed the palette and forgot the signature".
+  if (loot.signature) {
+    const sig = ITEM_BASES[loot.signature];
+    check(`${kind} is made of what it is known for`,
+      !!sig && loot.palettes.includes(sig.art.palette),
+      `${loot.signature} is ${sig?.art.palette}, ${kind} is ${loot.palettes.join("/")}`);
+  }
 }
 
 // Every monster in the game must be able to drop SOMETHING, and its own
@@ -382,12 +400,21 @@ for (const kind of Object.keys(MONSTER_LOOT)) {
   let onTheme = 0;
   let offTheme = 0;
   const seen = new Set();
+  // THE ORDINARY POOL ONLY, on both sides of the ratio below. Affinity does not
+  // apply to a fabled base at all — a keeper's items enter at a flat weight,
+  // outside the band-distance and affinity multipliers — so counting them here
+  // measures the keeper list instead of the knob this is about. It showed up as
+  // the troll failing at 1.6x while the ghost, same band and the same number of
+  // on-theme bases, sat at 3.1x: the only difference was how many of the six
+  // things the troll keeps happen to be made of what it is made of.
   for (let i = 0; i < 4000; i++) {
     const base = rollBase(band, kind, rand);
     seen.add(base.id);
+    if (scarcityOf(base) === "fabled") continue;
     if (affinity.has(base.art.palette)) onTheme++;
     else offTheme++;
   }
+  const ordinary = onTheme + offTheme;
   // Measured as an ODDS RATIO against an unbiased roll of the same band, which
   // is the only scale-free way to state this. Comparing shares does not work:
   // a slime's wood-and-bronze is already two thirds of band 1 and cannot triple,
@@ -396,14 +423,18 @@ for (const kind of Object.keys(MONSTER_LOOT)) {
   // palette happens to be. The odds ratio is exactly what `AFFINITY_WEIGHT`
   // sets, so this asserts the knob rather than a symptom of it.
   let baseline = 0;
+  let baseTotal = 0;
   for (let i = 0; i < 4000; i++) {
-    if (affinity.has(rollBase(band, undefined, rand).art.palette)) baseline++;
+    const b = rollBase(band, undefined, rand);
+    if (scarcityOf(b) === "fabled") continue;
+    baseTotal++;
+    if (affinity.has(b.art.palette)) baseline++;
   }
-  const odds = (n) => n / Math.max(1, 4000 - n);
-  const ratio = odds(onTheme) / odds(baseline);
+  const odds = (n, total) => n / Math.max(1, total - n);
+  const ratio = odds(onTheme, ordinary) / odds(baseline, baseTotal);
   check(`${kind} drops its own materials far more than chance would`,
     ratio > 2.2,
-    `${(ratio).toFixed(1)}x the odds (${onTheme} on-theme vs ${baseline} unbiased)`);
+    `${(ratio).toFixed(1)}x the odds (${onTheme}/${ordinary} on-theme vs ${baseline}/${baseTotal} unbiased)`);
   // A bias, not a restriction: a camp that only ever drops one palette is a
   // vending machine, and the matched sets would only be assemblable by farming
   // one spot.

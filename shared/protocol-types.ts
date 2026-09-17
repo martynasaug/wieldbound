@@ -1657,10 +1657,32 @@ export const MONSTER_STATS: Record<MonsterKind, MonsterStats> = {
     enrageThreshold: 0.3,
     enrageWindupScale: 0.7,
     enrageIntervalScale: 0.8,
-    // Hide like bark and it knits itself back together — unless you burn it,
-    // which is the one thing everyone has always known about trolls.
-    resist: { physical: 25, nature: 25, fire: -45 },
-    // A club that size does not cut, it knocks the feet out.
+    // FROST IS THE ONE ELEMENT NOTHING IN THE WORLD DEALT.
+    //
+    // Cactoro carries nature, the ghost arcane, the demon and the dragon fire,
+    // the golem lightning — and frost had nobody. That made every frost number
+    // a player can wear decoration: `resistFrost` on the Glacier suffix, on the
+    // Rimeward Robe, on Everwinter and Hoarfrost and Rimeglassed, all of it
+    // answering an attack that did not exist anywhere. A stat that can never
+    // matter is worse than a missing one, because it reads as a real choice.
+    //
+    // This creature was already the answer and nobody had noticed: it is drawn
+    // with the YETI model, and it was resisting nature. The art and the data
+    // had simply never been introduced. Now it throws what it is made of, the
+    // same way every other elemental creature here does.
+    attackSchool: "frost",
+    // And fire is still the answer, which is the one thing everyone has always
+    // known about trolls — the note that used to sit here was never about
+    // nature, it was about burning. Frost replaces nature rather than joining
+    // it: a thing cannot be the seam for two elements without being the answer
+    // to neither.
+    resist: { physical: 25, frost: 40, fire: -45 },
+    // Still `staggered`, not `chilled`, and that is deliberate restraint. A
+    // slow would be the obvious flavour and it would quietly undo this fight:
+    // the whole design is a 900ms wind-up you answer by WALKING OUT OF IT, and
+    // `balance.mjs` swept the slam multiplier against that assumption. Chilling
+    // the player turns a read into a stat check. The frost is in what it deals,
+    // which is the half that was missing.
     inflicts: { status: "staggered", chance: 0.3 },
   },
 
@@ -4056,7 +4078,7 @@ export const MONSTER_LABELS: Record<MonsterKind, string> = {
   cactoro: "Cactoro",
   orcbrute: "Orc Brute",
   ghost: "Ghost",
-  troll: "Troll",
+  troll: "Frost Troll",
   demon: "Demon",
   golem: "Golem",
   dragon: "Dragon",

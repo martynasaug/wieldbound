@@ -6582,6 +6582,15 @@ export class Game {
         // the signature one line up — it was in the loot table and nowhere a
         // player could read it before they already owned the item.
         keeps: keepsOf(t.kind).map((b) => b.name),
+        // What it throws, read off the same stat block the server resolves the
+        // blow with — so the frame cannot promise physical from something that
+        // deals frost. Null for the ordinary ones, which is most of them.
+        deals: (() => {
+          const school = tStats.attackSchool;
+          if (!school || school === "physical") return null;
+          const def = schoolDef(school);
+          return { school, name: def.name, color: def.color };
+        })(),
         // Derived from the same profile the server resolves damage against, so
         // the frame cannot tell a player to bring fire to something that does
         // not mind it. Mapped to names and colours here because the frame is a

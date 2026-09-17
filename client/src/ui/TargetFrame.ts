@@ -57,6 +57,20 @@ export interface TargetLook {
   resists?: { school: string; name: string; color: string }[];
   weakTo?: { school: string; name: string; color: string }[];
   /**
+   * What its blows are MADE of, where that is not plain physical.
+   *
+   * The frame has always said what a creature resists and what it folds to,
+   * which is everything you need to pick a weapon and nothing you need to pick
+   * armour. Six creatures in the world throw an element and none of them said
+   * so anywhere — you found out by being hit, and by then the fight had already
+   * decided whether the resistance you were wearing was the right one.
+   *
+   * Listed first, above the weakness, because it is the one line here that is
+   * about what to WEAR rather than what to bring, and a player reads a frame
+   * before the fight for exactly that.
+   */
+  deals?: { school: string; name: string; color: string } | null;
+  /**
    * What is running on it right now.
    *
    * Answers the question a debuff makes a player ask constantly and that
@@ -103,7 +117,7 @@ export class TargetFrame {
     const schoolKey =
       (look?.resists ?? []).map((r) => r.school).join(",") +
       "/" +
-      (look?.weakTo ?? []).map((r) => r.school).join(",");
+      (look?.weakTo ?? []).map((r) => r.school).join(",") + "/" + (look?.deals?.school ?? "");
     const key =
       `${look?.band ?? 0}|${look?.elite ? 1 : 0}|${look?.icon ?? ""}|${look?.knownFor ?? ""}` +
       `|${(look?.keeps ?? []).join(",")}|${schoolKey}`;
@@ -140,6 +154,7 @@ export class TargetFrame {
       // bother bringing a sword" is only a complaint.
       this.schools.innerHTML = "";
       const rows: [string, TargetLook["weakTo"]][] = [
+        ["Hits with", look?.deals ? [look.deals] : undefined],
         ["Weak to", look?.weakTo],
         ["Resists", look?.resists],
       ];

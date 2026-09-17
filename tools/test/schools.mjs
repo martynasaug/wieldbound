@@ -389,6 +389,29 @@ section("8. the defensive half");
     const school = MONSTER_STATS[kind].attackSchool;
     check(`${kind}'s ${school} can be resisted`, ELEMENTAL_SCHOOLS.includes(school));
   }
+
+  // AND THE OTHER DIRECTION, which is the one that was missing and the one that
+  // costs a player something. The check above asks "can what this creature
+  // throws be dressed against". Nothing asked "is what a player can dress
+  // against ever thrown" — and for the whole life of the project the answer for
+  // FROST was no. Every frost number a player could wear, the Glacier suffix,
+  // the Rimeward Robe, Everwinter, Hoarfrost, Rimeglassed, the Frostbound set
+  // tier, answered an attack that did not exist anywhere in the world.
+  //
+  // That is worse than a missing stat, because it reads as a real choice. It is
+  // also completely silent: nothing throws, every test passed, and the tooltip
+  // said "+20% frost resistance" in the same confident voice as the numbers
+  // that work.
+  for (const school of ELEMENTAL_SCHOOLS) {
+    const key = RESIST_KEY[school];
+    const wearable =
+      AFFIXES.some((a) => (a.per[key] ?? 0) > 0) ||
+      Object.values(PALETTE_SETS).some((s) => s.tiers.some((t) => (t.bonus[key] ?? 0) > 0));
+    if (!wearable) continue;
+    const thrown = attackers.filter((k) => MONSTER_STATS[k].attackSchool === school);
+    check(`${school} resistance answers something that exists`, thrown.length > 0,
+      `a player can wear ${key} and nothing in the world deals ${school}`);
+  }
   console.log(
     `  ${attackers.map((k) => `${k}:${MONSTER_STATS[k].attackSchool}`).join(", ")}`,
   );

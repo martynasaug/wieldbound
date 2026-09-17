@@ -2025,12 +2025,27 @@ export const MONSTER_LOOT: Record<MonsterKind, MonsterLoot> = {
   // band 4
   ghost: { palettes: ["bone", "obsidian"] },
   troll: {
-    palettes: ["iron", "bone"],
+    // FROST JOINS IRON, and iron stays for a reason worth writing down: the
+    // troll's signature is the Bulwark, which is an IRON shield, and a boss
+    // returns its signature a third of the time before the pool is even built.
+    // Swapping iron out for frost made a third of every troll drop off-theme by
+    // construction — the affinity ratio fell from 3.1x to 1.4x and the drop
+    // test caught it. A creature's materials have to cover the thing it is
+    // known for, or the signature fights the affinity.
+    //
+    // Frost being here at all is the point: nothing at band 4 or 5 was made of
+    // it, so `dropSources` could derive no carrier and the game's own answer to
+    // "where do I find Frostbrand" was "the far corners" and nothing else.
+    palettes: ["frost", "iron"],
     signature: "bulwark",
-    // The cold and the wild. Three of these are frost or verdant, which nothing
-    // in the bestiary is MADE of — which is exactly why they need a keeper
-    // named rather than derived.
-    keeps: ["frostbrand", "rimerobe", "starcaller", "heartwood", "direshell", "reaperscythe"],
+    // The cold and the wild. The first three now sit with a creature actually
+    // made of what they are — they were put here as editorial cover for a
+    // missing frost creature, and the cover is no longer needed, which is a
+    // better reason for the same list.
+    //
+    // Heartwood stays because verdant has no boss and no band-5 creature of any
+    // kind; it is the one genuinely homeless material left in the table.
+    keeps: ["frostbrand", "rimerobe", "starcaller", "heartwood"],
   },
   demon: { palettes: ["crimson", "obsidian"] },
 
@@ -2042,14 +2057,21 @@ export const MONSTER_LOOT: Record<MonsterKind, MonsterLoot> = {
   golem: {
     palettes: ["steel", "storm"],
     signature: "deepsledge",
-    // Storm, stone and black glass.
-    keeps: ["thunderhead", "stormfists", "stormmail", "levinbrand", "obsidianfists", "blackglassmail"],
+    // Storm, stone and black glass. Obsidian has no boss of its own — the ghost
+    // and the demon carry it and neither always drops — so the three black-glass
+    // things sit with the one boss that is itself a made thing of rock.
+    keeps: ["thunderhead", "stormfists", "stormmail", "levinbrand",
+            "obsidianfists", "blackglassmail", "reaperscythe"],
   },
   dragon: {
     palettes: ["crimson", "gold"],
     signature: "dragonscale",
-    // Fire, gold and blood.
-    keeps: ["wyrmtooth", "claymore", "dawnbreaker", "sunspire", "archmagerobe", "ruinstring"],
+    // Fire, gold and blood — every one of them made of what the dragon is made
+    // of, which is what a keeper list should look like where the materials
+    // allow it. Direshell moved here from the troll for exactly that reason:
+    // it is crimson, and a frost creature was never the right owner of it.
+    keeps: ["wyrmtooth", "claymore", "dawnbreaker", "sunspire", "archmagerobe",
+            "ruinstring", "direshell"],
   },
 };
 

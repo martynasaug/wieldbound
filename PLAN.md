@@ -27563,3 +27563,68 @@ thing at band 5 would give those items a natural home and give the frost school
 a late-game carrier at the same time.
 
 Suite green. Client and server typecheck. 18 fabled items, 3 keepers, 0 anvils.
+
+**Phase 70 M70.377 — the frost thing.**
+Asked for directly, off the end of the last milestone: a frost creature, because
+four fabled items had no carrier to derive and the troll was editorial cover for
+a missing one.
+
+THE GAP WAS BIGGER AND BETTER THAN THAT. Asking the bestiary what each element
+does: cactoro throws nature, the ghost arcane, the demon and the dragon fire,
+the golem lightning — and FROST WAS THROWN BY NOTHING. Which means every frost
+number a player can wear had, for the whole life of the project, been answering
+an attack that does not exist anywhere in the world: the Glacier suffix, the
+Rimeward Robe, Everwinter, Hoarfrost, Rimeglassed, the Frostbound set tier. A
+stat that can never matter is worse than a missing one, because it reads as a
+real choice and costs a real slot.
+
+AND THE ANSWER NEEDED NO NEW ART, because it was already standing there. The
+troll is drawn with `Yeti.gltf` — it has been since the model was added — and it
+was resisting NATURE. The art and the data had simply never been introduced. It
+throws frost now, resists frost, keeps its fire weakness (the one thing everyone
+has always known about trolls, and the note that used to sit on that line was
+never about nature anyway), and is called the Frost Troll.
+
+`inflicts` STAYED `staggered` RATHER THAN BECOMING `chilled`, which is the
+restraint the change turns on. A slow is the obvious flavour and would quietly
+undo the fight: the whole design is a 900ms wind-up you answer by walking out of
+it, and `balance.mjs` swept the slam multiplier against exactly that assumption.
+Chilling the player turns a read into a stat check. The frost is in what it
+deals, which is the half that was missing.
+
+THE GUARD THAT SHOULD HAVE CAUGHT IT. `schools.mjs` asked one direction — can
+what this creature throws be dressed against — and never the other. It asks both
+now: every element a player can wear resistance to must be thrown by something.
+Verified by removing the fix and watching it fail, which is the only way to know
+a test is real: `frost resistance answers something that exists — a player can
+wear resistFrost and nothing in the world deals frost`.
+
+AND A SECOND BUG THE CHANGE CAUSED, caught by the drop test. Swapping the
+troll's affinity from iron to frost put its affinity ratio at 1.4x where the
+ghost, same band and the same number of on-theme bases, sat at 3.1x. The cause:
+a boss returns its SIGNATURE a third of the time, before the pool is built, and
+the troll's signature is the Bulwark, an IRON shield. A third of every troll drop
+had become off-theme by construction and no affinity weight could pull it back.
+Iron stays in the palettes beside frost, and the rule is now stated rather than
+inferred: `${kind} is made of what it is known for`. The ratio did catch it, but
+reported a failure about materials "far more than chance would" appear, which is
+three inferences away from "you changed a palette and forgot the signature".
+
+KEEPS FOLLOW MATERIALS NOW. Direshell is crimson and moved to the dragon, whose
+list is entirely things it is made of; the three black-glass items sit with the
+golem, the one boss that is itself a made thing of rock. Heartwood stays with the
+troll because verdant has no boss and no band-5 creature of any kind — the one
+genuinely homeless material left in the table. A named fabled item is 163 to 217
+boss kills across all three, which is the figure that matters.
+
+TWELVE FROST ITEMS NOW NAME A CREATURE where they used to say "the far corners"
+and nothing else, and 160 of 182 bases name one, up from 151.
+
+THE FRAME SAYS WHAT IT THROWS. Six creatures in the world carry an element and
+none of them said so anywhere — you found out by being hit, and by then the fight
+had already decided whether the resistance you were wearing was the right one.
+"Hits with frost" sits above the weakness, because it is the one line on that
+panel about what to WEAR rather than what to bring. It also makes the golem's
+seam legible for the first time: Hits with lightning, Weak to lightning.
+
+Suite green. Client and server typecheck. Five elements, five carriers.
