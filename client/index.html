@@ -899,6 +899,79 @@
       .lb-xpbar i { display: block; height: 100%; background: var(--gold-bright); border-radius: 2px; }
       .lb-level { color: var(--gold-bright); font-size: 12px; }
 
+      /* --- Chat ------------------------------------------------------------
+         Above the combat log and the same width, because the two are read the
+         same way and by the same glance. Separate boxes rather than one
+         stream: the log is the game talking about numbers and scrolls fast
+         during a fight, and a line somebody typed must not be washed away by
+         four monsters landing hits. */
+      #chat {
+        position: absolute;
+        left: 12px;
+        bottom: 184px;
+        width: 320px;
+        background: rgba(28, 21, 12, 0.8);
+        border: 1px solid var(--gold-dim);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-family: Georgia, serif;
+        font-size: 12px;
+        /* The box only takes the pointer when it has something to take it FOR.
+           At rest the click goes through to the world behind it, exactly like
+           the combat log, so the chat panel never eats a move order. */
+        pointer-events: none;
+      }
+      #chat-log {
+        max-height: 132px;
+        overflow-y: auto;
+        line-height: 1.45;
+        margin-bottom: 5px;
+        /* Scrollable, so this half does want the wheel. */
+        pointer-events: auto;
+      }
+      #chat-log:empty { display: none; }
+      .chat-entry { color: #cbbb95; overflow-wrap: anywhere; }
+      .chat-entry .chat-who { color: #d6b06a; font-weight: bold; }
+      /* City carries further, so it is cooler and quieter than the room you are
+         standing in. Local is the warm one. */
+      .chat-entry.city .chat-who { color: #8fb4d6; }
+      .chat-entry.own .chat-who { color: #e2b04f; }
+      .chat-entry.note { color: #9a8d76; font-style: italic; }
+      #chat-row {
+        display: flex;
+        gap: 6px;
+        align-items: stretch;
+        pointer-events: auto;
+      }
+      #chat-channel {
+        flex: 0 0 auto;
+        padding: 3px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--gold-dim);
+        background: rgba(48, 36, 20, 0.9);
+        color: #e2b04f;
+        font: bold 10px Georgia, serif;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      #chat-channel.city { color: #8fb4d6; border-color: rgba(143, 180, 214, 0.5); }
+      #chat-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 3px 7px;
+        border-radius: 4px;
+        border: 1px solid var(--gold-dim);
+        background: rgba(18, 14, 9, 0.9);
+        color: #f0e6cc;
+        font: 12px Georgia, serif;
+        outline: none;
+      }
+      /* Lit while it holds the keyboard, because the one thing a player must
+         never wonder is whether the next key will walk them or type. */
+      #chat.typing #chat-input { border-color: #e2b04f; background: rgba(28, 21, 12, 0.98); }
+      #chat.typing { background: rgba(28, 21, 12, 0.94); }
+
       #combat-log {
         position: absolute;
         left: 12px;

@@ -7,6 +7,10 @@ import {
   gatherRangeToNode,
   NODE_BODY_RADIUS_PX,
   LOOT_DROP_CHANCE,
+  CHAT_MIN_INTERVAL_MS,
+  LOCAL_CHAT_RANGE_PX,
+  sanitizeChat,
+  type ChatChannel,
   LOOT_PICKUP_RANGE_PX,
   LOOT_RESERVED_MS,
   LOOT_LIFETIME_MS,
@@ -241,6 +245,7 @@ import {
   npcById,
   propById,
   propPosition,
+  settlementAt,
 } from "../../shared/town.ts";
 import { SHOP_OUTPUT_RARITY, exchangeById, shopEntry } from "../../shared/shop.ts";
 import { landmarkAt } from "../../shared/landmarks.ts";
@@ -2818,6 +2823,67 @@ function maybeDropLoot(playerId: string, socket: WebSocket, monster: MonsterStat
   dropOnGround(playerId, { ...rolled, id: `pending-${dropCounter}`, equipped: false }, monster.x, monster.y);
 }
 
+/** When each player last got a line out, for the rate limit. */
+const lastSaidAt = new Map<string, number>();
+
+/**
+ * Somebody says something.
+ *
+ * EVERY LIMIT IS ENFORCED HERE AND NOT ONLY IN THE INPUT BOX. The client trims
+ * and caps too, so the field behaves, but an attribute on an element is a
+ * suggestion to whoever is running the page — and the one thing a client must
+ * never be trusted with is how many messages to send, because the cost of a
+ * message is paid by everyone who receives it.
+ *
+ * Silent on refusal rather than sending an error back. A rate limit that
+ * answers is a rate limit that doubles the traffic it exists to cut, and the
+ * only person who can trip this by accident already knows they pressed enter
+ * twice.
+ */
+function handleSay(
+  playerId: string,
+  socket: WebSocket,
+  payload: { text: string; channel: ChatChannel },
+): void {
+  const now = Date.now();
+  if (now - (lastSaidAt.get(playerId) ?? 0) < CHAT_MIN_INTERVAL_MS) return;
+
+  const text = sanitizeChat(payload.text ?? "");
+  if (!text) return;
+  const channel: ChatChannel = payload.channel === "city" ? "city" : "local";
+
+  const speaker = players.get(playerId);
+  if (!speaker) return;
+
+  // WHO CAN HEAR IT. `local` is a radius, which is what makes a crowd feel like
+  // a place — the people by the anvil are talking about the anvil, and you have
+  // to walk over to be part of it. `city` is the settlement, which is what
+  // makes a city useful: "has anybody got a spare Rimeblade" is worthless if it
+  // only reaches whoever is already standing next to you.
+  const where = channel === "city" ? settlementAt(speaker.x, speaker.y) : null;
+  if (channel === "city" && !where) {
+    sendInfo(socket, "There is nobody to hear you out here.", "#9a8d76");
+    return;
+  }
+
+  lastSaidAt.set(playerId, now);
+  const out: ServerToClientMessage = {
+    type: "CHAT_MESSAGE",
+    payload: { from: speaker.name, fromId: playerId, text, channel, at: now },
+  };
+  const data = JSON.stringify(out);
+
+  for (const [otherId, other] of players) {
+    if (channel === "local") {
+      if (Math.hypot(other.x - speaker.x, other.y - speaker.y) > LOCAL_CHAT_RANGE_PX) continue;
+    } else if (settlementAt(other.x, other.y)?.id !== where?.id) {
+      continue;
+    }
+    const sock = sockets.get(otherId);
+    if (sock?.readyState === WebSocket.OPEN) sock.send(data);
+  }
+}
+
 /**
  * Essence off a kill. The one material that cannot be gathered, and the reason
  * the top of the reforge ladder is not a function of time spent at trees.
@@ -3697,6 +3763,14 @@ wss.on("connection", (socket) => {
       sendXpUpdate(socket, xp, level, leveledUp);
       if (leveledUp && attrs) sendStatsUpdate(socket, attrs, maxHpOf(id, attrs), maxManaOf(id, attrs));
       sendQuestState(socket, id);
+      return;
+    }
+
+    if (msg.type === "SAY") {
+      // Guarded like every other branch down here: `id` is null until HELLO
+      // lands, and somebody talking before they have a character is somebody
+      // with no name to put on it.
+      if (id) handleSay(id, socket, msg.payload);
       return;
     }
 

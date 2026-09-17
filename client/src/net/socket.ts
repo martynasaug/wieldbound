@@ -2,6 +2,7 @@ import { profiler } from "../three/profiler";
 import type {
   HotbarLayout,
   AttributeName,
+  ChatChannel,
   ClientToServerMessage,
   ItemRarity,
   ItemSlot,
@@ -38,6 +39,7 @@ export interface GameSocketHandlers {
   onPotionsUpdate: (payload: Extract<ServerToClientMessage, { type: "POTIONS_UPDATE" }>["payload"]) => void;
   onTonicsUpdate: (payload: Extract<ServerToClientMessage, { type: "TONICS_UPDATE" }>["payload"]) => void;
   onLeaderboardUpdate: (payload: Extract<ServerToClientMessage, { type: "LEADERBOARD_UPDATE" }>["payload"]) => void;
+  onChatMessage: (payload: Extract<ServerToClientMessage, { type: "CHAT_MESSAGE" }>["payload"]) => void;
   onDailyBonus: (payload: Extract<ServerToClientMessage, { type: "DAILY_BONUS" }>["payload"]) => void;
   onInfo: (payload: Extract<ServerToClientMessage, { type: "INFO" }>["payload"]) => void;
   onSkillResult: (payload: Extract<ServerToClientMessage, { type: "SKILL_RESULT" }>["payload"]) => void;
@@ -134,6 +136,8 @@ export class GameSocket {
       this.handlers.onPotionsUpdate(msg.payload);
     } else if (msg.type === "TONICS_UPDATE") {
       this.handlers.onTonicsUpdate(msg.payload);
+    } else if (msg.type === "CHAT_MESSAGE") {
+      this.handlers.onChatMessage(msg.payload);
     } else if (msg.type === "LEADERBOARD_UPDATE") {
       this.handlers.onLeaderboardUpdate(msg.payload);
     } else if (msg.type === "DAILY_BONUS") {
@@ -263,6 +267,11 @@ export class GameSocket {
   /** One step up the ladder on something already owned. */
   sendReforgeItem(stationId: string, itemId: string, affix?: string): void {
     this.send({ type: "REFORGE_ITEM", payload: { stationId, itemId, affix } });
+  }
+
+  /** Say something. The server decides who hears it — see `handleSay`. */
+  sendSay(text: string, channel: ChatChannel): void {
+    this.send({ type: "SAY", payload: { text, channel } });
   }
 
   sendRequestLeaderboard(): void {

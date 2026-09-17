@@ -4756,6 +4756,101 @@ export interface RequestLeaderboardMessage {
   type: "REQUEST_LEADERBOARD";
 }
 
+// --- Saying something -------------------------------------------------------
+//
+// THE FIRST PLAYER-TO-PLAYER VERB IN THE GAME. Everything else on this wire is
+// a player talking to the world — swing at that, forge this, tell me the
+// leaderboard. Sixty-odd message types and not one of them carried a word from
+// one person to another, which is a strange thing to discover about a game
+// people are supposed to spend time in together, and it is the reason a city
+// was worth building the systems for rather than only the streets.
+//
+// Two channels and no more. `local` is who can hear you, which is the one that
+// makes a crowd feel like a place — people near the anvil talking about the
+// anvil. `city` is everyone inside the walls, which is the one that makes a
+// city useful: asking whether anybody has a spare Rimeblade only works if the
+// question reaches people who are not standing next to you.
+//
+// There is deliberately no whisper and no global. Global turns every town into
+// the same room and undoes the point of having two of them; whisper needs a
+// name lookup, a block list and an ignore list to not be a harassment vector,
+// and half of that is worse than none of it.
+export type ChatChannel = "local" | "city";
+
+/**
+ * The longest thing anybody can say at once.
+ *
+ * Enough for a sentence and not enough for a wall. The cap is enforced on the
+ * SERVER as well as in the input's `maxlength`, because an attribute on an
+ * element is a suggestion to whoever is running the page.
+ */
+export const CHAT_MAX_CHARS = 180;
+
+/**
+ * How often one player may speak.
+ *
+ * Also server-side, and for a stronger reason than the length cap: the cost of
+ * a message is paid by everyone who receives it, so the one thing a client must
+ * not be trusted with is how many to send.
+ */
+export const CHAT_MIN_INTERVAL_MS = 900;
+
+/** How far `local` carries. About a screen: if you can see them, you hear them. */
+export const LOCAL_CHAT_RANGE_PX = 900;
+
+/**
+ * What a line of chat is allowed to contain, decided in one place.
+ *
+ * SHARED SO THE TWO ENDS AGREE. The client trims before sending so the input
+ * behaves, and the server trims again because that is the copy that counts —
+ * and if they used different rules the sender would see something different
+ * from everybody else, which is the most confusing possible outcome.
+ *
+ * Control characters go because a newline in a log line breaks the layout and
+ * the rest are invisible; runs of whitespace collapse because forty spaces is
+ * how you shout past a length cap.
+ */
+export function sanitizeChat(text: string): string {
+  // WRITTEN OUT RATHER THAN AS A CHARACTER CLASS, because a regex of
+  // control-code escapes is a string that every tool between here and the
+  // file gets a chance to mangle — and one did: an earlier version of this
+  // line reached disk with three literal control BYTES sitting where the
+  // escapes should have been, which `grep` then reported as a binary file.
+  // A loop over code points cannot be mis-escaped by anything.
+  let out = "";
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 32;
+    out += code < 32 || code === 127 ? " " : ch;
+  }
+  return out
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, CHAT_MAX_CHARS);
+}
+
+export interface SayMessage {
+  type: "SAY";
+  payload: { text: string; channel: ChatChannel };
+}
+
+export interface ChatMessageMessage {
+  type: "CHAT_MESSAGE";
+  payload: {
+    /** The speaker's name, as everyone else sees it. */
+    from: string;
+    /**
+     * And their id, which is what puts the bubble over the right body. A name
+     * cannot do that job: two characters may share one, and the client already
+     * keys every actor it has built by id.
+     */
+    fromId: string;
+    text: string;
+    channel: ChatChannel;
+    /** Server clock, so an arrival order is agreed rather than per-client. */
+    at: number;
+  };
+}
+
 export interface LeaderboardEntry {
   name: string;
   level: number;
@@ -4953,6 +5048,7 @@ export type ClientToServerMessage =
   | AcceptQuestMessage
   | TurnInQuestMessage
   | SetHotbarMessage
+  | SayMessage
   | SetLookMessage;
 
 /**
@@ -5017,6 +5113,7 @@ export interface QuestStateMessage {
   payload: { active: QuestProgressState[]; completed: string[] };
 }
 export type ServerToClientMessage =
+  | ChatMessageMessage
   | StateSnapshotMessage
   | WelcomeMessage
   | InventoryUpdateMessage

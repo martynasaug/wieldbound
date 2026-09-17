@@ -575,3 +575,20 @@ finished further from the camp than they started.
 ```powershell
 node tools/soak/keeperlook.mjs
 ```
+
+`soak/chattalk.mjs` — needs the server. Drives TWO clients, because chat is the
+first player-to-player verb in the game and a message has to leave one and
+arrive at another to have happened at all. Checks that a line gets across, that
+the speaker sees their own, that a bubble appears over the right head, that the
+local radius and the city walls each carry what they should and nothing else,
+and that the length cap and rate limit hold when a message is pushed straight
+down the socket past the input box.
+
+Section 4 is the one worth keeping: a player who presses Enter while walking
+must STOP walking, and must be able to walk again afterwards. This codebase has
+been bitten by focus before — `Game.bindInput` opens with a typing guard because
+of it — and neither half throws when it breaks.
+
+```powershell
+node tools/soak/chattalk.mjs
+```

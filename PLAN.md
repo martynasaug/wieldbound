@@ -27716,6 +27716,21 @@ Verified by reading it, not assumed:
 - **Foundations before scenery.**
 - **Radius 2600, ~60 buildings, 7 districts** — against Emberhold's radius 800
   and six.
+- **It must not LOOK like Emberhold.** Said explicitly, because the cheap way to
+  build a big city is to take the six building kinds that exist and place sixty
+  of them, and the result would read as Emberhold with more sheds. Different
+  walls, different roofs, different materials, a different silhouette against
+  the sky, and a different street pattern — harbour and quays rather than a ring
+  round a square.
+
+  Concretely, what has to differ: **stone and slate instead of plaster and
+  thatch**, because Coldharrow is a cold northern port and Emberhold is a warm
+  inland village; a **stone curtain wall with towers** instead of a timber
+  palisade; **taller, narrower footprints** packed along streets instead of six
+  wide fronts on one ring; and a **harbour** as the organising shape, so the
+  city has a waterfront edge and a landward edge rather than a centre and a rim.
+  Emberhold's `STYLES` table is warm plaster, shingle and thatch on purpose —
+  Coldharrow needs its own table, not extra rows in that one.
 
 ## Phase A — foundations
 
@@ -27851,3 +27866,58 @@ kind of failure. `pushOutOfBuildingsOf`, `insideAnyBuildingOf` and
 one-line wrappers over them.
 
 Suite green, 23 tests. Client and server typecheck. Emberhold unchanged.
+
+**Phase 71 A2 — chat.** Done. The first player-to-player verb in the game.
+
+`SAY` up, `CHAT_MESSAGE` down, two channels and no more. `local` is a 900px
+radius, which is what makes a crowd feel like a place: the people by the anvil
+are talking about the anvil and you walk over to be part of it. `city` is the
+settlement — the first thing built on A1's `settlementAt` — and it is what makes
+a city useful, because "has anybody got a spare Rimeblade" is worthless if it
+only reaches whoever is already standing next to you.
+
+No whisper and no global, deliberately. Global turns every town into the same
+room and undoes the point of having two of them; whisper needs a block list and
+an ignore list to not be a harassment vector, and half of that is worse than
+none of it.
+
+EVERY LIMIT IS THE SERVER'S. The input has a `maxlength` so the field behaves,
+and the server caps again because an attribute on an element is a suggestion to
+whoever is running the page. The rate limit matters more than the length one:
+the cost of a message is paid by everyone who receives it, so the one thing a
+client must never be trusted with is how many to send. Both were driven from a
+harness that pushes straight down the socket past the box — 380 characters
+arrived as 180, and five messages at once arrived as none.
+
+THE RISK WAS FOCUS, and it is not hypothetical: `Game.bindInput` opens with a
+typing guard because this codebase has already had "the keys stick after a panel
+steals focus". The guard stops NEW presses while typing and does nothing about
+keys already HELD, so a player who walks into town on W and presses Enter would
+have kept walking through the whole sentence. Focusing the box clears the held
+set, the same way the window's own blur handler does. Measured: 0.0px walked
+while typing with W down, 154px walked again after closing the box.
+
+A BUBBLE IS NOT A FLOATER. It borrows the one idea that matters — anything
+anchored in the world must be re-projected every frame or it hangs over empty
+grass — and nothing else. Combat text rises, fans out, scales with how much the
+hit mattered and is gone in under a second, because it reports an EVENT; speech
+holds still, wraps and waits to be read, because it reports a PERSON. Bending
+`floaters.ts` to do both would have meant three "does not" flags on a system
+whose three behaviours are exactly those.
+
+Local only for the bubble: city chat reaches people who cannot see the speaker,
+so a bubble for it would float over nothing, or over whoever happens to be
+standing where the speaker is not.
+
+AND IT SAT ON THE NAMEPLATE at first — 2.1 units is exactly where a player's own
+plate hangs, so the speaker's name printed twice in the same square of screen.
+Floats over a player use 3.2 and clear the plate, so the bubble sits just above
+that band. Only a screenshot could have said so.
+
+The harness also caught its own bug, which is the honest kind: the city test
+failed twice, once because it walked the listener OUT of the walls (so city chat
+correctly did not reach them) and once because it sent two lines 700ms apart
+under a 900ms rate limit (so the limiter correctly ate the second). Neither was
+the product.
+
+Suite green, 24 tests. Client and server typecheck.

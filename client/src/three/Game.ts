@@ -114,6 +114,7 @@ import { InventoryPanel } from "../ui/InventoryPanel";
 import { CraftPanel } from "../ui/CraftPanel";
 import { SkillPanel, type WeaponProgressView } from "../ui/SkillPanel";
 import { LeaderboardPanel } from "../ui/LeaderboardPanel";
+import { ChatPanel } from "../ui/ChatPanel";
 import { CombatLog } from "../ui/CombatLog";
 import { TargetFrame } from "../ui/TargetFrame";
 import { ATTACK_SLOT, Hotbar, type BarAction } from "../ui/Hotbar";
@@ -123,6 +124,7 @@ import { loadClipLibrary } from "./clips";
 import { loadWardrobe, loadGarments } from "./wardrobe";
 import { Hud } from "./hud";
 import { Floaters, type FloatSpec } from "./floaters";
+import { ChatBubbles } from "./bubbles";
 import { Drops } from "./drops";
 // `isUpgrade` is presentation, not a rule: it decides whether to draw a mark,
 // and lives beside the other things that decide how an item is shown.
@@ -741,6 +743,8 @@ export class Game {
   private readonly monsterShaderKeepAlive: THREE.Object3D[] = [];
   private readonly hud: Hud;
   private readonly floaters: Floaters;
+  private readonly bubbles: ChatBubbles;
+  private readonly chatPanel: ChatPanel;
   private readonly drops: Drops;
   /** Last snapshot's drops, for the plates and the minimap. */
   private dropStates: DroppedItemState[] = [];
@@ -1082,6 +1086,16 @@ export class Game {
     this.world = new World(container);
     this.hud = new Hud(container);
     this.floaters = new Floaters(container);
+    this.bubbles = new ChatBubbles(container);
+    this.chatPanel = new ChatPanel(
+      container,
+      (text, channel) => this.socket.sendSay(text, channel),
+      // RELEASING THE HELD KEYS is the whole reason this is a callback
+      // rather than the panel minding its own business: the set of keys
+      // currently down lives in here, and a player who presses Enter while
+      // walking would otherwise keep walking through the whole sentence.
+      () => this.keys.clear(),
+    );
     this.drops = new Drops(this.world.scene);
     this.minimap = new Minimap(container);
     this.effects = new Effects(this.world.scene);
@@ -1522,6 +1536,17 @@ export class Game {
         this.wallet.herb = p.herb;
         this.inventoryPanel.setTonics(p.tonics);
         this.syncMaterials();
+      },
+      onChatMessage: (p) => {
+        const own = p.fromId === this.playerId;
+        this.chatPanel.push(p.from, p.text, p.channel, own);
+        // A bubble only for LOCAL. City chat reaches people who cannot see
+        // the speaker, so a bubble for it would either float over nothing
+        // or, worse, over whoever happens to be standing where the speaker
+        // is not. The panel is the right home for a voice from across town.
+        if (p.channel !== "local") return;
+        const body = own ? this.localActor : this.players.get(p.fromId);
+        if (body) this.bubbles.say(p.fromId, p.from, p.text, body.position);
       },
       onLeaderboardUpdate: (p) => this.leaderboardPanel.setEntries(p.entries),
       onDailyBonus: (p) => {
@@ -2293,6 +2318,10 @@ export class Game {
       if (seen.has(id)) continue;
       actor.dispose();
       this.players.delete(id);
+      // Their bubble is anchored to the body that just went away. Left alone it
+      // would hang at the last projected position until it timed out, which is
+      // a line of speech over nobody.
+      this.bubbles.forget(id);
       this.playerNames.delete(id);
       this.playerClasses.delete(id);
       this.playerMotion.delete(id);
@@ -4043,6 +4072,19 @@ export class Game {
         this.settingsPanel.refresh();
         return;
       }
+      // ENTER OPENS THE CHAT BOX. Before the panel toggles below it, because
+      // this is the one key here that hands the keyboard to something else —
+      // and after the guard at the top of this handler, which is what stops it
+      // firing again for every keystroke of the sentence that follows.
+      //
+      // `preventDefault` matters: without it the Enter that opened the box is
+      // also delivered to the freshly focused input, which some browsers treat
+      // as a submit on a form-like field.
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.chatPanel.focusInput();
+        return;
+      }
       // The keys and the dock buttons are two ways to do one thing, so both
       // finish by re-lighting the dock.
       if (key === "c") {
@@ -5276,6 +5318,9 @@ export class Game {
     // After the actors have moved and before the frame is drawn, so a number
     // never lags the body it came off by a frame.
     this.floaters.update(this.projectForFloat);
+    // Same projection as the floats, because a bubble is anchored to a body
+    // in the world exactly as a damage number is.
+    this.bubbles.update(this.projectForFloat);
     // Advanced locally between snapshots, so the sweeps move smoothly rather
     // than in the ten steps a second the snapshots arrive in.
     this.serverTime += dt * 1000;
