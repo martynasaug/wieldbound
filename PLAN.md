@@ -27970,3 +27970,55 @@ server came back up dead. All twenty-one were confirmed as wieldbound by reading
 each command line, then stopped BY PID.
 
 Suite green, 25 tests. Client and server typecheck. Emberhold unchanged.
+
+**Phase 71 B2 — the Kingsway.** Done.
+
+MOST OF THE ROAD ALREADY EXISTED, which is worth saying plainly rather than
+claiming the work: `shared/road.ts` has carried `NORTH_TOWN_NAME = "Coldharrow"`
+and a routed, camp-clearing track north since an earlier phase, and Pinereach's
+blurb already called itself "the last thing between the Coldwater and the site
+where Coldharrow is to stand". The fiction anticipated this city before the plan
+did. What B2 added is the distance, the stones, the reasons to walk it, and a
+geometry that survives a city at the end of it.
+
+THE NORTHERN LAYOUT, SETTLED IN ONE PASS rather than nudged twice. The probe
+that laid it out found a collision the plan had missed: Pinereach reached 5,900px
+north and Coldharrow's landward wall was to stand at 5,800, so the city would
+have been built in the trees. Going north now: band-5 camps at 2,750, Pinereach
+3,100..4,900, the city 5,800..11,000 centred at 8,400 with a radius of 2,600 —
+350px of clear ground between the camps and the wood, 900 between the wood and
+the wall.
+
+AND THE SEAWARD WALL SITS EXACTLY ON THE WORLD'S NORTH EDGE, which started as an
+awkward number and is the best thing in the layout: Coldharrow is a frozen
+harbour, so the edge of the world is the ice. There is nothing to build past it
+because there is nothing past it.
+
+THE BRIDGE IS WHY THE ROAD IS NOW DEAD STRAIGHT. Extending the route changed the
+spline's curvature back through the river crossing, and `crossing.mjs` caught a
+0.133-unit step at the abutment — a third over tolerance, and the same class of
+fault as the three crossing bugs reported from play. The first fix, a waypoint
+at the crossing, made it worse in a more interesting way: it put a kink exactly
+where the bridge is built, and since the deck is laid along whatever heading the
+road has at the water, `river.mjs` reported the verge in the water and the
+outside rut through the parapet. The road runs due north from 2,500 out instead.
+Deck angle is now exactly -90.0 degrees and the crossing sits on the spawn
+meridian at 8000, 7600. The bend that 270 replaces was avoiding an orc camp that
+is seven hundred pixels behind by the time the road gets there.
+
+THREE STONES, AND THEY ARE A DIFFERENT KIND OF WALK. Cabel's four spiral outward
+around the compass and each is further into country nobody holds. These three
+run up one road toward a place being built, and the road is patrolled — so the
+walk is long rather than dangerous, which is the whole promise the guarded-road
+decision made. That is why they are their own chain rather than three more
+entries on the end of his: "go further than anybody has" and "go and see what
+they are building" are not the same errand.
+
+`quests.mjs` enforces the rule that made them necessary — nothing may be a
+landmark that nothing sends you to. Three stones meant three quests, and the
+test failed until they existed, which is the right way round.
+
+Positions were measured, not drawn: each stands 343 to 448px off the smoothed
+path, clear of the woods, the river, the camps and each other.
+
+Suite green, 25 tests. Client and server typecheck.

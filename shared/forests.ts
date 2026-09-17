@@ -97,8 +97,13 @@ export const FORESTS: Forest[] = [
   {
     id: "pinereach",
     name: "Pinereach",
-    ...fromSpawn(0, 4500),
-    radiusPx: 1400,
+    // PULLED IN TO MAKE ROOM. At 4,500 out and 1,400 across this wood reached
+    // 5,900px north, and Coldharrow's landward wall stands at 5,800 — so the
+    // city would have been built in the trees. Its own blurb says it is the
+    // last thing between the Coldwater and the site, which is now literally
+    // true: the pines stop at 4,900 and the wall begins nine hundred on.
+    ...fromSpawn(0, 4000),
+    radiusPx: 900,
     species: "pine",
     perBlock: 34,
     blurb:

@@ -592,3 +592,21 @@ of it — and neither half throws when it breaks.
 ```powershell
 node tools/soak/chattalk.mjs
 ```
+
+`soak/kingsway.mjs` — needs the server. Walks the North Road end to end, stopping
+at each waystone and finally at the Coldharrow site, photographing the length of
+it. `road.mjs` proves the route clears every camp, node and stone and
+`crossing.mjs` proves the deck and the land meet at the bridge; neither can say
+whether the thing reads as a road somebody would choose to follow, which is the
+whole claim being made about it.
+
+It follows the path with a cursor that only moves FORWARD toward the current
+stop's own index. The first version aimed at the furthest path point within
+700px of the player, which has no notion of "ahead" and fell back to the road's
+last point when nothing was in range — the bot charged 7,686px north on the
+first leg and cheerfully reported arriving 4,768px short of a stone it had
+already run past.
+
+```powershell
+node tools/soak/kingsway.mjs Sawyer
+```

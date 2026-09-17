@@ -23,7 +23,7 @@
 import { PLAYER_SPAWN, AGGRO_RANGE_PX } from "./protocol-types.ts";
 import { TOWN_RADIUS_PX } from "./town.ts";
 
-/** What is being built up there. Nothing stands at the site yet. */
+/** What is being built up there. See PLAN.md Phase 71. */
 export const NORTH_TOWN_NAME = "Coldharrow";
 
 /**
@@ -52,14 +52,47 @@ export const NORTH_ROAD_WAYPOINTS: readonly (readonly [number, number])[] = [
   [TOWN_RADIUS_PX, 256],
   [1300, 252],
   [1900, 258],
-  [2500, 266],
-  [3200, 269],
+  [2500, 270],
+  // DEAD NORTH FROM HERE, and the 269 it replaces is why. The bridge is built
+  // along whatever heading the road has where it meets the water, so a road
+  // still turning at the crossing gives a deck at one angle and a carriageway
+  // at another: the verge ends up in the river and the outside rut runs through
+  // the parapet. Straightening the approach was worth more than the degree of
+  // sweep it cost, and the orc camp this bend was avoiding is seven hundred
+  // pixels behind by the time the road gets here.
+  [3200, 270],
   [4100, 270],
   [5000, 270],
+  // THE LAST TWO RUN INTO THE CITY RATHER THAN UP TO IT. Coldharrow is 2,600px
+  // in radius, so its landward wall stands at 3,800 out and the road crosses it
+  // 1,200px before the end of this list — which is where the gate goes, because
+  // a gate is a hole somebody cut where the road already was. The track only
+  // stops being a road at the middle, where it becomes streets.
+  [5700, 270],
+  [6400, 270],
+  [7400, 270],
+  [8400, 270],
 ];
 
-/** Where the road ends, and where the next town will stand. */
-export const NORTH_TOWN_SITE: { x: number; y: number } = polar(5000, 270);
+/**
+ * The middle of Coldharrow, and the end of the road.
+ *
+ * MOVED OUT FROM 5,000 WHEN THE CITY GOT ITS SIZE. At 2,600px of radius a city
+ * centred at 5,000 would have put its landward wall at 2,400 — inside the ring
+ * of band-5 camps at 2,750, so the wall would have been built among the golems.
+ * 6,400 puts it at 3,800, a thousand clear of them, and still leaves 2,000px
+ * between the seaward wall and the edge of the world.
+ */
+export const NORTH_TOWN_SITE: { x: number; y: number } = polar(8400, 270);
+
+/**
+ * How far the city reaches from that middle.
+ *
+ * Emberhold is 800. This is the number the whole of Phase 71 C is sized by, and
+ * it lives here rather than with the city's own data because the ROAD has to
+ * know it: the gate is wherever the track crosses this circle.
+ */
+export const NORTH_TOWN_RADIUS_PX = 2600;
 
 /**
  * How much room the road keeps from a monster camp's centre.

@@ -87,6 +87,41 @@ export const LANDMARKS: Landmark[] = [
       "Split top to bottom, and the gap is wide enough to walk through. People who have been " +
       "this far west do not agree about whether that was done on purpose.",
   },
+  // --- The Kingsway ---------------------------------------------------------
+  // Three on one road, which breaks the spiral the four above are laid out by
+  // and is the point: those exist so that walking OUT has landmarks, and these
+  // exist because walking NORTH is now a journey with a destination rather than
+  // a direction. Each stands 340px off the track — far enough that the road
+  // does not run over a five-metre monolith, close enough to be unmistakably
+  // beside it. Positions were measured against the smoothed path, the woods,
+  // the river and the camps rather than drawn; see `tools/test/road.mjs`.
+  {
+    id: "posternstone",
+    name: "The Postern Stone",
+    radiusPx: 1669,
+    angleDeg: 267.3,
+    blurb:
+      "The first stone on the north road, close enough that you can still hear the anvil " +
+      "behind you. Carters stop here to shift a load before the long part starts.",
+  },
+  {
+    id: "marchstone",
+    name: "The March Stone",
+    radiusPx: 2971,
+    angleDeg: 261.6,
+    blurb:
+      "Where Emberhold stops claiming the road. Past this the watch does not come, and the " +
+      "next thing standing is the pinewood.",
+  },
+  {
+    id: "pinewardstone",
+    name: "The Pineward Stone",
+    radiusPx: 5317,
+    angleDeg: 273.7,
+    blurb:
+      "Set on the far side of Pinereach, facing north. On a clear day this is where Coldharrow " +
+      "first shows itself, and the stone is worn smooth on the side people lean against to look.",
+  },
   {
     id: "ashenstone",
     name: "The Ashen Stone",

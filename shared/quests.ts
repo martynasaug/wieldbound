@@ -203,6 +203,65 @@ export const QUESTS: QuestDef[] = [
     after: "watch-sunkenstone",
     reward: { xp: 600, materials: { wood: 140, ore: 140, herb: 70 } },
   },
+  // --- The Kingsway ---------------------------------------------------------
+  //
+  // A SECOND CHAIN OF STONES, and it is a different KIND of walk from Cabel's
+  // four. Those spiral outward around the compass and each one is further into
+  // country nobody holds — the reward is having been there. These three run up
+  // one road toward a place that is being built, and the road is patrolled, so
+  // the walk is long rather than dangerous.
+  //
+  // That difference is the whole reason they are a separate chain rather than
+  // three more entries on the end of the other one. "Go further than anybody
+  // has" and "go and see what they are building" are not the same errand, and a
+  // player who has done the first has no reason to think they have done the
+  // second.
+  {
+    id: "kingsway-postern",
+    giver: "cabel",
+    name: "Out the North Postern",
+    brief:
+      "You have seen the gap between the inn and the shop. There is a road through it now, and " +
+      "a stone a little way up it. Walk to the stone. That is the whole task — I want somebody " +
+      "who is not a carter to tell me what the surface is like.",
+    done:
+      "Good. It will take a cart, then. That matters more than it sounds like it does.",
+    objective: { kind: "reach", landmark: "posternstone", count: 1 },
+    requiresLevel: 6,
+    reward: { xp: 240, materials: { wood: 70, ore: 70, herb: 35 } },
+  },
+  {
+    id: "kingsway-march",
+    giver: "cabel",
+    name: "As Far As We Claim",
+    brief:
+      "Next stone up the road. It sits where the watch stops going, which is not a warning so " +
+      "much as an admission — past it the road is still a road, it is simply nobody's. Keep to " +
+      "it and the orcs off to the west will not trouble you.",
+    done:
+      "Then the road holds that far. I will tell the Herald, and she will tell somebody who " +
+      "can do something about the rest of it.",
+    objective: { kind: "reach", landmark: "marchstone", count: 1 },
+    requiresLevel: 12,
+    after: "kingsway-postern",
+    reward: { xp: 700, materials: { wood: 150, ore: 150, herb: 80 } },
+  },
+  {
+    id: "kingsway-pineward",
+    giver: "cabel",
+    name: "The Far Side of the Pines",
+    brief:
+      "The road goes into Pinereach and comes out the other side, and there is a stone where it " +
+      "does. Stand at it and look north. They say you can see Coldharrow from there on a clear " +
+      "day. I would like to know whether that is true or whether it is something carters say.",
+    done:
+      "So it is true. Well. That is the first anybody in Emberhold has seen of the place with " +
+      "their own eyes, and you can put that against your name.",
+    objective: { kind: "reach", landmark: "pinewardstone", count: 1 },
+    requiresLevel: 18,
+    after: "kingsway-march",
+    reward: { xp: 1500, materials: { wood: 300, ore: 300, herb: 160 }, consumable: { id: "potion", count: 3 } },
+  },
   {
     id: "watch-ashenstone",
     giver: "cabel",
