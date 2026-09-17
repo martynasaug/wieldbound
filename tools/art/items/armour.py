@@ -924,11 +924,21 @@ def plate_chest(a):
 
 def scale_chest(a):
     """Scale: overlapping rows of small plates, each row a little wider than the last."""
+    # THE COAT IS WOOD-ROLE, NOT METAL-ROLE, and that one word is most of why
+    # this style used to read as the same object as Chain Mail. `LEATHER` is an
+    # alias for `"Steel"` — the palette's METAL — so a coat described as leather
+    # everywhere in this file was painted the same tone as the scales riveted to
+    # it, and the whole piece came out one hue at two brightnesses.
+    #
+    # Reported: "armours look pretty similar, probably because their colour is
+    # similar." Every palette's `wood` is a genuinely different HUE from its
+    # metal — brown against grey, brown against green — so a coat in the wood
+    # role and scales in the metal role separate at any distance.
     a.shell(BONE_CHEST, [(over_chest(17.0), BODY["chest_y0"] - 3.0),
                          (over_chest(20.0), BODY["shoulder_y"] - 2.0),
                          (over_chest(18.6), BODY["chest_y1"] - 8.0),
                          (over_chest(17.0), BODY["chest_y1"] + 3.0)],
-            LEATHER, squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
+            "Wood", squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
     rows = 5
     for i in range(rows):
         y = BODY["chest_y0"] + 2.0 + i * (BODY["chest_y1"] - BODY["chest_y0"] - 6.0) / rows
@@ -952,7 +962,7 @@ def scale_chest(a):
             BRIGHT, squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT + LAYER * 0.5, sides=LIMB_SIDES)
     a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"]), (over_waist(24.5), BODY["hip_y"] - 6.0),
                          (over_waist(23.0), BODY["hip_y"] - 24.0)],
-            LEATHER, squash=(1.0, 1.0), z=-6.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
+            "Wood", squash=(1.0, 1.0), z=-6.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
     for k in range(8):
         angle = -math.pi * 0.6 + k * (math.pi * 1.2 / 7)
         at, out = a.skin(BONE_WAIST, BODY["waist_y1"] - 14.0, angle, CLEAR_COAT + LAYER, z=-6.0)
@@ -976,7 +986,7 @@ def brigandine_chest(a):
     for side in (1, -1):
         a.plate(BONE_CHEST, [(side * 5.0, BODY["chest_y1"] + 1.0), (side * 14.0, BODY["chest_y1"] - 3.0),
                              (side * 11.0, BODY["chest_y0"] + 4.0), (side * 3.0, BODY["chest_y0"] + 6.0)],
-                LEATHER, z=CHEST_FACE + CLEAR_COAT + LAYER, thickness=3.5)
+                "DarkBrown", z=CHEST_FACE + CLEAR_COAT + LAYER, thickness=3.5)
     a.band(BONE_CHEST, BODY["chest_y0"] - 2.0, 20.0, LEATHER_TRIM, tube=3.5, squash=(1.0, 1.15), z=-3.0,
            hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
     a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"]),
@@ -1133,6 +1143,8 @@ THIGH_X, CALF_X = 22.0, 23.6
 # free of the wearer's hands, head and feet, so limb pieces would double up on
 # cloth that is already there.
 LIMB_KIT = {
+    "lamellar":   {"arm": ("Steel", 12.0, 13.0), "leg": LEATHER_TRIM, "trim": "Steel"},
+    "carapace":   {"arm": ("White", 12.0, 13.0), "leg": "Black", "trim": "White"},
     "scale":      {"arm": (BRIGHT, 12.0, 13.0), "leg": "Steel", "trim": "DarkSteel"},
     "brigandine": {"arm": (LEATHER_TRIM, 12.0, 13.0), "leg": "Steel", "trim": "DarkSteel"},
     "chain":      {"arm": (GARMENT, 12.0, 13.0), "leg": GARMENT, "trim": "DarkSteel"},
@@ -1234,7 +1246,106 @@ def dress_limbs(a, style):
 # why a robe has to be cut from the palette's accent because wood's metal sits
 # on the skin's own value. Deleting the functions would burn that record to save
 # nothing; dropping them from this table is what makes them unreachable.
+def lamellar_chest(a):
+    """Lamellar: rows of small plates laced edge to edge, a standing collar, a long fauld."""
+    # THE ROWS ARE THE STYLE. Scale is a field of points and brigandine is a
+    # field of rivets; lamellar is a stack of HORIZONTAL BANDS, and at this
+    # camera a band is the one piece of structure that survives. So the coat
+    # underneath is plain and every row is a real ring standing proud of it.
+    a.shell(BONE_CHEST, [(over_chest(17.5), BODY["chest_y0"] - 5.0),
+                         (over_chest(20.0), BODY["chest_y0"] + 12.0),
+                         (over_chest(20.0), BODY["shoulder_y"] - 2.0),
+                         (over_chest(18.5), BODY["chest_y1"] - 6.0),
+                         (over_chest(16.5), BODY["chest_y1"] + 5.0)],
+            "DarkWood", squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
+    rows = (BODY["chest_y0"] + 2.0, BODY["chest_y0"] + 13.0, BODY["chest_y0"] + 24.0,
+            BODY["chest_y0"] + 35.0, BODY["chest_y1"] - 6.0)
+    for i, y in enumerate(rows):
+        a.band(BONE_CHEST, y, 20.0, BRIGHT if i % 2 else "Steel", tube=4.2,
+               squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
+    # The lacing: short vertical ties between the rows, front and sides, which is
+    # what holds a lamellar coat together and what tells it from a banded one.
+    for y in rows[:-1]:
+        for k in range(7):
+            angle = -math.pi * 0.52 + k * (math.pi * 1.04 / 6)
+            at, out = a.skin(BONE_CHEST, y + 5.5, angle, CLEAR_COAT + LAYER * 1.6, z=-3.0)
+            a.stud(BONE_CHEST, at, (out[0], 0.0, out[2]), 2.4, 1.6, "Gold", sides=4)
+    # A standing collar, because a lamellar coat is built up to the throat.
+    a.shell(BONE_CHEST, [(13.5, BODY["chest_y1"] + 2.0), (14.5, BODY["chest_y1"] + 13.0)],
+            "Steel", squash=(1.0, 1.1), sides=LIMB_SIDES, z=-3.0, hug=CLEAR_COAT + LAYER)
+    # THE FAULD IS VERTICAL LAMES, not a skirt: a long coat of plates ends in
+    # separate tongues so the wearer can sit down, and separate tongues are a
+    # different silhouette from chain's continuous hem.
+    a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"] + 2.0),
+                         (over_waist(24.0), BODY["hip_y"] - 4.0)],
+            "DarkWood", squash=(1.0, 1.0), z=-6.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
+    for k in range(11):
+        # Centred on the face and swept round to either hip: `turn` is the
+        # lathe's own angle, where -pi/2 faces forward.
+        turn = -math.pi * 0.5 + (k - 5) * 0.36
+        a.shell(BONE_WAIST, [(23.0, BODY["hip_y"] - 3.0), (23.5, BODY["hip_y"] - 15.0),
+                             (22.0, BODY["hip_y"] - 27.0)],
+                "Steel", squash=(1.0, 1.0), z=-6.0, sides=LIMB_SIDES, cap=False,
+                hug=CLEAR_COAT + LAYER, arc=0.075, turn=turn)
+    a.band(BONE_WAIST, BODY["waist_y1"] - 2.0, 23.0, "DarkSteel", tube=3.4,
+           squash=(1.0, 1.0), z=-6.0, hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
+    pauldrons(a, "Steel", span=14.0, drop=10.0)
+
+
+def carapace_chest(a):
+    """Carapace: overlapping curved shells with a ridged spine, grown rather than forged."""
+    # NOT A COAT WITH THINGS ON IT. The other four chest styles are a shell plus
+    # decoration; this one is decoration all the way down — three big domed
+    # plates down the front, each standing further out than the one above, so
+    # the silhouette itself is stepped rather than smooth.
+    a.shell(BONE_CHEST, [(over_chest(17.0), BODY["chest_y0"] - 5.0),
+                         (over_chest(19.5), BODY["chest_y0"] + 14.0),
+                         (over_chest(19.5), BODY["shoulder_y"] - 2.0),
+                         (over_chest(17.5), BODY["chest_y1"] + 4.0)],
+            "DarkBrown", squash=(1.0, 1.15), z=-3.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
+    for i in range(4):
+        top = BODY["chest_y1"] - 2.0 - i * 13.0
+        a.shell(BONE_CHEST, [(19.0, top), (20.0, top - 9.0), (19.0, top - 13.5)],
+                "White", squash=(1.0, 1.15), z=-3.0, cap=False, sides=LIMB_SIDES,
+                hug=CLEAR_COAT + LAYER * (0.5 + i * 0.6))
+    # The spine: a ridge of plates up the BACK, which is the half of this style
+    # a player sees while running away from something. `turn` pi/2 is behind.
+    for k in range(5):
+        y = BODY["chest_y0"] + 4.0 + k * 11.0
+        at, out = a.skin(BONE_CHEST, y, math.pi, CLEAR_COAT + LAYER * 2.6, z=-3.0)
+        a.stud(BONE_CHEST, at, (out[0], 0.4, out[2]), 15.0 - k * 1.2, 7.0 - k * 0.5,
+               "White", sides=3)
+    # THE PLATES GO ON DOWN THE ABDOMEN, and the shell under them is the same
+    # dark hide as the chest's. Left black with two bands on it, the waist was a
+    # flat dark field from the ribs to the hips — half the torso with nothing on
+    # it — while the chest above was covered in overlapping plate. The style has
+    # to continue or it reads as a jerkin worn over a black shirt.
+    a.shell(BONE_WAIST, [(over_waist(22.0), BODY["waist_y1"] + 2.0),
+                         (over_waist(24.0), BODY["hip_y"] - 4.0),
+                         (over_waist(22.0), BODY["hip_y"] - 24.0)],
+            "DarkBrown", squash=(1.0, 1.0), z=-6.0, hug=CLEAR_COAT, sides=LIMB_SIDES)
+    for i in range(3):
+        top = BODY["waist_y1"] - 1.0 - i * 13.0
+        a.shell(BONE_WAIST, [(22.5, top), (23.5, top - 9.0), (22.5, top - 13.5)],
+                "White", squash=(1.0, 1.0), z=-6.0, cap=False, sides=LIMB_SIDES,
+                hug=CLEAR_COAT + LAYER * (2.3 - i * 0.55))
+    a.band(BONE_WAIST, BODY["hip_y"] - 24.0, 22.0, LEATHER_TRIM, tube=3.0,
+           squash=(1.0, 1.0), z=-6.0, hug=CLEAR_COAT + LAYER, sides=LIMB_SIDES)
+    # Shoulder shells with a spur on each, which is what makes it read as a
+    # creature's back rather than as a jerkin.
+    for bone, side in ((BONE_ARM_L, 1), (BONE_ARM_R, -1)):
+        a.shell(bone, [(17.0, BODY["shoulder_y"] + 8.0),
+                       (20.5, BODY["shoulder_y"] - 2.0),
+                       (17.5, BODY["shoulder_y"] - 16.0)],
+                LEATHER_TRIM, squash=(1.0, 1.0), sides=LIMB_SIDES,
+                x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+        a.stud(bone, (side * (BODY["shoulder_x"] + 6.0), BODY["shoulder_y"] + 6.0, -14.0),
+               (side * 0.45, 0.55, -0.7), 22.0, 6.5, "White", sides=3)
+
+
 CHEST = {
+    "lamellar": lamellar_chest,
+    "carapace": carapace_chest,
     "scale": scale_chest,
     "brigandine": brigandine_chest,
     "chain": chain_chest,

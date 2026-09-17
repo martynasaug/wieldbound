@@ -19,11 +19,12 @@ import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { chromium } from "playwright";
 import { open, login } from "./driver.mjs";
 import { HAIR_STYLE_IDS } from "../../shared/look.ts";
+import { ITEM_BASES } from "../../shared/items.ts";
 
 const OUT = "tools/soak/shots/wearlook";
 mkdirSync(OUT, { recursive: true });
 
-const ARMOR = ["leather", "chain", "plate", "robe", "scale", "brigandine"];
+const ARMOR = ["leather", "chain", "plate", "robe", "scale", "brigandine", "lamellar", "carapace"];
 const HELM = ["cap", "hood", "full", "horned", "circlet", "barbute", "crested"];
 const BOOTS = ["low", "tall", "plated", "wrapped", "fur", "strapped"];
 const CAPE = ["cape", "cloak", "mantle", "tabard"];
@@ -36,7 +37,24 @@ const SLOTS = {
   cape: CAPE,
 };
 
-const worn = (style) => (style ? { style, rarity: "honed", palette: "steel" } : undefined);
+// EVERY STYLE IN ITS OWN PALETTE, NOT ALL OF THEM IN STEEL.
+//
+// Reported: "armours look pretty similar, probably because their colour is
+// similar." They are — in these sheets, because this line used to pin every
+// item to `palette: "steel"` and shoot the lot. Twenty-three styles were
+// reviewed side by side in one colour, and a review that removes the variable
+// under discussion cannot see a problem with it.
+//
+// In the game a Scale Mail is bronze, a Chain Mail iron, a Chitin Plate
+// verdant. The catalogue already says so, so the sheet asks it: the first item
+// wearing each style lends its palette, and the sheets now show what a player
+// would actually meet.
+const PALETTE_OF = {};
+for (const base of Object.values(ITEM_BASES)) {
+  if (base.style && !(base.style in PALETTE_OF)) PALETTE_OF[base.style] = base.art.palette;
+}
+const worn = (style) =>
+  (style ? { style, rarity: "honed", palette: PALETTE_OF[style] ?? "steel" } : undefined);
 const pick = (list, i) => list[i % list.length];
 
 // ITEMS WORN TOGETHER, WHICH IS HOW THEY ARE ACTUALLY WORN.

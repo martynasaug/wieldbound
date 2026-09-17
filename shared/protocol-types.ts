@@ -3580,7 +3580,7 @@ export const SLOT_LABEL: Record<ItemSlot, string> = {
 // the moment they have names.
 export const GEAR_STYLES = [
   // chest
-  "leather", "chain", "plate", "robe", "scale", "brigandine",
+  "leather", "chain", "plate", "robe", "scale", "brigandine", "lamellar", "carapace",
   // head
   "cap", "hood", "full", "horned", "circlet", "barbute", "crested",
   // feet

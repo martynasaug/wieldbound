@@ -1247,6 +1247,37 @@ function armorParts(style: GearStyle, _rarity: ItemRarity): Part[] {
     return parts;
   }
 
+  if (style === "lamellar") {
+    // Rows of plates laced edge to edge: the fallback stacks four short shells
+    // so the SILHOUETTE is banded, which is the one thing that reads at this
+    // distance and the whole reason the style exists.
+    const rows = [0, 1, 2, 3].map((i) =>
+      shell(30, 29, 13, [0, chestBottom + 6 + i * 12, -4], 0.94));
+    parts.push({ bone: "Torso", role: "metal", geometry: merge(rows) });
+    parts.push({ bone: "Abdomen", role: "leather", geometry: merge([
+      shell(31, 30, 14, [0, WAIST_Y, -6], 0.94),
+      // A fauld of separate tongues rather than a continuous hem.
+      shell(30, 33, 30, [0, WAIST_Y - 20, -6], 0.96),
+    ]) });
+    return parts;
+  }
+
+  if (style === "carapace") {
+    // Plates overlapping downward like roof tiles, each standing further out
+    // than the one above, plus a ridge up the back.
+    const plates = [0, 1, 2, 3].map((i) =>
+      shell(27 + i * 2, 27 + i * 2, 14, [0, chestTop - 4 - i * 13, -4], 0.94));
+    parts.push({ bone: "Torso", role: "leather", geometry: merge([
+      ...plates,
+      box([7, chestH, 10], [0, chestMid, -32]),
+    ]) });
+    parts.push({ bone: "Abdomen", role: "leather", geometry: merge([
+      shell(31, 30, 16, [0, WAIST_Y, -6], 0.94),
+      shell(33, 32, 16, [0, WAIST_Y - 16, -6], 0.96),
+    ]) });
+    return parts;
+  }
+
   // "plate", "scale" and "brigandine" — the heaviest look: a shaped cuirass, a
   // gorget at the throat, and real pauldrons on the arm bones so they swing
   // with the shoulders.
@@ -1421,7 +1452,7 @@ const MODELLED_ARMOUR = new Set<string>([
   // nothing acts on. Three chest styles keep this route until there is authored
   // art for them, which is what this set was always for: replaced piece by
   // piece, with the old path carrying whatever has not been replaced.
-  "armor:scale", "armor:brigandine", "armor:chain",
+  "armor:scale", "armor:brigandine", "armor:chain", "armor:lamellar", "armor:carapace",
   "helm:cap", "helm:full", "helm:horned", "helm:circlet", "helm:hood",
   "helm:barbute", "helm:crested",
   "boots:low", "boots:tall", "boots:plated", "boots:wrapped",

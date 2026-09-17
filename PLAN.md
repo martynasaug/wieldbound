@@ -27249,3 +27249,59 @@ it failed the moment the four styles appeared, and it kept failing until each
 had a fallback in its slot's builder. That is what a guard is for.
 
 Suite green. Client typechecks.
+
+**Phase 70 M70.372 — two chest styles, and the review that could not see colour.**
+The chest is the largest surface on the character and had six styles, three of
+which are the pack's costumes rather than anything this file builds.
+
+    lamellar   a stack of horizontal bands, laced, over a fauld of separate lames
+    carapace   plates overlapping downward like roof tiles, and a ridge up the back
+
+Four rows wear them: Lamellar Coat, Banded Mail, Chitin Plate, Direshell.
+
+THE PICTURES CAUGHT THREE THINGS, and the third one matters most.
+
+  A SHARD IS A SPIKE. `a.stud` tapers to a point, which is right for a rivet and
+  wrong for a lame: the fauld came out as a ring of downward teeth. A lame is a
+  flat tongue, and the way to get one from this kit is a very narrow ARC of a
+  shell — the same trick the strapped boot's lacing uses.
+
+  A STRIPE IS NOT A STEP. The carapace's three plates differed in radius by less
+  than the eye resolves at this camera, so only their colours changed and the
+  chest read as a striped jumper. Overlapping downward, each plate's lower edge
+  standing nearly two units further out, puts the step in the SILHOUETTE. And
+  the waist under them was still black with two bands on it — half the torso
+  bare while the chest above was plated — so the plates run on down.
+
+  AND THEN: "armours look pretty similar, probably because their colour is
+  similar, not enough textures etc." Correct, and the first thing to check was
+  the instrument. `wearlook.mjs` pinned every item to `palette: "steel"` and
+  shot the lot — twenty-five styles reviewed side by side in one colour. A
+  review that removes the variable under discussion cannot see a problem with
+  it, and I had been calling silhouettes "clearly distinct" off those sheets all
+  day. It takes each style's own palette from the catalogue now.
+
+  THE COMPLAINT SURVIVED THE FIX, and two causes came out of it:
+
+    THE PALETTES CLUSTERED. Four of the five band-3 chests were neutral greys
+    and tans; two band-4 chests were verdant. Four rows moved — all of them
+    ones I had just added, so no existing item changed identity.
+
+    AND `LEATHER` IS AN ALIAS FOR `"Steel"`, which is the METAL role. Every coat
+    this file calls leather was painted the same tone as the metal riveted to
+    it, so a whole style came out one hue at two brightnesses. Every palette's
+    `wood` is a genuinely different HUE from its metal, so the scale coat, the
+    lamellar coat and the carapace's hide are wood-role now, and the brigandine's
+    straps are fixed brown. Five styles, five material stories: light metal;
+    brown coat with metal scales; accent cloth with brown straps; dark hide with
+    metal bands and gold lacing; dark hide under bone plates.
+
+AND I CORRUPTED `shared/items.ts` EARLIER AND DID NOT NOTICE. A `perl -0pi`
+replacement wrote `` for an em dash, which emits one raw cp1252 byte rather
+than UTF-8. TypeScript compiled it and the game ran; the file simply could not
+be read as UTF-8 any more, which surfaced when the next script tried. Repaired,
+and the lesson is the one already recorded for shell quoting: write files with a
+tool that knows the encoding.
+
+1344 of 1344 outfits clean. 25 fitted, 0 not. 178 base items, 25 styles.
+Suite green — one flake in `throwers.mjs`, which passes on three re-runs.

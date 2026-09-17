@@ -898,6 +898,24 @@ const ARMOR_BASES: ItemBase[] = [
   g("apprenticerobe", "Apprentice's Robe", "armor", 2, "robe", "armor-robe", "bronze",
     "Dyed once, badly, by its owner. Most of them are.",
     { power: 1.15, guard: 0.75 }),
+  // TWO NEW CHEST STYLES, and the slot needed them more than any other: six
+  // styles dressed the largest surface on the character, and three of the six
+  // are the pack's own costumes rather than anything this file builds.
+  //
+  // Both are silhouettes the other four do not have. Scale is a field of points
+  // and brigandine a field of rivets; LAMELLAR is a stack of horizontal bands
+  // with lacing between them and a fauld of separate tongues, which is the one
+  // structure that survives at this camera. CARAPACE is not a coat with things
+  // on it at all — three domed plates down the front, each standing further out
+  // than the one above, so the silhouette itself is stepped.
+  g("lamellar", "Lamellar Coat", "armor", 3, "lamellar", "armor-scale", "crimson",
+    "Four hundred plates, and the lacing is the part that fails."),
+  g("bandedmail", "Banded Mail", "armor", 4, "lamellar", "armor-scale", "obsidian",
+    "Heavier than it looks, and it looks heavy."),
+  g("chitinplate", "Chitin Plate", "armor", 4, "carapace", "armor-scale", "bone",
+    "It was grown, and the seller was not clear on by what."),
+  g("direshell", "Direshell", "armor", 5, "carapace", "armor-scale", "crimson",
+    "Still warm in the middle of the plate, hours after you take it off."),
   g("chainmail", "Chain Mail", "armor", 3, "chain", "armor-chain", "iron",
     "Four thousand rings, and every one of them somebody's afternoon."),
   g("brigandine", "Brigandine", "armor", 3, "brigandine", "armor-brigandine", "steel",
