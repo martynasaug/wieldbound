@@ -27663,3 +27663,159 @@ the kind on the wire rather than a lookup, which is a protocol change and its
 own piece of work.
 
 Suite green. Client and server typecheck. Five elements, five carriers.
+
+---
+
+# Phase 71 — COLDHARROW
+
+*Written BEFORE the work, unlike every entry above it. Those are retrospectives;
+this is a plan, and the parts of it that turn out wrong should be corrected here
+rather than quietly diverged from.*
+
+Asked for: a BIG city in the north where people HANG OUT, as opposed to
+Emberhold, where they get to know the game. Lots of structures, lots to do, and
+the world expanded north to hold it.
+
+## The finding that shapes all of it
+
+**There are no social verbs in this game.** All ~60 protocol messages, and not
+one of them is player-to-player: no chat, no emotes, no trade, no party, no
+grouping. Two players in the same place can see each other move and fight and do
+nothing else. `protocol-types.ts` even carries a comment about "a party-mate's
+own health" being legible from outside their own screen, which is aspirational —
+there is no party.
+
+So a big beautiful city today would be a big empty one. Chat is not a nice
+addition to this plan, it is the thing the plan rests on, and it is cheap: one
+message each way, a panel, a bubble over the head.
+
+## What the engine already gives us
+
+Verified by reading it, not assumed:
+
+- **Buildings are procedural.** A `TownBuilding` is a box — position, width,
+  depth, facing, storeys — plus a `kind` indexing a style table (wall and roof
+  material, plinth, storey height, roof pitch, awning). A new building is a data
+  row; a new KIND is a style row plus whatever geometry it needs.
+- **Terrain is a pure function** of seeded noise over the shared tables, so new
+  ground costs nothing to generate.
+- **NPCs are complete**: role, body archetype, icon, greeting, dialogue topics,
+  and a `beat` — a round of stops with dwell times.
+- **Quests** already support kill, slay-by-element, gather, forge, salvage and
+  reach-a-landmark.
+- **The leaderboard is live data**, which means it can be rendered as
+  architecture with real names on it.
+- **There is no money.** Materials are the currency. That is distinctive and it
+  stays: adding gold would ripple through the shop, the forge, salvage and every
+  price in the game.
+
+## Decisions taken
+
+- **Guarded road, anyone can walk it.** Not endgame-gated. The land either side
+  still kills you; the road does not.
+- **Foundations before scenery.**
+- **Radius 2600, ~60 buildings, 7 districts** — against Emberhold's radius 800
+  and six.
+
+## Phase A — foundations
+
+Neither is visible alone. Nothing else is worth building first.
+
+**A1 · The `Settlement` record.** `TOWN_CENTER`, `TOWN_RADIUS_PX`,
+`TOWN_BUILDINGS`, `TOWN_PROPS`, `TOWN_GATES` and `TOWN_NPCS` are module-level
+singletons, and `insideTown`, `resolveTownCollision`, `pushOutOfBuildings` and
+`inGateway` all assume there is exactly one town. They become fields on a
+`Settlement`, with a `SETTLEMENTS` list and `settlementAt(x, y)`. About sixty
+call sites in production plus `tools/test/town.mjs`, which holds seventy-nine
+references and becomes a loop over settlements.
+
+THE PROOF THE REFACTOR IS FAITHFUL: Emberhold's data does not change and its
+existing layout test stays green. A refactor of this size that also edits the
+thing it is refactoring cannot be checked.
+
+**A2 · Chat.** `SAY` -> `CHAT_MESSAGE`. Two channels: `local`, radius-limited
+with a bubble over the speaker, and `city`, everyone inside one settlement.
+Rate limit, length cap and control-character stripping on the server, because
+the server is the only place a limit is real. No moderation system — that is a
+genuine piece of work and this is not it.
+
+## Phase B — the north
+
+**B1 · Expand the world.** `WORLD_HEIGHT` 12000 -> 20000 and `PLAYER_SPAWN` to
+(8000, 14000). Every camp, node, waystone, forest, road and river segment is
+placed POLAR FROM SPAWN, so the whole existing world moves with it and its
+relative layout is byte-identical. Emberhold keeps exactly the south it has and
+gains 14000px of north.
+
+The one thing that breaks is stored player positions, which are absolute:
+everyone would wake 8000px out. One migration shifting stored `y`, under a new
+`schema_marks` row — the table exists for exactly this.
+
+**B2 · The Kingsway.** A patrolled road from Emberhold's north gate to
+Coldharrow's landward gate, with watchposts standing alone along it and new
+waystones. `shared/road.ts` describes one through-road today, so this extends
+it rather than reusing it.
+
+**B3 · Fast travel** between waystones already reached ON FOOT. Discovery
+persisted per character, a map to pick from, a server-side teleport. This is
+what makes a distant city somewhere people go rather than somewhere they went
+once, and leaving it out is the most likely way this whole phase fails.
+
+## Phase C — the city
+
+Emberhold is radius 800 with six buildings. Coldharrow is **radius 2600 with
+about sixty**, centred 6600px north of spawn: its landward wall lands roughly
+1150px past the band-5 ring, and 4800px of world remains beyond it for whatever
+comes next.
+
+Built around a **frozen harbour** rather than a square, so it reads as a
+different kind of place rather than a bigger Emberhold. Seven districts:
+
+- **The Landward Gate** — barracks, watchposts, where the Kingsway arrives.
+- **The Wharf** — the pier, fishmarket, boathouses, the ice.
+- **The Works** — smithy, refinery, foundry, the bank vault.
+- **The Commons** — inn, bathhouse, the Hall of Names, the green.
+- **The Cold Quarter** — half-ruined, the bounty board, the rougher people.
+- **The Terraces** — where people live; cottages up the slope.
+- **Highwatch** — towers, the seaward wall, the beacon.
+
+New building kinds, each a style row plus geometry: `warehouse`, `guildhall`,
+`bathhouse`, `stall`, `tower`, `pier`, `granary`, `barracks`, `boathouse`,
+`ruin`. This is the largest content cost in the plan and the only part no test
+can check — it needs screenshots.
+
+## Phase D — reasons to be there
+
+A city is scenery unless being in it beats not being in it.
+
+1. **Bank / shared stash.** With a thirty-slot bag this is the most useful thing
+   on the list.
+2. **Hall of Names** — the leaderboard as architecture, real names on it.
+3. **Training dummies** — a monster kind that does not fight back, with a damage
+   readout. Nearly free.
+4. **Bounty board** — rotating repeatable quests on the existing machinery.
+5. **Per-vendor stock.** `SHOP_STOCK` is one flat list; splitting it is what
+   makes a market district mean anything.
+6. **Fishing** — node-based gathering exists and a river already runs through
+   the world.
+
+## Phase E — later
+
+Emotes, then direct trade, then a consignment board — which is worth more than
+direct trade, because it works when nobody else is online.
+
+## Deferred, with reasons
+
+- **PvP / duelling.** All combat is player-versus-monster; `resolveHit` has no
+  player-target path. A new damage path plus consent, zones and death rules.
+- **Guilds, housing, instanced dungeons.** Each is a system, not a feature.
+- **Currency.** Materials are the money and that is worth keeping.
+
+## Risks
+
+- **The snapshot is global and unculled** — every player, monster, node and drop
+  to every socket, ten times a second. Fine today. A crowded city in a world
+  two-thirds bigger is exactly what makes it not fine, and Phase D is what fills
+  the city. Interest management probably has to land before D does.
+- **A1 is the largest single-change surface in the plan.**
+- **The DB migration in B1** is the one step that can lose something.
