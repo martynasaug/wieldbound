@@ -4800,6 +4800,31 @@ export interface AllocateStatMessage {
   payload: { stat: AttributeName };
 }
 
+export interface TravelToMessage {
+  type: "TRAVEL_TO";
+  payload: { landmark: string };
+}
+
+/**
+ * The server has moved you.
+ *
+ * Its own message rather than a field on something else. Dying already moves a
+ * player and does it through `HP_UPDATE`, which was right for dying — the fall
+ * and the arrival are one event — and would be wrong here: there is no health
+ * change to hang a teleport off, and a client reading a position out of a
+ * health message would have to guess which ones mean "you moved".
+ */
+export interface TeleportMessage {
+  type: "TELEPORT";
+  payload: { x: number; y: number; landmark: string };
+}
+
+/** Every waystone this character has stood at. The map of what they may reach. */
+export interface LandmarksUpdateMessage {
+  type: "LANDMARKS_UPDATE";
+  payload: { reached: string[] };
+}
+
 export interface RequestLeaderboardMessage {
   type: "REQUEST_LEADERBOARD";
 }
@@ -5097,6 +5122,7 @@ export type ClientToServerMessage =
   | TurnInQuestMessage
   | SetHotbarMessage
   | SayMessage
+  | TravelToMessage
   | SetLookMessage;
 
 /**
@@ -5162,6 +5188,8 @@ export interface QuestStateMessage {
 }
 export type ServerToClientMessage =
   | ChatMessageMessage
+  | TeleportMessage
+  | LandmarksUpdateMessage
   | StateSnapshotMessage
   | WelcomeMessage
   | InventoryUpdateMessage

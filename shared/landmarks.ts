@@ -25,6 +25,7 @@
 // resource.
 
 import { PLAYER_SPAWN, bandAt } from "./protocol-types.ts";
+import { settlementAt } from "./town.ts";
 
 export interface Landmark {
   id: string;
@@ -183,4 +184,47 @@ export function landmarkAt(x: number, y: number): Landmark | null {
     if (atLandmark(l, x, y)) return l;
   }
   return null;
+}
+
+// --- Travelling -------------------------------------------------------------
+//
+// THE ROAD NORTH IS 8,400px LONG, and that is the whole argument for this. The
+// first walk up it is meant to be an event — it is why the stones are there and
+// why a quest chain sends you — but the hundredth is a tax on living in the
+// city at the end of it, and a city nobody can bear to travel to is not a place
+// people hang out, which was the entire point of building one.
+//
+// THREE RULES, AND EACH ONE IS DOING A JOB:
+//
+//   You may only travel FROM a waystone or a settlement. Otherwise this is a
+//   panic button that deletes every retreat in the game — the walk home from a
+//   bad fight is a real cost and should stay one.
+//
+//   You may only travel TO a stone you have already stood at. The map is not a
+//   menu of places you have heard of; it is a record of where you have been,
+//   which is what makes the first walk worth making.
+//
+//   And never in combat, which the server enforces rather than the panel.
+//
+// Free, deliberately. Materials are this game's only currency and they are
+// earned by gathering, so a toll would price travelling in time spent at a
+// rock — which is the cost this exists to remove, paid somewhere less honest.
+
+/** True where a character is allowed to set off from. */
+export function canTravelFrom(x: number, y: number): boolean {
+  return !!landmarkAt(x, y) || !!settlementAt(x, y);
+}
+
+/**
+ * What the place you are standing in is called, for the panel's header.
+ *
+ * A settlement beats a waystone when somehow both are true, because a stone
+ * inside a town would be the town's monument rather than a frontier marker —
+ * and `LANDMARK_SPACING_PX` is checked against the towns, so this is a tie that
+ * should never occur and resolves sensibly if it ever does.
+ */
+export function travelOriginName(x: number, y: number): string | null {
+  const town = settlementAt(x, y);
+  if (town) return town.name;
+  return landmarkAt(x, y)?.name ?? null;
 }

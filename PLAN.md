@@ -28022,3 +28022,59 @@ Positions were measured, not drawn: each stands 343 to 448px off the smoothed
 path, clear of the woods, the river, the camps and each other.
 
 Suite green, 25 tests. Client and server typecheck.
+
+**Phase 71 B3 — fast travel.** Done, and it is the piece the plan called the
+most likely way this phase fails: the road north is 8,400px, the first walk up
+it is meant to be an event, and the hundredth is a tax on living at the end of
+it. A city nobody can bear to travel to is not somewhere people hang out, which
+was the entire reason for building one.
+
+THREE RULES, EACH DOING A JOB:
+
+  You may only set off FROM a waystone or a settlement. Otherwise this is a
+  panic button that deletes every retreat in the game — the walk home from a bad
+  fight is a real cost and should stay one.
+
+  You may only travel TO a stone you have stood at. The panel is not a menu of
+  places you have heard of, it is a record of where you have been, which is what
+  makes the first walk worth making.
+
+  And never in combat.
+
+Free, deliberately. Materials are this game's only currency and they come out of
+the ground, so a toll would price travelling in time spent at a rock — which is
+the cost this exists to remove, paid somewhere less honest.
+
+A ROW PER STONE rather than a JSON column, the same argument the talent tables
+are written under: the absence of a row is the honest representation of "never
+been there". Standing at one is the whole qualification — no quest, no purchase —
+because the point of the record is that it is a record of walking.
+
+THE PANEL SHOWS THE STONES IT CANNOT OFFER, greyed, with the direction and
+rough distance of each. A list of the four places you have been tells you where
+you can go; a list of seven, three of them dashed out, tells you what is LEFT,
+which is the only thing in the game that says "there are places you have not
+walked to yet" out loud. Same argument as the forge's locked recipes.
+
+EVERY RULE IS ENFORCED ON THE SERVER and none only in the panel. Driven straight
+down the socket past the interface: asking for a stone never visited answers
+"You have never stood at The Ashen Stone", and asking from open country answers
+"You can only set off from a waystone or a town". The stakes are higher here
+than for the chat limits — a teleport a client can ask for unchecked is a
+teleport to anywhere.
+
+AND A SCREENSHOT FOUND WHAT THE TESTS COULD NOT: the arrival toast was printing
+across the chat input. The toasts have sat at `bottom: 190px` in the bottom-left
+column since long before chat existed, and A2 put the chat panel at 184 in the
+same strip. Nothing overlaps in the data; the corner was simply claimed twice.
+The column is combat log, then chat, then toasts above both.
+
+The harness needed the same correction twice and it is worth recording. It
+recomputed "did we arrive" from the player's position against
+`LANDMARK_REACH_PX`, reported "never reached" about a stone the server had
+already recorded — and then fast-travelled to that same stone, which only works
+if it was recorded. A sampled distance is a second answer to a question the game
+answers continuously, and when the two disagree the harness is the one that is
+wrong. It asks the panel now, which is the server's answer.
+
+Suite green, 25 tests. Client and server typecheck.

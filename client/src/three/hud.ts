@@ -354,7 +354,14 @@ const STYLE = `
 #hud3d .plate-npc.engaged .pt { color: #ffd873; }
 #hud3d .plate-npc.engaged .pt::after { content: " · click to talk"; }
 
-#hud3d .toasts { position: absolute; left: 14px; bottom: 190px; display: flex; flex-direction: column; gap: 5px; }
+/* ABOVE THE CHAT PANEL, which claims 184..360 in this same corner. At 190
+   these two sat exactly on top of each other — a screenshot of a fast-travel
+   arrival showed the toast that says where you have arrived printed across
+   the chat input. The combat log has the bottom of the column, chat sits on
+   it, and the toasts stack above both; a gap under them when nothing is
+   toasting is invisible, because a toast is transient and the gap is not a
+   thing anybody is looking at. */
+#hud3d .toasts { position: absolute; left: 14px; bottom: 372px; display: flex; flex-direction: column; gap: 5px; }
 /* THE CAST BAR.
    Centred and low, just above the action bar, which is where every game with
    one puts it — because it is the one readout you have to watch while also

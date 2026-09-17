@@ -216,6 +216,52 @@ if (!alreadyShifted) {
   console.log(`[db] world grew north: shifted ${moved} character(s) by +${NORTH_SHIFT_PX}px, once`);
 }
 
+// --- Where a character has actually been ------------------------------------
+//
+// A ROW PER STONE, not a JSON column, for the reason the talent tables give one
+// paragraph down: the absence of a row is the honest representation of "never
+// been there", where a column would need an empty array written on every
+// character who has never left Emberhold. It is also the shape the question is
+// asked in — "has this character stood at that stone" is a primary-key lookup.
+//
+// This is what fast travel is allowed to read. Reaching a stone is recorded by
+// standing at it and nothing else: there is no quest to complete and no item to
+// buy, because the whole point of the record is that it is a record of walking.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS character_landmarks (
+    characterId TEXT NOT NULL,
+    landmarkId TEXT NOT NULL,
+    reachedAt INTEGER NOT NULL,
+    PRIMARY KEY (characterId, landmarkId)
+  );
+`);
+
+/** Every waystone this character has stood at. */
+export function reachedLandmarks(characterId: string): string[] {
+  return db
+    .prepare("SELECT landmarkId FROM character_landmarks WHERE characterId = ?")
+    .all(characterId)
+    .map((r) => (r as { landmarkId: string }).landmarkId);
+}
+
+/**
+ * Record an arrival. Returns whether this was the FIRST time.
+ *
+ * The caller uses that to decide whether to say anything: arriving at a stone
+ * you have stood at a hundred times should not toast, and arriving at one you
+ * have never seen is the moment the road paid off.
+ */
+export function noteLandmarkReached(characterId: string, landmarkId: string): boolean {
+  const before = db
+    .prepare("SELECT 1 FROM character_landmarks WHERE characterId = ? AND landmarkId = ?")
+    .get(characterId, landmarkId);
+  if (before) return false;
+  db.prepare(
+    "INSERT INTO character_landmarks (characterId, landmarkId, reachedAt) VALUES (?, ?, ?)",
+  ).run(characterId, landmarkId, Date.now());
+  return true;
+}
+
 // --- Weapon proficiency and talents -----------------------------------------
 // Two narrow tables rather than columns on `characters`: both are keyed by
 // (character, weapon) and one of them is additionally keyed by node, which is

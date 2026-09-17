@@ -610,3 +610,18 @@ already run past.
 ```powershell
 node tools/soak/kingsway.mjs Sawyer
 ```
+
+`soak/travel.mjs` — needs the server. Walks to a waystone, checks the arrival
+was recorded, walks to a second, travels back, and then pushes two refusals
+straight down the socket past the panel: a stone never visited, and a departure
+from open country. Both must be refused by the server, because a greyed button
+is an interface and a teleport a client can ask for unchecked is a teleport to
+anywhere.
+
+It asks the travel panel whether a stone is known rather than recomputing the
+distance itself — the first two versions did the latter and reported "never
+reached" about a stone the game had already recorded.
+
+```powershell
+node tools/soak/travel.mjs
+```

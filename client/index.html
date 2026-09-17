@@ -899,6 +899,87 @@
       .lb-xpbar i { display: block; height: 100%; background: var(--gold-bright); border-radius: 2px; }
       .lb-level { color: var(--gold-bright); font-size: 12px; }
 
+      /* --- Travel -----------------------------------------------------------
+         Centred rather than docked to an edge: it is opened deliberately, it is
+         read once, and something is chosen from it — the same shape as the
+         creator, not the same shape as the combat log. */
+      #travel {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 460px;
+        max-height: 72vh;
+        display: none;
+        flex-direction: column;
+        background: rgba(28, 21, 12, 0.97);
+        border: 1px solid var(--gold-dim);
+        border-radius: 8px;
+        padding: 14px 16px;
+        font-family: Georgia, serif;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+      }
+      #travel.open { display: flex; }
+      #travel-title {
+        font: bold 15px Georgia, serif;
+        color: #e2b04f;
+        letter-spacing: 0.04em;
+        margin-bottom: 2px;
+      }
+      #travel-from {
+        font-size: 11px;
+        color: #cbbb95;
+        margin-bottom: 10px;
+      }
+      /* Said in the panel rather than by refusing a click, because "why is
+         everything grey" is a question the panel should answer itself. */
+      #travel-from.nowhere { color: #c98b6a; font-style: italic; }
+      #travel-list {
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .travel-row {
+        text-align: left;
+        padding: 7px 10px;
+        border-radius: 5px;
+        border: 1px solid rgba(214, 176, 106, 0.3);
+        background: rgba(48, 36, 20, 0.55);
+        color: #f0e6cc;
+        font-family: Georgia, serif;
+        cursor: pointer;
+      }
+      .travel-row:hover:not(:disabled) {
+        border-color: #e2b04f;
+        background: rgba(72, 54, 28, 0.75);
+      }
+      .travel-row:disabled { cursor: default; }
+      .travel-name { font-size: 12.5px; font-weight: bold; color: #e2b04f; }
+      .travel-note {
+        font-size: 11px;
+        color: #cbbb95;
+        line-height: 1.4;
+        margin-top: 2px;
+      }
+      /* A stone never walked to keeps its shape on the list and loses its name.
+         The row is still there because the gap is the information. */
+      .travel-row.unknown { opacity: 0.45; border-style: dashed; }
+      .travel-row.unknown .travel-name { color: #9a8d76; font-style: italic; }
+      .travel-row.here { border-color: rgba(143, 209, 90, 0.5); }
+      .travel-row.here .travel-name { color: #8fd15a; }
+      #travel-close {
+        margin-top: 12px;
+        align-self: flex-end;
+        padding: 5px 14px;
+        border-radius: 5px;
+        border: 1px solid var(--gold-dim);
+        background: rgba(48, 36, 20, 0.9);
+        color: #e2b04f;
+        font: 11px Georgia, serif;
+        cursor: pointer;
+      }
+
       /* --- Chat ------------------------------------------------------------
          Above the combat log and the same width, because the two are read the
          same way and by the same glance. Separate boxes rather than one

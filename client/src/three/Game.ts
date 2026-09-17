@@ -115,6 +115,8 @@ import { CraftPanel } from "../ui/CraftPanel";
 import { SkillPanel, type WeaponProgressView } from "../ui/SkillPanel";
 import { LeaderboardPanel } from "../ui/LeaderboardPanel";
 import { ChatPanel } from "../ui/ChatPanel";
+import { TravelPanel } from "../ui/TravelPanel";
+import { landmarkAt, travelOriginName } from "../../../shared/landmarks";
 import { CombatLog } from "../ui/CombatLog";
 import { TargetFrame } from "../ui/TargetFrame";
 import { ATTACK_SLOT, Hotbar, type BarAction } from "../ui/Hotbar";
@@ -745,6 +747,9 @@ export class Game {
   private readonly floaters: Floaters;
   private readonly bubbles: ChatBubbles;
   private readonly chatPanel: ChatPanel;
+  /** Exposed on the debug handle for the travel harness — see its note on
+   *  asking the game rather than recomputing its answers. */
+  readonly travelPanel: TravelPanel;
   private readonly drops: Drops;
   /** Last snapshot's drops, for the plates and the minimap. */
   private dropStates: DroppedItemState[] = [];
@@ -1096,6 +1101,10 @@ export class Game {
       // walking would otherwise keep walking through the whole sentence.
       () => this.keys.clear(),
     );
+    this.travelPanel = new TravelPanel(container, (id) => {
+      this.socket.sendTravelTo(id);
+      this.travelPanel.close();
+    });
     this.drops = new Drops(this.world.scene);
     this.minimap = new Minimap(container);
     this.effects = new Effects(this.world.scene);
@@ -1536,6 +1545,18 @@ export class Game {
         this.wallet.herb = p.herb;
         this.inventoryPanel.setTonics(p.tonics);
         this.syncMaterials();
+      },
+      onLandmarksUpdate: (p) => this.travelPanel.setReached(p.reached),
+      onTeleport: (p) => {
+        // The same three steps dying takes, and for the same reason: the
+        // server has had this position since it decided, and the client has
+        // been standing somewhere else until this message. Snap the body,
+        // move the camera's anchor, then say the new position out loud
+        // rather than waiting for the next keypress to reconcile it.
+        this.playerX = p.x;
+        this.playerY = p.y;
+        this.localActor?.snapTo(...onGround(toWorldX(p.x), toWorldZ(p.y)));
+        this.socket.sendMove(p.x, p.y);
       },
       onChatMessage: (p) => {
         const own = p.fromId === this.playerId;
@@ -4087,6 +4108,13 @@ export class Game {
       }
       // The keys and the dock buttons are two ways to do one thing, so both
       // finish by re-lighting the dock.
+      // The travel panel. Not on the dock: it is only usable in two kinds of
+      // place, and a permanently lit button for something that refuses you
+      // most of the time is worse than a key that works where it works.
+      if (key === "t") {
+        this.travelPanel.toggle();
+        return;
+      }
       if (key === "c") {
         this.characterPanel.toggle();
         this.fitWindows(this.characterPanel.isOpen ? "dock-character" : undefined);
@@ -5326,6 +5354,14 @@ export class Game {
     this.serverTime += dt * 1000;
     this.profiler.begin("ui");
     this.statusBar.update(this.serverTime);
+    // Where the travel panel thinks you are standing. Asked every frame and
+    // early-returns unless it changed, which is cheaper than any scheme for
+    // noticing that you walked into a town — and it reads the SHARED rule, so
+    // the panel cannot offer a departure the server would refuse.
+    this.travelPanel.setOrigin(
+      travelOriginName(this.playerX, this.playerY),
+      landmarkAt(this.playerX, this.playerY)?.id ?? null,
+    );
     this.profiler.end("ui");
     // What is on you and what is on whatever you are fighting, handed to the bar
     // so a skill that READS a condition can say when its condition is met.

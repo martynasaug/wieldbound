@@ -187,6 +187,8 @@ import {
 import {
   loadOrCreateCharacter,
   savePosition,
+  reachedLandmarks,
+  noteLandmarkReached,
   addWood,
   addOre,
   addHerb,
@@ -247,6 +249,12 @@ import {
   propPosition,
   settlementAt,
 } from "../../shared/town.ts";
+import {
+  LANDMARKS,
+  LANDMARK_REACH_PX,
+  canTravelFrom,
+  landmarkPosition,
+} from "../../shared/landmarks.ts";
 import { SHOP_OUTPUT_RARITY, exchangeById, shopEntry } from "../../shared/shop.ts";
 import { landmarkAt } from "../../shared/landmarks.ts";
 import {
@@ -3037,6 +3045,74 @@ function noteLandmarkArrival(playerId: string, x: number, y: number): void {
   standingAt.set(playerId, id);
   if (!here) return;
   advanceQuests(playerId, (o) => (o.kind === "reach" && o.landmark === here.id ? 1 : 0));
+
+  // AND THE RECORD FAST TRAVEL READS. Standing here is the whole qualification
+  // — no quest, no purchase — because the point of the record is that it is a
+  // record of having walked.
+  const socket = sockets.get(playerId);
+  if (noteLandmarkReached(playerId, here.id)) {
+    sendLandmarks(socket, playerId);
+    if (socket) {
+      sendInfo(socket, `${here.name} — you can travel from here now.`, "#d6b06a");
+    }
+  }
+}
+
+function sendLandmarks(socket: WebSocket | undefined, playerId: string): void {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  const msg: ServerToClientMessage = {
+    type: "LANDMARKS_UPDATE",
+    payload: { reached: reachedLandmarks(playerId) },
+  };
+  socket.send(JSON.stringify(msg));
+}
+
+/**
+ * Travel to a stone this character has stood at.
+ *
+ * EVERY RULE IS CHECKED HERE and none of them is checked only in the panel. The
+ * panel greys out what it cannot offer because that is a better interface, and
+ * the server refuses it anyway because the panel is a suggestion to whoever is
+ * running the page — the same argument the chat limits are written under, and
+ * the stakes are higher: a teleport a client can ask for unchecked is a
+ * teleport to anywhere.
+ */
+function handleTravel(playerId: string, socket: WebSocket, landmarkId: string): void {
+  const player = players.get(playerId);
+  if (!player) return;
+
+  const now = Date.now();
+  if (now - (lastCombatAt.get(playerId) ?? -Infinity) < COMBAT_LOCKOUT_MS) {
+    sendInfo(socket, "Not while something is still fighting you.", "#ef5350");
+    return;
+  }
+  if (!canTravelFrom(player.x, player.y)) {
+    sendInfo(socket, "You can only set off from a waystone or a town.", "#ef5350");
+    return;
+  }
+  const to = LANDMARKS.find((l) => l.id === landmarkId);
+  if (!to) return;
+  if (!reachedLandmarks(playerId).includes(to.id)) {
+    sendInfo(socket, `You have never stood at ${to.name}.`, "#ef5350");
+    return;
+  }
+
+  const at = landmarkPosition(to);
+  if (Math.hypot(player.x - at.x, player.y - at.y) < LANDMARK_REACH_PX) {
+    sendInfo(socket, `You are already at ${to.name}.`, "#9a8d76");
+    return;
+  }
+
+  player.x = at.x;
+  player.y = at.y;
+  savePosition(playerId, at.x, at.y);
+  standingAt.set(playerId, to.id);
+  const msg: ServerToClientMessage = {
+    type: "TELEPORT",
+    payload: { x: at.x, y: at.y, landmark: to.id },
+  };
+  socket.send(JSON.stringify(msg));
+  sendInfo(socket, `${to.name}.`, "#d6b06a");
 }
 
 /** The whole wallet, in one message. */
@@ -3203,6 +3279,10 @@ wss.on("connection", (socket) => {
       // is better than a fifth field that only some paths remember to set.
       sendMaterials(socket, id);
       sendRecipes(socket, id);
+      // Where this character has been. Sent at login rather than on demand,
+      // because the travel panel has to know what it may offer the first time
+      // it opens rather than after a round trip.
+      sendLandmarks(socket, id);
       sendConsumables(socket, id, consumablesOf(id));
       sendRunes(socket, runesOf(id));
       // Work in hand, so the tracker is populated on the first frame rather
@@ -3763,6 +3843,11 @@ wss.on("connection", (socket) => {
       sendXpUpdate(socket, xp, level, leveledUp);
       if (leveledUp && attrs) sendStatsUpdate(socket, attrs, maxHpOf(id, attrs), maxManaOf(id, attrs));
       sendQuestState(socket, id);
+      return;
+    }
+
+    if (msg.type === "TRAVEL_TO") {
+      if (id) handleTravel(id, socket, msg.payload.landmark);
       return;
     }
 

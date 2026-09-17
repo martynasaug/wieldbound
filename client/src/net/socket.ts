@@ -40,6 +40,8 @@ export interface GameSocketHandlers {
   onTonicsUpdate: (payload: Extract<ServerToClientMessage, { type: "TONICS_UPDATE" }>["payload"]) => void;
   onLeaderboardUpdate: (payload: Extract<ServerToClientMessage, { type: "LEADERBOARD_UPDATE" }>["payload"]) => void;
   onChatMessage: (payload: Extract<ServerToClientMessage, { type: "CHAT_MESSAGE" }>["payload"]) => void;
+  onTeleport: (payload: Extract<ServerToClientMessage, { type: "TELEPORT" }>["payload"]) => void;
+  onLandmarksUpdate: (payload: Extract<ServerToClientMessage, { type: "LANDMARKS_UPDATE" }>["payload"]) => void;
   onDailyBonus: (payload: Extract<ServerToClientMessage, { type: "DAILY_BONUS" }>["payload"]) => void;
   onInfo: (payload: Extract<ServerToClientMessage, { type: "INFO" }>["payload"]) => void;
   onSkillResult: (payload: Extract<ServerToClientMessage, { type: "SKILL_RESULT" }>["payload"]) => void;
@@ -138,6 +140,10 @@ export class GameSocket {
       this.handlers.onTonicsUpdate(msg.payload);
     } else if (msg.type === "CHAT_MESSAGE") {
       this.handlers.onChatMessage(msg.payload);
+    } else if (msg.type === "TELEPORT") {
+      this.handlers.onTeleport(msg.payload);
+    } else if (msg.type === "LANDMARKS_UPDATE") {
+      this.handlers.onLandmarksUpdate(msg.payload);
     } else if (msg.type === "LEADERBOARD_UPDATE") {
       this.handlers.onLeaderboardUpdate(msg.payload);
     } else if (msg.type === "DAILY_BONUS") {
@@ -267,6 +273,11 @@ export class GameSocket {
   /** One step up the ladder on something already owned. */
   sendReforgeItem(stationId: string, itemId: string, affix?: string): void {
     this.send({ type: "REFORGE_ITEM", payload: { stationId, itemId, affix } });
+  }
+
+  /** Go to a waystone already stood at. Every rule is the server's. */
+  sendTravelTo(landmark: string): void {
+    this.send({ type: "TRAVEL_TO", payload: { landmark } });
   }
 
   /** Say something. The server decides who hears it — see `handleSay`. */
