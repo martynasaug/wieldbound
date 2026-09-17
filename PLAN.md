@@ -27202,3 +27202,50 @@ and all three new fist weapons sit on the hand. The numbers and the pictures
 agree, which after this phase is worth stating explicitly.
 
 Suite green. Client typechecks.
+
+**Phase 70 M70.371 — four new gear styles, and two guards that had gone quiet.**
+Nineteen styles dressed the whole game: six chests, five heads, four feet, four
+backs. The head is the first thing anyone looks at and it had one silhouette per
+band, so that is where two of the four went.
+
+    barbute    closed all round except a tall T down the face
+    crested    a skullcap under a brush that stands above the outline
+    fur        a hide boot under a deep turned-down cuff, tufted at its edge
+    strapped   a sandal sole and four rings up an otherwise bare shin
+
+SIX ROWS WEAR THEM: Barbute, Night Barbute, Warden's Crest, Thonged Sandals,
+Trapper's Boots, Wolfstride. 174 base items, 23 styles.
+
+THREE THINGS THE PICTURES CAUGHT, and each was a different way of being wrong:
+
+  `over_skull` ON TOP OF FULL-HELM RADII IS A BUCKET. `full_helm` carries the
+  only head radii in the file that were measured rather than chosen, and it uses
+  them RAW because the clearance is already in them. Running them through a 1.17
+  scale asks for 43 where the head is 33, and the barbute photographed as a grey
+  box wider than the shoulders.
+
+  A DOME THAT REACHES THE FACE CLOSES IT. The second attempt put a full
+  revolution from the jaw up and an open arc over the cheeks, expecting the
+  arc's gap to be the face — but the dome underneath had already closed it. The
+  dome stops at the brow now and everything below it is the arc, so the T is the
+  gap and there is nothing behind it.
+
+  A CUFF IS NOT A BUCKET. The fur boot's cuff had nine units of clearance over a
+  shin thirteen across, so each leg ended in a pale barrel wider than the thigh
+  above it. And the strapped boot wound two half-rings per level, a quarter turn
+  apart, which photographed as a coil spring: a strap is a RING, and what makes
+  it lacing is the long runs up the front and back that the rings cross.
+
+AND TWO GUARDS HAD STOPPED GUARDING. `everycombo.mjs` reported "480 of 480
+outfits clean" after the four styles landed — the same number as before, because
+its four style lists were typed out by hand. `fitcheck.mjs` did worse: its
+`SLOT_OF` map could not name the new styles' slots, so it equipped them into
+`undefined` and then reported `undefined:fur — nothing worn`, which reads as a
+modelling fault and is a harness fault. Both read the catalogue now, and the
+count moved on its own: **1008 of 1008 outfits clean, 23 fitted, 0 not.**
+
+`gearstyles.mjs` was the one that worked: it is driven by the catalogue already,
+it failed the moment the four styles appeared, and it kept failing until each
+had a fallback in its slot's builder. That is what a guard is for.
+
+Suite green. Client typechecks.

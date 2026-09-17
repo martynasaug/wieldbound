@@ -3582,9 +3582,9 @@ export const GEAR_STYLES = [
   // chest
   "leather", "chain", "plate", "robe", "scale", "brigandine",
   // head
-  "cap", "hood", "full", "horned", "circlet",
+  "cap", "hood", "full", "horned", "circlet", "barbute", "crested",
   // feet
-  "low", "tall", "plated", "wrapped",
+  "low", "tall", "plated", "wrapped", "fur", "strapped",
   // back
   "cape", "cloak", "mantle", "tabard",
 ] as const;
@@ -3617,6 +3617,10 @@ export const HELM_COVERS_HAIR: Record<string, boolean> = {
   // The circlet keeps it: a band above the brow with nothing over the crown,
   // which is the whole point of the style.
   circlet: false,
+  // A barbute closes over the whole skull and both cheeks; a crested helm is a
+  // skullcap with a brush on it, and a skullcap covers the hair.
+  barbute: true,
+  crested: true,
 };
 
 // Slots that put a layer on the character. `ring` is invisible, and `weapon`

@@ -23,12 +23,28 @@
 // by height band counts both sleeves as chest armour and reports the torso at
 // 680% covered — which an earlier version of this did.
 import { open, login } from "./driver.mjs";
+import { ITEM_BASES } from "../../shared/items.ts";
+import { GEAR_STYLES } from "../../shared/protocol-types.ts";
 import { HAIR_STYLE_IDS } from "../../shared/look.ts";
 
-const ARMOR = ["leather", "chain", "plate", "robe", "scale", "brigandine"];
-const HELM = ["cap", "hood", "full", "horned", "circlet"];
-const BOOTS = ["low", "tall", "plated", "wrapped"];
-const CAPE = ["cape", "cloak", "mantle", "tabard"];
+// TAKEN FROM THE CATALOGUE, NOT TYPED OUT. Two helms and two boots were added
+// in M70.371 and this harness went on reporting "480 of 480 clean" — the same
+// number as before, because these four lists used to be written by hand and
+// knew nothing about them. A guard that keeps passing while the thing it guards
+// grows will report success on the day something breaks.
+const styled = (slot) => [...new Set(
+  Object.values(ITEM_BASES).filter((b) => b.slot === slot && b.style).map((b) => b.style),
+)];
+const ARMOR = styled("armor");
+const HELM = styled("helm");
+const BOOTS = styled("boots");
+const CAPE = styled("cape");
+for (const [slot, list] of [["armor", ARMOR], ["helm", HELM], ["boots", BOOTS], ["cape", CAPE]]) {
+  const declared = GEAR_STYLES.filter((g) => list.includes(g));
+  if (declared.length !== list.length) {
+    console.log(`WARNING: ${slot} has styles no catalogue item wears`);
+  }
+}
 
 // Regions the WORN slots are responsible for. The head is the helm's business
 // and `helmcover.mjs` measures it; hands and face belong to the body.

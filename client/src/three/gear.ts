@@ -1135,6 +1135,40 @@ function helmParts(style: GearStyle, _rarity: ItemRarity): Part[] {
     ]) }];
   }
 
+  if (style === "barbute") {
+    // A barbute is closed all round EXCEPT a tall opening down the face, and
+    // that opening is the only thing telling it from the great helm below. So
+    // the fallback builds the shell in two halves with the gap between them
+    // rather than one box with a slit cut in it.
+    const brow = mid + 4;
+    const cheek = (side: -1 | 1) =>
+      box([HEAD_HALF_WIDTH + 2, HEAD_TOP - HEAD_BOTTOM - 16, HEAD_HALF_WIDTH * 2 + 14],
+          [side * (HEAD_HALF_WIDTH * 0.62), mid - 2, -8]);
+    return [{ bone: "Head", role: "metal", geometry: merge([
+      dome(HEAD_HALF_WIDTH + 6, [0, brow, -6], [1, 1.25, 1.2]),
+      shell(HEAD_HALF_WIDTH + 7, HEAD_HALF_WIDTH + 7, 12, [0, brow - 2, -6], 1.2),
+      cheek(-1),
+      cheek(1),
+    ]) }];
+  }
+
+  if (style === "crested") {
+    // A skullcap under a brush. The brush is the style — it stands above the
+    // outline, which is the one part of a helm that reads at this distance —
+    // so it is stepped rather than a single slab, tallest over the crown.
+    const brow = mid + 6;
+    const crest = [0, 1, 2, 3, 4, 5].map((k) => {
+      const t = k / 5;
+      return box([7, 20 + Math.sin(t * Math.PI) * 18, 14],
+                 [0, HEAD_TOP + 6 + Math.sin(t * Math.PI) * 8, 18 - t * 58]);
+    });
+    return [{ bone: "Head", role: "metal", geometry: merge([
+      dome(HEAD_HALF_WIDTH + 7, [0, brow, -6], [1, 1.3, 1.2]),
+      shell(HEAD_HALF_WIDTH + 9, HEAD_HALF_WIDTH + 9, 9, [0, brow + 4, -6], 1.2),
+      ...crest,
+    ]) }];
+  }
+
   // "full" — a closed great helm. The one style that hides the face, so it
   // needs a slit or the character reads as headless.
   return [
@@ -1280,6 +1314,10 @@ function bootsParts(style: GearStyle, _rarity: ItemRarity): Part[] {
     tall: "leather",
     plated: "metal",
     wrapped: "cloth",
+    // A fur cuff is cloth so it takes the pale accent rather than the boot's
+    // own hide; strapped sandals are leather like the rest of the sole.
+    fur: "cloth",
+    strapped: "leather",
   };
   const role: MaterialRole = BOOT_ROLE[style] ?? "leather";
   const parts: Part[] = [];
@@ -1303,6 +1341,18 @@ function bootsParts(style: GearStyle, _rarity: ItemRarity): Part[] {
             shell(17, 18, 48, [side * SHIN_X, SHIN_Y + 6, 1], 1.0),
             shell(20, 17, 10, [side * SHIN_X, SHIN_Y + 32, 1], 1.0),
           ])
+        : style === "fur"
+        // A shaft to mid-shin under a cuff that is wider than it is deep, which
+        // is the one thing separating this from `tall` in silhouette.
+        ? merge([
+            shell(17, 18, 34, [side * SHIN_X, SHIN_Y - 2, 1], 1.0),
+            shell(23, 21, 16, [side * SHIN_X, SHIN_Y + 26, 1], 1.0),
+          ])
+        : style === "strapped"
+        // Four rings and no shaft: the shin is bare between them, which is why
+        // this is the lightest thing in the slot.
+        ? merge([16, 27, 38, 49].map((y) =>
+            shell(15, 15, 5, [side * SHIN_X, y, 1], 1.0)))
         : shell(18, 19, 24, [side * SHIN_X, 20, 1], 1.0),
     });
   }
@@ -1373,7 +1423,9 @@ const MODELLED_ARMOUR = new Set<string>([
   // piece, with the old path carrying whatever has not been replaced.
   "armor:scale", "armor:brigandine", "armor:chain",
   "helm:cap", "helm:full", "helm:horned", "helm:circlet", "helm:hood",
+  "helm:barbute", "helm:crested",
   "boots:low", "boots:tall", "boots:plated", "boots:wrapped",
+  "boots:fur", "boots:strapped",
   "cape:cape", "cape:cloak", "cape:mantle", "cape:tabard",
 ]);
 

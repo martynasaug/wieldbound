@@ -1575,12 +1575,74 @@ def hood_helm(a):
             CLOTH, z=BODY["head_back_z"] + 4.0, thickness=8.0)
 
 
+def barbute_helm(a):
+    """A barbute: closed all round except for a T cut down the face."""
+    # THE T IS THE WHOLE STYLE, and it is why this is not another `full`. A great
+    # helm is a bucket with a slot; a barbute is a shell that comes right down
+    # over the cheeks and jaw and then opens in a single tall Y from the brow to
+    # the chin. At the game's camera that opening is the one thing telling the
+    # two apart, so it is cut wide enough to read: the cheeks stop 26 degrees
+    # either side of the face rather than the skullcap's 36.
+    # THE T IS CUT BY WHAT IS NOT DRAWN, AND THAT MEANS THE DOME CANNOT REACH IT.
+    #
+    # The first version put a full revolution from the jaw to the crown and then
+    # an open arc over the cheeks, expecting the arc's gap to be the face. It
+    # cannot be: the dome underneath had already closed the face, so the helm
+    # photographed as a featureless bucket — which is the complaint this style
+    # exists to answer, made twice in one phase.
+    #
+    # So the dome STOPS AT THE BROW, and everything below the brow is the arc.
+    # The T is the gap the arc leaves, and there is nothing behind it.
+    a.shell(BONE_HEAD, [(34.5, BROW_Y - 3.0), (35.5, 274.0), (34.0, 286.0), (24.0, 297.0)],
+            "Steel", squash=(1.0, 1.24), z=SKULL_Z, sides=LIMB_SIDES)
+    # 0.79 of the circle leaves 76 degrees open at the face, which at this
+    # camera is a tall slot rather than a crack.
+    a.shell(BONE_HEAD, [(26.0, 206.0), (32.0, 226.0), (34.5, 250.0), (34.5, BROW_Y + 3.0)],
+            "Steel", squash=(1.0, 1.24), z=SKULL_Z, arc=0.79, turn=math.pi / 2, cap=False,
+            sides=LIMB_SIDES)
+    # A low ridge over the crown, which is what a barbute has instead of a comb.
+    a.plate(BONE_HEAD, [(-4.0, BROW_Y + 4.0), (4.0, BROW_Y + 4.0), (3.0, 293.0), (-3.0, 293.0)],
+            "LightSteel", z=SKULL_Z + 30.0, thickness=5.0)
+    # The rim round the bottom edge, which follows the same arc the cheeks do —
+    # `band` turns a full ring and a full ring here would draw a bar across the
+    # open face.
+    a.shell(BONE_HEAD, [(28.0, 208.0), (30.0, 211.0), (28.0, 214.0)], "DarkSteel",
+            squash=(1.0, 1.24), z=SKULL_Z, arc=0.79, turn=math.pi / 2, cap=False,
+            sides=LIMB_SIDES)
+
+
+def crested_helm(a):
+    """A skullcap under a tall crest running front to back, like a brush."""
+    skullcap(a, "DarkSteel", wide=35.0)
+    a.band(BONE_HEAD, BROW_Y + 6.0, over_skull(35.0), "Gold", tube=2.6, squash=(1.0, 1.16), z=SKULL_Z)
+    # THE CREST IS A ROW, NOT A FIN. A single slab up the crown reads as a blade
+    # stuck in the head; a row of shards leaning back reads as hair or horsehair,
+    # which is what a crest is. Each one is taller in the middle.
+    # Front to back across the crown: `t` runs from the brow's own depth to well
+    # behind the head, and the dome's height under each one comes from the same
+    # arc the skullcap is turned on, so every tuft stands ON the helmet.
+    for k in range(11):
+        t = k / 10
+        z = SKULL_Z + 26.0 - t * 66.0
+        y = 276.0 + math.sin(t * math.pi) * 16.0
+        tall = 20.0 + math.sin(t * math.pi) * 20.0
+        a.stud(BONE_HEAD, (0.0, y, z), (0.0, 1.0, -0.45), tall, 7.5, CLOTH, sides=4)
+    # A holder at the front, so the brush comes out of something.
+    a.plate(BONE_HEAD, [(-5.0, BROW_Y + 2.0), (5.0, BROW_Y + 2.0), (4.0, 288.0), (-4.0, 288.0)],
+            "Gold", z=SKULL_Z + 30.0, thickness=5.0)
+    for side in (1, -1):
+        a.stud(BONE_HEAD, (side * 27.0, BROW_Y - 4.0, SKULL_Z + 4.0), (side * 0.25, -1.0, 0.1),
+               18.0, 6.0, "DarkSteel", sides=5)
+
+
 HELM = {
     "cap": cap_helm,
     "full": full_helm,
     "horned": horned_helm,
     "circlet": circlet_helm,
     "hood": hood_helm,
+    "barbute": barbute_helm,
+    "crested": crested_helm,
 }
 
 
@@ -1700,11 +1762,55 @@ def wrapped_boots(a):
         shin_band(a, CLOTH, y, 13.8, tube=2.2)
 
 
+def fur_boots(a):
+    """A hide boot under a deep cuff of fur, turned down at the knee."""
+    shoe(a, BOOT_HIDE, toe=BOOT_TRIM, height=13.0)
+    boot_shaft(a, BOOT_HIDE, 11.0, BOOT_TOP - 10.0, over_shin(12.6), over_shin(14.0))
+    # THE CUFF IS THE STYLE and it has to have a shape of its own, or this is a
+    # tall boot in another colour. But not at any width: the first pass gave it
+    # nine units of clearance over a shin that is thirteen across, so each leg
+    # ended in a pale bucket wider than the thigh above it. Four is a cuff.
+    shin(a, "White", BOOT_TOP - 16.0, BOOT_TOP, 14.5, 16.0, hug=CLEAR_BOOT + LAYER)
+    shin_band(a, "White", BOOT_TOP - 1.0, 15.5, tube=3.0, hug=CLEAR_BOOT + LAYER * 1.4)
+    for bone, side in BONE_SHIN:
+        for k in range(7):
+            ang = k * 2 * math.pi / 7 + 0.3
+            a.stud(bone, (side * SHIN_X + math.cos(ang) * 14.5, BOOT_TOP - 15.0,
+                          math.sin(ang) * 12.5),
+                   (math.cos(ang) * 0.3, -1.0, math.sin(ang) * 0.3),
+                   7.0 + (k % 3) * 2.5, 3.5, "White", sides=4)
+
+
+def strapped_boots(a):
+    """A sandal sole and a long crossed strapping up the shin: the lightest thing to wear."""
+    shoe(a, BOOT_HIDE, toe=BOOT_HIDE, height=9.0)
+    # No shaft at all — the shin is bare between the straps, which is the point
+    # of the style and the reason it is band 1. `everycombo` counts a region
+    # covered if ANY layer spans it, and the straps do span it.
+    #
+    # FOUR NARROW RINGS, NOT EIGHT PAIRED ARCS. The first pass wound two
+    # half-rings per level, turned a quarter turn apart, and photographed as a
+    # coil spring down each leg — ten pale tubes that read as ribbing rather
+    # than as anything tied. A strap is a ring; what makes it lacing is the two
+    # long runs up the front and the back that the rings cross.
+    for y in (16.0, 27.0, 38.0, 49.0):
+        shin_band(a, BOOT_TRIM, y, 12.8, tube=2.0, hug=CLEAR_BOOT)
+    for bone, side in BONE_SHIN:
+        for face in (0.0, math.pi):
+            a.shell(bone, [(12.4, 12.0), (12.8, 34.0), (12.4, BOOT_TOP - 6.0)],
+                    BOOT_TRIM, squash=(1.0, 1.0), sides=LIMB_SIDES,
+                    x=side * SHIN_X, cap=False, hug=CLEAR_BOOT + LAYER,
+                    arc=0.09, turn=face)
+    shin_band(a, BOOT_TRIM, BOOT_TOP - 6.0, 13.0, tube=2.6, hug=CLEAR_BOOT + LAYER)
+
+
 BOOTS = {
     "low": low_boots,
     "tall": tall_boots,
     "plated": plated_boots,
     "wrapped": wrapped_boots,
+    "fur": fur_boots,
+    "strapped": strapped_boots,
 }
 
 

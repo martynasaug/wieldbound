@@ -24,8 +24,8 @@ const OUT = "tools/soak/shots/wearlook";
 mkdirSync(OUT, { recursive: true });
 
 const ARMOR = ["leather", "chain", "plate", "robe", "scale", "brigandine"];
-const HELM = ["cap", "hood", "full", "horned", "circlet"];
-const BOOTS = ["low", "tall", "plated", "wrapped"];
+const HELM = ["cap", "hood", "full", "horned", "circlet", "barbute", "crested"];
+const BOOTS = ["low", "tall", "plated", "wrapped", "fur", "strapped"];
 const CAPE = ["cape", "cloak", "mantle", "tabard"];
 
 const SLOTS = {

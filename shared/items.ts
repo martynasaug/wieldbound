@@ -853,6 +853,17 @@ const HELM_BASES: ItemBase[] = [
   g("leatherhood", "Leather Hood", "helm", 1, "hood", "helm-hood", "wood",
     "Keeps the rain off, and your face out of the story.",
     { power: 0.8, guard: 1.4 }),
+  // TWO NEW HEAD STYLES, because five was one silhouette per band and the head
+  // is the first thing anyone looks at. A barbute is closed all round except a
+  // T down the face — the opposite reading to the great helm's bucket-and-slot
+  // — and a crested helm is a skullcap under a brush that stands well above the
+  // outline, which is the one thing that reads at this camera's distance.
+  g("barbute", "Barbute", "helm", 3, "barbute", "helm-full", "steel",
+    "You can see out of it. That is the concession it makes."),
+  g("wardencrest", "Warden's Crest", "helm", 4, "crested", "helm-cap", "bronze",
+    "The brush is horsehair, and it is taller than the helmet under it."),
+  g("nightbarbute", "Night Barbute", "helm", 5, "barbute", "helm-full", "obsidian",
+    "The T is narrower than it needs to be, which is the point."),
   g("ironcap", "Iron Cap", "helm", 2, "cap", "helm-cap", "iron",
     "A bowl with a strap. Unglamorous, and it works."),
   g("rangerhood", "Ranger's Hood", "helm", 3, "hood", "helm-hood", "verdant",
@@ -914,6 +925,16 @@ const BOOTS_BASES: ItemBase[] = [
     { power: 0.7, guard: 1.3 }),
   g("leatherboots", "Leather Boots", "boots", 1, "low", "boots-low", "bronze",
     "Broken in by somebody with slightly different feet."),
+  // AND TWO ON THE FEET. `strapped` is a sole and a lacing with the shin bare
+  // between the straps, which is a band-1 silhouette nothing else in the slot
+  // has; `fur` is a deep turned-down cuff, which is the only one with a shape
+  // above the knee.
+  g("thongsandals", "Thonged Sandals", "boots", 1, "strapped", "boots-low", "wood",
+    "Two soles, a great deal of cord, and an argument for staying on the road."),
+  g("trappersboots", "Trapper's Boots", "boots", 3, "fur", "boots-tall", "bone",
+    "The cuff was another animal's, and it is warmer than the rest of you."),
+  g("wolfstride", "Wolfstride", "boots", 5, "fur", "boots-tall", "frost",
+    "Rimed at the cuff every morning, whatever the weather was."),
   g("travelboots", "Traveller's Boots", "boots", 2, "tall", "boots-tall", "wood",
     "Tall enough for the mud, which is most of the road.",
     { guard: 1.3 }),

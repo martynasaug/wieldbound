@@ -28,15 +28,18 @@
 // thing the machine notices before a person has to.
 import { open, login } from "./driver.mjs";
 import { GEAR_STYLES } from "../../shared/protocol-types.ts";
+import { ITEM_BASES } from "../../shared/items.ts";
 
 const FILTER = process.argv.slice(2);
 
-const SLOT_OF = {
-  leather: "armor", chain: "armor", plate: "armor", robe: "armor", scale: "armor", brigandine: "armor",
-  cap: "helm", hood: "helm", full: "helm", horned: "helm", circlet: "helm",
-  low: "boots", tall: "boots", plated: "boots", wrapped: "boots",
-  cape: "cape", cloak: "cape", mantle: "cape", tabard: "cape",
-};
+// WHICH SLOT EACH STYLE BELONGS TO, TAKEN FROM THE CATALOGUE. This used to be
+// typed out here, and when two helms and two boots were added in M70.371 it
+// reported them as `undefined:fur — nothing worn`: the harness could not name
+// their slot, so it equipped them into nothing and then complained that nothing
+// was worn. Every item declares its own slot and style; that is the answer.
+const SLOT_OF = Object.fromEntries(
+  Object.values(ITEM_BASES).filter((b) => b.style).map((b) => [b.style, b.slot]),
+);
 
 const styles = GEAR_STYLES.filter(
   (s) => !FILTER.length || FILTER.includes(s) || FILTER.includes(SLOT_OF[s]),
