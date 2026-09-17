@@ -27921,3 +27921,52 @@ under a 900ms rate limit (so the limiter correctly ate the second). Neither was
 the product.
 
 Suite green, 24 tests. Client and server typecheck.
+
+**Phase 71 B1 — the world grows north.** Done. 12,000 tall to 22,000.
+
+GROWN BOTH WAYS, WHICH IS NOT WHAT THE PLAN SAID. The plan was to keep the
+south edge and push the north one out, moving `PLAYER_SPAWN` off the world's
+centre. That is one line and it would have cost four files and changed the
+game's appearance: the client's world origin is `WORLD_HEIGHT / 2`, the terrain
+is a pure function of world coordinates, so Emberhold sliding away from the
+origin resamples the noise and gives the starting town different hills. The
+horizon ring, the ground scatter and the minimap bounds are all centred on the
+origin too.
+
+Growing symmetrically leaves `PLAYER_SPAWN = WORLD_HEIGHT / 2` as the same line
+it always was, so `toWorldZ(spawn)` is still zero and the terrain under
+Emberhold is bit-identical — confirmed against the screenshot from A1. The
+southern half is empty procedural land nobody asked for, which costs nothing to
+generate and is somewhere to put things later. 11,000px of north, against 6,000.
+
+THE MIGRATION WORKED AND WAS THE EASY PART. 2,199 characters shifted by exactly
++5000 in y and exactly 0 in x, verified by diffing a checkpointed copy of the
+database against the live one; range 1,450..12,000 became 6,450..17,000, inside
+a 22,000 world. Then the server was stopped and started again to prove the mark
+holds: no second shift, range unchanged. A migration applied twice is worse than
+one applied never.
+
+WHAT ACTUALLY BIT WAS THE CLAIM THAT EVERYTHING IS SPAWN-RELATIVE. It was not.
+The forests and the river's course were authored as flat ABSOLUTE coordinates —
+`x: 8000, y: 1500` — so when the world grew they stayed exactly where the
+numbers said while everything around them moved five thousand pixels south. A
+wood ended up sitting on the starting town, 23 resource nodes and 7 camps stood
+under a canopy, and the road crossed the river zero times. Nothing threw; two
+test suites said so.
+
+Both are written as offsets now, through a `fromSpawn(east, north)` helper, and
+they read better than they did: Pinereach is `...fromSpawn(0, 4500)`, which is
+"dead north of spawn, four and a half thousand out". The next time the world
+changes shape they will move with it.
+
+AND THE RIVER'S OWN TEST HAD THE SAME BUG, which is the part worth remembering:
+it scanned `y` from 1200 to 4600 for the bucketed-query check — the Coldwater's
+old latitude, typed in. It swept empty grass three thousand pixels south of the
+river and reported a 56px error. The band is derived from `riverPath()` now.
+
+Housekeeping: twenty-one orphaned dev-server processes had accumulated across
+this session's restarts and one was still holding port 8080, which is why the
+server came back up dead. All twenty-one were confirmed as wieldbound by reading
+each command line, then stopped BY PID.
+
+Suite green, 25 tests. Client and server typecheck. Emberhold unchanged.

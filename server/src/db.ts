@@ -188,6 +188,34 @@ if (!alreadyWiped) {
   console.log(`[db] item catalogue: cleared ${before} pre-catalogue item(s), once`);
 }
 
+// --- The world grew, and stored positions did not -------------------------
+//
+// EVERYTHING IN THIS WORLD IS PLACED POLAR FROM SPAWN — the camps, the resource
+// nodes, the waystones, the forests, the road, the river and both towns — so
+// growing `WORLD_HEIGHT` moved every one of them together and changed none of
+// their relationships. A character's saved x and y are the exception: they are
+// absolute, they are the only absolute coordinates anywhere in the game, and
+// left alone they would have put everybody five thousand pixels north of where
+// they logged out. For a world whose north was open country until this week,
+// that is somebody waking up in a band-5 camp.
+//
+// Once, under a mark, exactly like the item wipe above it. A shift applied
+// twice is worse than one applied never.
+const NORTH_SHIFT_MARK = "world-north-22000";
+const NORTH_SHIFT_PX = 5000;
+const alreadyShifted = db
+  .prepare("SELECT mark FROM schema_marks WHERE mark = ?")
+  .get(NORTH_SHIFT_MARK);
+if (!alreadyShifted) {
+  const moved = (db.prepare("SELECT COUNT(*) AS n FROM characters").get() as { n: number }).n;
+  db.prepare("UPDATE characters SET y = y + ?").run(NORTH_SHIFT_PX);
+  db.prepare("INSERT INTO schema_marks (mark, appliedAt) VALUES (?, ?)").run(
+    NORTH_SHIFT_MARK,
+    Date.now(),
+  );
+  console.log(`[db] world grew north: shifted ${moved} character(s) by +${NORTH_SHIFT_PX}px, once`);
+}
+
 // --- Weapon proficiency and talents -----------------------------------------
 // Two narrow tables rather than columns on `characters`: both are keyed by
 // (character, weapon) and one of them is additionally keyed by node, which is

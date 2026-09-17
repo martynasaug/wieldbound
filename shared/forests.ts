@@ -32,7 +32,7 @@
 // the land takes over past it. Walking out of Emberhold now looks like leaving
 // somewhere.
 
-import { PLAYER_SPAWN, WORLD_WIDTH, WORLD_HEIGHT } from "./protocol-types.ts";
+import { PLAYER_SPAWN, WORLD_WIDTH, WORLD_HEIGHT, fromSpawn } from "./protocol-types.ts";
 
 /**
  * How far out the frontier starts, in server pixels from spawn.
@@ -97,8 +97,7 @@ export const FORESTS: Forest[] = [
   {
     id: "pinereach",
     name: "Pinereach",
-    x: 8000,
-    y: 1500,
+    ...fromSpawn(0, 4500),
     radiusPx: 1400,
     species: "pine",
     perBlock: 34,
@@ -110,8 +109,7 @@ export const FORESTS: Forest[] = [
   {
     id: "blackstand",
     name: "Blackstand",
-    x: 4300,
-    y: 1900,
+    ...fromSpawn(-3700, 4100),
     radiusPx: 1500,
     species: "dead",
     perBlock: 22,
@@ -122,8 +120,7 @@ export const FORESTS: Forest[] = [
   {
     id: "mirefen",
     name: "The Mirefen",
-    x: 11700,
-    y: 1800,
+    ...fromSpawn(3700, 4200),
     radiusPx: 1400,
     species: "twisted",
     perBlock: 26,
@@ -134,8 +131,7 @@ export const FORESTS: Forest[] = [
   {
     id: "thornwood",
     name: "The Thornwood",
-    x: 13200,
-    y: 6400,
+    ...fromSpawn(5200, -400),
     radiusPx: 1900,
     species: "mixed",
     perBlock: 30,
@@ -146,8 +142,7 @@ export const FORESTS: Forest[] = [
   {
     id: "sorrowwood",
     name: "Sorrowwood",
-    x: 3000,
-    y: 6600,
+    ...fromSpawn(-5000, -600),
     radiusPx: 1800,
     species: "twisted",
     perBlock: 28,
@@ -158,8 +153,7 @@ export const FORESTS: Forest[] = [
   {
     id: "weepingwood",
     name: "The Weeping Wood",
-    x: 8800,
-    y: 10600,
+    ...fromSpawn(800, -4600),
     radiusPx: 1600,
     species: "mixed",
     perBlock: 32,

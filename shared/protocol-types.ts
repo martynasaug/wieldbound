@@ -36,7 +36,31 @@ export const BATTLE_RANGE_PX = 110;
 // pixel is FRONTIER: land past the last ring, where the road runs and the next
 // town will stand.
 export const WORLD_WIDTH = 16000;
-export const WORLD_HEIGHT = 12000;
+// GROWN NORTH FOR COLDHARROW, and grown SYMMETRICALLY on purpose.
+//
+// The obvious move was to add the new room only where it was wanted — keep the
+// south edge where it is and push the north one out — which means moving
+// `PLAYER_SPAWN` off the world's centre. That is one line and it would have
+// cost four files and changed the game's appearance: the client's world origin
+// is `WORLD_HEIGHT / 2`, the terrain is a pure function of world coordinates,
+// and so Emberhold sliding away from the origin would have resampled the noise
+// and given the starting town different hills. The horizon ring, the ground
+// scatter and the minimap bounds are all centred on the origin too, and every
+// one of them would have needed a centre passed through it.
+//
+// Growing both ways keeps spawn exactly where it has always been — dead centre,
+// which is the line below unchanged — so `toWorldZ(PLAYER_SPAWN.y)` is still
+// zero, the terrain under Emberhold is bit-identical, and nothing that frames
+// the world has to learn about asymmetry.
+//
+// The southern half is empty procedural land nobody asked for, and that is the
+// whole price: it generates from the same pure function as everything else, so
+// it costs nothing to have and is somewhere to put things later.
+//
+// 11000px of north now, against 6000 before. Coldharrow's landward wall sits
+// 3800px out — a thousand past the band-5 camps at 2750 — and its seaward wall
+// leaves 2000px between the city and the edge of the world.
+export const WORLD_HEIGHT = 22000;
 
 /**
  * How long one gather takes at gather level 0, and how much a level takes off.
@@ -3428,6 +3452,30 @@ export function xpToNextLevel(level: number): number {
 }
 
 export const PLAYER_SPAWN = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
+
+/**
+ * A world position authored as an offset from spawn.
+ *
+ * WRITTEN AFTER THE WORLD GREW AND TWO TABLES DID NOT MOVE WITH IT. Almost
+ * everything here is placed polar from spawn — the camps, the node rings, the
+ * waystones, the towns — because the rule the world is laid out by is that
+ * distance from the centre IS difficulty. The forests and the river's course
+ * were the exceptions: both were authored as flat absolute coordinates, and
+ * when `WORLD_HEIGHT` went from 12,000 to 22,000 they stayed exactly where the
+ * numbers said while everything around them moved five thousand pixels south.
+ *
+ * The symptom was not subtle — a wood sitting on top of the starting town, the
+ * river eight thousand pixels north of a road that no longer crossed it — but
+ * nothing threw, and it was two test suites rather than the game that said so.
+ *
+ * `north` rather than `y` because that is how the placement was reasoned about
+ * in the first place: the Coldwater runs across the north of the map, Pinereach
+ * stands between it and the site of Coldharrow. Writing the intent down means
+ * the next time the world changes shape, these move with it.
+ */
+export function fromSpawn(eastPx: number, northPx: number): { x: number; y: number } {
+  return { x: PLAYER_SPAWN.x + eastPx, y: PLAYER_SPAWN.y - northPx };
+}
 
 export function maxHpForLevel(level: number, vitality = 0, maxHpBonus = 0): number {
   return 50 + (level - 1) * 10 + vitality * VITALITY_HP_STEP + maxHpBonus;

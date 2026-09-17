@@ -29,7 +29,7 @@
 // ONE shape, it is the reason the bridge exists, and a river you can stroll
 // across is not a river, it is a blue stripe painted on the grass.
 
-import { PLAYER_SPAWN, WORLD_WIDTH } from "./protocol-types.ts";
+import { PLAYER_SPAWN, WORLD_WIDTH, fromSpawn } from "./protocol-types.ts";
 import { ROAD_HALF_WIDTH_PX, roadPath } from "./road.ts";
 
 export const RIVER_NAME = "The Coldwater";
@@ -58,19 +58,34 @@ export const RIVER_HALF_WIDTH_PX = 150;
  * an accident of drawing: the river is the boundary of Emberhold's district, so
  * it has to sit outside the district rather than through the middle of it.
  */
-export const RIVER_WAYPOINTS: readonly (readonly [number, number])[] = [
-  [-900, 3060],
-  [1600, 2720],
-  [3400, 3090],
-  [5200, 2740],
-  [6800, 2520],
-  [8000, 2600],
-  [9400, 2980],
-  [11200, 2660],
-  [13000, 3040],
-  [14800, 2660],
-  [16900, 2900],
+/**
+ * The Coldwater's course, authored as (east of spawn, north of spawn).
+ *
+ * OFFSETS RATHER THAN ABSOLUTE COORDINATES — see `fromSpawn`. These were
+ * eleven flat world positions until the world grew north, at which point the
+ * river stayed put while the road, the town and the bridge all moved, and the
+ * only thing that noticed was a test reporting that the road crossed the
+ * river zero times.
+ */
+const RIVER_OFFSETS: readonly (readonly [number, number])[] = [
+  [-8900, 2940],
+  [-6400, 3280],
+  [-4600, 2910],
+  [-2800, 3260],
+  [-1200, 3480],
+  [0, 3400],
+  [1400, 3020],
+  [3200, 3340],
+  [5000, 2960],
+  [6800, 3340],
+  [8900, 3100],
 ];
+
+export const RIVER_WAYPOINTS: readonly (readonly [number, number])[] =
+  RIVER_OFFSETS.map(([east, north]) => {
+    const at = fromSpawn(east, north);
+    return [at.x, at.y] as const;
+  });
 
 /** How far from the water a monster camp or a resource node must stay. */
 export const RIVER_CLEARANCE_PX = 240;

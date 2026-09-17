@@ -128,8 +128,15 @@ section("the distance index");
   };
   let worst = 0;
   let checked = 0;
+  // THE BAND THE RIVER IS ACTUALLY IN, derived rather than typed. This used to
+  // scan y from 1200 to 4600, which was where the Coldwater ran when the world
+  // was 12,000 tall; the world grew to 22,000, the river moved with spawn, and
+  // the scan carried on sweeping empty grass three thousand pixels south of it.
+  const ys = riverPath().map((p) => p.y);
+  const yFrom = Math.round(Math.min(...ys) - 1500);
+  const yTo = Math.round(Math.max(...ys) + 1500);
   for (let x = 0; x <= WORLD_WIDTH; x += 137) {
-    for (let y = 1200; y <= 4600; y += 113) {
+    for (let y = yFrom; y <= yTo; y += 113) {
       const a = riverAt(x, y).distancePx;
       const b = brute(x, y);
       worst = Math.max(worst, Math.abs(a - b));
