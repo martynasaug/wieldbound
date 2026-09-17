@@ -28321,3 +28321,202 @@ the city.
 
 Forty-four buildings, none overlapping, none in a street, nothing but the quays
 on the water. Suite green, 25 tests.
+
+## Phase 71 C2e — the furniture, the ground, and an ice sheet that was neither
+
+Three things reported from play in one sitting, and two of them were the same
+bug wearing different clothes.
+
+STREET FURNITURE FIRST, which was the intended work. Lamps down every street,
+bollards along the quay lip, cargo stacked where it was landed, braziers where
+somebody would actually stand round one, and a notice board inside the gate.
+The positions live in `shared/`, in `COLDHARROW_PROPS`, because `resolveTownOnce`
+already walks `s.props` for every settlement — so a brazier added to that table
+is collidable the moment it is visible. A brazier drawn from one list and
+collided from another is a brazier you can stand inside.
+
+AND THE PROPS NEEDED A SOLVER TOO. Seven of the first fourteen were inside a
+building. Same cause as the linear layout the milestone before: they were typed
+in polar terms against the AUTHORED positions, and `settleLayout` moves every
+building from where it was authored. `settlePropsAt` searches outward from the
+authored spot — 30px rings, sixteen bearings, nearest first — for the first
+place clear of every building, out of the carriageway and off the ice. Radius
+before bearing, so a prop stays as near its intended spot as the obstruction
+allows instead of sliding round the city. The layout test now checks it, which
+is what will catch the next building that shifts and takes a brazier with it.
+
+A prop inside a wall is worse than two buildings overlapping, and worth saying
+why: it is INVISIBLE and still collides. The player walks up the quay, stops
+dead in open air, and there is nothing on screen to explain it.
+
+"STILL A LOT OF GRASS AND FLOWERS IN THE CITY." The ground-cover scatter
+suppressed itself inside `pavedRadiusPx`, which for Emberhold is very nearly the
+whole village — 528 of 800 — so one number doing two jobs was never visible.
+Coldharrow paves 884 of 2,600: the central square only, because a city is
+streets and yards rather than one big floor. So the scatter kept clear of the
+square and grew clover and wildflowers across the other 87% of the city, through
+the works yards, along the terraces, over the wharf. `coverRadiusPx` splits the
+two. Emberhold keeps exactly what it had — a village green is grass and should
+be — and inside a city wall is not.
+
+"WHAT THE HELL IS THIS WHITE THING IN THE NORTH SIDE OF THE CITY." Two faults at
+once, and the first is the fifth singleton this file has produced.
+
+The ice carried `emissiveIntensity: 1` as a literal and was registered with
+nothing. `litGlass` is the registry that makes windows track the clock; the
+sheet and the floes were not in it, so they emitted at full strength at every
+hour. At midday the sun drowns it out, which is why the frozen 0.42 the shot
+harness used never showed it. At first light every roof in the city goes black
+and the harbour does not — a glowing white void in a city of dark stone. The
+registry is an INSTANCE field this time, not another module-level list: this
+file has already produced four faults of exactly that shape — `wallColliders`,
+`TOWN_CENTER` in the flat spots, the gate angles in the camera ring, and
+`squareDressing` — and two materials are not worth a fifth.
+
+The second was geometry. The basin's outer radius was `RADIUS + 120`, which puts
+the ice 120px outside the curtain wall — and because Coldharrow's north wall
+sits exactly on y = 0, that is 120px outside THE WORLD. The sheet hung over
+ungenerated terrain off the top of the map. It ends at `RADIUS - 80` now, inside
+the wall, with its north lip at y = 80.
+
+"THAT HARBOUR ICE LOOKS LIKE NOT RENDERED WHITE FLOOR AND WHITE BLOCKS, HOW IS
+IT ICE." Accurate, and neither fix above touched it. It was one flat-shaded ring
+sector in a single colour with thirty boxes laid on it: every normal identical,
+every pixel the same tone, nothing anywhere in it that said ice rather than
+floor. Colour was not the problem — SURFACE was.
+
+So it is built as one now. The sheet is a 112x16 mesh with vertex colours from
+two octaves of seeded value noise, lerping open ice to drifted snow, with the
+drift gathering against the quay so the basin has a direction across it. It
+carries a hand's breadth of vertical relief, because ice sags and heaves and
+because identical normals are what made it read as floor at any colour. A
+fracture network is walked over it — twenty-two seeded cracks that wander and
+fork, drawn as thin dark ribbons — since a crack network is the single most
+legible "this is ice" signal there is. And four pressure ridges, where plates
+have met and one has ridden up: a LINE of packed shards leaning the same way,
+which reads as ice under pressure where the same shards scattered read as
+rubble.
+
+WHY THE SHOT HARNESS MISSED ALL OF IT, which is the lesson worth keeping. The
+wharf shot in `coldharrow.mjs` ends with a step toward the city centre — the fix
+for a real bug, since `approach` leaves the player facing wherever the last step
+went and three photographs of the curtain wall came back as empty grass. But the
+harbour is on the far side of the quay from the centre, so that step turns the
+camera AWAY from the ice: the wharf shot is a photograph of the fishmarket's
+back wall with its subject behind the lens. `icelook.mjs` faces the basin, and
+shoots the same frame at three hours rather than one, because the emissive bug
+was invisible at noon and glaring at first light.
+
+ON THE WALLS, which came up in the same sitting. Coldharrow cannot grow north:
+its centre is at y = 2600 with a radius of 2600, so the north wall is already ON
+the world edge and the levelling disc already reaches 520px past it. Expanding
+means growing the world, moving the centre and migrating what references it —
+a B1-shaped job, not a number. And the city is not short of room: 44 buildings
+over 10.6x Emberhold's area is one per 483k px^2 against the village's 335k. It
+is already sparser than the place it is meant to dwarf. Fill it first.
+
+A FIVE-THOUSAND-PIXEL STALE CONSTANT IN THE DRIVER, found because the ice
+harness could not reach the quay. `tools/soak/driver.mjs` carried its own
+`TOWN_CENTER = { x: 8000, y: 6000 }`, copied from `shared/town.ts` and never
+updated when B1 moved the spawn north to y = 11000. Nothing failed loudly.
+
+Two things followed, both silent and both months old by the time they surfaced:
+
+THE REAL PALISADE STOPPED BEING ROUTED. `insideTown` never fired for a character
+actually standing in Emberhold, so the gate logic — which exists because a level
+1 once spent seven of an eight-minute run pushing at a wall — had quietly not
+run since B1.
+
+AND A PHANTOM TOWN APPEARED AT (8000, 6000), which is open country halfway up
+the Kingsway between the two settlements. Every north-south leg has been
+skirting a tangent around an invisible circle that is not there. The Pineward
+Stone sits 460px from that phantom centre, inside its 860px margin, so every
+step of `icelook.mjs` was routed to a "gate" back south and it burned all 420
+of them without ever reaching the harbour.
+
+The constants are imported now, and the routing reads `SETTLEMENTS` per
+settlement rather than treating one town as special: `settlementAround` for
+which wall you are in, `settlementCrossed` for which one a line runs through,
+and both gate and tangent logic taking their geometry from that record. This is
+the same argument the renderer and the layout test each had to have in turn.
+There is more than one settlement now, and any hand-copied piece of its geometry
+is a copy that can go stale without ever saying so.
+
+It also means Coldharrow's curtain wall is routed for the first time — fifty-two
+hundred pixels across, where `steerToward` fans bearings over a 240px lookahead
+and never stood a chance.
+
+## Phase 71 C2f — the city that made the game unplayable
+
+Reported from play, in three messages, and all of it was mine:
+
+  "its unplayable pretty much, you made the game lagg and freeze like crazy"
+  "The snow doesnt look like snow at all, ice just looks like blocks too"
+  "I cant even enter the game, on the loading screen it freezes"
+
+A POINT LIGHT COSTS ~200-350ms OF LOAD TIME. Not frame time. `lantern()` gives
+every fitting a real `THREE.PointLight`, and a lamp every 380px along four
+spokes and two rings is fifty-eight of them — sixty-six with the braziers,
+against Emberhold's six. Each one lengthens the unrolled light loop in every one
+of the 43 shaders the game compiles under the loading screen, so the cost lands
+where nobody was measuring: the load went from 15.9s to 21.0s, in long
+synchronous spans, which is a loading screen that looks like a hang.
+
+The note on Emberhold's six square lanterns already said this in plain words —
+"every extra one is a real per-fragment cost on every lit surface in view" — and
+it was read, ignored, and understated.
+
+BISECTED RATHER THAN REASONED ABOUT, after two wrong theories. The first was
+that the stall was shader compilation at the city; `newprograms.mjs` showed ZERO
+new programs at the wall, the gate or the quay. The second was that the light
+CULLING added here had invalidated the warm by changing `NUM_POINT_LIGHTS`,
+which is genuinely part of the program cache key — also wrong, and measurable as
+wrong. What actually found it was turning things off one at a time:
+
+    baseline (no Coldharrow dressing) .. 15.9s
+    + dressing, 21 point lights ........ 21.0s
+    + dressing, 8 point lights ......... 18.3s
+    + dressing, braziers removed ....... 16.8s
+    final: no street lights, 4 braziers  17.3s
+
+So: not one street lamp carries a light. The posts and their emissive glow balls
+are merged geometry and cost nothing of the sort, and they are what reads at
+this camera anyway. Eight braziers became four, at the gate and the quays, which
+is where players arrive and stand. +1.4s for a second city, down from +5.1s.
+
+AND 257 SHADOW-CASTING MESHES BECAME ONE. Every floe and ridge shard was its own
+`THREE.Mesh` with `castShadow` — 257 draw calls in the main pass and 257 more in
+the shadow pass, for slabs twelve centimetres thick whose shadows nobody could
+pick out. Merged, the way `Builder` has always treated the buildings.
+
+ICE IS NOT MADE OF BOXES, which is what "ice just looks like blocks" was looking
+at, and no amount of colour or tilt fixes a cube: the silhouette is what is
+being read. Floes are irregular six-to-nine sided plates now, with the radius a
+smooth function of the angle so the outline is uneven without being spiky and
+the top and bottom faces agree. A pressure ridge is those same plates STOOD ON
+EDGE, which is what one physically is — a sheet snapped and shoved up on its
+side — rather than a row of lumps.
+
+AND SNOW IS NOT MADE OF CIRCLES. The yard texture's trodden snow was 26 big soft
+discs, which tile out to pale circles a couple of metres across and read as
+bubbles or a stain, because nothing outdoors that size is round. Each patch is
+built from a ring of overlapping lobes at jittered radii now, giving a ragged
+border, with grit scattered back over the top so it reads as trodden rather than
+painted on.
+
+WHAT THE GRASS ACTUALLY WAS, since the first fix only got half of it.
+`coverRadiusPx` stopped the ground-cover scatter — the clover and wildflowers —
+across the 87% of the city that is not the paved square. The GRASS underneath
+was never the scatter: `buildGround` paves `pavedRadiusPx` and nothing else, so
+everything out to the curtain wall was raw terrain, and raw terrain is meadow.
+There is a yard now, of beaten earth and grit, drawn only where a settlement
+asks for one. Emberhold sets the two radii equal and keeps its green.
+
+THE LESSON, WRITTEN DOWN BECAUSE IT COST A SESSION: this city was built by
+reasoning about cost and never once counting it, in a codebase whose comments
+give the exact per-unit prices. Two harnesses now do the counting — `citycost.mjs`
+for draw calls, programs, visible lights and worst-frame time, and a load-time
+bisect for anything that grows the loading screen. Neither existed before,
+because nothing in `tools/test/` renders anything, and every check there was
+green through all of it.
+

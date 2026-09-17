@@ -204,54 +204,82 @@ export async function nearestMonster(page) {
   });
 }
 
-// THE TOWN HAS A WALL, AND IT HAS THREE DOORS.
+// A SETTLEMENT HAS A WALL, AND THE WALL HAS DOORS.
 //
-// `TOWN_RADIUS_PX` is 800 and `TOWN_GATES` cuts openings at 0, 180 and 256
-// degrees. A bot that walks straight at its destination from inside the
-// palisade pushes at whichever wall segment lies between, forever. A level 1
-// starting at the arrival point did exactly that for seven of an eight-minute
-// run — 65 blocked legs, 21px/s average, and a report of "no invariant
-// violations" that meant nothing at all.
+// A bot that walks straight at its destination from inside a wall pushes at
+// whichever segment lies between, forever. A level 1 starting at the arrival
+// point did exactly that for seven of an eight-minute run — 65 blocked legs,
+// 21px/s average, and a report of "no invariant violations" that meant nothing
+// at all. The endgame character never showed it because it is always already
+// outside; anything starting a fresh character has to leave through a gate.
 //
-// The endgame character never showed this because it is always already outside.
-// Anything that starts a fresh character has to leave through a gate.
-export const TOWN_CENTER = { x: 8000, y: 6000 };
-export const TOWN_RADIUS_PX = 800;
-const GATE_ANGLES_DEG = [0, 180, 256];
+// THESE WERE HARDCODED AND WENT FIVE THOUSAND PIXELS STALE, which is worth
+// recording because nothing failed loudly for it. `TOWN_CENTER` was a literal
+// `{ x: 8000, y: 6000 }` copied from `shared/town.ts`, and Phase 71 B1 moved
+// the spawn north to y = 11000 without touching it. Two things followed, both
+// silent:
+//
+//   THE REAL PALISADE STOPPED BEING ROUTED. `insideTown` never fired for a
+//   character actually standing in Emberhold, so the gate logic this comment
+//   exists to explain had quietly not run since B1.
+//
+//   AND A PHANTOM TOWN APPEARED AT (8000, 6000), which is open country halfway
+//   up the Kingsway between Emberhold and Coldharrow. Every north-south leg
+//   skirted an invisible circle that is not there, and `icelook.mjs` burned all
+//   420 of its steps being steered away from the harbour because the Pineward
+//   Stone happens to sit 460px from that phantom centre — inside it.
+//
+// So they are IMPORTED now, and the tables are read per settlement rather than
+// one town being special. The same argument the renderer and the layout test
+// both had to have: there is more than one settlement, and any copy of its
+// geometry is a copy that can go stale without saying so.
+import { SETTLEMENTS, TOWN_CENTER, TOWN_RADIUS_PX } from "../../shared/town.ts";
 
-/** True while the point is inside the palisade (with a little margin). */
+export { TOWN_CENTER, TOWN_RADIUS_PX };
+
+/** The settlement whose wall `p` is inside, with a little margin — or null. */
+export function settlementAround(p, margin = 60) {
+  for (const s of SETTLEMENTS) {
+    if (Math.hypot(p.x - s.center.x, p.y - s.center.y) < s.radiusPx + margin) return s;
+  }
+  return null;
+}
+
+/** True while the point is inside any settlement's wall. */
 export function insideTown(p) {
-  return Math.hypot(p.x - TOWN_CENTER.x, p.y - TOWN_CENTER.y) < TOWN_RADIUS_PX + 60;
+  return settlementAround(p) !== null;
 }
 
 /** A point just outside the gate nearest `from`'s current bearing. */
 export function gateWaypoint(from) {
-  const bearing = (Math.atan2(from.y - TOWN_CENTER.y, from.x - TOWN_CENTER.x) * 180) / Math.PI;
-  let best = GATE_ANGLES_DEG[0];
+  const town = settlementAround(from);
+  if (!town) return from;
+  const bearing = (Math.atan2(from.y - town.center.y, from.x - town.center.x) * 180) / Math.PI;
+  let best = town.gates[0].angleDeg;
   let bestDelta = Infinity;
-  for (const g of GATE_ANGLES_DEG) {
-    const delta = Math.abs(((g - bearing + 540) % 360) - 180);
+  for (const g of town.gates) {
+    const delta = Math.abs(((g.angleDeg - bearing + 540) % 360) - 180);
     if (delta < bestDelta) {
       bestDelta = delta;
-      best = g;
+      best = g.angleDeg;
     }
   }
   const a = (best * Math.PI) / 180;
   // Well clear of the opening, so the next leg does not immediately re-enter.
   return {
-    x: TOWN_CENTER.x + Math.cos(a) * (TOWN_RADIUS_PX + 260),
-    y: TOWN_CENTER.y + Math.sin(a) * (TOWN_RADIUS_PX + 260),
+    x: town.center.x + Math.cos(a) * (town.radiusPx + 260),
+    y: town.center.y + Math.sin(a) * (town.radiusPx + 260),
   };
 }
 
-// AND THE TOWN IS AN OBSTACLE TWICE, depending on which side of it you start.
+// AND A SETTLEMENT IS AN OBSTACLE TWICE, depending on which side you start.
 //
 // `gateWaypoint` handles LEAVING: you are inside, the destination is outside,
 // so walk to a door. It does nothing for PASSING, where both ends are outside
-// and the straight line happens to run through Emberhold — and `steerToward`
+// and the straight line happens to run through the place — and `steerToward`
 // cannot save that either, because it fans bearings over a 240px lookahead and
-// the palisade is sixteen hundred pixels across. The bot walks into the wall
-// and grinds.
+// the palisade is sixteen hundred pixels across. Coldharrow is fifty-two
+// hundred. The bot walks into the wall and grinds.
 //
 // This showed up the moment the river routing started working. With the
 // south-east wilds finally reachable, the next stop was the WEST wilds, and the
@@ -261,8 +289,8 @@ export function gateWaypoint(from) {
 // A door is the wrong answer here. Nobody walks in the front gate and out the
 // back to get past a town, and routing that way needs the gate logic to know
 // which door it came in by, which it deliberately does not. You walk AROUND.
-// So: take the tangent to the palisade on whichever side is shorter, which is
-// the path a person takes without thinking about it.
+// So: take the tangent on whichever side is shorter, which is the path a person
+// takes without thinking about it.
 
 /** Distance from `c` to the segment `a`-`b`. */
 function pointToSegment(c, a, b) {
@@ -273,11 +301,28 @@ function pointToSegment(c, a, b) {
   return Math.hypot(c.x - (a.x + dx * t), c.y - (a.y + dy * t));
 }
 
-/** True when the straight line from `from` to `to` runs through the town but
- *  neither end is in it — the "passing through" case, not the "leaving" one. */
+/** The settlement the straight line runs through while neither end is in one —
+ *  the "passing through" case, not the "leaving" one. Null when the way is
+ *  clear. Returns the CLOSEST such settlement, because a line can clip two and
+ *  the near one has to be rounded first. */
+export function settlementCrossed(from, to) {
+  if (insideTown(from) || insideTown(to)) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (const s of SETTLEMENTS) {
+    if (pointToSegment(s.center, from, to) >= s.radiusPx + 40) continue;
+    const d = Math.hypot(s.center.x - from.x, s.center.y - from.y);
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  return best;
+}
+
+/** True when the line runs through any settlement. */
 export function crossesTown(from, to) {
-  if (insideTown(from) || insideTown(to)) return false;
-  return pointToSegment(TOWN_CENTER, from, to) < TOWN_RADIUS_PX + 40;
+  return settlementCrossed(from, to) !== null;
 }
 
 /**
@@ -289,17 +334,19 @@ export function crossesTown(from, to) {
  * wall instead of committing to one long arc.
  */
 export function skirtTown(from, to) {
-  const R = TOWN_RADIUS_PX + 200;
-  const dx = TOWN_CENTER.x - from.x;
-  const dy = TOWN_CENTER.y - from.y;
+  const town = settlementCrossed(from, to);
+  if (!town) return to;
+  const R = town.radiusPx + 200;
+  const dx = town.center.x - from.x;
+  const dy = town.center.y - from.y;
   const d = Math.hypot(dx, dy);
   if (d <= R) return to; // already inside the skirt; the gate logic owns this
   const base = Math.atan2(dy, dx);
   const spread = Math.acos(Math.min(1, R / d));
   // The tangent points, as bearings FROM the town centre.
   const options = [base + Math.PI - spread, base + Math.PI + spread].map((a) => ({
-    x: TOWN_CENTER.x + Math.cos(a) * R,
-    y: TOWN_CENTER.y + Math.sin(a) * R,
+    x: town.center.x + Math.cos(a) * R,
+    y: town.center.y + Math.sin(a) * R,
   }));
   let best = options[0];
   let bestCost = Infinity;

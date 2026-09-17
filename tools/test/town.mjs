@@ -27,6 +27,8 @@ import {
 import {
   SETTLEMENTS,
   COLDHARROW,
+  insideAnyBuildingOf,
+  propPositionIn,
   onColdharrowStreet,
   onColdharrowIce,
   TOWN_BUILDINGS,
@@ -153,6 +155,32 @@ for (const town of SETTLEMENTS) {
   );
   for (const b of wet) fail(`${b.id} stands on the harbour ice`);
   if (!wet.length) console.log(`  Coldharrow: nothing but the quays is on the water`);
+}
+
+// --- and nor is any of the furniture --------------------------------------
+// A PROP INSIDE A WALL IS WORSE THAN A BUILDING OVERLAP, because it is
+// invisible and still collides: the player walks up the quay, stops dead in
+// open air, and there is nothing on screen to say why. Seven of the first
+// fourteen were inside one, all for the same reason — authored in polar terms
+// against positions that `settleLayout` then moved. `settlePropsAt` resolves
+// that now; this is what catches it the next time a building shifts and the
+// braziers silently follow it into the masonry.
+{
+  let buried = 0;
+  for (const prop of COLDHARROW.props) {
+    const p = propPositionIn(COLDHARROW, prop);
+    if (insideAnyBuildingOf(COLDHARROW.buildings, p.x, p.y, prop.blockRadiusPx)) {
+      fail(`${prop.id} is inside a Coldharrow building`);
+      buried++;
+    } else if (onColdharrowStreet(p.x, p.y)) {
+      fail(`${prop.id} stands in a Coldharrow street`);
+      buried++;
+    } else if (onColdharrowIce(p.x, p.y)) {
+      fail(`${prop.id} stands on the harbour ice`);
+      buried++;
+    }
+  }
+  if (!buried) console.log(`  Coldharrow: ${COLDHARROW.props.length} props, all standing clear`);
 }
 
 // The smithy occupies roughly two units either side of spawn and the player

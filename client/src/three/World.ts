@@ -669,7 +669,7 @@ export class World {
           z: toWorldZ(t.center.y),
           // A little past the cobbles, so nothing sprouts through the rim where
           // the paving is already fading out.
-          radius: (t.pavedRadiusPx / PX_PER_UNIT) * 1.06,
+          radius: (t.coverRadiusPx / PX_PER_UNIT) * 1.06,
         },
         // One per building, sized to the corner of its footprint — a plant
         // coming up through a wall is worse than a bare patch.

@@ -103,6 +103,22 @@ export interface Settlement {
   center: { x: number; y: number };
   radiusPx: number;
   pavedRadiusPx: number;
+  /**
+   * How far out the meadow stops.
+   *
+   * SEPARATE FROM `pavedRadiusPx`, and the split is the bug. The ground-cover
+   * scatter suppressed itself inside the PAVING, which for Emberhold is very
+   * nearly the whole village — 528 of its 800 — so the two numbers being one
+   * number was never visible. Coldharrow paves 884 of 2,600: the central
+   * square only, because a city is streets and yards rather than one big
+   * floor. So the scatter kept clear of the square and grew clover and
+   * wildflowers across the other 87% of the city, in the works yards, along
+   * the terraces, over the wharf. Reported from play as "still a lot of grass
+   * and flowers in the city".
+   *
+   * A village green is grass and should be. Inside a city wall is not.
+   */
+  coverRadiusPx: number;
   gates: readonly TownGate[];
   buildings: readonly TownBuilding[];
   props: readonly TownProp[];
@@ -1609,6 +1625,10 @@ export const EMBERHOLD: Settlement = {
   center: TOWN_CENTER,
   radiusPx: TOWN_RADIUS_PX,
   pavedRadiusPx: TOWN_PAVED_RADIUS_PX,
+  // EXACTLY WHAT IT HAD. The village green is grass and is meant to be, so
+  // Emberhold keeps the old behaviour — the meadow stops at the cobbles and
+  // the gardens round the palisade stay. Only the city changes.
+  coverRadiusPx: TOWN_PAVED_RADIUS_PX,
   gates: TOWN_GATES,
   buildings: TOWN_BUILDINGS,
   props: TOWN_PROPS,
@@ -1949,7 +1969,7 @@ export function onColdharrowStreet(x: number, y: number): boolean {
 export const COLDHARROW_BASIN = {
   /** Inside this the ground is ice, not land. */
   innerPx: 1560,
-  outerPx: COLDHARROW_RADIUS_PX + 120,
+  outerPx: COLDHARROW_RADIUS_PX - 80,
   startDeg: 238,
   endDeg: 302,
 };
@@ -2174,6 +2194,109 @@ export const COLDHARROW_BUILDINGS: TownBuilding[] = settleLayout(COLDHARROW_AUTH
 
 
 
+/**
+ * Coldharrow's street furniture.
+ *
+ * ONE TABLE, FOR THE SAME REASON EMBERHOLD HAS ONE: the position lives in
+ * `shared/` so that the thing the client draws and the thing a body is kept out
+ * of are a single entry. `resolveTownOnce` already walks `s.props` for every
+ * settlement, so a brazier added here is collidable the moment it is visible.
+ * A brazier drawn from one list and collided from another is a brazier you can
+ * stand inside, and nobody finds out until they do.
+ *
+ * Positions were not typed from taste. `settleLayout` moves every building from
+ * where it was authored, so anything placed by eye against the authored numbers
+ * lands inside a wall; these were checked against the settled layout and the
+ * street mask, which is what `tools/test/town.mjs` now re-checks on every run.
+ */
+export const COLDHARROW_PROPS: TownProp[] = [
+  // BRAZIERS, AND THERE ARE FOUR OF THEM BECAUSE EIGHT COST 1.4 SECONDS OF
+  // LOAD. Each one is a fire and a point light, and both halves are paid under
+  // the loading screen: the light lengthens every shader the game compiles, and
+  // the flame is its own emitter. Bisected against a 15.9s baseline, eight
+  // braziers alone were 1.4s of it — on a load that had already grown to 21s
+  // and was reported as a freeze.
+  //
+  // So they go only where people actually stand: the pair inside the Landward
+  // Gate, which is where every player arrives, and the pair at the head of the
+  // quays. The works yard and the commons are seen from across the city, where
+  // a fire would have been scenery at the price of a light.
+  { id: "cold-brazier-gate-w", radiusPx: 2080, angleDeg: 79, blockRadiusPx: 26 },
+  { id: "cold-brazier-gate-e", radiusPx: 2080, angleDeg: 101, blockRadiusPx: 26 },
+  { id: "cold-brazier-quay-w", radiusPx: 1430, angleDeg: 258, blockRadiusPx: 26 },
+  { id: "cold-brazier-quay-e", radiusPx: 1430, angleDeg: 282, blockRadiusPx: 26 },
+
+  // CARGO, standing on the quay because that is where cargo is: landed, and not
+  // yet moved. Big enough to walk round rather than over.
+  { id: "cold-cargo-a", radiusPx: 1300, angleDeg: 250, blockRadiusPx: 34 },
+  { id: "cold-cargo-b", radiusPx: 1240, angleDeg: 262, blockRadiusPx: 34 },
+  { id: "cold-cargo-c", radiusPx: 1240, angleDeg: 278, blockRadiusPx: 34 },
+  { id: "cold-cargo-d", radiusPx: 1300, angleDeg: 290, blockRadiusPx: 30 },
+  { id: "cold-cargo-e", radiusPx: 860, angleDeg: 268, blockRadiusPx: 30 },
+
+  // The notice board, inside the gate where somebody arriving reads it.
+  { id: "cold-notices", radiusPx: 1960, angleDeg: 97, blockRadiusPx: 22 },
+];
+
+/**
+ * Move each prop off whatever it landed inside.
+ *
+ * SAME ARGUMENT AS `settleLayout`, one level down. A brazier is authored as an
+ * INTENT — "at the head of the west quay", "inside the gate where you'd read
+ * the notices" — and intent is expressed in polar terms against a layout that
+ * `settleLayout` then moves. Seven of the first fourteen props ended up inside
+ * a building because of exactly that: the numbers were typed against the
+ * authored positions and checked against the settled ones.
+ *
+ * A prop inside a wall is worse than a building overlap, because it is INVISIBLE
+ * and still collides: the player walks up the quay, stops dead in open air, and
+ * there is nothing on screen to explain why. So this searches outward from the
+ * authored spot for the nearest place that is clear of every building, out of
+ * the carriageway and off the ice, and takes the first one.
+ *
+ * Deterministic, and in `shared/` for the reason the layout solver gives: the
+ * renderer, the collision resolver and the layout test must be looking at one
+ * answer, or the fire you can see is not the fire you bump into.
+ */
+function settlePropsAt(
+  props: TownProp[],
+  buildings: readonly TownBuilding[],
+): TownProp[] {
+  const clear = (x: number, y: number, pad: number): boolean =>
+    !insideAnyBuildingOf(buildings, x, y, pad) &&
+    !onColdharrowStreet(x, y) &&
+    !onColdharrowIce(x, y);
+
+  return props.map((prop) => {
+    const a0 = (prop.angleDeg * Math.PI) / 180;
+    const x0 = COLD_CENTRE.x + Math.cos(a0) * prop.radiusPx;
+    const y0 = COLD_CENTRE.y + Math.sin(a0) * prop.radiusPx;
+    if (clear(x0, y0, prop.blockRadiusPx)) return prop;
+
+    // Outward in rings: every 30px, sixteen bearings, nearest first. Radius
+    // before bearing, so a prop stays as close to its authored spot as the
+    // obstruction allows rather than sliding right round the city.
+    for (let step = 30; step <= 600; step += 30) {
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const x = x0 + Math.cos(a) * step;
+        const y = y0 + Math.sin(a) * step;
+        if (!clear(x, y, prop.blockRadiusPx)) continue;
+        const dx = x - COLD_CENTRE.x;
+        const dy = y - COLD_CENTRE.y;
+        return {
+          ...prop,
+          radiusPx: Math.round(Math.hypot(dx, dy)),
+          angleDeg: (Math.atan2(dy, dx) * 180) / Math.PI,
+        };
+      }
+    }
+    // Nowhere within 600px is clear. Leave it where it was authored and let the
+    // layout test say so, rather than teleporting it somewhere unrelated.
+    return prop;
+  });
+}
+
 export const COLDHARROW: Settlement = {
   id: "coldharrow",
   name: "Coldharrow",
@@ -2182,10 +2305,11 @@ export const COLDHARROW: Settlement = {
   // A far smaller PAVED fraction than Emberhold's two thirds. A port is quays
   // and yards, not one big floor.
   pavedRadiusPx: Math.round(COLDHARROW_RADIUS_PX * 0.34),
+  // The whole walled area. Inside the curtain is city, paved or not.
+  coverRadiusPx: COLDHARROW_RADIUS_PX,
   gates: COLDHARROW_GATES,
   buildings: COLDHARROW_BUILDINGS,
-  // Phase 71 C2b.
-  props: [],
+  props: settlePropsAt(COLDHARROW_PROPS, COLDHARROW_BUILDINGS),
   npcs: [],
   arrival: atCold(2200, 90),
 };

@@ -24,7 +24,7 @@
 // already-built image and only a large move or a zoom change starts a rebuild.
 
 import { WORLD_WIDTH, WORLD_HEIGHT } from "../../../shared/protocol-types";
-import { TOWN_CENTER, TOWN_RADIUS_PX, TOWN_PAVED_RADIUS_PX } from "../../../shared/town";
+import { SETTLEMENTS, onColdharrowIce, onColdharrowStreet } from "../../../shared/town";
 import { ROAD_HALF_WIDTH_PX, distanceToRoad } from "../../../shared/road";
 import { RIVER_HALF_WIDTH_PX, distanceToRiver } from "../../../shared/river";
 import { forestStrengthAt } from "../../../shared/forests";
@@ -77,13 +77,53 @@ function groundAt(px: number, py: number): [number, number, number] {
   }
 
   const road = distanceToRoad(px, py);
-  const townR = Math.hypot(px - TOWN_CENTER.x, py - TOWN_CENTER.y);
+
+  // EVERY SETTLEMENT, and this was the sixth place in the codebase to know
+  // about exactly one of them. It read `TOWN_CENTER`, `TOWN_RADIUS_PX` and
+  // `TOWN_PAVED_RADIUS_PX` — Emberhold's three — so Coldharrow was not drawn on
+  // the minimap AT ALL. Standing on its quay, the map showed an unbroken green
+  // disc: no wall, no paving, no harbour, nothing to navigate by in the one
+  // place a city most needs a map.
+  //
+  // The others, for the record, since the shape keeps recurring: `wallColliders`
+  // as a field initialiser, `TOWN_CENTER` in the terrain flat spots, the gate
+  // angles in the camera collider ring, `squareDressing` placing a village's
+  // furniture at a harbour, and `TOWN_CENTER` again in the soak driver, five
+  // thousand pixels stale. Any hand-held copy of one settlement's geometry is a
+  // thing that silently means "the first one" forever.
+  let town: (typeof SETTLEMENTS)[number] | null = null;
+  let townR = 0;
+  for (const st of SETTLEMENTS) {
+    const d = Math.hypot(px - st.center.x, py - st.center.y);
+    if (d < st.radiusPx) {
+      town = st;
+      townR = d;
+      break;
+    }
+  }
 
   let base: [number, number, number];
-  if (townR < TOWN_PAVED_RADIUS_PX) {
+  if (town && onColdharrowIce(px, py)) {
+    // The harbour, which is the one feature that makes the north of the map
+    // legible at a glance — without it the basin reads as more paving.
+    //
+    // Pulled toward the paving rather than left as open water: this is a
+    // FROZEN harbour, and `C.shallow` on its own reads as a lake somebody
+    // could sail into, which is the opposite of what the place is.
+    base = mix(C.shallow, C.paving, 0.45);
+  } else if (town && onColdharrowStreet(px, py)) {
+    base = [...C.road] as [number, number, number];
+  } else if (town && townR < town.pavedRadiusPx) {
     base = [...C.paving] as [number, number, number];
-  } else if (townR < TOWN_RADIUS_PX) {
-    base = mix(C.paving, C.townDirt, (townR - TOWN_PAVED_RADIUS_PX) / (TOWN_RADIUS_PX - TOWN_PAVED_RADIUS_PX));
+  } else if (town) {
+    // Out to the WALL rather than to the paving, so a city whose square is a
+    // third of its width still reads as built-up all the way to the curtain —
+    // the same split `coverRadiusPx` had to make for the ground itself.
+    base = mix(
+      C.paving,
+      C.townDirt,
+      (townR - town.pavedRadiusPx) / Math.max(1, town.radiusPx - town.pavedRadiusPx),
+    );
   } else {
     // A little variation so open country is not one flat block of colour.
     const n = Math.sin(px * 0.0021) * Math.cos(py * 0.0017);

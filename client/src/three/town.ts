@@ -30,6 +30,8 @@ import {
   TOWN_BUILDINGS,
   COLDHARROW_BASIN,
   COLDHARROW_STREETS,
+  onColdharrowStreet,
+  propPositionIn,
   inGatewayAmong,
   type Settlement,
   type Street,
@@ -1153,7 +1155,14 @@ function hangingSign(b: Builder, group: THREE.Group, text: string, x: number, y:
 // --- Lanterns ---------------------------------------------------------------
 
 export interface Lantern {
-  light: THREE.PointLight;
+  /**
+   * Null for a fitting that is drawn lit but casts no real light.
+   *
+   * See the `light` parameter on `lantern`: a city's worth of street lamps at
+   * one PointLight each is what made Coldharrow unplayable, and most of them
+   * are now post-and-glow only.
+   */
+  light: THREE.PointLight | null;
   /** The visible flame. Absent for lights that stand inside geometry of their
    *  own, where a second bright ball would only be a second bright ball. */
   glow: THREE.Mesh | null;
@@ -1205,6 +1214,26 @@ function lantern(
   bare = false,
   /** Suppresses the emissive ball, for a fitting that supplies its own fire. */
   noGlow = false,
+  /**
+   * Whether this fitting gets a real `PointLight`.
+   *
+   * THE SINGLE MOST EXPENSIVE THING IN THE CITY, and the reason this parameter
+   * exists. Emberhold has six lanterns and so six point lights, which is fine.
+   * Coldharrow's streets wanted a lamp every 380px along four spokes and two
+   * rings, and that came to FIFTY-EIGHT — sixty-six with the braziers, an
+   * eleven-fold increase in dynamic lights. Reported from play as "unplayable,
+   * you made the game lag and freeze like crazy", which is exactly right: every
+   * lit fragment in the scene pays for every light in range, and three.js
+   * recompiles the shader program whenever the count changes, so walking the
+   * city triggers a stall on nearly every step.
+   *
+   * A lamp does not need a light to read as lit. The POST is merged geometry
+   * and effectively free; the GLOW is a small emissive ball that is bright at
+   * night on its own. So most lamps get both of those and no light, a few get
+   * the real thing so the street has actual pools of illumination, and the
+   * braziers keep theirs because they are what people gather at.
+   */
+  light = true,
 ): void {
   if (!bare) {
     b.cyl("iron", 0.07, height, x, 0, z, 6);
@@ -1215,18 +1244,26 @@ function lantern(
     b.add("iron", new THREE.ConeGeometry(0.22, 0.22, 6), x, height + 0.56, z);
   }
 
-  const light = new THREE.PointLight(0xffb45e, 0, 13, 2);
-  light.position.set(x, height + 0.22, z);
-  group.add(light);
+  let lit: THREE.PointLight | null = null;
+  if (light) {
+    lit = new THREE.PointLight(0xffb45e, 0, 13, 2);
+    lit.position.set(x, height + 0.22, z);
+    group.add(lit);
+  }
 
   let glow: THREE.Mesh | null = null;
   if (!noGlow) {
     glow = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 8), lanternGlowMaterial);
-    glow.position.copy(light.position);
+    glow.position.set(x, height + 0.22, z);
     group.add(glow);
   }
 
-  lanterns.push({ light, glow, phase: (x * 12.9898 + z * 78.233) % (Math.PI * 2), strength });
+  lanterns.push({
+    light: lit,
+    glow,
+    phase: (x * 12.9898 + z * 78.233) % (Math.PI * 2),
+    strength,
+  });
 }
 
 
@@ -1572,6 +1609,12 @@ function brazier(
   x: number,
   z: number,
   lanterns: Lantern[],
+  /**
+   * Whether this one casts real light. See `lantern`'s `light` parameter and
+   * the measured cost in `coldharrowDressing`, which is why a brazier can now
+   * be fire without being a lamp.
+   */
+  light = true,
 ): void {
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2;
@@ -1588,7 +1631,7 @@ function brazier(
   // Stronger than a lamp, because an open fire is: the lanterns line the square
   // and a brazier is meant to be a place people stand round after dark. No
   // glow ball — the fire below IS the visible half now.
-  lantern(b, group, x, z, 1.05, lanterns, 1.25, true, true);
+  lantern(b, group, x, z, 1.05, lanterns, 1.25, true, true, light);
   // Sitting IN the basket, on the coals, and wider than a torch's: a brazier
   // burns logs laid flat and a torch burns a bundle held upright, so one is
   // squat and one is a tongue.
@@ -2117,9 +2160,7 @@ const LOOKS: Record<string, SettlementLook> = {
     // Curtain 4.6, merlons to 5.3; a little over so the camera cannot ride the
     // parapet either.
     wallHeight: 6.2,
-    // Phase 71 C2b. Emberhold's `squareDressing` is not a stand-in: it would
-    // put a village's benches and bunting round a harbour basin.
-    dressing: () => {},
+    dressing: coldharrowDressing,
   },
 };
 
@@ -2406,6 +2447,120 @@ function makeBuilding(
  * tall. Tiling instead puts the same image down twelve times across the square,
  * and the fade is done with vertex alpha on the mesh — see `buildGround`.
  */
+/**
+ * Trodden ground, for the yards and lanes between a city's buildings.
+ *
+ * THE OTHER HALF OF THE GRASS REPORT, and the half `coverRadiusPx` does not
+ * touch. "Still a lot of grass and flowers in the city" was two faults wearing
+ * one description. The FLOWERS were the ground-cover scatter, which suppressed
+ * itself inside the paving and so covered the 87% of Coldharrow that is not the
+ * central square. The GRASS underneath them was never the scatter at all:
+ * `buildGround` paves `pavedRadiusPx` and nothing else, so everything from the
+ * square out to the curtain wall was raw terrain, and raw terrain is meadow.
+ *
+ * Emberhold wants exactly that — the belt of grass between the houses and the
+ * palisade is where the gardens and the woodpile live, and a village green is
+ * supposed to be green. A city is not. What lies between blocks in a walled
+ * city is beaten earth, grit, and the snow that gets trodden into it, which is
+ * what this draws.
+ *
+ * Separate from `cobbleTexture` rather than a tint of it, because the two are
+ * different surfaces doing different jobs. Setts are LAID, in courses, by
+ * somebody. A yard is what is left where nobody laid anything.
+ */
+function yardTexture(): THREE.Texture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const rand = seeded(20260917);
+
+  ctx.fillStyle = "#585349";
+  ctx.fillRect(0, 0, size, size);
+
+  // Broad mottling first, so the ground is never one flat tone at any distance.
+  for (let i = 0; i < 90; i++) {
+    const r = 14 + rand() * 46;
+    const shade = 74 + Math.floor(rand() * 26);
+    ctx.fillStyle = `rgba(${shade + 8},${shade + 4},${shade - 4},0.5)`;
+    wrapped(ctx, size, () => {
+      ctx.beginPath();
+      ctx.arc(rand() * size, rand() * size, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // Grit: small, many, and barely lighter than the ground. A yard reads as
+  // gritty because of the DENSITY of the specks, not their contrast.
+  for (let i = 0; i < 1500; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const r = 0.6 + rand() * 1.9;
+    const shade = 96 + Math.floor(rand() * 44);
+    ctx.fillStyle = `rgb(${shade},${shade - 3},${shade - 10})`;
+    wrapped(ctx, size, () => {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // Trodden snow, and the FIRST VERSION OF THIS WAS THE PROBLEM. It was 26 big
+  // soft circles at radius 7-22, which tiles out to pale discs a couple of
+  // metres across — reported from play as not looking like snow at all, and
+  // they did not: they read as bubbles, or as a stain, because nothing in
+  // nature that size is a circle.
+  //
+  // What makes trodden snow read is the EDGE. It survives in irregular patches
+  // with ragged, roughly straight borders where boots have scuffed it back, and
+  // it is thin enough that the grit shows through. So each patch is built from
+  // a ring of overlapping small blobs at a jittered radius — which gives a
+  // lumpy outline instead of a circle — and then knocked back by scattering
+  // ground-coloured specks over it, so the snow never reads as a clean fill.
+  const patch = (cxp: number, cyp: number, span: number, alpha: number) => {
+    const lobes = 9 + Math.floor(rand() * 7);
+    const wob: number[] = [];
+    for (let i = 0; i < lobes; i++) wob.push(0.55 + rand() * 0.8);
+    ctx.fillStyle = `rgba(206,212,214,${alpha})`;
+    wrapped(ctx, size, () => {
+      for (let i = 0; i < lobes; i++) {
+        const a = (i / lobes) * Math.PI * 2;
+        const rr = span * wob[i];
+        ctx.beginPath();
+        ctx.arc(cxp + Math.cos(a) * rr, cyp + Math.sin(a) * rr, span * 0.52, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.arc(cxp, cyp, span * 0.62, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  };
+
+  for (let i = 0; i < 14; i++) {
+    patch(rand() * size, rand() * size, 5 + rand() * 11, 0.2 + rand() * 0.22);
+  }
+
+  // Grit back over the top, so the patches are trodden rather than laid.
+  for (let i = 0; i < 900; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const shade = 78 + Math.floor(rand() * 34);
+    ctx.fillStyle = `rgba(${shade},${shade - 3},${shade - 9},${0.3 + rand() * 0.5})`;
+    wrapped(ctx, size, () => {
+      ctx.beginPath();
+      ctx.arc(x, y, 0.5 + rand() * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 function cobbleTexture(): THREE.Texture {
   const size = 256;
   const canvas = document.createElement("canvas");
@@ -2851,6 +3006,265 @@ function palisade(b: Builder, group: THREE.Group, lanterns: Lantern[], s: Settle
   }
 }
 
+/**
+ * One broken plate of ice: an irregular slab with an angular outline.
+ *
+ * BECAUSE `BoxGeometry` LOOKS LIKE A BOX, which is what the first two attempts
+ * at this were and exactly what came back from play — "ice just looks like
+ * blocks too". No amount of colour, tilt or scatter fixes a cube: the silhouette
+ * is the thing being read, and a cube's silhouette is a cube's at every angle.
+ *
+ * Ice does not break into rectangles. A sheet under stress fractures along
+ * lines that meet at odd angles, so a plate is a POLYGON with a handful of
+ * straight sides of unequal length — six to nine of them, none of them square
+ * to each other. That outline is nearly the whole cue, and it costs the same as
+ * the box did.
+ *
+ * The radius is a smooth function of the angle rather than a per-vertex random,
+ * so the outline is irregular without being spiky, and the top and bottom faces
+ * agree — the seam a per-vertex jitter leaves at angle zero is visible as a
+ * notch, and on a slab this flat it reads as a modelling error.
+ */
+function icePlate(
+  radius: number,
+  thickness: number,
+  sides: number,
+  /** Decorrelates plates so no two share an outline. */
+  phase: number,
+): THREE.BufferGeometry {
+  const geo = new THREE.CylinderGeometry(radius, radius * 0.94, thickness, sides);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const a = Math.atan2(z, x);
+    // Two low harmonics: enough to make the sides unequal, too smooth to spike.
+    const f =
+      1 +
+      0.3 * Math.sin(a * 3 + phase) +
+      0.17 * Math.sin(a * 7 + phase * 2.3) +
+      0.09 * Math.sin(a * 11 + phase * 0.7);
+    pos.setX(i, x * f);
+    pos.setZ(i, z * f);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * Smooth seeded value noise, for mottling the harbour ice.
+ *
+ * A lattice of random values read back with smoothstep interpolation, which is
+ * the cheapest thing that gives PATCHES rather than static — and patches are
+ * what the ice needed. Per-vertex random would have been noise on a disc and
+ * still read as one flat tone from any distance; this gives drifts a few metres
+ * across, which is the scale wind-blown snow actually sits at.
+ *
+ * Two of these at different lattice sizes are layered at the call site. One
+ * octave reads as a regular grid once you have noticed it; two does not.
+ */
+function iceMottle(seed: number, cols: number, rows: number): (u: number, v: number) => number {
+  const r = seededRandom(seed);
+  const g: number[] = [];
+  for (let i = 0; i < cols * rows; i++) g.push(r());
+  return (u, v) => {
+    const x = Math.max(0, Math.min(1, u)) * (cols - 1);
+    const y = Math.max(0, Math.min(1, v)) * (rows - 1);
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const x1 = Math.min(x0 + 1, cols - 1);
+    const y1 = Math.min(y0 + 1, rows - 1);
+    const fx = x - x0;
+    const fy = y - y0;
+    const sx = fx * fx * (3 - 2 * fx);
+    const sy = fy * fy * (3 - 2 * fy);
+    const top = g[y0 * cols + x0] * (1 - sx) + g[y0 * cols + x1] * sx;
+    const bot = g[y1 * cols + x0] * (1 - sx) + g[y1 * cols + x1] * sx;
+    return top * (1 - sy) + bot * sy;
+  };
+}
+
+/**
+ * Coldharrow's furniture.
+ *
+ * NOT `squareDressing` WITH DIFFERENT NUMBERS. That function sets out benches,
+ * planters, a well and bunting on a ring round a village green. A harbour has
+ * none of those, which is why the look table grew a `dressing` slot in the
+ * first place — running Emberhold's put a hamlet's garden furniture round an
+ * ice basin.
+ *
+ * What a cold port has instead, and why each one is here:
+ *
+ *   LAMPS, along the streets. A village is walked between doors it can see; a
+ *   city is walked at night down roads it cannot, and the lamps are what make
+ *   the street legible as a route rather than a gap between buildings. They go
+ *   at the KERB, inside the carriageway — the one band guaranteed clear of
+ *   masonry, because `settleLayout` has already pushed every building out of it.
+ *   Set at the edge, outside the street, they would be half-buried in whatever
+ *   the solver happened to park there.
+ *
+ *   BOLLARDS, along the quay lip. The single detail that makes a waterfront
+ *   read as a waterfront rather than a paved area that stops. Low enough to
+ *   step over and given no collision, because stopping a body on every one of
+ *   them would fence off the harbour.
+ *
+ *   CARGO and BRAZIERS, from `s.props` rather than from a second list here, so
+ *   the fire you can see is the fire you bump into.
+ */
+/**
+ * The braziers that throw light, as opposed to the ones that are only fire.
+ *
+ * A set rather than a count, because WHICH four matters: the pair at the head
+ * of the quays and the pair inside the Landward Gate are where a player arrives
+ * and where they stand about. The ones in the works yard and out on the commons
+ * are seen from across the city, where a light contributes nothing a flame does
+ * not already do.
+ */
+const LIT_BRAZIERS = new Set([
+  "cold-brazier-gate-w",
+  "cold-brazier-gate-e",
+  "cold-brazier-quay-w",
+  "cold-brazier-quay-e",
+]);
+
+function coldharrowDressing(
+  b: Builder,
+  group: THREE.Group,
+  lanterns: Lantern[],
+  s: Settlement,
+): void {
+  const cx = toWorldX(s.center.x);
+  const cz = toWorldZ(s.center.y);
+  const at = (radiusPx: number, deg: number) => {
+    const a = (deg * Math.PI) / 180;
+    return {
+      x: cx + (Math.cos(a) * radiusPx) / PX_PER_UNIT,
+      z: cz + (Math.sin(a) * radiusPx) / PX_PER_UNIT,
+    };
+  };
+
+  // --- lamps ----------------------------------------------------------------
+  // Alternating sides rather than facing pairs: a matched pair every forty feet
+  // reads as a runway, and a stagger reads as a street.
+  //
+  // SPACED AT 620px AND MOSTLY UNLIT, which is the fix for the worst thing this
+  // file has done. At 380px spacing with a PointLight each, the four spokes and
+  // two rings came to fifty-eight dynamic lights — on top of the braziers,
+  // sixty-six against Emberhold's six. Every lit fragment pays for every light
+  // in range and three.js rebuilds the shader program when the count changes,
+  // so the city stuttered on nearly every step. Reported from play as
+  // "unplayable... lag and freeze like crazy".
+  //
+  // NOT ONE OF THEM CARRIES A REAL LIGHT, and the number that settled it is
+  // this: a point light costs ~210-300ms OF LOAD TIME, every time. Not frame
+  // time — LOAD time, because it lengthens the unrolled light loop in every one
+  // of the 43 shaders the game compiles under the loading screen. Bisected
+  // against a 15.9s baseline, with everything else in the city present:
+  //
+  //      0 Coldharrow lights ......... 15.9s   (baseline)
+  //      8 (the braziers only) ....... 18.3s
+  //     21 (plus every third lamp) ... 21.0s
+  //
+  // Which is how a city with street lighting turned a sixteen-second load into
+  // a twenty-one-second one and made the loading screen look like a hang. It
+  // was reported that way — "on the loading screen it freezes and my whole
+  // browser freezes" — and the comment on Emberhold's six square lanterns had
+  // already said it in plain words: every extra one is a real cost on every lit
+  // surface. It was right, and it understated the case.
+  //
+  // The posts and their emissive glow balls cost nothing of the sort, and they
+  // are what actually reads at this camera. Pools of light on the cobbles were
+  // never worth five seconds of every session.
+  let flip = false;
+  let n = 0;
+  const LIT_EVERY = Number.POSITIVE_INFINITY;
+  for (const st of COLDHARROW_STREETS) {
+    const kerb = st.halfPx - 28;
+    if (st.kind === "spoke") {
+      const angle = st.angleDeg ?? 0;
+      const along = (angle * Math.PI) / 180;
+      const across = ((angle + 90) * Math.PI) / 180;
+      for (let r = (st.fromPx ?? 0) + 340; r <= (st.toPx ?? 0) - 160; r += 620) {
+        flip = !flip;
+        const off = kerb * (flip ? 1 : -1);
+        const x = cx + (Math.cos(along) * r + Math.cos(across) * off) / PX_PER_UNIT;
+        const z = cz + (Math.sin(along) * r + Math.sin(across) * off) / PX_PER_UNIT;
+        lantern(b, group, x, z, 3.2, lanterns, 1.15, false, false, n++ % LIT_EVERY === 0);
+      }
+    } else {
+      // Constant ARC LENGTH, not constant angle: the two rings are at different
+      // radii, and a fixed angular step would space the outer ring's lamps
+      // almost twice as far apart as the inner ring's.
+      const ring = st.radiusPx ?? 1;
+      const stepDeg = (620 / ring) * (180 / Math.PI);
+      for (let d = (st.startDeg ?? 0) + stepDeg / 2; d < (st.endDeg ?? 0); d += stepDeg) {
+        flip = !flip;
+        const p = at(ring + kerb * (flip ? 1 : -1), d);
+        lantern(b, group, p.x, p.z, 3.2, lanterns, 1.15, false, false, n++ % LIT_EVERY === 0);
+      }
+    }
+  }
+
+  // --- the quay lip ---------------------------------------------------------
+  const lip = COLDHARROW_BASIN.innerPx - 45;
+  for (let deg = COLDHARROW_BASIN.startDeg + 2; deg < COLDHARROW_BASIN.endDeg; deg += 3.4) {
+    const a = (deg * Math.PI) / 180;
+    // Skip where a street runs out to the water: a bollard in the middle of the
+    // road at the end of the spine is a bollard somebody put there by accident.
+    if (onColdharrowStreet(s.center.x + Math.cos(a) * lip, s.center.y + Math.sin(a) * lip)) {
+      continue;
+    }
+    const p = at(lip, deg);
+    b.cyl("pitch", 0.2, 0.8, p.x, 0, p.z, 8);
+    b.add("pitch", new THREE.SphereGeometry(0.23, 8, 6), p.x, 0.8, p.z);
+  }
+
+  // --- what the shared table says is here -----------------------------------
+  for (const prop of s.props) {
+    const at2 = propPositionIn(s, prop);
+    const x = toWorldX(at2.x);
+    const z = toWorldZ(at2.y);
+    if (prop.id.startsWith("cold-brazier")) {
+      // FOUR OF THE EIGHT ARE LIT. All eight are built — the iron, the coals
+      // and the fire are merged geometry either way — but only the four people
+      // actually gather at throw light. That keeps Coldharrow's total near
+      // Emberhold's six, which its own note calls "the number the night pass is
+      // tuned against".
+      brazier(b, group, x, z, lanterns, LIT_BRAZIERS.has(prop.id));
+      continue;
+    }
+    if (prop.id.startsWith("cold-cargo")) {
+      // A PILE, not a prop. Cargo on a quay is stacked, and three loose crates
+      // spaced out on the flags read as litter; boxes rather than gltf
+      // instances because the stack is the shape that matters, not the lid.
+      const r = seededRandom(prop.id.charCodeAt(prop.id.length - 1) * 977 + prop.radiusPx);
+      const n = 3 + Math.floor(r() * 3);
+      for (let i = 0; i < n; i++) {
+        const w = 0.8 + r() * 0.45;
+        const h = 0.62 + r() * 0.3;
+        const lift = i >= 3 ? 0.95 : 0;
+        b.box(
+          i % 2 ? "timber" : "timberLight",
+          w,
+          h,
+          w * (0.82 + r() * 0.36),
+          x + (r() - 0.5) * 1.4,
+          lift,
+          z + (r() - 0.5) * 1.4,
+          r() * Math.PI,
+        );
+      }
+      continue;
+    }
+    if (prop.id === "cold-notices") {
+      b.cyl("timber", 0.09, 2.0, x - 0.6, 0, z, 6);
+      b.cyl("timber", 0.09, 2.0, x + 0.6, 0, z, 6);
+      b.box("timberLight", 1.6, 1.1, 0.1, x, 1.4, z, 0);
+    }
+  }
+}
+
 /** The well in the square, plus a market stall, troughs and fences. */
 function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[], s: Settlement): void {
   const cx = toWorldX(s.center.x);
@@ -3146,12 +3560,30 @@ function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[], s: 
  * the fade only needs geometry where it happens, and a uniformly subdivided disc
  * spends most of its vertices in the middle where the alpha is a constant 1.
  */
-export function ringedDisc(radius: number, segments: number, bands: number[]): THREE.BufferGeometry {
+export function ringedDisc(
+  radius: number,
+  segments: number,
+  bands: number[],
+  /**
+   * Where the fade to transparent begins, as a fraction of the radius.
+   *
+   * A PARAMETER BECAUSE THE YARD NEEDS A DIFFERENT ONE, and the default hid
+   * that. `bands` only says where the geometry is tessellated; the alpha ramp
+   * was a hardcoded 0.78 regardless, which is right for the paved square — a
+   * plaza should melt into the grass round it over a fifth of its width. For a
+   * surface whose whole job is that there is NO grass under it out to the wall,
+   * the same ramp leaves a ring of meadow inside the city: the bug moved
+   * outward rather than fixed.
+   */
+  fadeFrom = 0.78,
+): THREE.BufferGeometry {
   const positions: number[] = [];
   const uvs: number[] = [];
   const colors: number[] = [];
 
-  const alphaAt = (t: number) => (t <= 0.78 ? 1 : Math.max(0, 1 - (t - 0.78) / 0.22));
+  const span = Math.max(0.001, 1 - fadeFrom);
+  const alphaAt = (t: number) =>
+    t <= fadeFrom ? 1 : Math.max(0, 1 - (t - fadeFrom) / span);
   const push = (t: number, angle: number) => {
     const r = t * radius;
     const x = Math.cos(angle) * r;
@@ -3459,75 +3891,302 @@ export class Town {
    * quays — because one flat polygon the size of a harbour reads as a hole in
    * the ground rather than as a surface.
    */
+  /**
+   * The ice, so the clock can dim it.
+   *
+   * AN INSTANCE FIELD, NOT A MODULE-LEVEL LIST like `litGlass` above. That one
+   * is shared by every Town ever built, which is survivable only because
+   * Emberhold is the only settlement with windows and is a bug waiting for the
+   * third town. This file has already produced four singleton faults of exactly
+   * that shape — `wallColliders`, `TOWN_CENTER` in the flat spots, the gate
+   * angles in the camera ring, `squareDressing` — and there is no reason to add
+   * a fifth for the sake of two materials.
+   */
+  private readonly iceSurfaces: THREE.MeshStandardMaterial[] = [];
+
+  /** Whether this settlement's lanterns are currently in the render list. */
+  private lightsOn = true;
+
   private buildHarbour(): void {
     if (this.settlement.id !== "coldharrow") return;
 
     const cx = toWorldX(this.settlement.center.x);
     const cz = toWorldZ(this.settlement.center.y);
     const b = COLDHARROW_BASIN;
+    const group = new THREE.Group();
 
+    // WHAT WAS WRONG WITH THE FIRST ONE, because it explains every choice below.
+    // It was a single flat-shaded ring sector in one colour with thirty white
+    // boxes laid on top, and it read — accurately — as "not rendered white
+    // floor and white blocks". Nothing in it said ice. A frozen harbour is not
+    // a pale disc: it is a SURFACE, and what makes a surface is variation
+    // across it, breaks in it, and something standing proud of it. So:
+    //
+    //   MOTTLE   the sheet, so it is never one flat tone across 1,100 units.
+    //   RELIEF   it, so the normals differ and it catches the light unevenly.
+    //   CRACK    it, because a fracture network is the single most legible
+    //            "this is ice and not stone" signal there is.
+    //   RIDGE    it, where plates have driven into each other and ridden up.
+    //
+    // All of it is seeded, so every client sees the same harbour.
+
+    const rand = seededRandom(70177);
+
+    // --- the sheet ----------------------------------------------------------
     const sheet = new THREE.MeshStandardMaterial({
-      color: 0x9fb8c6,
-      roughness: 0.22,
+      // White, because the COLOUR COMES FROM THE VERTICES below. `vertexColors`
+      // multiplies the two, so a tinted base would tint the mottle as well and
+      // the range would compress back to the flat tone being fixed.
+      color: 0xffffff,
+      vertexColors: true,
+      roughness: 0.16,
       metalness: 0.0,
-      // See the note above, and the Coldwater's, which this is the other half
-      // of the same argument as.
-      emissive: 0x1b2c36,
-      emissiveIntensity: 1,
-      transparent: true,
-      opacity: 0.94,
-      depthWrite: false,
+      // Kept just off black so the basin does not become a hole at night. The
+      // INTENSITY is driven by the clock in `update`, not fixed here: at a
+      // constant 1 this emitted at full strength at every hour, so at first
+      // light the harbour was a glowing white void in a city of black roofs.
+      // Reported from play as "what the hell is this white thing".
+      emissive: 0x16242c,
+      emissiveIntensity: 0,
       polygonOffset: true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
     });
+    this.iceSurfaces.push(sheet);
 
-    const group = new THREE.Group();
-    const STEP = 4;
-    for (let d = b.startDeg; d < b.endDeg; d += STEP) {
-      const d1 = Math.min(d + STEP, b.endDeg);
-      const a0 = (d * Math.PI) / 180;
-      const a1 = (d1 * Math.PI) / 180;
-      const ri = b.innerPx / PX_PER_UNIT;
-      const ro = b.outerPx / PX_PER_UNIT;
-      // One quad per step, corners on the two radii — a ring sector built by
-      // hand because Three's RingGeometry cannot be given an arc that starts
-      // anywhere but zero without rotating the whole thing into place.
-      const g = new THREE.BufferGeometry();
-      const v = new Float32Array([
-        cx + Math.cos(a0) * ri, 0.02, cz + Math.sin(a0) * ri,
-        cx + Math.cos(a1) * ri, 0.02, cz + Math.sin(a1) * ri,
-        cx + Math.cos(a1) * ro, 0.02, cz + Math.sin(a1) * ro,
-        cx + Math.cos(a0) * ri, 0.02, cz + Math.sin(a0) * ri,
-        cx + Math.cos(a1) * ro, 0.02, cz + Math.sin(a1) * ro,
-        cx + Math.cos(a0) * ro, 0.02, cz + Math.sin(a0) * ro,
-      ]);
-      g.setAttribute("position", new THREE.BufferAttribute(v, 3));
-      g.computeVertexNormals();
-      const m = new THREE.Mesh(g, sheet);
-      m.renderOrder = 2;
-      group.add(m);
+    // Two octaves of smooth value noise. One is a lattice; two is weather.
+    const broad = iceMottle(70177, 9, 5);
+    const fine = iceMottle(90011, 23, 11);
+    const openIce = new THREE.Color(0x3f5a68);
+    const driftedSnow = new THREE.Color(0x9db3bd);
+
+    const ANG = 112;
+    const RAD = 16;
+    const pos: number[] = [];
+    const col: number[] = [];
+    const scratch = new THREE.Color();
+
+    const corner = (ai: number, ri: number) => {
+      const u = ai / ANG;
+      const v = ri / RAD;
+      const deg = b.startDeg + (b.endDeg - b.startDeg) * u;
+      const a = (deg * Math.PI) / 180;
+      const radPx = b.innerPx + (b.outerPx - b.innerPx) * v;
+      const r = radPx / PX_PER_UNIT;
+      // Snow drifts against the quay and thins toward open ice, so the sheet
+      // has a direction to it rather than being noise on a disc.
+      let t = broad(u, v) * 0.62 + fine(u, v) * 0.38;
+      t = t * 0.76 + (1 - v) * 0.24;
+      t = t * t * (3 - 2 * t);
+      scratch.copy(openIce).lerp(driftedSnow, t);
+      return {
+        x: cx + Math.cos(a) * r,
+        // A hand's breadth of relief. Ice is not a plane — it sags and heaves —
+        // and without it every normal is identical, which is what made the
+        // first sheet read as untextured floor no matter what colour it was.
+        y: 0.02 + (broad(u, v) - 0.5) * 0.14,
+        z: cz + Math.sin(a) * r,
+        c: scratch.clone(),
+      };
+    };
+
+    for (let ai = 0; ai < ANG; ai++) {
+      for (let ri = 0; ri < RAD; ri++) {
+        const p00 = corner(ai, ri);
+        const p10 = corner(ai + 1, ri);
+        const p11 = corner(ai + 1, ri + 1);
+        const p01 = corner(ai, ri + 1);
+        for (const t of [p00, p10, p11, p00, p11, p01]) {
+          pos.push(t.x, t.y, t.z);
+          col.push(t.c.r, t.c.g, t.c.b);
+        }
+      }
+    }
+    const sheetGeo = new THREE.BufferGeometry();
+    sheetGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
+    sheetGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(col), 3));
+    sheetGeo.computeVertexNormals();
+    const sheetMesh = new THREE.Mesh(sheetGeo, sheet);
+    sheetMesh.renderOrder = 2;
+    sheetMesh.receiveShadow = true;
+    group.add(sheetMesh);
+
+    // --- cracks -------------------------------------------------------------
+    // Thin dark ribbons just above the sheet. A fracture WANDERS and BRANCHES;
+    // a straight line reads as a join in the floor, which is the thing being
+    // fixed rather than a way to fix it.
+    const crackMat = new THREE.MeshStandardMaterial({
+      color: 0x2c4350,
+      roughness: 0.5,
+      emissive: 0x0d161b,
+      emissiveIntensity: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+    });
+    this.iceSurfaces.push(crackMat);
+
+    const inBasin = (x: number, z: number): boolean => {
+      const dx = x - cx;
+      const dz = z - cz;
+      const rPx = Math.hypot(dx, dz) * PX_PER_UNIT;
+      if (rPx < b.innerPx || rPx > b.outerPx) return false;
+      let deg = (Math.atan2(dz, dx) * 180) / Math.PI;
+      while (deg < b.startDeg) deg += 360;
+      return deg <= b.endDeg;
+    };
+
+    const crackVerts: number[] = [];
+    const ribbon = (x0: number, z0: number, x1: number, z1: number, w: number) => {
+      const dx = x1 - x0;
+      const dz = z1 - z0;
+      const len = Math.hypot(dx, dz) || 1;
+      const nx = (-dz / len) * w;
+      const nz = (dx / len) * w;
+      const y = 0.09;
+      crackVerts.push(
+        x0 - nx, y, z0 - nz, x1 - nx, y, z1 - nz, x1 + nx, y, z1 + nz,
+        x0 - nx, y, z0 - nz, x1 + nx, y, z1 + nz, x0 + nx, y, z0 + nz,
+      );
+    };
+
+    const walk = (x: number, z: number, heading: number, segs: number, w: number) => {
+      let hx = x;
+      let hz = z;
+      let dir = heading;
+      for (let i = 0; i < segs; i++) {
+        dir += (rand() - 0.5) * 0.7;
+        const len = 2.2 + rand() * 5.5;
+        const tx = hx + Math.cos(dir) * len;
+        const tz = hz + Math.sin(dir) * len;
+        if (!inBasin(tx, tz)) return;
+        ribbon(hx, hz, tx, tz, w * (0.6 + rand() * 0.8));
+        hx = tx;
+        hz = tz;
+      }
+    };
+
+    for (let c = 0; c < 22; c++) {
+      const deg = b.startDeg + rand() * (b.endDeg - b.startDeg);
+      const radPx = b.innerPx + rand() * (b.outerPx - b.innerPx);
+      const a = (deg * Math.PI) / 180;
+      const x = cx + (Math.cos(a) * radPx) / PX_PER_UNIT;
+      const z = cz + (Math.sin(a) * radPx) / PX_PER_UNIT;
+      const heading = rand() * Math.PI * 2;
+      walk(x, z, heading, 5 + Math.floor(rand() * 9), 0.11);
+      // Fork off the same origin, at an angle, thinner. Fractures branch.
+      if (rand() > 0.45) walk(x, z, heading + 1.4 + rand(), 3 + Math.floor(rand() * 5), 0.07);
+    }
+    if (crackVerts.length) {
+      const cg = new THREE.BufferGeometry();
+      cg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(crackVerts), 3));
+      cg.computeVertexNormals();
+      const cm = new THREE.Mesh(cg, crackMat);
+      cm.renderOrder = 3;
+      group.add(cm);
     }
 
-    // Floes: a scatter of pale slabs along the quay edge, seeded so the harbour
-    // is the same harbour on every client.
-    const rand = seededRandom(70177);
-    const floe = new THREE.MeshStandardMaterial({
-      color: 0xc6d8e2,
-      roughness: 0.3,
-      emissive: 0x24333d,
-      emissiveIntensity: 1,
+    // --- pressure ridges and loose plates -----------------------------------
+    const plate = new THREE.MeshStandardMaterial({
+      // Only a shade off the sheet. At 0xc6d8e2 against pale ice these read as
+      // torn paper scattered over the harbour; the point of a floe is that it
+      // is the SAME ice, broken and tilted, so it differs by a shade and a
+      // normal rather than by being white.
+      color: 0x7d95a1,
+      roughness: 0.22,
+      emissive: 0x16242c,
+      emissiveIntensity: 0,
     });
-    for (let i = 0; i < 46; i++) {
+    this.iceSurfaces.push(plate);
+
+    // ONE MESH FOR ALL OF IT. Every shard and floe below used to be its own
+    // `THREE.Mesh` with `castShadow` set — two hundred and fifty-seven of them,
+    // which is 257 draw calls in the main pass and 257 more in the shadow pass,
+    // for objects twelve centimetres thick whose shadows nobody will ever pick
+    // out. They are collected and merged instead, the same way `Builder` treats
+    // the buildings, and the shadow casting is dropped.
+    const plateParts: THREE.BufferGeometry[] = [];
+    const plateMatrix = new THREE.Matrix4();
+    const plateEuler = new THREE.Euler();
+    const plateQuat = new THREE.Quaternion();
+    const plateScale = new THREE.Vector3(1, 1, 1);
+    const addPlate = (
+      g: THREE.BufferGeometry,
+      px: number,
+      py: number,
+      pz: number,
+      rx: number,
+      ry: number,
+      rz: number,
+    ) => {
+      plateEuler.set(rx, ry, rz);
+      plateQuat.setFromEuler(plateEuler);
+      plateMatrix.compose(new THREE.Vector3(px, py, pz), plateQuat, plateScale);
+      const flat = g.index ? g.toNonIndexed() : g;
+      flat.applyMatrix4(plateMatrix);
+      flat.deleteAttribute("uv");
+      plateParts.push(flat);
+    };
+
+    // A ridge is where two plates met and one rode up: a LINE of shards, packed
+    // and leaning the same way. The line is what the eye reads as ice under
+    // pressure; the same shards scattered read as rubble.
+    for (let r = 0; r < 4; r++) {
+      const radPx = b.innerPx + 120 + rand() * Math.max(60, b.outerPx - b.innerPx - 260);
+      const startDeg = b.startDeg + rand() * (b.endDeg - b.startDeg - 26);
+      const spanDeg = 9 + rand() * 20;
+      const lean = (rand() - 0.5) * 0.5;
+      const shards = Math.floor(spanDeg * 3.2);
+      for (let i = 0; i < shards; i++) {
+        const deg = startDeg + (spanDeg * i) / shards;
+        const a = (deg * Math.PI) / 180;
+        const rr = (radPx + (rand() - 0.5) * 34) / PX_PER_UNIT;
+        // PLATES STOOD ON EDGE, which is what a pressure ridge physically is:
+        // the same flat sheet, snapped, with the broken pieces shoved up on
+        // their sides. Tipped most of the way over rather than a little, so the
+        // silhouette is a row of angled blades and not a row of lumps.
+        const g = icePlate(0.5 + rand() * 0.95, 0.12 + rand() * 0.1, 6 + Math.floor(rand() * 3), rand() * 6.3);
+        addPlate(
+          g,
+          cx + Math.cos(a) * rr,
+          0.16 + rand() * 0.4,
+          cz + Math.sin(a) * rr,
+          (rand() - 0.5) * 0.5,
+          a + (rand() - 0.5) * 0.9,
+          lean + (Math.PI / 2) * (0.55 + rand() * 0.4) * (rand() > 0.5 ? 1 : -1),
+        );
+      }
+    }
+
+    // And a few plates frozen in flat, away from the ridges, so the open ice
+    // between them is not perfectly smooth either.
+    for (let i = 0; i < 16; i++) {
       const deg = b.startDeg + rand() * (b.endDeg - b.startDeg);
-      const r = (b.innerPx + rand() * 520) / PX_PER_UNIT;
+      const radPx = b.innerPx + rand() * (b.outerPx - b.innerPx);
       const a = (deg * Math.PI) / 180;
-      const w = 0.9 + rand() * 2.6;
-      const g = new THREE.BoxGeometry(w, 0.16 + rand() * 0.14, w * (0.6 + rand() * 0.7));
-      const m = new THREE.Mesh(g, floe);
-      m.position.set(cx + Math.cos(a) * r, 0.06, cz + Math.sin(a) * r);
-      m.rotation.y = rand() * Math.PI;
-      group.add(m);
+      const rr = radPx / PX_PER_UNIT;
+      const w = 0.7 + rand() * 1.5;
+      const g = icePlate(w, 0.11 + rand() * 0.1, 6 + Math.floor(rand() * 4), rand() * 6.3);
+      // A few degrees off flat. It is the TILT rather than the outline that
+      // makes a plate read as broken ice — laid perfectly flat they are tiles.
+      addPlate(
+        g,
+        cx + Math.cos(a) * rr,
+        0.05,
+        cz + Math.sin(a) * rr,
+        (rand() - 0.5) * 0.2,
+        rand() * Math.PI,
+        (rand() - 0.5) * 0.2,
+      );
+    }
+
+    if (plateParts.length) {
+      const merged = mergeGeometries(plateParts, false);
+      if (merged) {
+        const m = new THREE.Mesh(merged, plate);
+        m.renderOrder = 4;
+        group.add(m);
+      }
     }
 
     this.group.add(group);
@@ -3609,6 +4268,43 @@ export class Town {
     // Shared, because the ground-cover scatter has to keep out of exactly this
     // circle and no more — see the note on `TOWN_PAVED_RADIUS_PX`.
     const paveRadius = this.settlement.pavedRadiusPx / PX_PER_UNIT;
+
+    // THE YARD, under everything else, out to the wall.
+    //
+    // Only where a settlement actually wants one. `coverRadiusPx` says how far
+    // the meadow is suppressed; where that reaches further than the paving
+    // there is a band with no grass and no cobbles, which is the city's yards
+    // and back lanes and was bare terrain until now. Emberhold sets the two
+    // equal, so it draws no yard and keeps its green exactly as it was.
+    if (this.settlement.coverRadiusPx > this.settlement.pavedRadiusPx) {
+      // Opaque past the wall, fading only outside it — hence the 0.94 rather
+      // than the default 0.78, which would have left a ring of meadow between
+      // the last houses and the curtain.
+      const yardRadius = (this.settlement.coverRadiusPx / PX_PER_UNIT) * 1.06;
+      const yard = new THREE.Mesh(
+        ringedDisc(yardRadius, 96, [0, 0.55, 0.8, 0.94, 0.97, 1], 0.94),
+        new THREE.MeshStandardMaterial({
+          map: yardTexture(),
+          color: 0x8e8d86,
+          transparent: true,
+          vertexColors: true,
+          roughness: 1,
+          depthWrite: false,
+          // A weaker offset than the paving's and the streets', so both win
+          // over this where they overlap it. Three surfaces at one height need
+          // an order, and the order is: yard, then streets, then the square.
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -1,
+        }),
+      );
+      yard.rotation.x = -Math.PI / 2;
+      yard.position.set(cx, 0.012, cz);
+      yard.renderOrder = 0;
+      yard.receiveShadow = true;
+      yard.name = "town-yard";
+      this.group.add(yard);
+    }
 
     // Rings, so the fade has somewhere to happen. Three's own CircleGeometry is
     // a fan from a single centre vertex, and an alpha interpolated straight
@@ -3851,6 +4547,30 @@ export class Town {
     this.townFill.intensity = night * 0.7 * eased;
     this.squareGlow.intensity = night * 34 * Math.max(eased, 0.25);
 
+    // AND THE OTHER TOWN'S LIGHTS ARE TURNED OFF ENTIRELY.
+    //
+    // Every settlement is built at load and lives in the scene for the whole
+    // session, so their lights are in the renderer's list wherever the player
+    // happens to be standing. Three.js uploads every visible light to every lit
+    // material's uniforms and loops all of them per fragment — so Emberhold's
+    // six were being paid for on Coldharrow's quay, and Coldharrow's twenty-one
+    // were being paid for in Emberhold's square, four hundred units away and
+    // behind the horizon.
+    //
+    // `visible = false` takes a light out of the render list altogether. That
+    // changes the shader program and costs a recompile, which is exactly the
+    // stall this is meant to avoid — so the switch has a WIDE HYSTERESIS BAND
+    // and flips at most once per approach, rather than on the distance test
+    // used for the fill light, which changes every frame as the player walks.
+    const wantLights = distanceFromCentre < radius * (this.lightsOn ? 3.4 : 2.6);
+    if (wantLights !== this.lightsOn) {
+      this.lightsOn = wantLights;
+      for (const l of this.lanterns) {
+        if (l.light) l.light.visible = wantLights;
+        if (l.glow) l.glow.visible = wantLights;
+      }
+    }
+
     // Lanterns are lit by the hour alone, not by where the player is: a town
     // that only lights up once you are inside it is a town with nothing to walk
     // toward.
@@ -3863,14 +4583,23 @@ export class Town {
         0.86 +
         Math.sin(timeSeconds * 6.1 + l.phase) * 0.09 +
         Math.sin(timeSeconds * 2.3 + l.phase * 2) * 0.05;
-      l.light.intensity = lit * 12 * flicker * l.strength;
+      if (l.light) l.light.intensity = lit * 12 * flicker * l.strength;
       if (!l.glow) continue;
-      l.glow.visible = lit > 0.04;
+      // `wantLights` wins: a glow ball in a town the player is nowhere near is
+      // a draw call for something over the horizon.
+      l.glow.visible = wantLights && lit > 0.04;
       if (l.glow.visible) l.glow.scale.setScalar(0.85 + flicker * 0.3);
     }
 
     // Every pane in town. A loop rather than one assignment, because the
     // buildings own their materials so that they can be faded one at a time.
     for (const glass of litGlass) glass.emissiveIntensity = lit * 1.15;
+
+    // The harbour. Backwards from the windows on purpose: a lit pane is a
+    // thing somebody switched on and belongs to the dark, whereas the ice is
+    // only ever catching the sky. So it emits a little at night — enough that
+    // the basin stays a surface rather than a hole — and nothing by day, when
+    // the sun is doing the work and any emissive at all turns it to paper.
+    for (const ice of this.iceSurfaces) ice.emissiveIntensity = lit * 0.55;
   }
 }
