@@ -1810,6 +1810,92 @@ export const COLDHARROW_BUILDINGS: TownBuilding[] = [
   cold("cold-ruin-c", "ruin", "The Old Custom House", 1240, 188, 320, 260, 2),
 ];
 
+/**
+ * Coldharrow's streets.
+ *
+ * A CITY IS ITS STREETS AND NOT ITS BUILDINGS. Emberhold needs none of this: it
+ * is one paved square with six fronts on it, so the square IS the street and
+ * the road through it is the only route anybody takes. Coldharrow is 2,600px
+ * across with seven districts round a harbour, and without streets it is
+ * thirty-nine stone buildings standing on a lawn — which is exactly how it
+ * looked the first time it was walked through.
+ *
+ * Each is an arc or a spoke, given as a band rather than a line so the renderer
+ * can lay paving along it and the ground cover can be told to keep off.
+ *
+ * THE SPOKES ARE NOT EVENLY SPACED. They run to the places people are actually
+ * going — the gates, the Works, the quays — because a street that goes nowhere
+ * is a texture, and the point of these is that walking the city should feel
+ * like following a route somebody laid out.
+ */
+export interface Street {
+  id: string;
+  /** "spoke" runs out from the middle; "ring" runs round it. */
+  kind: "spoke" | "ring";
+  /** For a spoke: the bearing it runs along, and how far out it reaches. */
+  angleDeg?: number;
+  fromPx?: number;
+  toPx?: number;
+  /** For a ring: the radius it runs at, and the arc it covers. */
+  radiusPx?: number;
+  startDeg?: number;
+  endDeg?: number;
+  /** Half-width, in server pixels. */
+  halfPx: number;
+}
+
+export const COLDHARROW_STREETS: Street[] = [
+  // --- the spine ------------------------------------------------------------
+  // The Kingsway does not stop at the gate; it becomes the city's main street
+  // and runs the whole way through to the quays. Widest of the lot, because it
+  // is the one a cart comes up.
+  { id: "spine-south", kind: "spoke", angleDeg: 90, fromPx: 0, toPx: 2600, halfPx: 130 },
+  { id: "spine-north", kind: "spoke", angleDeg: 270, fromPx: 0, toPx: 2450, halfPx: 130 },
+
+  // --- to the other two gates ----------------------------------------------
+  { id: "shore-way", kind: "spoke", angleDeg: 200, fromPx: 0, toPx: 2600, halfPx: 95 },
+  { id: "cliff-way", kind: "spoke", angleDeg: 340, fromPx: 0, toPx: 2600, halfPx: 95 },
+
+  // --- into the districts ---------------------------------------------------
+  { id: "works-way", kind: "spoke", angleDeg: 150, fromPx: 300, toPx: 2150, halfPx: 85 },
+  { id: "terrace-way", kind: "spoke", angleDeg: 212, fromPx: 300, toPx: 2100, halfPx: 80 },
+  { id: "high-way", kind: "spoke", angleDeg: 320, fromPx: 300, toPx: 2200, halfPx: 80 },
+  { id: "commons-way", kind: "spoke", angleDeg: 28, fromPx: 300, toPx: 2100, halfPx: 85 },
+
+  // --- the ring -------------------------------------------------------------
+  // One circuit joining the districts to each other rather than everything
+  // having to go through the middle, which is the difference between a city and
+  // a wheel. Broken at the harbour, where the basin is.
+  { id: "ring-east", kind: "ring", radiusPx: 1650, startDeg: 300, endDeg: 480, halfPx: 75 },
+  { id: "ring-west", kind: "ring", radiusPx: 1650, startDeg: 120, endDeg: 240, halfPx: 75 },
+];
+
+/** Whether a world position is on one of Coldharrow's streets. */
+export function onColdharrowStreet(x: number, y: number): boolean {
+  const dx = x - COLD_CENTRE.x;
+  const dy = y - COLD_CENTRE.y;
+  const r = Math.hypot(dx, dy);
+  if (r > COLDHARROW_RADIUS_PX + 200) return false;
+  let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+  if (deg < 0) deg += 360;
+
+  for (const st of COLDHARROW_STREETS) {
+    if (st.kind === "spoke") {
+      if (r < (st.fromPx ?? 0) || r > (st.toPx ?? 0)) continue;
+      // Perpendicular distance from the spoke's centreline.
+      const delta = Math.abs(((deg - (st.angleDeg ?? 0) + 540) % 360) - 180);
+      if (r * Math.sin((delta * Math.PI) / 180) <= st.halfPx) return true;
+    } else {
+      if (Math.abs(r - (st.radiusPx ?? 0)) > st.halfPx) continue;
+      const from = st.startDeg ?? 0;
+      const to = st.endDeg ?? 0;
+      const d = deg < from ? deg + 360 : deg;
+      if (d >= from && d <= to) return true;
+    }
+  }
+  return false;
+}
+
 export const COLDHARROW: Settlement = {
   id: "coldharrow",
   name: "Coldharrow",

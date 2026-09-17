@@ -28,8 +28,10 @@ import { seededRandom } from "../../../shared/rng";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   TOWN_BUILDINGS,
+  COLDHARROW_STREETS,
   inGatewayAmong,
   type Settlement,
+  type Street,
   TOWN_CENTER,
   TOWN_GATE_ANGLES,
   TOWN_GATE_HALF_DEG,
@@ -2094,7 +2096,12 @@ const COLDHARROW_STYLES: Record<BuildingKind, KindStyle> = {
   ruin: { wall: "graniteDark", roof: "slateCold", plinth: 0.9, storeyHeight: 1.5, roofPitch: 0.12 },
 };
 
-/** Keyed by settlement id. One entry today; the second is Phase 71 C. */
+/** Which settlements have streets. Emberhold's square IS its street. */
+const STREETS_BY_SETTLEMENT: Record<string, Street[]> = {
+  coldharrow: COLDHARROW_STREETS,
+};
+
+/** Keyed by settlement id. */
 const LOOKS: Record<string, SettlementLook> = {
   emberhold: {
     styles: EMBERHOLD_STYLES,
@@ -3312,6 +3319,7 @@ export class Town {
     builder.finish(this.group);
 
     this.buildGround();
+    this.buildStreets();
 
     const cx = toWorldX(this.settlement.center.x);
     const cz = toWorldZ(this.settlement.center.y);
@@ -3417,10 +3425,89 @@ export class Town {
    * and the opacity, so "fade out at the rim" becomes a per-vertex number and
    * the map is free to repeat as often as it likes underneath it.
    */
+  /**
+   * Paving along the streets, for a settlement that has any.
+   *
+   * SEPARATE FROM `buildGround` because they are different surfaces doing
+   * different jobs. The ground is one disc in the middle — the place the city
+   * gathers — and the streets are the routes between districts, which reach
+   * nearly to the wall. Drawing them as one shape would pave the entire
+   * enclosure and turn the city into a floor with buildings on it.
+   *
+   * Laid as quads along each run rather than as one merged mesh, because a
+   * street is a ribbon and a ribbon of quads takes the terrain's own slope
+   * where a single plane cannot. They sit a hair above the ground for the same
+   * reason the square does: without it the cobbles z-fight the terrain at
+   * grazing angles and the symptom looks like a shader bug.
+   */
+  private buildStreets(): void {
+    const streets = STREETS_BY_SETTLEMENT[this.settlement.id];
+    if (!streets?.length) return;
+
+    const cx = toWorldX(this.settlement.center.x);
+    const cz = toWorldZ(this.settlement.center.y);
+    const mat = new THREE.MeshStandardMaterial({
+      map: cobbleTexture(),
+      // A shade cooler and darker than Emberhold's warm setts: these are wet
+      // northern stone, and a street should read as older than the square.
+      color: 0x8a8880,
+      transparent: true,
+      roughness: 1,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+    });
+
+    const group = new THREE.Group();
+    const quad = (
+      x0: number, z0: number, x1: number, z1: number, halfW: number,
+    ) => {
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      if (len < 0.01) return;
+      const g = new THREE.PlaneGeometry(len, halfW * 2);
+      g.rotateX(-Math.PI / 2);
+      const m = new THREE.Mesh(g, mat);
+      m.position.set((x0 + x1) / 2, 0.035, (z0 + z1) / 2);
+      m.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
+      m.renderOrder = 1;
+      group.add(m);
+    };
+
+    const at = (r: number, deg: number) => {
+      const a = (deg * Math.PI) / 180;
+      return { x: cx + (Math.cos(a) * r) / PX_PER_UNIT, z: cz + (Math.sin(a) * r) / PX_PER_UNIT };
+    };
+
+    for (const st of streets) {
+      const halfW = st.halfPx / PX_PER_UNIT;
+      if (st.kind === "spoke") {
+        const p0 = at(st.fromPx ?? 0, st.angleDeg ?? 0);
+        const p1 = at(st.toPx ?? 0, st.angleDeg ?? 0);
+        quad(p0.x, p0.z, p1.x, p1.z, halfW);
+      } else {
+        // An arc in eight-degree steps: short enough that the ring does not
+        // read as a polygon, long enough not to be a thousand quads.
+        const from = st.startDeg ?? 0;
+        const to = st.endDeg ?? 0;
+        for (let d = from; d < to; d += 8) {
+          const p0 = at(st.radiusPx ?? 0, d);
+          const p1 = at(st.radiusPx ?? 0, Math.min(d + 8, to));
+          quad(p0.x, p0.z, p1.x, p1.z, halfW);
+        }
+      }
+    }
+    this.group.add(group);
+  }
+
   private buildGround(): void {
-    const cx = toWorldX(TOWN_CENTER.x);
-    const cz = toWorldZ(TOWN_CENTER.y);
-    const radius = TOWN_RADIUS_PX / PX_PER_UNIT;
+    // ITS OWN CENTRE AND ITS OWN RADII. All three of these read Emberhold's,
+    // so Coldharrow's paving was drawn eight thousand pixels south of
+    // Coldharrow — on top of Emberhold's, at Emberhold's size — and the city
+    // itself had bare grass between every building.
+    const cx = toWorldX(this.settlement.center.x);
+    const cz = toWorldZ(this.settlement.center.y);
+    const radius = this.settlement.radiusPx / PX_PER_UNIT;
     // Stops just short of the buildings' front walls rather than running under
     // them: paving that reaches the palisade makes the whole enclosure one
     // surface, and the belt of grass between the houses and the wall is what
@@ -3428,7 +3515,7 @@ export class Town {
     //
     // Shared, because the ground-cover scatter has to keep out of exactly this
     // circle and no more — see the note on `TOWN_PAVED_RADIUS_PX`.
-    const paveRadius = TOWN_PAVED_RADIUS_PX / PX_PER_UNIT;
+    const paveRadius = this.settlement.pavedRadiusPx / PX_PER_UNIT;
 
     // Rings, so the fade has somewhere to happen. Three's own CircleGeometry is
     // a fan from a single centre vertex, and an alpha interpolated straight

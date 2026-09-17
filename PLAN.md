@@ -28209,3 +28209,56 @@ A probe settled it rather than another guess: 523 meshes within 120 units of
 Coldharrow's centre, 521 of them visible. The city was there for all three.
 
 Suite green, 25 tests. Client and server typecheck.
+
+**Phase 71 C2c — the ground, and the streets.** Reported from play, and both
+were the same fault wearing two hats: three more places the renderer read
+Emberhold's constants instead of the settlement's.
+
+EVERY STRUCTURE WAS BURIED OR STANDING ON AIR. `terrainHeight` returns 0 inside
+a FLAT SPOT and `makeBuilding` places every building at world Y = 0, which is
+the whole reason Emberhold sits correctly on its own square — and `FLAT_SPOTS`
+was derived from `TOWN_CENTER` and `TOWN_RADIUS_PX`. Coldharrow was dropped onto
+raw noise that rolls eleven units, so its buildings sat wherever Y = 0 happened
+to fall relative to the ground: sunk to the windows on a rise, floating over a
+dip. Derived from `SETTLEMENTS` now.
+
+IT HAD NO PAVING AT ALL, for the same reason one layer up: `buildGround` read
+all three of the centre, the radius and the paved radius off Emberhold, so
+Coldharrow's square was being drawn eight thousand pixels south — on top of
+Emberhold's, at Emberhold's size — and the city itself had bare grass between
+every building.
+
+AND WEEDS GREW THROUGH THE COBBLES the moment it had any, because the ground
+cover's exclusion list was `TOWN_PAVED_RADIUS_PX` and `TOWN_BUILDINGS`. The
+note beside it already said why this matters — "wildflowers coming up through a
+paved square read as the town having been dropped on top of the field rather
+than built in it" — it simply only said it about one town.
+
+STREETS, WHICH EMBERHOLD DOES NOT HAVE AND DOES NOT NEED. It is one paved square
+with six fronts on it: the square IS the street. Coldharrow is 2,600px across
+with seven districts round a harbour, and without streets it is thirty-nine
+stone buildings standing on a lawn — which is exactly how it looked walking
+through it.
+
+Ten of them: the Kingsway continuing through the Landward Gate as the spine and
+out to the quays, spokes to the other two gates and into the four working
+districts, and a ring at 1,650 joining the districts to each other so that not
+everything has to go through the middle. That last one is the difference
+between a city and a wheel. Broken at the harbour, where the basin is.
+
+The spokes are NOT evenly spaced, and that is the point: they run to the places
+people are going, because a street to nowhere is a texture.
+
+`onColdharrowStreet` is a predicate rather than a list of circles, for the same
+reason the road's is — a street is a ribbon, and a hundred circles laid along
+one still leaves grass on every bend.
+
+AND THE PHOTOGRAPHS FINALLY WORKED, by giving up on posing them.
+`coldharrow.mjs` takes shots at named places, and posing was what kept failing:
+the camera follows the player's heading, so every framing decision is really a
+decision about which way they were walking when the shutter went.
+`coldwalk.mjs` walks one straight line from the gate to the quays and
+photographs every 420px of ground covered. Thirteen frames, and the city is in
+them.
+
+Suite green, 25 tests. Client and server typecheck.

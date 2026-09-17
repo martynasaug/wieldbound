@@ -37,6 +37,7 @@ import {
 } from "../../../shared/river.ts";
 import { FORESTS, forestStrengthAt } from "../../../shared/forests.ts";
 import {
+  SETTLEMENTS,
   TOWN_BUILDINGS,
   TOWN_CENTER,
   TOWN_PAVED_RADIUS_PX,
@@ -115,16 +116,27 @@ interface FlatSpot {
 // Reading the landmark table directly removes the ordering entirely: there is
 // no moment at which `terrainHeight` gives a different answer.
 const FLAT_SPOTS: FlatSpot[] = [
-  {
-    x: toWorldX(TOWN_CENTER.x),
-    z: toWorldZ(TOWN_CENTER.y),
-    radius: (TOWN_RADIUS_PX / PX_PER_UNIT) * 1.2,
+  // EVERY SETTLEMENT, not Emberhold and then a gap. This read `TOWN_CENTER` and
+  // `TOWN_RADIUS_PX` directly, so the moment there was a second town its ground
+  // was never levelled: `terrainHeight` returns 0 inside a flat spot and
+  // `makeBuilding` places every building at world Y = 0, which is why Emberhold
+  // sits correctly on its own square. Coldharrow was dropped onto raw noise
+  // that rolls eleven units, so every structure in it was either buried to the
+  // windows or standing on air. Reported from play, which is the only place it
+  // could have been seen.
+  ...SETTLEMENTS.map((s) => ({
+    x: toWorldX(s.center.x),
+    z: toWorldZ(s.center.y),
+    // A little past the wall: the belt of ground inside it, the wall itself and
+    // whatever leans against it all have to be on the level, and a wall running
+    // up a hill needs every course cut to a different height.
+    radius: (s.radiusPx / PX_PER_UNIT) * 1.2,
     // A long shoulder, not a cliff. The land can be eleven units below the
-    // town's level now, and easing that out over twenty-two units would put
-    // Emberhold on a mesa; over forty it reads as a town built on the flattest
-    // rise in the district, which is where a town would be.
+    // town's level, and easing that out over twenty-two units would put a town
+    // on a mesa; over forty it reads as built on the flattest rise in the
+    // district, which is where a town would be.
     blend: 40,
-  },
+  })),
   // A levelled apron under each waystone. Somebody who raised a five-metre
   // monolith levelled the ground for it, and the alternative is a three-metre
   // disc of trodden earth with one edge in the air.

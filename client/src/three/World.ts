@@ -23,7 +23,13 @@ import { DayNight, nightAmount } from "./daynight";
 import { ROAD_HALF_WIDTH_PX, distanceToRoad } from "../../../shared/road";
 import { RIVER_HALF_WIDTH_PX, riverAt } from "../../../shared/river";
 import { FORESTS, forestStrengthAt } from "../../../shared/forests";
-import { TOWN_BUILDINGS, TOWN_CENTER, TOWN_PAVED_RADIUS_PX } from "../../../shared/town";
+import {
+  SETTLEMENTS,
+  TOWN_BUILDINGS,
+  TOWN_CENTER,
+  TOWN_PAVED_RADIUS_PX,
+  onColdharrowStreet,
+} from "../../../shared/town";
 // The height field moved to `heightfield.ts` so that a Node test could walk it —
 // see the note at the top of that file. Re-exported here rather than repointed
 // at every call site, because "where is the ground" is asked from a dozen
@@ -651,22 +657,27 @@ export class World {
       // the ring of grass between the houses and the palisade, which is the one
       // part of Emberhold that is meant to read as ground rather than as floor.
       // The belt came out as flat green baize with a fence round it.
-      exclude: [
+      //
+      // EVERY SETTLEMENT, not Emberhold and then a gap. These two lists read
+      // `TOWN_PAVED_RADIUS_PX` and `TOWN_BUILDINGS`, so the first thing anybody
+      // saw of Coldharrow's paving was clover and wildflowers growing up
+      // through the cobbles of its main square. Reported from play.
+      exclude: SETTLEMENTS.flatMap((t) => [
         {
-          x: toWorldX(TOWN_CENTER.x),
-          z: toWorldZ(TOWN_CENTER.y),
+          x: toWorldX(t.center.x),
+          z: toWorldZ(t.center.y),
           // A little past the cobbles, so nothing sprouts through the rim where
           // the paving is already fading out.
-          radius: (TOWN_PAVED_RADIUS_PX / PX_PER_UNIT) * 1.06,
+          radius: (t.pavedRadiusPx / PX_PER_UNIT) * 1.06,
         },
         // One per building, sized to the corner of its footprint — a plant
         // coming up through a wall is worse than a bare patch.
-        ...TOWN_BUILDINGS.map((b) => ({
+        ...t.buildings.map((b) => ({
           x: toWorldX(b.x),
           z: toWorldZ(b.y),
           radius: (Math.hypot(b.widthPx, b.depthPx) / 2 + 20) / PX_PER_UNIT,
         })),
-      ],
+      ]),
       // And nothing grows in the wheel ruts. A circle cannot describe a four
       // kilometre curve, which is why the scatter takes a predicate as well as
       // a list — a hundred circles laid along the road would still leave grass
@@ -676,6 +687,12 @@ export class World {
         const sx = toServerX(x);
         const sy = toServerY(z);
         if (distanceToRoad(sx, sy) < ROAD_HALF_WIDTH_PX * 0.82) return true;
+        // Nor in a city street, for the same reason and by the same kind of
+        // predicate: a street is a ribbon and no list of circles describes one.
+        if (onColdharrowStreet(sx, sy)) return true;
+        // Nor in a city street, for the same reason and by the same kind of
+        // predicate: a street is a ribbon and no list of circles describes one.
+        if (onColdharrowStreet(sx, sy)) return true;
         // Nor in the Coldwater, nor on its shingle. Wildflowers standing in a
         // river is the same class of mistake as wildflowers in the wheel ruts,
         // and rather more obvious.
