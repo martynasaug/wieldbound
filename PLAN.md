@@ -27627,4 +27627,39 @@ had already decided whether the resistance you were wearing was the right one.
 panel about what to WEAR rather than what to bring. It also makes the golem's
 seam legible for the first time: Hits with lightning, Weak to lightning.
 
+AND THEN A SCREENSHOT OF THE FIGHT, WHICH IS WHERE THE REST OF IT CAME FROM.
+Everything above is data, and the data was coherent. The picture was not.
+
+THE FROST TROLL WAS PINK. `Yeti.gltf` ships in a pale flesh tone, and against a
+pink body every true statement on its own frame — Frost Troll, hits with frost,
+resists frost — read as a mislabel. It was the same fault this milestone set out
+to fix, pointing the other way, and nothing in the data could have shown it.
+`ActorOptions.tint` multiplies a colour through one actor's materials at build,
+straight after the clone that already gives every actor its own; the troll takes
+`0x9fc4dc` and comes out ice. A multiply is the wrong tool for a PLAYER body —
+the note on `tintBody` is about exactly that, a painted sheet of mid-browns that
+a multiply cannot lighten — and the right one here, where the source is near
+white and the destination is colder and darker than it.
+
+THE LOG WAS UNGRAMMATICAL, AND HAD BEEN ALL ALONG. `SchoolDef.verb` is a past
+participle, because a quest objective needs one: "2 golems shocked". The combat
+log used it for a sentence about a blow landing now, and special-cased physical
+with a hardcoded present-tense word — so "You burned the demon for 14" sat
+directly above "You hit the wolf for 9". Six creatures carry an element now, so
+it shows up in most fights rather than a few. `strike` is the bare present, one
+field for both persons because every one of them is a regular verb, and physical
+having its own entry is what deletes the special case: it is not the exception,
+it is the row whose word happens to be "hit".
+
+Verified in play rather than reasoned about — `tools/soak/frostfight.mjs` walks
+out to the camp and fights: `The Frost Troll chills you for 27.`
+
+WHAT THE SAME SCREENSHOT SHOWED AND THIS DOES NOT FIX: the killing blow reads
+"The enemy chills you for 53". `MONSTER_ATTACK` carries a monster id, the client
+resolves the name from its own actor map, and by the time the blow that killed
+you resolves you have been teleported home and the creature dropped. The one
+line where naming the thing matters most is the one line that cannot. It wants
+the kind on the wire rather than a lookup, which is a protocol change and its
+own piece of work.
+
 Suite green. Client and server typecheck. Five elements, five carriers.

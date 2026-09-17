@@ -614,17 +614,38 @@ export interface SchoolDef {
   name: string;
   /** Interface colour: floating damage, the target frame's lines, the sheet. */
   color: string;
-  /** How a hit of this school reads in a log line, lower case. */
+  /**
+   * Past participle, for a label describing what has already happened to
+   * something: "2 golems shocked" on a quest objective.
+   */
   verb: string;
+  /**
+   * Bare present, for a sentence about a blow landing NOW — which is what a
+   * combat log is. "You chill the troll", "The troll chills you"; third person
+   * is this plus an s, and every one of them is a regular verb, which is why
+   * one field covers both.
+   *
+   * SEPARATE FROM `verb` BECAUSE THE TWO ARE DIFFERENT PARTS OF SPEECH, and
+   * using the participle for both is what the log used to do: "You burned the
+   * demon for 14" sat directly above "You hit the wolf for 9", because physical
+   * was special-cased with a hardcoded present-tense word while every element
+   * got the past one. Six creatures carry an element now, so the seam shows up
+   * in most fights rather than a few.
+   *
+   * Physical having a strike of its own is what removes that special case:
+   * it is not the exception any more, it is the row whose word happens to be
+   * "hit".
+   */
+  strike: string;
 }
 
 export const SCHOOLS: Record<DamageSchool, SchoolDef> = {
-  physical: { id: "physical", name: "Physical", color: "#e8e2d4", verb: "struck" },
-  fire:     { id: "fire",     name: "Fire",     color: "#ff8a3d", verb: "burned" },
-  frost:    { id: "frost",    name: "Frost",    color: "#7fd4f5", verb: "chilled" },
-  nature:   { id: "nature",   name: "Nature",   color: "#8fd15a", verb: "poisoned" },
-  arcane:   { id: "arcane",   name: "Arcane",   color: "#c08aff", verb: "seared" },
-  lightning:{ id: "lightning",name: "Lightning",color: "#ffe066", verb: "shocked" },
+  physical: { id: "physical", name: "Physical", color: "#e8e2d4", verb: "struck",   strike: "hit" },
+  fire:     { id: "fire",     name: "Fire",     color: "#ff8a3d", verb: "burned",   strike: "burn" },
+  frost:    { id: "frost",    name: "Frost",    color: "#7fd4f5", verb: "chilled",  strike: "chill" },
+  nature:   { id: "nature",   name: "Nature",   color: "#8fd15a", verb: "poisoned", strike: "poison" },
+  arcane:   { id: "arcane",   name: "Arcane",   color: "#c08aff", verb: "seared",   strike: "sear" },
+  lightning:{ id: "lightning",name: "Lightning",color: "#ffe066", verb: "shocked",  strike: "shock" },
 };
 
 export function schoolDef(school: DamageSchool | undefined | null): SchoolDef {

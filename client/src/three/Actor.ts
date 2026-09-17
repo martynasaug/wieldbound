@@ -632,6 +632,26 @@ export interface ActorOptions {
   rim?: number;
 
   /**
+   * A colour multiplied through this actor's own materials once, at build.
+   *
+   * FOR CREATURES WHOSE DATA AND ART DISAGREE. The frost troll is the case it
+   * exists for: it is the Yeti model, it throws frost, it resists frost, the
+   * frame says "hits with frost" — and it was rendering in the model's own pale
+   * PINK, which made every one of those true statements read as a mislabel.
+   *
+   * A multiply, not the texture recolouring `tintBody` does, and the difference
+   * is worth stating because the note on that function is about a multiply
+   * being the wrong tool. It was, there: a player's body is a painted sheet of
+   * mid-browns and a multiply cannot lighten, so the pale end of the palette
+   * was a no-op. Here the source is already near-white and the destination is
+   * colder and darker than it, which is exactly the direction a multiply goes.
+   *
+   * Per KIND rather than per actor, so a camp stays one creature rather than
+   * three shades of one.
+   */
+  tint?: number;
+
+  /**
    * Who this is, for the purpose of looking like themselves.
    *
    * The character's name, and it is the whole of the colour customisation —
@@ -1150,6 +1170,15 @@ export class Actor {
       mesh.material = Array.isArray(mesh.material)
         ? mesh.material.map((m) => m.clone())
         : mesh.material.clone();
+      // Straight after the clone and nowhere else: the prototype's materials
+      // are shared with every other actor built from this model, so tinting
+      // before this point would repaint the whole species.
+      if (this.options.tint !== undefined) {
+        for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          const lit = m as THREE.MeshStandardMaterial;
+          if (lit.color) lit.color.multiplyScalar(1).multiply(new THREE.Color(this.options.tint));
+        }
+      }
       this.trackMesh(mesh);
     });
 

@@ -83,6 +83,22 @@ check("every school has its own colour",
   new Set(DAMAGE_SCHOOLS.map((s) => SCHOOLS[s].color)).size === DAMAGE_SCHOOLS.length);
 check("every school has its own verb",
   new Set(DAMAGE_SCHOOLS.map((s) => SCHOOLS[s].verb)).size === DAMAGE_SCHOOLS.length);
+// And its own present-tense word, which is a DIFFERENT part of speech and a
+// different job: `verb` labels a thing that has happened ("2 golems shocked"),
+// `strike` is a sentence about a blow landing now ("the troll chills you").
+// Using the participle for both is what the combat log did, and it put "You
+// burned the demon for 14" directly above "You hit the wolf for 9".
+check("every school has its own strike word",
+  new Set(DAMAGE_SCHOOLS.map((s) => SCHOOLS[s].strike)).size === DAMAGE_SCHOOLS.length);
+check("physical is not special-cased out of it", !!SCHOOLS.physical.strike);
+for (const school of DAMAGE_SCHOOLS) {
+  const { strike, verb } = SCHOOLS[school];
+  check(`${school}'s strike is bare present`, strike === strike.toLowerCase() && !strike.endsWith("ed"),
+    strike);
+  check(`${school}'s two words are actually different`, strike !== verb, `${strike} / ${verb}`);
+  // Third person is strike + s, which only works while they are all regular.
+  check(`${school} reads as a sentence`, `the troll ${strike}s you`.length > 12, strike);
+}
 // Armour is the physical answer and has been since Phase 14. A second stat
 // doing that job is how a number becomes impossible to tune.
 check("there is no such thing as physical resistance",

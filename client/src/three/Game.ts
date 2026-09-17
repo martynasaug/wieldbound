@@ -289,7 +289,18 @@ const LEVEL_UP_RING_LIFT = 0.45;
 // Monsters (CC0, glTF), so the stand-ins from M1 are gone. Height is chosen to
 // read the kind's role at a glance — a golem should look like it has 14 armour
 // before you attack it — not to match whatever scale the source was authored at.
-const MONSTER_MODELS: Record<MonsterKind, { model: string; height: number }> = {
+/**
+ * `tint` is a colour multiplied through the model once, and only two creatures
+ * want one. See `ActorOptions.tint` for why it is a multiply.
+ *
+ * The frost troll is the reason it exists. It is the Yeti model and it has
+ * been since the model was added — but the Yeti ships in a pale PINK, and the
+ * day the creature started throwing frost, resisting frost and saying "hits
+ * with frost" on its own frame, every one of those true statements read as a
+ * mislabel against a pink body. A screenshot of the fight is what showed it;
+ * nothing in the data could.
+ */
+const MONSTER_MODELS: Record<MonsterKind, { model: string; height: number; tint?: number }> = {
   slime: { model: "GreenBlob.gltf", height: 0.8 },
   mushnub: { model: "Mushnub.gltf", height: 0.95 },
   spikyblob: { model: "GreenSpikyBlob.gltf", height: 1.0 },
@@ -299,7 +310,7 @@ const MONSTER_MODELS: Record<MonsterKind, { model: string; height: number }> = {
   cactoro: { model: "Cactoro.gltf", height: 1.7 },
   orcbrute: { model: "Orc_Skull.gltf", height: 1.9 },
   ghost: { model: "Ghost.gltf", height: 1.5 },
-  troll: { model: "Yeti.gltf", height: 2.3 },
+  troll: { model: "Yeti.gltf", height: 2.3, tint: 0x9fc4dc },
   demon: { model: "Demon.gltf", height: 2.2 },
   golem: { model: "Goleling_Evolved.gltf", height: 2.8 },
   dragon: { model: "Dragon_Evolved.gltf", height: 3.4 },
@@ -2333,6 +2344,7 @@ export class Game {
       const actor = new Actor({
         model: spec.model,
         height: spec.height,
+        tint: spec.tint,
         variance: (hashString(id) % 1000) / 1000,
         idleGlance: true,
         // NO THROUGH-WALLS SILHOUETTE, for the same reason the presence light
@@ -3023,7 +3035,7 @@ export class Game {
       const sch = schoolDef(p.school);
       const verdict = Game.resistNoteOf(p.resisted);
       this.combatLog.push(
-        `You ${p.school && p.school !== "physical" ? sch.verb : "hit"} the ${label} for ` +
+        `You ${sch.strike} the ${label} for ` +
           `${p.playerDamage}${p.playerCrit ? " (CRIT)" : ""}${verdict}.`,
         p.playerCrit ? "#ffd85e" : sch.color,
       );
@@ -3217,7 +3229,7 @@ export class Game {
       // player mid-fight than what it was made of, and that is the one thing
       // the log's colours have always separated — so the school is in the WORD
       // ("burns you") and never in the colour.
-      const verb = p.crit ? "CRITs" : p.school && p.school !== "physical" ? schoolDef(p.school).verb : "hits";
+      const verb = p.crit ? "CRITs" : `${schoolDef(p.school).strike}s`;
       if (p.crit) {
         // A crit stays its own line always — see `CombatLog.pushHit`'s own
         // comment for why merging it into a running count would bury it.
