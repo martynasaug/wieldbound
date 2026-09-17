@@ -79,6 +79,38 @@ export const TOWN_PAVED_RADIUS_PX = Math.round(TOWN_RADIUS_PX * 0.66);
  * method `clearRingAngles` uses, and for the same reason: the last thing placed
  * on this ring by guessing ended up inside a building.
  */
+/**
+ * A settlement: everything that used to be a module-level singleton in here.
+ *
+ * WRITTEN BECAUSE THERE IS ABOUT TO BE A SECOND TOWN. Every function below took
+ * a world position and answered it against Emberhold, because Emberhold was the
+ * only place there was — `TOWN_CENTER`, `TOWN_RADIUS_PX`, `TOWN_BUILDINGS`,
+ * `TOWN_PROPS` and `TOWN_GATES` were read straight out of module scope by the
+ * collision resolver, and a player standing in any other town would have walked
+ * through its walls with nothing anywhere throwing.
+ *
+ * The refactor is ADDITIVE ON PURPOSE. Every `TOWN_*` export stays exactly what
+ * it was and Emberhold's data is untouched, so the sixty-odd call sites across
+ * the client compile and behave identically; what changes is that the resolver
+ * now finds WHICH settlement a point is in first. The existing layout test
+ * staying green is the whole proof, and it could not be the proof if the data
+ * had been rearranged in the same pass.
+ */
+export interface Settlement {
+  id: string;
+  name: string;
+  /** The middle. Everything below is polar from it. */
+  center: { x: number; y: number };
+  radiusPx: number;
+  pavedRadiusPx: number;
+  gates: readonly TownGate[];
+  buildings: readonly TownBuilding[];
+  props: readonly TownProp[];
+  npcs: readonly TownNpc[];
+  /** Where a new or respawning character lands. */
+  arrival: { x: number; y: number };
+}
+
 export interface TownGate {
   angleDeg: number;
   halfDeg: number;
@@ -290,7 +322,37 @@ function toWorld(lx: number, ly: number, angleDeg: number): { x: number; y: numb
  * exactly the wrong wall.
  */
 export function pushOutOfBuildings(x: number, y: number, radiusPx = 16): { x: number; y: number } {
-  for (const b of TOWN_BUILDINGS) {
+  const here = settlementAt(x, y);
+  return here ? pushOutOfBuildingsIn(here, x, y, radiusPx) : { x, y };
+}
+
+export function pushOutOfBuildingsIn(
+  s: Settlement,
+  x: number,
+  y: number,
+  radiusPx = 16,
+): { x: number; y: number } {
+  return pushOutOfBuildingsOf(s.buildings, x, y, radiusPx);
+}
+
+/**
+ * The same, against a bare table of buildings.
+ *
+ * THE TABLE AND NOT THE SETTLEMENT, because Emberhold's own furniture is laid
+ * out by asking this question while Emberhold is still being built: the bench
+ * ring is computed from the clear bearings, which reads the building
+ * footprints, and it runs at module scope before the register at the bottom of
+ * this file exists. Routing that through `settlementAt` threw "Cannot access
+ * SETTLEMENTS before initialization" — the whole town failed to load, which is
+ * at least the loud kind of failure.
+ */
+export function pushOutOfBuildingsOf(
+  buildings: readonly TownBuilding[],
+  x: number,
+  y: number,
+  radiusPx = 16,
+): { x: number; y: number } {
+  for (const b of buildings) {
     const local = toLocal(x - b.x, y - b.y, b.facingDeg);
     const halfDepth = b.depthPx / 2 + radiusPx + WALL_PADDING_PX;
     const halfWidth = b.widthPx / 2 + radiusPx + WALL_PADDING_PX;
@@ -310,7 +372,27 @@ export function pushOutOfBuildings(x: number, y: number, radiusPx = 16): { x: nu
 
 /** True while the point is inside a building's footprint. For the tests. */
 export function insideAnyBuilding(x: number, y: number, radiusPx = 0): boolean {
-  for (const b of TOWN_BUILDINGS) {
+  const here = settlementAt(x, y);
+  return here ? insideAnyBuildingIn(here, x, y, radiusPx) : false;
+}
+
+export function insideAnyBuildingIn(
+  s: Settlement,
+  x: number,
+  y: number,
+  radiusPx = 0,
+): boolean {
+  return insideAnyBuildingOf(s.buildings, x, y, radiusPx);
+}
+
+/** The same, against a bare table — see `pushOutOfBuildingsOf` for why. */
+export function insideAnyBuildingOf(
+  buildings: readonly TownBuilding[],
+  x: number,
+  y: number,
+  radiusPx = 0,
+): boolean {
+  for (const b of buildings) {
     const local = toLocal(x - b.x, y - b.y, b.facingDeg);
     if (
       Math.abs(local.x) < b.depthPx / 2 + radiusPx &&
@@ -422,7 +504,12 @@ function clearRingAngles(): number[] {
     const a = (deg * Math.PI) / 180;
     const x = TOWN_CENTER.x + Math.cos(a) * radiusPx;
     const y = TOWN_CENTER.y + Math.sin(a) * radiusPx;
-    return !insideAnyBuilding(x, y, RING_FURNITURE_CLEARANCE_PX) && !inGateway(deg);
+    // Against the tables directly: this runs while the module is still being
+    // evaluated, so neither the register nor `EMBERHOLD` exists yet.
+    return (
+      !insideAnyBuildingOf(TOWN_BUILDINGS, x, y, RING_FURNITURE_CLEARANCE_PX) &&
+      !inGatewayAmong(TOWN_GATES, deg)
+    );
   };
   const usable = (deg: number) =>
     clearAt(deg, BENCH_RING_PX) &&
@@ -648,9 +735,18 @@ export const TOWN_PROPS: TownProp[] = [
   ),
 ];
 
-/** World position of a prop, from its polar placement. */
+/** World position of a prop, from its polar placement in its own settlement. */
+export function propPositionIn(s: Settlement, prop: TownProp): { x: number; y: number } {
+  const a = (prop.angleDeg * Math.PI) / 180;
+  return {
+    x: Math.round(s.center.x + Math.cos(a) * prop.radiusPx),
+    y: Math.round(s.center.y + Math.sin(a) * prop.radiusPx),
+  };
+}
+
+/** The same, for Emberhold, which is what every existing caller means. */
 export function propPosition(prop: TownProp): { x: number; y: number } {
-  return at(prop.radiusPx, prop.angleDeg);
+  return propPositionIn(EMBERHOLD, prop);
 }
 
 export function propById(id: string): TownProp | null {
@@ -677,7 +773,16 @@ const WALL_THICKNESS_PX = 22;
  * nothing else ever asked the question anywhere but on a gate bearing.
  */
 export function inGateway(angleDeg: number): boolean {
-  return TOWN_GATES.some((g) => {
+  return inGatewayOf(EMBERHOLD, angleDeg);
+}
+
+export function inGatewayOf(s: Settlement, angleDeg: number): boolean {
+  return inGatewayAmong(s.gates, angleDeg);
+}
+
+/** The same, against a bare table — see `pushOutOfBuildingsOf` for why. */
+export function inGatewayAmong(gates: readonly TownGate[], angleDeg: number): boolean {
+  return gates.some((g) => {
     // Shortest signed difference between two bearings, folded to a magnitude.
     const delta = Math.abs(((angleDeg - g.angleDeg + 540) % 360) - 180);
     return delta < g.halfDeg;
@@ -719,7 +824,21 @@ export function resolveTownCollision(
   y: number,
   radiusPx = 16,
 ): { x: number; y: number } {
-  const settled = iterate(x, y, radiusPx);
+  // WHICH TOWN, FIRST. Far from any of them there is nothing to push against —
+  // no building, no prop, and the palisade only acts inside its own ring band —
+  // so the early-out changes no answer and saves the whole sweep for the
+  // overwhelming majority of the world, which is field.
+  const here = settlementAt(x, y);
+  return here ? resolveCollisionIn(here, x, y, radiusPx) : { x, y };
+}
+
+export function resolveCollisionIn(
+  s: Settlement,
+  x: number,
+  y: number,
+  radiusPx = 16,
+): { x: number; y: number } {
+  const settled = iterate(s, x, y, radiusPx);
   if (settled.settled) return { x: settled.x, y: settled.y };
 
   // STILL ARGUING AFTER SIXTEEN PASSES, so no ordering of these pushes agrees.
@@ -742,12 +861,13 @@ export function resolveTownCollision(
   // ground behind it, then a fan around the compass — a single ray can run the
   // whole length of the same cluster it is trying to leave, which is what two of
   // the eighty-four did.
-  const toCentre = Math.atan2(TOWN_CENTER.y - settled.y, TOWN_CENTER.x - settled.x);
+  const toCentre = Math.atan2(s.center.y - settled.y, s.center.x - settled.x);
   const bearings = [toCentre];
   for (let i = 1; i <= 8; i++) bearings.push(toCentre + (i * Math.PI * 2) / 9);
   for (let stepPx = 6; stepPx <= 240; stepPx += 6) {
     for (const bearing of bearings) {
       const probe = iterate(
+        s,
         settled.x + Math.cos(bearing) * stepPx,
         settled.y + Math.sin(bearing) * stepPx,
         radiusPx,
@@ -762,6 +882,7 @@ export function resolveTownCollision(
 
 /** Applies the pushes until they stop moving, or until the passes run out. */
 function iterate(
+  s: Settlement,
   x: number,
   y: number,
   radiusPx: number,
@@ -769,7 +890,7 @@ function iterate(
   for (let pass = 0; pass < TOWN_RESOLVE_PASSES; pass++) {
     const fromX = x;
     const fromY = y;
-    const next = resolveTownOnce(x, y, radiusPx);
+    const next = resolveTownOnce(s, x, y, radiusPx);
     x = next.x;
     y = next.y;
     // Settled. Anything below a twentieth of a pixel is arithmetic noise rather
@@ -782,18 +903,19 @@ function iterate(
 /** One sweep of every solid thing the town is made of. See the note on
  *  `TOWN_RESOLVE_PASSES` for why this is not the whole answer on its own. */
 function resolveTownOnce(
+  s: Settlement,
   x: number,
   y: number,
   radiusPx: number,
 ): { x: number; y: number } {
-  const out = pushOutOfBuildings(x, y, radiusPx);
+  const out = pushOutOfBuildingsIn(s, x, y, radiusPx);
   x = out.x;
   y = out.y;
 
-  for (const prop of TOWN_PROPS) {
+  for (const prop of s.props) {
     // Zero means "drawn here, walk through it" — see the smithy.
     if (prop.blockRadiusPx <= 0) continue;
-    const p = propPosition(prop);
+    const p = propPositionIn(s, prop);
     const dx = x - p.x;
     const dy = y - p.y;
     const keepOut = prop.blockRadiusPx + radiusPx;
@@ -812,17 +934,17 @@ function resolveTownOnce(
   // The palisade. A ring you cross only at a gateway, pushed to whichever side
   // you are already nearer — so being caught in it never teleports you into or
   // out of town, only clear of the timber.
-  const dx = x - TOWN_CENTER.x;
-  const dy = y - TOWN_CENTER.y;
+  const dx = x - s.center.x;
+  const dy = y - s.center.y;
   const r = Math.hypot(dx, dy);
-  const inner = TOWN_RADIUS_PX - WALL_THICKNESS_PX - radiusPx;
-  const outer = TOWN_RADIUS_PX + WALL_THICKNESS_PX + radiusPx;
+  const inner = s.radiusPx - WALL_THICKNESS_PX - radiusPx;
+  const outer = s.radiusPx + WALL_THICKNESS_PX + radiusPx;
   if (r > inner && r < outer && r > 0.001) {
     const bearing = (Math.atan2(dy, dx) * 180) / Math.PI;
-    if (!inGateway(bearing)) {
-      const target = r < TOWN_RADIUS_PX ? inner : outer;
-      x = TOWN_CENTER.x + (dx / r) * target;
-      y = TOWN_CENTER.y + (dy / r) * target;
+    if (!inGatewayOf(s, bearing)) {
+      const target = r < s.radiusPx ? inner : outer;
+      x = s.center.x + (dx / r) * target;
+      y = s.center.y + (dy / r) * target;
     }
   }
 
@@ -1446,3 +1568,74 @@ export const PLAYER_ARRIVAL: { x: number; y: number } = at(150, 60);
  * which is three body widths.
  */
 export const ROAD_HALF_WIDTH_PX = 120;
+
+// --- The register -----------------------------------------------------------
+//
+// ASSEMBLED HERE, AT THE BOTTOM, because a settlement is made of the tables
+// above it and this is the first line in the file where all of them exist. The
+// `TOWN_*` consts stay the primary spelling for Emberhold rather than becoming
+// aliases of these fields, and that ordering is not cosmetic: `at()` reads
+// `TOWN_CENTER` while the building and prop tables are still being built, so a
+// centre that only existed as `EMBERHOLD.center` would be read before it was
+// assigned.
+
+export const EMBERHOLD: Settlement = {
+  id: "emberhold",
+  name: TOWN_NAME,
+  center: TOWN_CENTER,
+  radiusPx: TOWN_RADIUS_PX,
+  pavedRadiusPx: TOWN_PAVED_RADIUS_PX,
+  gates: TOWN_GATES,
+  buildings: TOWN_BUILDINGS,
+  props: TOWN_PROPS,
+  npcs: TOWN_NPCS,
+  arrival: PLAYER_ARRIVAL,
+};
+
+/**
+ * Every settlement in the world.
+ *
+ * One entry today. It exists now rather than when the second one lands because
+ * the whole point of the refactor is that nothing downstream should have to
+ * change on that day — the resolver already asks "which town", the answer is
+ * simply always the same one for the moment.
+ */
+export const SETTLEMENTS: readonly Settlement[] = [EMBERHOLD];
+
+/**
+ * How far outside the wall still counts as being at a settlement.
+ *
+ * Generous, and it has to be: the palisade pushes a body standing OUTSIDE the
+ * ring as well as inside it, so a radius-exact test would let somebody walk
+ * through the wall from the field side. Two hundred pixels is comfortably more
+ * than the wall's thickness plus any body radius, and far less than the gap to
+ * anything else.
+ */
+const OUTSKIRTS_PX = 200;
+
+/**
+ * Which settlement a world position belongs to, or null for open country.
+ *
+ * Nearest-centre rather than first-match, so two towns whose outskirts overlap
+ * would still each resolve their own ground rather than whichever happened to
+ * be declared first. They should not overlap; a rule that only holds while the
+ * data is careful is not a rule.
+ */
+export function settlementAt(x: number, y: number): Settlement | null {
+  let best: Settlement | null = null;
+  let bestD = Infinity;
+  for (const s of SETTLEMENTS) {
+    const d = Math.hypot(x - s.center.x, y - s.center.y);
+    if (d > s.radiusPx + OUTSKIRTS_PX) continue;
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  return best;
+}
+
+/** A settlement by id, for anything holding a name rather than a position. */
+export function settlementById(id: string): Settlement | null {
+  return SETTLEMENTS.find((s) => s.id === id) ?? null;
+}

@@ -27819,3 +27819,35 @@ direct trade, because it works when nobody else is online.
   the city. Interest management probably has to land before D does.
 - **A1 is the largest single-change surface in the plan.**
 - **The DB migration in B1** is the one step that can lose something.
+
+**Phase 71 A1 — the `Settlement` record.** Done.
+
+Every function in `shared/town.ts` took a world position and answered it against
+Emberhold, because Emberhold was the only place there was: `TOWN_CENTER`,
+`TOWN_RADIUS_PX`, `TOWN_BUILDINGS`, `TOWN_PROPS` and `TOWN_GATES` were read
+straight out of module scope by the collision resolver. A player standing in any
+other town would have walked through its walls with nothing anywhere throwing.
+
+ADDITIVE ON PURPOSE. Every `TOWN_*` export is still exactly what it was and
+Emberhold's data is untouched, so the sixty-odd references across the client
+compile and behave identically — what changed is that the resolver asks WHICH
+settlement a point is in first, and there happens to be one answer today. The
+whole proof is `tools/test/town.mjs` staying green, and it could not have been
+the proof if the data had been rearranged in the same pass.
+
+The chain `resolveTownCollision -> iterate -> resolveTownOnce -> pushOutOf...`
+is threaded with a settlement; the public entry points find it with
+`settlementAt`, which is nearest-centre rather than first-match so two towns
+whose outskirts touch would still each resolve their own ground.
+
+AND THE ONE THING THAT BIT: the building tests also take a bare TABLE, not a
+settlement, because Emberhold's own furniture is laid out by asking them while
+Emberhold is still being built — the bench ring is computed from the clear
+bearings at module scope, above the register at the bottom of the file. Routing
+that through `settlementAt` threw `Cannot access 'SETTLEMENTS' before
+initialization` and the whole town failed to load, which is at least the loud
+kind of failure. `pushOutOfBuildingsOf`, `insideAnyBuildingOf` and
+`inGatewayAmong` are the table-taking forms, and the settlement-taking ones are
+one-line wrappers over them.
+
+Suite green, 23 tests. Client and server typecheck. Emberhold unchanged.
