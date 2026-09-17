@@ -25,6 +25,10 @@ import {
   WORLD_HEIGHT,
 } from "../../shared/protocol-types.ts";
 import {
+  SETTLEMENTS,
+  COLDHARROW,
+  onColdharrowStreet,
+  onColdharrowIce,
   TOWN_BUILDINGS,
   TOWN_NPCS,
   TOWN_CENTER,
@@ -97,14 +101,59 @@ function overlaps(a, b) {
 // --- The buildings stand apart ---------------------------------------------
 
 section("buildings");
-for (let i = 0; i < TOWN_BUILDINGS.length; i++) {
-  for (let j = i + 1; j < TOWN_BUILDINGS.length; j++) {
-    const a = TOWN_BUILDINGS[i];
-    const b = TOWN_BUILDINGS[j];
-    if (overlaps(a, b)) fail(`${a.id} overlaps ${b.id}`);
+// EVERY SETTLEMENT, not just Emberhold. This checked `TOWN_BUILDINGS` alone,
+// which meant Coldharrow's thirty-nine went in unchecked — and the first
+// street-relative layout put fifteen of them standing in a street and three
+// pairs inside each other. Emberhold's own comments record the same test
+// refusing a seven-building ring four times before the layout worked; that is
+// what it is for, and a second town deserves it.
+for (const town of SETTLEMENTS) {
+  for (let i = 0; i < town.buildings.length; i++) {
+    for (let j = i + 1; j < town.buildings.length; j++) {
+      const a = town.buildings[i];
+      const b = town.buildings[j];
+      if (overlaps(a, b)) fail(`${town.name}: ${a.id} overlaps ${b.id}`);
+    }
+  }
+  console.log(`  ${town.name}: ${town.buildings.length} buildings, none overlapping`);
+}
+
+// --- and nothing stands in a street ---------------------------------------
+// A street is the one part of a city that must stay empty, and a building in
+// one is not a near miss — it is a road that stops. Emberhold has no streets
+// (its square is the street), so this only has Coldharrow to say anything
+// about, and says it against the same predicate the paving and the ground
+// cover use.
+{
+  const inStreet = COLDHARROW.buildings.filter((b) => onColdharrowStreet(b.x, b.y));
+  for (const b of inStreet) fail(`${b.id} stands in a Coldharrow street`);
+
+  // The corners too, not only the middle: a building whose centre is clear and
+  // whose end juts into the carriageway still blocks it.
+  let clipped = 0;
+  for (const b of COLDHARROW.buildings) {
+    if (inStreet.includes(b)) continue;
+    for (const c of corners(b)) {
+      if (onColdharrowStreet(c.x, c.y)) {
+        fail(`${b.id} has a corner in a Coldharrow street`);
+        clipped++;
+        break;
+      }
+    }
+  }
+  if (!inStreet.length && !clipped) {
+    console.log(`  Coldharrow: ${COLDHARROW.buildings.length} buildings, none in a street`);
   }
 }
-console.log(`  ${TOWN_BUILDINGS.length} buildings, none overlapping`);
+
+// --- nor on the ice -------------------------------------------------------
+{
+  const wet = COLDHARROW.buildings.filter(
+    (b) => b.kind !== "pier" && onColdharrowIce(b.x, b.y),
+  );
+  for (const b of wet) fail(`${b.id} stands on the harbour ice`);
+  if (!wet.length) console.log(`  Coldharrow: nothing but the quays is on the water`);
+}
 
 // The smithy occupies roughly two units either side of spawn and the player
 // arrives standing in the middle of it, so the square has to be genuinely

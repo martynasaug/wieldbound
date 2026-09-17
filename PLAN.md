@@ -28262,3 +28262,62 @@ photographs every 420px of ground covered. Thirteen frames, and the city is in
 them.
 
 Suite green, 25 tests. Client and server typecheck.
+
+**Phase 71 C2d — the harbour, and a layout that is not a diagram.** Two things
+reported from play, and the second was the more useful.
+
+THE HARBOUR WAS GRASS. Coldharrow is described everywhere in this plan as built
+round a frozen harbour and the quays were standing on a lawn, which makes the
+whole northern arc read as a row of odd low buildings facing nothing. It is an
+arc rather than a disc because a harbour is an EDGE: the land wraps round it and
+the ice fills what is left, running north to the seaward wall, which is the edge
+of the world.
+
+Ice is the river's problem inverted. The Coldwater's material carries a constant
+dim emissive because a smooth dark surface with no reflection probe goes nearly
+black at dusk, and the river is the one thing you must not walk into. Ice fails
+the other way — nearly white, so it blows out flat at noon and is the only
+bright thing left at dusk. A pale blue darker than snow, low roughness for the
+sheen, a small emissive, and a scatter of paler floes near the quays, because
+one flat polygon the size of a harbour reads as a hole in the ground.
+
+"THE BUILDING PLACEMENTS ARE VERY LINEAR, NOT LIKE REAL CITIES." Correct, and
+the polar placement was doing it: every building at its own (radius, bearing)
+facing the middle. That is right for Emberhold — six fronts on one square, all
+looking at the anvil — and scaled to forty-four it makes concentric arcs.
+
+Towns are not built round a centre, they are built ALONG things. A building
+fronts the street it is on, its neighbours front the same street, and the row
+that results is the street's other wall. `onStreet` and `onRing` place from the
+street; the facing is derived so the door looks at the road.
+
+AND FOUR SPOKES, NOT EIGHT. The first street-relative attempt kept eight radial
+roads, which round a 2,600px city leaves twelve degrees between some of them —
+narrower than one house at the radius people build at. Fifteen buildings stood
+in a street. Real cities do not have eight roads out of the middle either: they
+have a few through-routes and then RINGS and BLOCKS. Three of these four are
+fixed by something real — the Kingsway in at 90 and on to the quays at 270, and
+the two other gates.
+
+A LAYOUT SOLVER, because authoring and packing are different jobs. What a person
+is good at deciding is intent: this fronts that street, on that side, turned a
+few degrees off square. What a person is bad at is checking forty-four rotated
+rectangles against each other and against ten streets — the test found twelve
+overlaps and fifteen buildings in roads, and every one was arithmetic rather
+than judgement. `settleLayout` pushes them apart, out of the streets and back
+off the water, deterministically and in `shared/`, so the resolver, the test and
+the thing you can see are one answer. Same shape as `resolveTownCollision`, and
+the same reason its passes constant exists: moving a building out of a street
+can push it into its neighbour.
+
+THE LAYOUT TEST NOW COVERS EVERY SETTLEMENT, which is what made all of this
+findable. It checked `TOWN_BUILDINGS` alone, so Coldharrow's forty-four went in
+unchecked. It also found a real bug in my own predicate: a spoke is a RAY, not a
+diameter, and the perpendicular test alone cannot tell the two apart — at a
+bearing opposite the street the angular delta folds to nearly 180 and its sine
+is just as small. The south spine was claiming the ground due north of the
+middle, and the fishmarket was reported standing in a road on the far side of
+the city.
+
+Forty-four buildings, none overlapping, none in a street, nothing but the quays
+on the water. Suite green, 25 tests.

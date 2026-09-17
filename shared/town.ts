@@ -1741,74 +1741,93 @@ export const COLDHARROW_GATES: readonly TownGate[] = [
   { angleDeg: 340, halfDeg: 8, name: "The Cliff Stair" },
 ];
 
-export const COLDHARROW_BUILDINGS: TownBuilding[] = [
-  // --- The Landward Gate, 60..120 -------------------------------------------
-  // What you meet first, and it is a garrison rather than a welcome.
-  cold("cold-gatetower-w", "tower", "The Landward Gate", 2380, 78, 190, 190, 2),
-  cold("cold-gatetower-e", "tower", undefined, 2380, 102, 190, 190, 2),
-  // OFF THE AXIS, and 90 is why. The Kingsway runs due north up the spawn
-  // meridian and continues through the Landward Gate to the middle of the city,
-  // so bearing 90 from this centre is not a place, it is the STREET. The first
-  // draft put the barracks squarely on it and `road.mjs` reported the road
-  // running through a building at eight points and a road torch standing inside
-  // one — which is the layout test doing exactly the job it exists for.
-  cold("cold-barracks", "barracks", "The Cold Watch", 1900, 108, 420, 260, 2),
-  cold("cold-stable", "stable", "The Gate Stables", 2050, 62, 300, 200, 1),
-  cold("cold-granary", "granary", "The Long Store", 2100, 134, 300, 230, 2),
+/**
+ * A building standing on a street.
+ *
+ * REPLACED POLAR PLACEMENT, and the reason is the whole difference between a
+ * city and a diagram. The first layout put every building at its own (radius,
+ * bearing) facing the middle, which is how Emberhold is laid out and is right
+ * for Emberhold: six fronts on one square, all looking at the anvil. Scaled up
+ * to thirty-nine it produces concentric arcs of buildings all facing inward —
+ * reported from play as "very linear, not like real cities", which is exactly
+ * what it was.
+ *
+ * Towns are not built round a centre, they are built ALONG THINGS. A building
+ * fronts the street it is on; its neighbours front the same street; the row
+ * that results is the street's other wall. So this places from the street:
+ * `alongPx` is how far up it, `offsetPx` is which side and how far back, and
+ * the facing is derived so the door looks at the road rather than at the
+ * middle of the city.
+ *
+ * `turn` is the last part and it matters more than its size suggests: a few
+ * degrees off square, varied per building, is the difference between a row
+ * somebody built over eighty years and a row somebody stamped.
+ */
+function onStreet(
+  id: string,
+  kind: BuildingKind,
+  name: string | undefined,
+  streetDeg: number,
+  alongPx: number,
+  /** Signed: which side of the street, and how far back from its centreline. */
+  offsetPx: number,
+  widthPx: number,
+  depthPx: number,
+  storeys: 1 | 2,
+  turn = 0,
+): TownBuilding {
+  const along = (streetDeg * Math.PI) / 180;
+  const across = ((streetDeg + 90) * Math.PI) / 180;
+  return {
+    id,
+    kind,
+    ...(name ? { name } : {}),
+    x: Math.round(COLD_CENTRE.x + Math.cos(along) * alongPx + Math.cos(across) * offsetPx),
+    y: Math.round(COLD_CENTRE.y + Math.sin(along) * alongPx + Math.sin(across) * offsetPx),
+    // Facing back across the street it stands on. The `+ 270` and `+ 90` are
+    // the two perpendiculars; which one depends on the side.
+    facingDeg: streetDeg + (offsetPx > 0 ? 270 : 90) + turn,
+    widthPx,
+    depthPx,
+    storeys,
+  };
+}
 
-  // --- The Works, 120..185 --------------------------------------------------
-  // Metal at a scale one smith cannot manage, which is the difference between a
-  // village forge and a city's.
-  cold("cold-foundry", "guildhall", "The Grey Foundry", 1520, 140, 460, 320, 2),
-  cold("cold-works-a", "warehouse", "Ore Stores", 1980, 152, 340, 240, 2),
-  cold("cold-works-b", "warehouse", undefined, 1980, 168, 300, 240, 2),
-  cold("cold-vault", "guildhall", "The Vault", 1180, 158, 320, 300, 2),
-  cold("cold-works-c", "cottage", undefined, 2280, 146, 210, 170, 1),
-  cold("cold-works-d", "cottage", undefined, 2280, 162, 210, 170, 1),
-
-  // --- The Terraces, 185..245 -----------------------------------------------
-  // Where people live, stacked up the slope away from the water.
-  cold("cold-terrace-a", "cottage", undefined, 1420, 196, 230, 180, 2),
-  cold("cold-terrace-b", "cottage", undefined, 1420, 210, 230, 180, 2),
-  cold("cold-terrace-c", "cottage", undefined, 1420, 224, 230, 180, 2),
-  cold("cold-terrace-d", "cottage", undefined, 1860, 190, 230, 180, 1),
-  cold("cold-terrace-e", "cottage", undefined, 1860, 204, 230, 180, 2),
-  cold("cold-terrace-f", "cottage", undefined, 1860, 218, 230, 180, 1),
-  cold("cold-terrace-g", "cottage", undefined, 1860, 232, 230, 180, 2),
-  cold("cold-chapel", "chapel", "The Cold Chapel", 2300, 212, 280, 340, 1),
-
-  // --- The Wharf, 245..300 --------------------------------------------------
-  // The reason the city is here. Everything on this arc faces the ice.
-  cold("cold-pier-w", "pier", "The Long Quay", 2260, 256, 620, 200, 1),
-  cold("cold-pier-e", "pier", "The Short Quay", 2260, 284, 480, 200, 1),
-  cold("cold-boathouse-a", "boathouse", undefined, 1840, 250, 300, 260, 1),
-  cold("cold-boathouse-b", "boathouse", undefined, 1840, 290, 300, 260, 1),
-  cold("cold-fishmarket", "stall", "The Fishmarket", 1400, 270, 520, 240, 1),
-  cold("cold-wharf-store-a", "warehouse", "The Ice House", 1840, 264, 340, 260, 2),
-  cold("cold-wharf-store-b", "warehouse", undefined, 1840, 276, 340, 260, 2),
-
-  // --- Highwatch, 300..350 --------------------------------------------------
-  // The seaward wall and the beacon, looking out over the ice.
-  cold("cold-beacon", "tower", "The Beacon", 2320, 320, 240, 240, 2),
-  cold("cold-watch-a", "tower", undefined, 2380, 302, 180, 180, 2),
-  cold("cold-watch-b", "tower", undefined, 2380, 338, 180, 180, 2),
-  cold("cold-highhall", "guildhall", "The Navigators", 1760, 320, 380, 300, 2),
-
-  // --- The Commons, 350..60 -------------------------------------------------
-  // Where people are when they are not working. The inn faces the basin.
-  cold("cold-inn", "inn", "The Frozen Bell", 1480, 20, 480, 300, 2),
-  cold("cold-bathhouse", "bathhouse", "The Steam Hall", 1480, 44, 380, 300, 1),
-  cold("cold-shop", "shop", "The Cold Ledger", 1820, 8, 320, 240, 2),
-  cold("cold-hall-of-names", "guildhall", "The Hall of Names", 1120, 30, 340, 300, 2),
-  cold("cold-commons-a", "cottage", undefined, 2200, 30, 220, 180, 2),
-  cold("cold-commons-b", "cottage", undefined, 2200, 48, 220, 180, 1),
-
-  // --- The Cold Quarter, 180..195 inner ------------------------------------
-  // Half-abandoned, and the only part of the city that is older than the city.
-  cold("cold-ruin-a", "ruin", undefined, 900, 180, 300, 240, 1),
-  cold("cold-ruin-b", "ruin", undefined, 900, 200, 260, 220, 1),
-  cold("cold-ruin-c", "ruin", "The Old Custom House", 1240, 188, 320, 260, 2),
-];
+/**
+ * A building fronting one of the ring streets.
+ *
+ * Its face is RADIAL rather than tangential — a building on a ring looks across
+ * it, which means inward if it stands outside the ring and outward if it stands
+ * inside. That is the other half of `onStreet`: between them, every building in
+ * the city faces a road rather than facing the middle.
+ */
+function onRing(
+  id: string,
+  kind: BuildingKind,
+  name: string | undefined,
+  ringPx: number,
+  angleDeg: number,
+  /** Signed: outside the ring is positive. */
+  offsetPx: number,
+  widthPx: number,
+  depthPx: number,
+  storeys: 1 | 2,
+  turn = 0,
+): TownBuilding {
+  const a = (angleDeg * Math.PI) / 180;
+  const r = ringPx + offsetPx;
+  return {
+    id,
+    kind,
+    ...(name ? { name } : {}),
+    x: Math.round(COLD_CENTRE.x + Math.cos(a) * r),
+    y: Math.round(COLD_CENTRE.y + Math.sin(a) * r),
+    facingDeg: angleDeg + (offsetPx > 0 ? 180 : 0) + turn,
+    widthPx,
+    depthPx,
+    storeys,
+  };
+}
 
 /**
  * Coldharrow's streets.
@@ -1845,29 +1864,39 @@ export interface Street {
 }
 
 export const COLDHARROW_STREETS: Street[] = [
-  // --- the spine ------------------------------------------------------------
-  // The Kingsway does not stop at the gate; it becomes the city's main street
-  // and runs the whole way through to the quays. Widest of the lot, because it
-  // is the one a cart comes up.
+  // FOUR SPOKES, NOT EIGHT, and the count is the whole lesson of the first
+  // attempt. Eight radial streets round a 2,600px city leaves twelve degrees
+  // between some of them, which at the radius people actually build at is
+  // narrower than one house — so every building that fronted one stood in
+  // another, and the layout test reported fifteen of them at once.
+  //
+  // Real cities do not have eight roads out of the middle either. They have a
+  // few through-routes and then RINGS and BLOCKS, which is what carries the
+  // traffic and what gives buildings somewhere to be that is not a frontage on
+  // a radius. Three of these four are fixed by something real: the Kingsway
+  // comes in at 90 and goes on to the quays at 270, and the other two gates are
+  // where they are.
   { id: "spine-south", kind: "spoke", angleDeg: 90, fromPx: 0, toPx: 2600, halfPx: 130 },
-  { id: "spine-north", kind: "spoke", angleDeg: 270, fromPx: 0, toPx: 2450, halfPx: 130 },
+  // Stops at the quay edge: north of 1,560 is the harbour, and a cobbled street
+  // across the ice is a street to nowhere in the most literal sense available.
+  // ENDS AT THE FISHMARKET'S DOOR, not at the quay edge. The market stands at
+  // 1,330 facing the ice, which is where a fishmarket goes, and a street that
+  // carried on past it would run through the building and then out onto the
+  // harbour. A main street ending at the thing it serves is what most main
+  // streets do.
+  { id: "spine-north", kind: "spoke", angleDeg: 270, fromPx: 0, toPx: 1120, halfPx: 130 },
+  { id: "shore-way", kind: "spoke", angleDeg: 200, fromPx: 0, toPx: 2600, halfPx: 100 },
+  { id: "cliff-way", kind: "spoke", angleDeg: 340, fromPx: 0, toPx: 2600, halfPx: 100 },
 
-  // --- to the other two gates ----------------------------------------------
-  { id: "shore-way", kind: "spoke", angleDeg: 200, fromPx: 0, toPx: 2600, halfPx: 95 },
-  { id: "cliff-way", kind: "spoke", angleDeg: 340, fromPx: 0, toPx: 2600, halfPx: 95 },
-
-  // --- into the districts ---------------------------------------------------
-  { id: "works-way", kind: "spoke", angleDeg: 150, fromPx: 300, toPx: 2150, halfPx: 85 },
-  { id: "terrace-way", kind: "spoke", angleDeg: 212, fromPx: 300, toPx: 2100, halfPx: 80 },
-  { id: "high-way", kind: "spoke", angleDeg: 320, fromPx: 300, toPx: 2200, halfPx: 80 },
-  { id: "commons-way", kind: "spoke", angleDeg: 28, fromPx: 300, toPx: 2100, halfPx: 85 },
-
-  // --- the ring -------------------------------------------------------------
-  // One circuit joining the districts to each other rather than everything
-  // having to go through the middle, which is the difference between a city and
-  // a wheel. Broken at the harbour, where the basin is.
-  { id: "ring-east", kind: "ring", radiusPx: 1650, startDeg: 300, endDeg: 480, halfPx: 75 },
-  { id: "ring-west", kind: "ring", radiusPx: 1650, startDeg: 120, endDeg: 240, halfPx: 75 },
+  // --- two rings ------------------------------------------------------------
+  // The outer joins the districts to each other so that not everything has to
+  // go through the middle, which is the difference between a city and a wheel.
+  // The inner is the edge of the square — the line the buildings round the
+  // middle front onto. Both are broken at the harbour, where the basin is.
+  { id: "ring-out-e", kind: "ring", radiusPx: 1820, startDeg: 302, endDeg: 480, halfPx: 85 },
+  { id: "ring-out-w", kind: "ring", radiusPx: 1820, startDeg: 120, endDeg: 238, halfPx: 85 },
+  { id: "ring-in-e", kind: "ring", radiusPx: 960, startDeg: 300, endDeg: 480, halfPx: 70 },
+  { id: "ring-in-w", kind: "ring", radiusPx: 960, startDeg: 120, endDeg: 240, halfPx: 70 },
 ];
 
 /** Whether a world position is on one of Coldharrow's streets. */
@@ -1882,8 +1911,16 @@ export function onColdharrowStreet(x: number, y: number): boolean {
   for (const st of COLDHARROW_STREETS) {
     if (st.kind === "spoke") {
       if (r < (st.fromPx ?? 0) || r > (st.toPx ?? 0)) continue;
-      // Perpendicular distance from the spoke's centreline.
       const delta = Math.abs(((deg - (st.angleDeg ?? 0) + 540) % 360) - 180);
+      // ITS OWN SIDE ONLY. A spoke is a ray, not a diameter, and the
+      // perpendicular test alone cannot tell the two apart: at a bearing
+      // opposite the street the delta folds to nearly 180 and its sine is just
+      // as small as it is on the street itself. The south spine therefore
+      // claimed the ground due NORTH of the middle, and the fishmarket — which
+      // stands at 272 and could not be moved anywhere that helped — was
+      // reported as standing in a road on the far side of the city.
+      if (delta > 90) continue;
+      // Perpendicular distance from the spoke's centreline.
       if (r * Math.sin((delta * Math.PI) / 180) <= st.halfPx) return true;
     } else {
       if (Math.abs(r - (st.radiusPx ?? 0)) > st.halfPx) continue;
@@ -1895,6 +1932,247 @@ export function onColdharrowStreet(x: number, y: number): boolean {
   }
   return false;
 }
+
+/**
+ * The harbour basin.
+ *
+ * THE REASON THE CITY IS HERE, and until now it was grass. Coldharrow is
+ * described everywhere in this plan as built round a frozen harbour; the quays
+ * were standing on a lawn, which makes the whole northern arc read as a row of
+ * odd low buildings facing nothing.
+ *
+ * An arc rather than a disc, because a harbour is an EDGE. The land wraps round
+ * it from the Wharf on one side to Highwatch on the other, and the ice fills
+ * what is left — running north to the seaward wall, which is the edge of the
+ * world, so there is nothing past it and nothing needs drawing there.
+ */
+export const COLDHARROW_BASIN = {
+  /** Inside this the ground is ice, not land. */
+  innerPx: 1560,
+  outerPx: COLDHARROW_RADIUS_PX + 120,
+  startDeg: 238,
+  endDeg: 302,
+};
+
+/** True where Coldharrow's harbour ice is, in world coordinates. */
+export function onColdharrowIce(x: number, y: number): boolean {
+  const dx = x - COLD_CENTRE.x;
+  const dy = y - COLD_CENTRE.y;
+  const r = Math.hypot(dx, dy);
+  if (r < COLDHARROW_BASIN.innerPx || r > COLDHARROW_BASIN.outerPx) return false;
+  let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+  if (deg < 0) deg += 360;
+  return deg >= COLDHARROW_BASIN.startDeg && deg <= COLDHARROW_BASIN.endDeg;
+}
+
+/**
+ * Push an authored layout apart until nothing overlaps and nothing is in a road.
+ *
+ * AUTHORING AND PACKING ARE DIFFERENT JOBS, and trying to do both by hand is
+ * what made the first two Coldharrow layouts. What a person is good at deciding
+ * is INTENT — this fronts that street, on that side, roughly there, turned a
+ * few degrees off square — and what a person is bad at is checking forty-four
+ * rotated rectangles against each other and against ten streets. The layout
+ * test found twelve overlaps and fifteen buildings standing in a road; every
+ * one was arithmetic rather than judgement.
+ *
+ * So the table above says where things WANT to be and this settles them. Same
+ * shape as `resolveTownCollision`, which has done the equivalent for bodies
+ * since Emberhold was built, and for the same reason given there: one pass is
+ * not a fixed point, because moving a building out of a street can push it into
+ * its neighbour.
+ *
+ * DETERMINISTIC AND SHARED. No randomness, and it runs in `shared/` rather than
+ * in the renderer, so the collision resolver, the layout test and the thing you
+ * can see are all looking at one answer. A solver that ran client-side would be
+ * a town whose walls are somewhere slightly different from where you may walk.
+ */
+const LAYOUT_PASSES = 24;
+
+function footprintRadius(b: TownBuilding): number {
+  // The corner, which is the furthest any part of a rotated rectangle reaches
+  // from its middle — so two of these never overlap if their centres are
+  // further apart than the sum.
+  return Math.hypot(b.widthPx, b.depthPx) / 2;
+}
+
+function settleLayout(buildings: TownBuilding[]): TownBuilding[] {
+  const out = buildings.map((b) => ({ ...b }));
+
+  for (let pass = 0; pass < LAYOUT_PASSES; pass++) {
+    let moved = 0;
+
+    // --- off each other ---------------------------------------------------
+    for (let i = 0; i < out.length; i++) {
+      for (let j = i + 1; j < out.length; j++) {
+        const a = out[i];
+        const b = out[j];
+        const keep = footprintRadius(a) + footprintRadius(b) + 40;
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let d = Math.hypot(dx, dy);
+        if (d >= keep) continue;
+        if (d < 0.001) {
+          // Two buildings on exactly one spot have no direction to part in.
+          dx = 1;
+          dy = 0;
+          d = 1;
+        }
+        const push = (keep - d) / 2;
+        a.x = Math.round(a.x - (dx / d) * push);
+        a.y = Math.round(a.y - (dy / d) * push);
+        b.x = Math.round(b.x + (dx / d) * push);
+        b.y = Math.round(b.y + (dy / d) * push);
+        moved++;
+      }
+    }
+
+    // --- and out of the roads ---------------------------------------------
+    // Outward along the bearing it stands on, because a building shoved off a
+    // radial street sideways lands on the next one round.
+    for (const b of out) {
+      const clear = footprintRadius(b) + 30;
+      let tries = 0;
+      while (tries < 24 && streetIntrusion(b, clear)) {
+        const dx = b.x - COLD_CENTRE.x;
+        const dy = b.y - COLD_CENTRE.y;
+        const r = Math.hypot(dx, dy) || 1;
+        b.x = Math.round(b.x + (dx / r) * 30);
+        b.y = Math.round(b.y + (dy / r) * 30);
+        tries++;
+        moved++;
+      }
+
+      // --- and back off the water -------------------------------------------
+      // The street rule pushes OUTWARD, and outward on the northern arc is the
+      // harbour: four buildings were shoved off a road and onto the ice. Only
+      // a quay may stand on water, so everything else comes back inward until
+      // it is on land again.
+      if (b.kind === "pier") continue;
+      tries = 0;
+      while (tries < 40 && onColdharrowIce(b.x, b.y)) {
+        const dx = b.x - COLD_CENTRE.x;
+        const dy = b.y - COLD_CENTRE.y;
+        const r = Math.hypot(dx, dy) || 1;
+        b.x = Math.round(b.x - (dx / r) * 30);
+        b.y = Math.round(b.y - (dy / r) * 30);
+        tries++;
+        moved++;
+      }
+    }
+
+    if (moved === 0) break;
+  }
+  return out;
+}
+
+/** Whether any part of this building's footprint reaches into a street. */
+function streetIntrusion(b: TownBuilding, clearPx: number): boolean {
+  if (onColdharrowStreet(b.x, b.y)) return true;
+  // The corners as well as the middle: a building whose centre is clear and
+  // whose end juts into the carriageway still blocks it.
+  const a = (b.facingDeg * Math.PI) / 180;
+  const hw = b.widthPx / 2;
+  const hd = b.depthPx / 2;
+  for (const [sx, sy] of [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ]) {
+    const lx = sx * hd;
+    const ly = sy * hw;
+    const cx = b.x + lx * Math.cos(a) - ly * Math.sin(a);
+    const cy = b.y + lx * Math.sin(a) + ly * Math.cos(a);
+    if (onColdharrowStreet(cx, cy)) return true;
+  }
+  void clearPx;
+  return false;
+}
+
+const COLDHARROW_AUTHORED: TownBuilding[] = [
+  // --- The Landward Gate ----------------------------------------------------
+  cold("cold-gatetower-w", "tower", "The Landward Gate", 2380, 78, 190, 190, 2),
+  cold("cold-gatetower-e", "tower", undefined, 2380, 102, 190, 190, 2),
+
+  // --- Up the spine from the gate -------------------------------------------
+  // Offsets are 420 and up: a 130 half-width street plus a 120 half-depth
+  // building needs 250 before anything fronts it at all, and the rest is the
+  // pavement a city has.
+  onStreet("cold-barracks", "barracks", "The Cold Watch", 90, 2150, -470, 440, 260, 2, -3),
+  onStreet("cold-granary", "granary", "The Long Store", 90, 2180, 460, 300, 230, 2, 4),
+  onStreet("cold-stable", "stable", "The Gate Stables", 90, 1760, 440, 300, 200, 1, -2),
+  onStreet("cold-spine-w1", "warehouse", undefined, 90, 1700, -450, 320, 250, 2, 2),
+  onStreet("cold-spine-e2", "cottage", undefined, 90, 1320, 430, 220, 180, 2, -5),
+  onStreet("cold-spine-w3", "cottage", undefined, 90, 1300, -425, 220, 180, 1, 5),
+
+  // --- The Works, off the west outer ring -----------------------------------
+  // A working quarter rather than a working street: the foundry fronts the ring
+  // with its stores behind it, which is how anything that needs a yard is laid
+  // out.
+  onRing("cold-foundry", "guildhall", "The Grey Foundry", 1820, 152, 340, 460, 320, 2, 4),
+  onRing("cold-works-a", "warehouse", "Ore Stores", 1820, 170, 330, 340, 240, 2, -3),
+  onRing("cold-works-b", "warehouse", undefined, 1820, 136, 320, 300, 240, 2, 5),
+  onRing("cold-works-c", "warehouse", undefined, 1820, 155, -330, 300, 230, 1, -4),
+  onStreet("cold-vault", "guildhall", "The Vault", 200, 1180, -520, 320, 300, 2, 8),
+  onRing("cold-works-d", "cottage", undefined, 1820, 122, -300, 210, 170, 1, 6),
+
+  // --- The Terraces, on the west rings --------------------------------------
+  // Housing in two rows, one on each ring, which is what a terrace is: the row
+  // IS the street's other wall.
+  onRing("cold-terrace-a", "cottage", undefined, 1820, 212, -300, 230, 180, 2, 2),
+  onRing("cold-terrace-b", "cottage", undefined, 1820, 224, -300, 230, 180, 2, -2),
+  onRing("cold-terrace-c", "cottage", undefined, 1820, 236, -300, 230, 180, 2, 3),
+  onRing("cold-terrace-d", "cottage", undefined, 1820, 200, 310, 230, 180, 1, -1),
+  onRing("cold-terrace-e", "cottage", undefined, 1820, 213, 310, 230, 180, 1, -3),
+  onRing("cold-terrace-f", "cottage", undefined, 1820, 226, 310, 230, 180, 2, 2),
+  onRing("cold-terrace-g", "cottage", undefined, 960, 214, -280, 230, 180, 2, -4),
+  onStreet("cold-chapel", "chapel", "The Cold Chapel", 200, 2180, 470, 280, 340, 1, 7),
+
+  // --- The Wharf ------------------------------------------------------------
+  // The one district that is not on a street, because a waterfront is not: the
+  // quays front the ICE in a line along the basin's edge, and what stands
+  // behind them faces the same way. It is why a harbour reads differently from
+  // the rest of a city built of the same stone.
+  cold("cold-pier-w", "pier", "The Long Quay", 1700, 250, 620, 200, 1),
+  cold("cold-pier-e", "pier", "The Short Quay", 1700, 290, 480, 200, 1),
+  cold("cold-fishmarket", "stall", "The Fishmarket", 1330, 270, 520, 240, 1),
+  cold("cold-boathouse-a", "boathouse", undefined, 1340, 243, 300, 260, 1),
+  cold("cold-boathouse-b", "boathouse", undefined, 1340, 297, 300, 260, 1),
+  cold("cold-wharf-store-a", "warehouse", "The Ice House", 990, 252, 340, 260, 2),
+  cold("cold-wharf-store-b", "warehouse", undefined, 990, 288, 340, 260, 2),
+
+  // --- Highwatch ------------------------------------------------------------
+  cold("cold-beacon", "tower", "The Beacon", 2320, 320, 240, 240, 2),
+  cold("cold-watch-a", "tower", undefined, 2380, 300, 180, 180, 2),
+  onStreet("cold-highhall", "guildhall", "The Navigators", 340, 1700, -520, 380, 300, 2, -6),
+  onRing("cold-high-a", "cottage", undefined, 1820, 318, 300, 220, 180, 2, 4),
+  onRing("cold-high-b", "cottage", undefined, 1820, 330, -300, 220, 180, 1, -4),
+
+  // --- The Commons, on the east rings ---------------------------------------
+  // The inn takes the corner where the inner ring meets the spine, which is
+  // where an inn goes: the most-passed spot that is not the middle of the road.
+  onRing("cold-inn", "inn", "The Frozen Bell", 960, 40, -320, 480, 300, 2, 5),
+  onRing("cold-bathhouse", "bathhouse", "The Steam Hall", 960, 20, 330, 380, 300, 1, -3),
+  onRing("cold-hall-of-names", "guildhall", "The Hall of Names", 960, 62, 330, 340, 300, 2, -7),
+  onRing("cold-shop", "shop", "The Cold Ledger", 1820, 30, -320, 300, 230, 2, 3),
+  onRing("cold-commons-a", "cottage", undefined, 1820, 45, 300, 220, 180, 2, 3),
+  onRing("cold-commons-b", "cottage", undefined, 1820, 15, 300, 220, 180, 1, -5),
+  onRing("cold-commons-c", "cottage", undefined, 1820, 60, -300, 220, 180, 2, 6),
+
+  // --- The Cold Quarter -----------------------------------------------------
+  // Older than the streets and not aligned to them, which is the point: this is
+  // what was here before the city was laid out, so it sits askew to everything
+  // round it.
+  cold("cold-ruin-a", "ruin", undefined, 1400, 178, 300, 240, 1),
+  cold("cold-ruin-b", "ruin", undefined, 1420, 192, 260, 220, 1),
+  cold("cold-ruin-c", "ruin", "The Old Custom House", 1160, 185, 320, 260, 2),
+];
+
+/** What is actually built: the table above, settled. */
+export const COLDHARROW_BUILDINGS: TownBuilding[] = settleLayout(COLDHARROW_AUTHORED);
+
+
 
 export const COLDHARROW: Settlement = {
   id: "coldharrow",

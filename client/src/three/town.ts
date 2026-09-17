@@ -28,6 +28,7 @@ import { seededRandom } from "../../../shared/rng";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   TOWN_BUILDINGS,
+  COLDHARROW_BASIN,
   COLDHARROW_STREETS,
   inGatewayAmong,
   type Settlement,
@@ -3320,6 +3321,7 @@ export class Town {
 
     this.buildGround();
     this.buildStreets();
+    this.buildHarbour();
 
     const cx = toWorldX(this.settlement.center.x);
     const cz = toWorldZ(this.settlement.center.y);
@@ -3440,6 +3442,97 @@ export class Town {
    * reason the square does: without it the cobbles z-fight the terrain at
    * grazing angles and the symptom looks like a shader bug.
    */
+  /**
+   * The frozen harbour.
+   *
+   * ICE IS THE SAME PROBLEM AS THE RIVER'S WATER, INVERTED. The note on the
+   * Coldwater's material explains why it carries a constant dim emissive: a
+   * smooth dark surface with no reflection probe to catch a sky goes very
+   * nearly black the moment the sun is low, and the river is the one thing you
+   * must not walk into. Ice has the opposite failure — it is nearly WHITE, so
+   * at noon it blows out into a flat sheet with no form at all, and at dusk it
+   * is the only thing in the frame still bright.
+   *
+   * So: a pale blue that is darker than snow, a low roughness for the sheen,
+   * and a small emissive that keeps it readable at night without letting it
+   * glow. Two layers — the sheet, and a paler crust of broken floes nearer the
+   * quays — because one flat polygon the size of a harbour reads as a hole in
+   * the ground rather than as a surface.
+   */
+  private buildHarbour(): void {
+    if (this.settlement.id !== "coldharrow") return;
+
+    const cx = toWorldX(this.settlement.center.x);
+    const cz = toWorldZ(this.settlement.center.y);
+    const b = COLDHARROW_BASIN;
+
+    const sheet = new THREE.MeshStandardMaterial({
+      color: 0x9fb8c6,
+      roughness: 0.22,
+      metalness: 0.0,
+      // See the note above, and the Coldwater's, which this is the other half
+      // of the same argument as.
+      emissive: 0x1b2c36,
+      emissiveIntensity: 1,
+      transparent: true,
+      opacity: 0.94,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+
+    const group = new THREE.Group();
+    const STEP = 4;
+    for (let d = b.startDeg; d < b.endDeg; d += STEP) {
+      const d1 = Math.min(d + STEP, b.endDeg);
+      const a0 = (d * Math.PI) / 180;
+      const a1 = (d1 * Math.PI) / 180;
+      const ri = b.innerPx / PX_PER_UNIT;
+      const ro = b.outerPx / PX_PER_UNIT;
+      // One quad per step, corners on the two radii — a ring sector built by
+      // hand because Three's RingGeometry cannot be given an arc that starts
+      // anywhere but zero without rotating the whole thing into place.
+      const g = new THREE.BufferGeometry();
+      const v = new Float32Array([
+        cx + Math.cos(a0) * ri, 0.02, cz + Math.sin(a0) * ri,
+        cx + Math.cos(a1) * ri, 0.02, cz + Math.sin(a1) * ri,
+        cx + Math.cos(a1) * ro, 0.02, cz + Math.sin(a1) * ro,
+        cx + Math.cos(a0) * ri, 0.02, cz + Math.sin(a0) * ri,
+        cx + Math.cos(a1) * ro, 0.02, cz + Math.sin(a1) * ro,
+        cx + Math.cos(a0) * ro, 0.02, cz + Math.sin(a0) * ro,
+      ]);
+      g.setAttribute("position", new THREE.BufferAttribute(v, 3));
+      g.computeVertexNormals();
+      const m = new THREE.Mesh(g, sheet);
+      m.renderOrder = 2;
+      group.add(m);
+    }
+
+    // Floes: a scatter of pale slabs along the quay edge, seeded so the harbour
+    // is the same harbour on every client.
+    const rand = seededRandom(70177);
+    const floe = new THREE.MeshStandardMaterial({
+      color: 0xc6d8e2,
+      roughness: 0.3,
+      emissive: 0x24333d,
+      emissiveIntensity: 1,
+    });
+    for (let i = 0; i < 46; i++) {
+      const deg = b.startDeg + rand() * (b.endDeg - b.startDeg);
+      const r = (b.innerPx + rand() * 520) / PX_PER_UNIT;
+      const a = (deg * Math.PI) / 180;
+      const w = 0.9 + rand() * 2.6;
+      const g = new THREE.BoxGeometry(w, 0.16 + rand() * 0.14, w * (0.6 + rand() * 0.7));
+      const m = new THREE.Mesh(g, floe);
+      m.position.set(cx + Math.cos(a) * r, 0.06, cz + Math.sin(a) * r);
+      m.rotation.y = rand() * Math.PI;
+      group.add(m);
+    }
+
+    this.group.add(group);
+  }
+
   private buildStreets(): void {
     const streets = STREETS_BY_SETTLEMENT[this.settlement.id];
     if (!streets?.length) return;

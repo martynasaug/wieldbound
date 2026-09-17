@@ -29,6 +29,7 @@ import {
   TOWN_CENTER,
   TOWN_PAVED_RADIUS_PX,
   onColdharrowStreet,
+  onColdharrowIce,
 } from "../../../shared/town";
 // The height field moved to `heightfield.ts` so that a Node test could walk it —
 // see the note at the top of that file. Re-exported here rather than repointed
@@ -690,9 +691,9 @@ export class World {
         // Nor in a city street, for the same reason and by the same kind of
         // predicate: a street is a ribbon and no list of circles describes one.
         if (onColdharrowStreet(sx, sy)) return true;
-        // Nor in a city street, for the same reason and by the same kind of
-        // predicate: a street is a ribbon and no list of circles describes one.
-        if (onColdharrowStreet(sx, sy)) return true;
+        // Nor on the harbour ice, which should not need saying and does: the
+        // scatter knows about land and about water, and ice is neither.
+        if (onColdharrowIce(sx, sy)) return true;
         // Nor in the Coldwater, nor on its shingle. Wildflowers standing in a
         // river is the same class of mistake as wildflowers in the wheel ruts,
         // and rather more obvious.
