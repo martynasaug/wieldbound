@@ -33,6 +33,9 @@ import {
   itemName,
   itemScore,
   itemShortName,
+  scarcityDef,
+  atCeiling,
+  traitOf,
 } from "../../../shared/items";
 import type { PassiveBonus } from "../../../shared/protocol-types";
 import { iconSvg } from "./icons";
@@ -238,9 +241,20 @@ export function itemDetails(item: ItemInstance, equipped: ItemInstance[] = []): 
    *  helmet does not deal damage and a school on it would be a number that
    *  never applies. */
   school: { name: string; color: string } | null;
+  /** How hard the BASE is to find, which the rarity word does not say: a Runed
+   *  cap and a Runed claymore are the same quality and nothing like the same
+   *  find. `capped` is whether this one has already climbed as far as it can. */
+  scarcity: { name: string; color: string; blurb: string; ceiling: string; capped: boolean };
+  /** The rule only this item has. Null for the great majority of them. `bonus`
+   *  is its always-on half, said in numbers, because that half is otherwise
+   *  invisible: it totals into the sheet through `itemPassives` and nothing on
+   *  the item says where it came from. */
+  trait: { name: string; blurb: string; bonus: string } | null;
   comparison: ItemComparison | null;
 } {
   const base = itemBase(item.baseId);
+  const scarcity = scarcityDef(base);
+  const trait = traitOf(base);
   return {
     name: itemShortName(item),
     color: rarityColor(item.rarity),
@@ -263,6 +277,20 @@ export function itemDetails(item: ItemInstance, equipped: ItemInstance[] = []): 
     // server swings with, so a Frostbrand cannot say frost and deal physical.
     school: item.weaponType
       ? { name: schoolDef(weaponSchool(item)).name, color: schoolDef(weaponSchool(item)).color }
+      : null,
+    scarcity: {
+      name: scarcity.name,
+      color: scarcity.color,
+      blurb: scarcity.blurb,
+      ceiling: rarityName(scarcity.ceiling),
+      capped: atCeiling(base, item.rarity),
+    },
+    trait: trait
+      ? {
+          name: trait.name,
+          blurb: trait.blurb,
+          bonus: trait.passive ? passiveSummary(trait.passive) : "",
+        }
       : null,
     comparison: compareToEquipped(item, equipped),
   };

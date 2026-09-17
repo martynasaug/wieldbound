@@ -516,3 +516,45 @@ cast over an identical outline though, and at the distance this camera sits the
 OUTLINE is what the eye sorts people by. `look.ts` adds the parts that change
 it: a hairstyle from five, a beard from four, a hair colour from a short
 authored list, and a build between 0.94 and 1.06.
+
+`drops.mjs` — no server needed. Checks the two axes an item drop has. That the
+scarcity tiers are ordered on BOTH of them (a rarer tier that stopped lower
+would be strictly worse, and nobody would want to find it); that the ceiling
+survives 400 rolls, a boss floor set at the top of the ladder, and a full walk
+up the forge, for every one of the 182 bases; that every off-hand and every
+fabled item carries a trait, that no two items share one, that every trait names
+a real status the target can actually hold, and that no chance is above a third.
+Then it rolls the real drop table 100,000 times per band and prints the mix.
+
+It is also the one test in here that does not use the shared LCG: `seed *
+1103515245` leaves what a double can hold on the first multiply, so the low bits
+are gone before the modulo and a weighted table measured through it looks
+unweighted. Anything measuring a DISTRIBUTION wants the mulberry32 in here.
+
+```powershell
+node tools/test/drops.mjs
+```
+
+`soak/traitfire.mjs` — needs the server. Proves a trait is CONNECTED, which no
+table can: buys or finds a trait-carrying off-hand, wears it, stands in a
+monster for its `onStruck`, then swings with something that marks what it hits
+for its `onHit`/`onCrit`. It found that a player's statuses are never pushed by
+`applyStatus`, that `applySkillDamage` is the skill funnel and not the blow
+funnel, and that the auto-attack path had never called `onPlayerKill`. Seed the
+character first so its bag has something with a trait in it.
+
+```powershell
+node tools/seed.mjs Sawyer
+node tools/soak/traitfire.mjs Sawyer
+```
+
+`soak/dropslook.mjs` — needs the server. Photographs the hover for one of each
+case the tooltip has to say something different about — plain, capped, off-hand,
+fabled — and reads back the scarcity line, the trait block and whether the
+tooltip clipped. Then opens the forge's reforge tab and prints the note naming
+the items it will not take any further, because a capped item simply vanishes
+from that list and a missing row reads as a bug rather than as the rule.
+
+```powershell
+node tools/soak/dropslook.mjs
+```

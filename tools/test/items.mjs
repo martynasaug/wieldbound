@@ -60,6 +60,8 @@ import {
   itemName,
   itemPassives,
   reforgeCost,
+  maxRarityFor,
+  rarityIndex,
   reforgeItem,
   reforgePreview,
   rollAffixes,
@@ -496,17 +498,35 @@ console.log(`  forge cost spans ${cheapest} to ${dearest} wood+ore`);
 check("forging gets meaningfully dearer with band", dearest > cheapest * 8);
 
 // The ladder must be climbable, and each step dearer than the last.
-const sample = ITEM_BASES.longsword;
+//
+// Walked on a FABLED base, because that is now the only kind of item that can
+// walk the whole thing. The sample used to be a longsword and the test broke
+// the day the ceiling landed — correctly: a longsword is scarce, it stops at
+// Forged, and `reforgeCost` returning null there is the rule working.
+const sample = ITEM_BASES.claymore;
+check("the ladder sample is a base that can climb all of it",
+  maxRarityFor(sample) === RARITY_ORDER[RARITY_ORDER.length - 1]);
 let lastCost = 0;
 for (const r of RARITY_ORDER.slice(0, -1)) {
   const cost = reforgeCost(sample, r);
   check(`reforge from ${r} has a cost`, !!cost);
+  if (!cost) break;
   const total = MATERIALS.reduce((s, m) => s + (cost[m] ?? 0), 0);
   check(`reforge from ${r} costs more than the step before`, total > lastCost, `${total} after ${lastCost}`);
   lastCost = total;
 }
 check("there is no step past the top", reforgeCost(sample, "enchanted") === null);
-console.log(`  a longsword to Enchanted: ${lastCost} materials on the last step alone`);
+console.log(`  a claymore to Enchanted: ${lastCost} materials on the last step alone`);
+
+// And the other half of the same rule: a base with a ceiling stops AT it, and
+// the forge says so by refusing to price the step rather than by pricing one
+// that cannot be taken.
+const capped = ITEM_BASES.longsword;
+check("a scarce base stops below the top", maxRarityFor(capped) !== "enchanted");
+check("the forge will not price a step past a base's ceiling",
+  reforgeCost(capped, maxRarityFor(capped)) === null, maxRarityFor(capped));
+check("but it prices every step up to it",
+  RARITY_ORDER.slice(0, rarityIndex(maxRarityFor(capped))).every((r) => !!reforgeCost(capped, r)));
 
 // Essence is the fight-only material, and only the top of the ladder needs it.
 const needsEssence = RARITY_ORDER.slice(0, -1).filter((r) => (reforgeCost(sample, r)?.essence ?? 0) > 0);
@@ -858,9 +878,14 @@ section("9e. the refined tier");
     const cape = bases.find((b) => b.slot === "cape" && b.band === 5);
     check("a blade leans on ingot", refineLean(blade.slot) === "ingot");
     check("a cape leans on weave", refineLean(cape.slot) === "weave");
-    const top = reforgeCost(cape, "runed");
+    // The cape's OWN top step, not a hard-coded "runed": most bases stop before
+    // the end of the ladder now, and asking one of them to price a step it
+    // cannot take is asking the ceiling to fail.
+    const last = RARITY_ORDER[rarityIndex(maxRarityFor(cape)) - 1];
+    const top = reforgeCost(cape, last);
+    check(`the cape can be reforged to its ceiling (${maxRarityFor(cape)})`, !!top);
     check("and the cape's top step really does want more weave than ingot",
-      (top.weave ?? 0) > (top.ingot ?? 0), JSON.stringify(top));
+      !!top && (top.weave ?? 0) > (top.ingot ?? 0), JSON.stringify(top));
   }
 
   // Only the far rings and the top half of the ladder. If band 1 needed an
@@ -870,7 +895,9 @@ section("9e. the refined tier");
     bases.filter((b) => b.band < 4)
       .every((b) => REFINED_MATERIALS.every((m) => !(forgeCost(b)[m] > 0))));
   {
-    const sample = ITEM_BASES.longsword;
+    // On a base with a whole ladder to measure. A capped one has no top half,
+    // so "the top half wants refined stock" is not a question it can answer.
+    const sample = ITEM_BASES.claymore;
     const stepsWanting = RARITY_ORDER.slice(0, -1)
       .filter((r) => REFINED_MATERIALS.some((m) => (reforgeCost(sample, r)?.[m] ?? 0) > 0));
     check("refined stock is wanted by the top half of the ladder, not all of it",
@@ -881,7 +908,11 @@ section("9e. the refined tier");
   // than the entire climb does now. Measured in raw-equivalent so the refined
   // tier cannot hide the cost rather than reduce it.
   {
-    const top = bases.find((b) => b.band === 5 && b.slot === "weapon");
+    // A fabled one, because "Broken to Enchanted" is a climb only a fabled base
+    // can make — on anything else the last two steps do not exist to be priced.
+    const top = bases.find(
+      (b) => b.band === 5 && b.slot === "weapon" && maxRarityFor(b) === "enchanted",
+    );
     const climb = RARITY_ORDER.slice(0, -1)
       .reduce((sum, r) => sum + rawWorth(reforgeCost(top, r)), 0);
     const perGather = gatherYieldFor(5, 3);
@@ -982,8 +1013,11 @@ section("9f. etching");
   }
   // Cheaper than the top of the ladder, because you have already paid by
   // destroying a whole other item to get the rune.
-  const topStep = reforgeCost(bases.find((b) => b.band === 5 && b.slot === "weapon"), "runed");
-  const etchTop = etchCost({ baseId: bases.find((b) => b.band === 5 && b.slot === "weapon").id });
+  const topWeapon = bases.find(
+    (b) => b.band === 5 && b.slot === "weapon" && maxRarityFor(b) === "enchanted",
+  );
+  const topStep = reforgeCost(topWeapon, "runed");
+  const etchTop = etchCost({ baseId: topWeapon.id });
   const raw = (c) => MATERIALS.reduce((s, m) => s + (c[m] ?? 0), 0);
   check("etching costs less than the last step of the ladder", raw(etchTop) < raw(topStep),
     `${raw(etchTop)} vs ${raw(topStep)}`);
@@ -1005,7 +1039,9 @@ section("9f. etching");
 // the three throws; all three make the ladder mean less than it says.
 section("9g. a cut rune survives the fire");
 {
-  const sample = ITEM_BASES.longsword;                       // band 3, weapon
+  // A fabled base, because the section reforges the same item four hundred
+  // times and a longsword has nowhere left to go from Forged — its ceiling.
+  const sample = ITEM_BASES.claymore;                        // band 5, fabled
   const forged = { id: "s1", equipped: false, ...rollItem(sample, "forged", rand) };  // 2 affixes
   const spare = eligibleAffixes(sample).find((a) => !forged.affixes.includes(a.id));
   const cut = etchAffix(forged, spare.id, forged.affixes[0]);

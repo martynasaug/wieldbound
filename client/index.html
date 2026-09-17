@@ -1730,7 +1730,37 @@
         margin-bottom: 5px;
         letter-spacing: .04em;
       }
+      /* How hard the base is to find, and where it stops. Small, uppercase and
+         in the scarcity's own colour rather than the item's: it is a fact about
+         the KIND of thing, not about this copy of it, so it must not be read as
+         part of the quality line above. */
+      #item-tooltip .tt-scarcity {
+        font-size: 9.5px;
+        letter-spacing: .07em;
+        text-transform: uppercase;
+        margin: -3px 0 6px;
+        opacity: .9;
+      }
       #item-tooltip .tt-line { font-size: 11px; color: #cbbb95; line-height: 1.45; }
+      /* The rule only this item has. Given a heading and a full sentence, which
+         nothing else on the tooltip gets, because a trait is the reason to carry
+         the item and the numbers above it are not. */
+      #item-tooltip .tt-trait-head {
+        margin-top: 6px;
+        font: bold 11px Georgia, serif;
+        color: #d6b06a;
+        letter-spacing: .04em;
+      }
+      #item-tooltip .tt-trait {
+        font-size: 11px;
+        color: #e8d8ae;
+        line-height: 1.45;
+        padding-left: 7px;
+        border-left: 2px solid rgba(214, 176, 106, .55);
+        margin: 2px 0 1px;
+      }
+      /* Its always-on half, on the same rail so the two read as one block. */
+      #item-tooltip .tt-trait.bonus { color: #cbbb95; }
       /* Affixes are the part of an item that is not true of every copy of it,
          so they are set apart rather than listed among the rolls. */
       /* What a weapon deals. Its own line under the quality, coloured the same

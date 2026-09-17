@@ -67,6 +67,7 @@ import {
   schoolDef,
   type MonsterKind,
   type PassiveBonus,
+  type StatusId,
   type StatusDef,
   type WeaponType,
   // Extension included on purpose: the tools/test suites run this file under
@@ -267,6 +268,12 @@ export interface ItemBase {
    * Bows and staves are two-handed for the same reason greatswords are.
    */
   twoHanded?: boolean;
+  /** How hard this one is to find. Derived from the band when absent — see
+   *  `scarcityOf`. Only the rows that disagree with their band say it. */
+  scarcity?: Scarcity;
+  /** The thing only this item does. Every off-hand has one; fabled items have
+   *  one; nothing else does. See `TRAITS`. */
+  trait?: string;
   mods?: WeaponMods;
   /** Multiplies the derived primary and secondary numbers. Use sparingly —
    *  the band and the slot should do almost all of the work. */
@@ -520,18 +527,18 @@ const WEAPON_BASES: ItemBase[] = [
   w("frostbrand", "Frostbrand", 5, "sword",
     { model: "items/frostbrand.glb", palette: "frost", scale: 1.24 },
     "Cold before you draw it, and colder after.",
-    { mods: { range: 1.2, speed: 1.35, damage: 1.45 }, twoHanded: true }),
+    { mods: { range: 1.2, speed: 1.35, damage: 1.45 }, twoHanded: true, scarcity: "fabled", trait: "everwinter" }),
   w("claymore", "Bloodclaim Claymore", 5, "sword",
     { model: "items/claymore.glb", palette: "crimson", scale: 1.36 },
     "It has a name because it earned one.",
-    { mods: { range: 1.25, speed: 1.45, damage: 1.6 }, twoHanded: true }),
+    { mods: { range: 1.25, speed: 1.45, damage: 1.6 }, twoHanded: true, scarcity: "fabled", trait: "bloodclaim" }),
   // The first lightning weapon in the game. Band 4 rather than 5 on purpose:
   // the golem is the one creature with a seam of it, and a player who can only
   // buy the answer at the same ring as the question has no answer at all.
   w("levinbrand", "Levinbrand", 4, "sword",
     { model: "items/levinbrand.glb", palette: "storm", scale: 1.04 },
     "The fuller is scorched in a line nobody cut.",
-    { mods: { speed: 0.92, damage: 1.05 } }),
+    { mods: { speed: 0.92, damage: 1.05 }, scarcity: "fabled", trait: "levinstruck" }),
 
   // ------------------------------------------------------------------- axes
   // Each its own model from `tools/art/items/weapons.py`, like the swords; they
@@ -593,7 +600,7 @@ const WEAPON_BASES: ItemBase[] = [
   w("reaperscythe", "Reaper's Scythe", 5, "axe",
     { model: "items/reaperscythe.glb", palette: "obsidian", scale: 1.2, grip: 0.45 },
     "A farm tool that stopped pretending.",
-    { mods: { range: 1.3, speed: 1.3, damage: 1.35 }, twoHanded: true }),
+    { mods: { range: 1.3, speed: 1.3, damage: 1.35 }, twoHanded: true, scarcity: "fabled", trait: "harvesting" }),
 
   // ------------------------------------------------------------------ maces
   // Each its own model from `tools/art/items/weapons.py`. Five of these were the
@@ -643,11 +650,11 @@ const WEAPON_BASES: ItemBase[] = [
   w("dawnbreaker", "Dawnbreaker", 5, "mace",
     { model: "items/dawnbreaker.glb", palette: "gold", scale: 1.16 },
     "Struck at the right angle it rings for a long time.",
-    { mods: { speed: 1.25, damage: 1.5 }, twoHanded: true }),
+    { mods: { speed: 1.25, damage: 1.5 }, twoHanded: true, scarcity: "fabled", trait: "daybreaking" }),
   w("thunderhead", "Thunderhead", 5, "mace",
     { model: "items/thunderhead.glb", palette: "storm", scale: 1.13 },
     "The air goes tight just before it lands. Everyone notices; nobody moves.",
-    { mods: { speed: 1.15, damage: 1.35 } }),
+    { mods: { speed: 1.15, damage: 1.35 }, scarcity: "fabled", trait: "thunderhead" }),
 
   // ------------------------------------------------------------------- bows
   // All two-handed, which is a rule about hands rather than about balance.
@@ -683,7 +690,7 @@ const WEAPON_BASES: ItemBase[] = [
   w("ruinstring", "Ruinstring", 5, "bow",
     { model: "items/ruinstring.glb", palette: "crimson", scale: 1.05 },
     "The string hums a half-tone flat and never goes slack.",
-    { mods: { range: 1.15, damage: 1.2 }, twoHanded: true }),
+    { mods: { range: 1.15, damage: 1.2 }, twoHanded: true, scarcity: "fabled", trait: "ruinous" }),
   w("hornbow", "Horn Bow", 3, "bow",
     { model: "items/hornbow.glb", palette: "bone", scale: 0.92 },
     "Short, and stores far more than its length has any right to.",
@@ -695,7 +702,7 @@ const WEAPON_BASES: ItemBase[] = [
   w("heartwood", "Heartwood Bow", 5, "bow",
     { model: "items/heartwood.glb", palette: "verdant", scale: 1.1 },
     "Cut green and never seasoned, because seasoning would kill it.",
-    { mods: { range: 1.1, damage: 1.18 }, twoHanded: true }),
+    { mods: { range: 1.1, damage: 1.18 }, twoHanded: true, scarcity: "fabled", trait: "heartwoven" }),
 
   // ----------------------------------------------------------------- staves
   w("apprenticestaff", "Apprentice's Staff", 1, "staff",
@@ -726,7 +733,7 @@ const WEAPON_BASES: ItemBase[] = [
   w("starcaller", "Starcaller", 5, "staff",
     { model: "items/starcaller.glb", palette: "frost", scale: 1.55, ...STAFF_HOLD },
     "Cold light, and it answers before you finish asking.",
-    { mods: { range: 1.15, damage: 1.25 }, twoHanded: true }),
+    { mods: { range: 1.15, damage: 1.25 }, twoHanded: true, scarcity: "fabled", trait: "starcalling" }),
   w("reedstaff", "Reed Staff", 1, "staff",
     { model: "items/reedstaff.glb", palette: "wood", scale: 1.28, ...STAFF_HOLD },
     "Light enough to carry all day, which is the only claim it makes.",
@@ -788,7 +795,7 @@ const WEAPON_BASES: ItemBase[] = [
   w("sunspire", "Sunspire", 5, "wand",
     { model: "items/sunspire.glb", palette: "gold", scale: 0.56 },
     "It throws a shadow in the wrong direction and nobody mentions it.",
-    { mods: { damage: 1.22, speed: 1.05 } }),
+    { mods: { damage: 1.22, speed: 1.05 }, scarcity: "fabled", trait: "sunspiring" }),
   w("stormrod", "Stormrod", 5, "wand",
     { model: "items/stormrod.glb", palette: "storm", scale: 0.58 },
     "It hums between castings, which the apprentices are told is normal.",
@@ -836,7 +843,7 @@ const WEAPON_BASES: ItemBase[] = [
   w("stormfists", "Stormfists", 5, "fist",
     { hands: "items/stormfists.glb", palette: "storm" },
     "The air tastes of iron before the blow lands.",
-    { mods: { damage: 1.3, speed: 0.95 } }),
+    { mods: { damage: 1.3, speed: 0.95 }, scarcity: "fabled", trait: "stormshod" }),
   // Bands 1, 2 and 5 had one fist each. All three are plain materials, which
   // the school ratio also wanted — see the note above the axes.
   w("splintguard", "Splint Guard", 1, "fist",
@@ -850,7 +857,7 @@ const WEAPON_BASES: ItemBase[] = [
   w("obsidianfists", "Obsidian Fists", 5, "fist",
     { hands: "items/obsidianfists.glb", palette: "obsidian" },
     "Black glass, knapped to an edge. It chips, and it does not blunt.",
-    { mods: { damage: 1.24, speed: 0.98 } }),
+    { mods: { damage: 1.24, speed: 0.98 }, scarcity: "fabled", trait: "obsidianed" }),
 ];
 
 // --- Off-hand ---------------------------------------------------------------
@@ -865,30 +872,30 @@ const WEAPON_BASES: ItemBase[] = [
 const OFFHAND_BASES: ItemBase[] = [
   g("plankshield", "Plank Shield", "offhand", 1, null, "offhand-shield", "wood",
     "Boards, a strap, and optimism.",
-    { art: { model: "items/plankshield.glb", palette: "wood", scale: 0.55, ...SHIELD_HOLD } }),
+    { art: { model: "items/plankshield.glb", palette: "wood", scale: 0.55, ...SHIELD_HOLD }, trait: "boarded" }),
   g("roundshield", "Round Shield", "offhand", 2, null, "offhand-shield", "steel",
     "Rimmed in iron, which is the half that matters.",
-    { art: { model: "items/roundshield.glb", palette: "steel", scale: 0.55, ...SHIELD_HOLD } }),
+    { art: { model: "items/roundshield.glb", palette: "steel", scale: 0.55, ...SHIELD_HOLD }, trait: "bulwarking" }),
   g("kiteshield", "Kite Shield", "offhand", 3, null, "offhand-shield", "steel",
     "Long enough to cover the leg you keep forgetting about.",
-    { art: { model: "items/kiteshield.glb", palette: "steel", scale: 0.6, ...SHIELD_HOLD } }),
+    { art: { model: "items/kiteshield.glb", palette: "steel", scale: 0.6, ...SHIELD_HOLD }, trait: "quartered" }),
   g("wardingfocus", "Warding Focus", "offhand", 3, null, "offhand-focus", "arcane",
     "Not a shield. It simply occupies the same argument.",
-    { art: { model: "items/wardingfocus.glb", palette: "arcane", scale: 0.42, grip: 0.24 }, guard: 1.4 }),
+    { art: { model: "items/wardingfocus.glb", palette: "arcane", scale: 0.42, grip: 0.24 }, guard: 1.4, trait: "emberlit" }),
   g("hunterquiver", "Hunter's Quiver", "offhand", 2, null, "offhand-quiver", "bone",
     "Twenty arrows and room for the ones you get back.",
-    { art: { model: "items/hunterquiver.glb", palette: "bone", scale: 0.55, grip: 0.4, flip: true }, power: 0.6, guard: 1.6 }),
+    { art: { model: "items/hunterquiver.glb", palette: "bone", scale: 0.55, grip: 0.4, flip: true }, power: 0.6, guard: 1.6, trait: "fletched" }),
   g("bulwark", "Bulwark", "offhand", 4, null, "offhand-shield", "iron",
     "Heavy enough that standing still becomes a tactic.",
     { art: { model: "items/bulwark.glb", palette: "iron", scale: 0.65, ...SHIELD_HOLD }, power: 1.25, guard: 0.7,
       // The troll's trophy is the key to the troll's relic. See the relic block.
-      teaches: "trollhide" }),
+      teaches: "trollhide", trait: "ironbound" }),
   g("stillwardglass", "Stillward Glass", "offhand", 5, null, "offhand-focus", "frost",
     "Whatever it is showing you, it is not this room.",
-    { art: { model: "items/stillwardglass.glb", palette: "frost", scale: 0.5, ...SHIELD_HOLD }, power: 1.25, guard: 0.6 }),
+    { art: { model: "items/stillwardglass.glb", palette: "frost", scale: 0.5, ...SHIELD_HOLD }, power: 1.25, guard: 0.6, trait: "rimeglassed" }),
   g("verdantaegis", "Verdant Aegis", "offhand", 5, null, "offhand-shield", "gold",
     "The green stone in the boss is warm, and nobody will say why.",
-    { art: { model: "items/verdantaegis.glb", palette: "gold", scale: 0.6, ...SHIELD_HOLD } }),
+    { art: { model: "items/verdantaegis.glb", palette: "gold", scale: 0.6, ...SHIELD_HOLD }, trait: "verdant" }),
 
   // FIVE MORE, AND FOUR OF THEM ARE NOT SHIELDS.
   //
@@ -900,23 +907,23 @@ const OFFHAND_BASES: ItemBase[] = [
   g("pitchtorch", "Pitch Torch", "offhand", 1, null, "offhand-focus", "wood",
     "It will not last the night, and it is the reason you can see at all.",
     { art: { model: "items/pitchtorch.glb", palette: "wood", scale: 0.8, grip: 0.12, flip: true },
-      power: 1.1, guard: 0.85 }),
+      power: 1.1, guard: 0.85, trait: "kindling" }),
   g("grimoire", "Travelling Grimoire", "offhand", 2, null, "offhand-focus", "bone",
     "Annotated by three owners, two of whom disagreed.",
     { art: { model: "items/grimoire.glb", palette: "bone", scale: 0.34, grip: 0.5, roll: 90 },
-      power: 1.2, guard: 0.8 }),
+      power: 1.2, guard: 0.8, trait: "annotated" }),
   g("warhorn", "Warhorn", "offhand", 3, null, "offhand-quiver", "bone",
     "One note, carried further than any of the shouting.",
     { art: { model: "items/warhorn.glb", palette: "bone", scale: 0.68, grip: 0.16, flip: true },
-      power: 0.8, guard: 1.3 }),
+      power: 0.8, guard: 1.3, trait: "sounding" }),
   g("embercenser", "Ember Censer", "offhand", 4, null, "offhand-focus", "crimson",
     "Swung on its chain, and the smoke goes where it likes.",
     { art: { model: "items/embercenser.glb", palette: "crimson", scale: 0.78, grip: 0.12 },
-      power: 1.25, guard: 0.7 }),
+      power: 1.25, guard: 0.7, trait: "censing" }),
   g("stormlantern", "Storm Lantern", "offhand", 5, null, "offhand-focus", "storm",
     "The light in it is not fire, and it does not go out in rain.",
     { art: { model: "items/stormlantern.glb", palette: "storm", scale: 0.66, grip: 0.86 },
-      power: 1.2, guard: 0.85 }),
+      power: 1.2, guard: 0.85, trait: "stormheld" }),
 ];
 
 // --- Head -------------------------------------------------------------------
@@ -988,7 +995,8 @@ const ARMOR_BASES: ItemBase[] = [
   g("chitinplate", "Chitin Plate", "armor", 4, "carapace", "armor-scale", "bone",
     "It was grown, and the seller was not clear on by what."),
   g("direshell", "Direshell", "armor", 5, "carapace", "armor-scale", "crimson",
-    "Still warm in the middle of the plate, hours after you take it off."),
+    "Still warm in the middle of the plate, hours after you take it off.",
+    { scarcity: "fabled", trait: "direshelled" }),
   g("chainmail", "Chain Mail", "armor", 3, "chain", "armor-chain", "iron",
     "Four thousand rings, and every one of them somebody's afternoon."),
   g("brigandine", "Brigandine", "armor", 3, "brigandine", "armor-brigandine", "steel",
@@ -1006,7 +1014,7 @@ const ARMOR_BASES: ItemBase[] = [
     { power: 1.25, guard: 0.8, teaches: "wyrmtooth" }),
   g("archmagerobe", "Archmage's Robe", "armor", 5, "robe", "armor-robe", "gold",
     "The hem does not quite touch the ground.",
-    { power: 0.6, guard: 1.9 }),
+    { power: 0.6, guard: 1.9, scarcity: "fabled", trait: "archmagely" }),
 ];
 
 // --- Feet -------------------------------------------------------------------
@@ -1119,7 +1127,7 @@ const KIT_BASES: ItemBase[] = [
     "Plain, cold, and slightly too large for whoever it was made for."),
   g("silverbuckler", "Silvered Buckler", "offhand", 4, null, "offhand-shield", "silver",
     "Small enough to be quick, bright enough to be seen.",
-    { art: { model: "items/silverbuckler.glb", palette: "silver", scale: 0.4, ...SHIELD_HOLD } }),
+    { art: { model: "items/silverbuckler.glb", palette: "silver", scale: 0.4, ...SHIELD_HOLD }, trait: "hoarfrost" }),
 
   // ------------------------------------------------------------------ gold
   g("gildedcrown", "Gilded Crown", "helm", 5, "circlet", "helm-circlet", "gold",
@@ -1134,7 +1142,7 @@ const KIT_BASES: ItemBase[] = [
   // -------------------------------------------------------------- obsidian
   g("blackglassmail", "Blackglass Mail", "armor", 5, "scale", "armor-scale", "obsidian",
     "Scales that drink the light. Cold even in the sun.",
-    { power: 1.2, guard: 0.85 }),
+    { power: 1.2, guard: 0.85, scarcity: "fabled", trait: "blackglassed" }),
   g("blackglassboots", "Blackglass Treads", "boots", 5, "wrapped", "boots-wrapped", "obsidian",
     "They make no sound at all, which takes some getting used to.",
     { power: 0.8, guard: 1.6 }),
@@ -1156,7 +1164,7 @@ const KIT_BASES: ItemBase[] = [
     { power: 1.2, guard: 0.75 }),
   g("rimerobe", "Rimeward Robe", "armor", 5, "robe", "armor-robe", "frost",
     "It never quite dries, and it is never quite wet.",
-    { power: 0.6, guard: 1.85 }),
+    { power: 0.6, guard: 1.85, scarcity: "fabled", trait: "rimewarded" }),
   g("rimeboots", "Rimeward Boots", "boots", 5, "tall", "boots-tall", "frost",
     "Where you stood is still cold an hour later.",
     { power: 0.8, guard: 1.65 }),
@@ -1203,7 +1211,7 @@ const KIT_BASES: ItemBase[] = [
     { power: 0.6, guard: 1.8 }),
   g("stormmail", "Skyclad Hauberk", "armor", 5, "scale", "armor-scale", "storm",
     "The scales stand up on their own in dry weather.",
-    { power: 1.15, guard: 0.9 }),
+    { power: 1.15, guard: 0.9, scarcity: "fabled", trait: "skyclad" }),
   g("stormboots", "Thunderstep", "boots", 4, "tall", "boots-tall", "storm",
     "You arrive slightly before the sound of arriving.",
     { power: 0.9, guard: 1.5 }),
@@ -1223,7 +1231,7 @@ const KIT_BASES: ItemBase[] = [
     // Not 0.5: a band-1 off-hand at half power rounds to 1, and a stat of 1 is
     // a stat that cannot get worse — which makes Broken indistinguishable from
     // Honed on it, and the bottom of the ladder meaningless for that one item.
-    { art: { model: "items/woodoffhand.glb", palette: "wood", scale: 0.5, grip: 0.45 }, power: 0.9, guard: 1.4 }),
+    { art: { model: "items/woodoffhand.glb", palette: "wood", scale: 0.5, grip: 0.45 }, power: 0.9, guard: 1.4, trait: "tindered" }),
 
   // --- Relics: the three things you cannot find, only make -------------------
   //
@@ -1265,6 +1273,8 @@ const KIT_BASES: ItemBase[] = [
       power: 1.3,
       guard: 0.6,
       forge: { wood: 120, ore: 260, essence: 36, ingot: 6 },
+      scarcity: "fabled",
+      trait: "wyrmfed",
     }),
   g("golemheart", "Golem-Heart Signet", "ring", 5, null, "ring-rune", "storm",
     "Warm, and it keeps a slow beat you stop noticing after a week.",
@@ -1315,6 +1325,319 @@ export const UNKNOWN_BASE: ItemBase = {
 
 export function itemBase(baseId: string | undefined | null): ItemBase {
   return (baseId && ITEM_BASES[baseId]) || UNKNOWN_BASE;
+}
+
+// --- How hard a thing is to FIND, which is not how good it is ----------------
+//
+// The catalogue had one axis of quality — the seven-step rarity ladder — and it
+// did two jobs badly. Every base item was equally likely to drop, so a Notched
+// Dirk and a Bloodclaim Claymore were the same roll of the dice; and every base
+// could climb the whole ladder, so the only difference between the best sword
+// in the game and the first one was a multiplier.
+//
+// SCARCITY IS THE SECOND AXIS. It says how rare the THING is, independently of
+// how well made this particular one turned out:
+//
+//   common   plain kit. Drops often, and CANNOT be better than Tempered
+//            however many times it is reforged. An iron cap is an iron cap.
+//   scarce   the good stuff. Rarer, and stops at Forged.
+//   fabled   named things. Very rare, no ceiling at all — the only route to an
+//            Enchanted item — and each one carries a TRAIT no other item has.
+//
+// The ceiling is the point. Without it the ladder flattens everything: grind
+// any item long enough and it becomes the best item, so what you FIND stops
+// mattering and only how long you reforged it does. With it, finding a fabled
+// base is the event, and the ladder is what you do with it afterwards.
+export type Scarcity = "common" | "scarce" | "fabled";
+
+export interface ScarcityDef {
+  id: Scarcity;
+  name: string;
+  /** How much of the drop pool this class gets, against the others. */
+  weight: number;
+  /** The best this base can ever be, found or forged. */
+  ceiling: ItemRarity;
+  /** One line for the tooltip, said from the player's side. */
+  blurb: string;
+  color: string;
+}
+
+export const SCARCITIES: Record<Scarcity, ScarcityDef> = {
+  common: {
+    id: "common", name: "Common", weight: 40, ceiling: "tempered", color: "#9aa3ad",
+    blurb: "Made in numbers. It will never be more than well made.",
+  },
+  scarce: {
+    id: "scarce", name: "Scarce", weight: 12, ceiling: "forged", color: "#8fb48a",
+    blurb: "Not many of these. It can be forged, but not runed.",
+  },
+  fabled: {
+    id: "fabled", name: "Fabled", weight: 1, ceiling: "enchanted", color: "#d6b06a",
+    blurb: "There are stories about this one. Nothing caps what it can become.",
+  },
+};
+
+/**
+ * A base's scarcity, derived from its band unless it says otherwise.
+ *
+ * DERIVED, because a hundred and eighty rows each carrying the word "common"
+ * is a hundred and eighty chances to typo it and no information at all. The
+ * world is laid out as distance from the anvil, so how far out a thing is
+ * found already says most of how rare it is; the rows that matter are the ones
+ * that DISAGREE with their band, and those say so explicitly.
+ */
+export function scarcityOf(base: ItemBase): Scarcity {
+  return base.scarcity ?? (base.band >= 3 ? "scarce" : "common");
+}
+
+export function scarcityDef(base: ItemBase): ScarcityDef {
+  return SCARCITIES[scarcityOf(base)];
+}
+
+/** The best this base can ever be. Found, reforged, or handed over by a boss. */
+export function maxRarityFor(base: ItemBase): ItemRarity {
+  return scarcityDef(base).ceiling;
+}
+
+/** Whether a rarity is at or past what this base may hold. */
+export function atCeiling(base: ItemBase, rarity: ItemRarity): boolean {
+  return rarityIndex(rarity) >= rarityIndex(maxRarityFor(base));
+}
+
+// --- What only this item does -----------------------------------------------
+//
+// An affix is a NUMBER, and the whole catalogue is numbers: a Keen sword crits
+// more, a Heavy one hits harder, and at the end of the ladder the best sword in
+// the game is the first sword with bigger numbers on it. That is a fine spine
+// and it is not a reason to pick one item over another that already has the
+// stats you want.
+//
+// A TRAIT is a rule. It belongs to one base item, it does not roll, it cannot
+// be rerolled off, and it is why you would carry that item instead of a
+// strictly better one. Two slots have them:
+//
+//   FABLED items, because "no ceiling" should mean something you can describe
+//   in a sentence rather than a larger multiplier.
+//
+//   EVERY OFF-HAND, because the slot had nothing to say. A shield gave armour
+//   and a focus gave power and that was the entire decision — so the off-hand
+//   was a stat stick in a game that already had five other stat sticks. Giving
+//   all fifteen a rule of their own makes it the slot you choose with, which is
+//   a better job for a slot that cannot be a weapon.
+//
+// THE VOCABULARY IS DELIBERATELY SMALL, and every verb in it already exists.
+// `passive` is a `PassiveBonus`, which talents, affixes, sets and statuses all
+// already total. The four triggers hang off points combat already has — a hit
+// resolves, a crit resolves, a kill resolves, a blow lands on the player — and
+// each one applies a STATUS, which is the other thing this game already knows
+// how to do. Nothing here needed a new system, which is why fifteen effects
+// cost four call sites.
+
+export interface TraitDef {
+  id: string;
+  name: string;
+  /** One line, said as a rule. The tooltip prints it verbatim. */
+  blurb: string;
+  /** Always on. Free of plumbing: it totals with everything else. */
+  passive?: PassiveBonus;
+  /** On landing a hit, this often, apply this to what was hit. */
+  onHit?: { status: StatusId; chance: number };
+  /** On a critical hit, apply this to what was hit. No roll. */
+  onCrit?: { status: StatusId };
+  /** On a killing blow, apply this to YOURSELF. */
+  onKill?: { status: StatusId };
+  /** On taking a blow, this often, apply this to yourself. */
+  onStruck?: { status: StatusId; chance: number };
+}
+
+export const TRAITS: Record<string, TraitDef> = {
+  // --- off-hands: one rule each, and the rule is the reason to carry it -----
+  bulwarking: {
+    id: "bulwarking", name: "Bulwarking",
+    blurb: "A blow that lands on you braces you: sometimes you shrug off the next one.",
+    onStruck: { status: "shielded", chance: 0.12 },
+  },
+  kindling: {
+    id: "kindling", name: "Kindling",
+    blurb: "Kills leave you burning to go again.",
+    onKill: { status: "rallied" },
+  },
+  emberlit: {
+    id: "emberlit", name: "Emberlit",
+    blurb: "What you hit tends to catch light.",
+    onHit: { status: "burning", chance: 0.14 },
+  },
+  hoarfrost: {
+    id: "hoarfrost", name: "Hoarfrost",
+    blurb: "Your critical hits leave the target slowed and stiff.",
+    onCrit: { status: "chilled" },
+  },
+  quartered: {
+    id: "quartered", name: "Quartered",
+    blurb: "You strike at what you have already opened up.",
+    onCrit: { status: "exposed" },
+  },
+  fletched: {
+    id: "fletched", name: "Fletched",
+    blurb: "A full quiver steadies the hand.",
+    passive: { accuracyBonus: 9, rangePercent: 5 },
+  },
+  annotated: {
+    id: "annotated", name: "Annotated",
+    blurb: "Somebody worked out the cheaper way to say it.",
+    passive: { manaCostPercent: 10, skillPowerPercent: 6 },
+  },
+  sounding: {
+    id: "sounding", name: "Sounding",
+    blurb: "One note, and the kill carries: you come out of it swinging.",
+    onKill: { status: "enraged" },
+  },
+  censing: {
+    id: "censing", name: "Censing",
+    blurb: "The smoke gets into whatever you are fighting, and stays there.",
+    onHit: { status: "poisoned", chance: 0.12 },
+  },
+  stormheld: {
+    id: "stormheld", name: "Stormheld",
+    blurb: "It earths what hits you, and answers what you hit.",
+    onHit: { status: "shocked", chance: 0.1 },
+    passive: { resistLightning: 12 },
+  },
+  boarded: {
+    id: "boarded", name: "Boarded",
+    blurb: "Boards and optimism, and the boards do their part.",
+    passive: { armor: 4, maxHpBonus: 14 },
+  },
+  rimeglassed: {
+    id: "rimeglassed", name: "Rimeglassed",
+    blurb: "Whatever it is showing you, it is showing them something worse.",
+    onCrit: { status: "marked" },
+    passive: { resistFrost: 10 },
+  },
+  verdant: {
+    id: "verdant", name: "Green-Hearted",
+    blurb: "The stone in the boss is warm, and it gives some of that back.",
+    passive: { healOnKill: 7, resistNature: 10 },
+  },
+  ironbound: {
+    id: "ironbound", name: "Ironbound",
+    blurb: "Heavy enough that standing still becomes a tactic.",
+    passive: { armor: 7, evasion: -4, maxHpBonus: 20 },
+  },
+  tindered: {
+    id: "tindered", name: "Tindered",
+    blurb: "Dry sticks, and a hand free to use them.",
+    passive: { moveSpeedBonus: 12 },
+  },
+
+  // --- fabled: the reason to keep one ---------------------------------------
+  bloodclaim: {
+    id: "bloodclaim", name: "Bloodclaim",
+    blurb: "It opens a wound and keeps it open.",
+    onHit: { status: "bleeding", chance: 0.25 },
+  },
+  everwinter: {
+    id: "everwinter", name: "Everwinter",
+    blurb: "Everything it touches slows down.",
+    onHit: { status: "chilled", chance: 0.3 },
+    passive: { resistFrost: 10 },
+  },
+  levinstruck: {
+    id: "levinstruck", name: "Levinstruck",
+    blurb: "The flash arrives before the wound.",
+    onCrit: { status: "shocked" },
+    passive: { attackSpeedPercent: 8 },
+  },
+  wyrmfed: {
+    id: "wyrmfed", name: "Wyrmfed",
+    blurb: "It takes something from whatever it finishes.",
+    onKill: { status: "bloodlust" },
+    passive: { healOnKill: 9 },
+  },
+  harvesting: {
+    id: "harvesting", name: "Harvesting",
+    blurb: "It was made for fields, and it has not forgotten the swing.",
+    passive: { damagePercent: 9, rangePercent: 8 },
+    onKill: { status: "enraged" },
+  },
+  daybreaking: {
+    id: "daybreaking", name: "Daybreaking",
+    blurb: "It lands like the first hour of a long day.",
+    onCrit: { status: "staggered" },
+    passive: { critDamagePercent: 18 },
+  },
+  thunderhead: {
+    id: "thunderhead", name: "Thunderhead",
+    blurb: "The air tastes of iron before the blow lands.",
+    onHit: { status: "shocked", chance: 0.18 },
+  },
+  ruinous: {
+    id: "ruinous", name: "Ruinous",
+    blurb: "The string hums flat, and what it hits comes apart.",
+    onHit: { status: "burning", chance: 0.2 },
+    passive: { critChance: 4 },
+  },
+  heartwoven: {
+    id: "heartwoven", name: "Heartwoven",
+    blurb: "Still alive, and it shares what it takes.",
+    onHit: { status: "poisoned", chance: 0.2 },
+    passive: { healOnKill: 6 },
+  },
+  starcalling: {
+    id: "starcalling", name: "Starcalling",
+    blurb: "It answers before you finish asking.",
+    passive: { skillPowerPercent: 14, cooldownPercent: 8 },
+  },
+  sunspiring: {
+    id: "sunspiring", name: "Sunspiring",
+    blurb: "It throws a shadow in the wrong direction, and burns what stands in it.",
+    onHit: { status: "burning", chance: 0.22 },
+    passive: { skillPowerPercent: 10 },
+  },
+  stormshod: {
+    id: "stormshod", name: "Stormshod",
+    blurb: "Every blow you land leaves them off balance.",
+    onHit: { status: "staggered", chance: 0.12 },
+    passive: { attackSpeedPercent: 10 },
+  },
+  obsidianed: {
+    id: "obsidianed", name: "Knapped",
+    blurb: "Black glass chips, and it does not blunt.",
+    onCrit: { status: "bleeding" },
+    passive: { critDamagePercent: 20 },
+  },
+  direshelled: {
+    id: "direshelled", name: "Direshelled",
+    blurb: "Still warm hours after you take it off, and it answers a blow.",
+    onStruck: { status: "enraged", chance: 0.15 },
+    passive: { armor: 6 },
+  },
+  blackglassed: {
+    id: "blackglassed", name: "Blackglassed",
+    blurb: "It drinks the light, and you are harder to find in it.",
+    passive: { evasion: 8, moveSpeedBonus: 8 },
+  },
+  archmagely: {
+    id: "archmagely", name: "Of the Archive",
+    blurb: "Everything you cast costs a little less than it should.",
+    passive: { manaCostPercent: 14, maxManaBonus: 25, skillPowerPercent: 8 },
+  },
+  rimewarded: {
+    id: "rimewarded", name: "Rimewarded",
+    blurb: "Frost forms on the outside of it, never the in.",
+    onStruck: { status: "shielded", chance: 0.1 },
+    passive: { resistFrost: 16 },
+  },
+  skyclad: {
+    id: "skyclad", name: "Skyclad",
+    blurb: "It earths what lands on you and passes some of it on.",
+    onStruck: { status: "rallied", chance: 0.14 },
+    passive: { resistLightning: 16 },
+  },
+};
+
+export function traitOf(base: ItemBase): TraitDef | null {
+  return (base.trait && TRAITS[base.trait]) || null;
 }
 
 // --- Affixes ----------------------------------------------------------------
@@ -1578,6 +1901,20 @@ export function rollRarity(random: () => number = Math.random): ItemRarity {
   return "worn";
 }
 
+/**
+ * The quality this base rolls, never past what it can hold.
+ *
+ * CLAMPED, NOT RE-ROLLED. A common item that rolls Enchanted comes out
+ * Tempered rather than being thrown back for another go — which means the
+ * ceiling makes common items reliably decent rather than making them rarer,
+ * and the frequency of a drop stays a property of the drop table alone.
+ */
+export function rollRarityFor(base: ItemBase, random: () => number = Math.random): ItemRarity {
+  const rolled = rollRarity(random);
+  const cap = maxRarityFor(base);
+  return rarityIndex(rolled) > rarityIndex(cap) ? cap : rolled;
+}
+
 export function rarityIndex(rarity: ItemRarity): number {
   const i = RARITY_ORDER.indexOf(rarity);
   return i < 0 ? RARITY_ORDER.indexOf("honed") : i;
@@ -1590,6 +1927,23 @@ export function rollRarityWithFloor(
 ): ItemRarity {
   const rolled = rollRarity(random);
   return rarityIndex(rolled) >= rarityIndex(floor) ? rolled : floor;
+}
+
+/**
+ * A boss's drop: at least the floor, never past the ceiling.
+ *
+ * The ceiling wins when the two disagree, and it has to: a floor that could
+ * push a common item past its cap would make bosses the way to get around the
+ * rule, which is the one place a player would look for a way around it.
+ */
+export function rollRarityForWithFloor(
+  base: ItemBase,
+  floor: ItemRarity,
+  random: () => number = Math.random,
+): ItemRarity {
+  const cap = maxRarityFor(base);
+  const wanted = rollRarityWithFloor(floor, random);
+  return rarityIndex(wanted) > rarityIndex(cap) ? cap : wanted;
 }
 
 // --- What a thing is carrying -----------------------------------------------
@@ -1807,6 +2161,13 @@ export function rollBase(
     // again for anything made of what this creature is made of.
     let weight = distance === 0 ? 3 : 1;
     if (affinity.has(base.art.palette)) weight *= AFFINITY_WEIGHT;
+    // AND HOW RARE THE THING ITSELF IS, which the pool used not to know: every
+    // base in range was equally likely, so the best sword in the game fell out
+    // of a slime at the same rate as the worst one. Forty to twelve to one —
+    // and at the outermost ring, where eighteen fabled bases sit and nothing
+    // plain is in reach, that is what keeps "fabled" down to a few drops in a
+    // hundred rather than one in twelve.
+    weight *= SCARCITIES[scarcityOf(base)].weight;
     for (let i = 0; i < weight; i++) pool.push(base);
   }
   if (pool.length === 0) return UNKNOWN_BASE;
@@ -1955,7 +2316,33 @@ export function itemPassives(item: Pick<ItemInstance, "baseId" | "affixes">): Re
     const affix = AFFIXES_BY_ID[id];
     if (affix) addPassives(total, affixBonus(affix, base.band));
   }
+  // The always-on half of a trait. It rides in here rather than anywhere else
+  // precisely so nothing downstream has to learn the word "trait": to damage,
+  // armour, mana and cooldowns, Fletched is indistinguishable from an affix.
+  const trait = traitOf(base);
+  if (trait?.passive) addPassives(total, trait.passive);
   return total;
+}
+
+/**
+ * Every trait on everything you are wearing.
+ *
+ * The triggered half cannot ride in on `PassiveBonus`, because "sometimes set
+ * them on fire" is not a number. It is four call sites instead — a hit, a crit,
+ * a kill, a blow taken — and this is what they ask.
+ */
+export function gearTraits(eq: EquippedGear | undefined): TraitDef[] {
+  if (!eq) return [];
+  const out: TraitDef[] = [];
+  for (const slot of ITEM_SLOTS) {
+    const item = eq[slot];
+    if (!item) continue;
+    const trait = traitOf(itemBase(item.baseId));
+    // Deduped: two copies of the same trait would double a chance that is
+    // written as "how often this happens", not as "how much of it you have".
+    if (trait && !out.includes(trait)) out.push(trait);
+  }
+  return out;
 }
 
 /**
@@ -2905,7 +3292,7 @@ export const FORGE_OUTPUT_RARITY: ItemRarity = "honed";
  */
 export function reforgeCost(base: ItemBase, from: ItemRarity): MaterialCost | null {
   const i = rarityIndex(from);
-  if (i >= RARITY_ORDER.length - 1) return null; // already Enchanted
+  if (!nextRarityFor(base, from)) return null; // at the ladder's top, or at its own
   const step = i + 1; // 1..6
   const scale = base.band * step;
   const cost: MaterialCost = {
@@ -2962,9 +3349,9 @@ export function forgePreview(base: ItemBase): { statValue: number; bonusStatValu
 }
 
 export function reforgePreview(item: ItemInstance): ReforgePreview | null {
-  const to = nextRarity(item.rarity);
-  if (!to) return null;
   const base = itemBase(item.baseId);
+  const to = nextRarityFor(base, item.rarity);
+  if (!to) return null;
   const power = RARITIES[to]?.power ?? 1;
   const keeping = survivingEtched(item, to);
   return {
@@ -3022,6 +3409,21 @@ export function nextRarity(from: ItemRarity): ItemRarity | null {
 }
 
 /**
+ * The next step for THIS item, which is not always the next step on the ladder.
+ *
+ * A reforge that could climb forever is why the ceiling has to be enforced here
+ * as well as at the drop: grind any common item long enough and it becomes the
+ * best item in the game, and then what you FIND stops mattering. Returning null
+ * at the cap is what the forge already does at the top of the ladder, so the
+ * panel needs no new state to say "this is as far as this one goes".
+ */
+export function nextRarityFor(base: ItemBase, from: ItemRarity): ItemRarity | null {
+  const next = nextRarity(from);
+  if (!next) return null;
+  return rarityIndex(next) > rarityIndex(maxRarityFor(base)) ? null : next;
+}
+
+/**
  * What an item becomes when reforged.
  *
  * The numbers are recomputed from the base at the new quality, and the ROLLED
@@ -3048,9 +3450,9 @@ export function reforgeItem(
   random: () => number = Math.random,
   chosenAffix?: string,
 ): ItemInstance | null {
-  const to = nextRarity(item.rarity);
-  if (!to) return null;
   const base = itemBase(item.baseId);
+  const to = nextRarityFor(base, item.rarity);
+  if (!to) return null;
   const keep = survivingEtched(item, to);
   const rolled = rollItem(base, to, random, chosenAffix, keep);
   return {

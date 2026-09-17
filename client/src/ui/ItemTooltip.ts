@@ -129,6 +129,21 @@ export function attachItemTooltip(
     sub.style.color = d.color;
     el.appendChild(sub);
 
+    // How hard the thing itself is to find, which the quality word above does
+    // not say and cannot: a Runed iron cap does not exist, and the only way a
+    // player learns that is being told where this base stops. Said as the
+    // ceiling rather than as a weight, because the ceiling is the part that
+    // changes what they do with it at the forge.
+    const scarcity = document.createElement("div");
+    scarcity.className = "tt-scarcity";
+    // Short, because the line is uppercased and a wrapped second row of small
+    // caps reads as shouting rather than as a footnote.
+    scarcity.textContent = d.scarcity.capped
+      ? `${d.scarcity.name} · this is its ceiling`
+      : `${d.scarcity.name} · stops at ${d.scarcity.ceiling}`;
+    scarcity.style.color = d.scarcity.color;
+    el.appendChild(scarcity);
+
     // What it deals. On its own line and in the school's own colour, because a
     // player comparing two swords is now comparing two DIFFERENT questions —
     // which hits harder, and which one the thing they are walking towards
@@ -174,6 +189,28 @@ export function attachItemTooltip(
         ? `${affix.label} — ${affix.value} · etched, survives the fire`
         : `${affix.label} — ${affix.value}`;
       el.appendChild(row);
+    }
+
+    // The rule, set apart from everything above it, because it is the one line
+    // on the tooltip that is not a number and not shared with any other item.
+    if (d.trait) {
+      const head = document.createElement("div");
+      head.className = "tt-trait-head";
+      head.textContent = d.trait.name;
+      el.appendChild(head);
+      const body = document.createElement("div");
+      body.className = "tt-trait";
+      body.textContent = d.trait.blurb;
+      el.appendChild(body);
+      // The numbers under the sentence, where a trait has any. Without this the
+      // Storm Lantern's twelve points of lightning resistance are applied and
+      // never mentioned anywhere a player can see.
+      if (d.trait.bonus) {
+        const bonus = document.createElement("div");
+        bonus.className = "tt-trait bonus";
+        bonus.textContent = d.trait.bonus;
+        el.appendChild(bonus);
+      }
     }
 
     // How it SWINGS, which no number in the rolls above expresses. A claymore

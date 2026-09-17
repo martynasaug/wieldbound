@@ -72,6 +72,7 @@ import {
   forgePreview,
   itemBase,
   nextRarity,
+  nextRarityFor,
   reforgeCost,
   reforgePreview,
   salvageYield,
@@ -481,15 +482,28 @@ export class CraftPanel {
   // --- reforge --------------------------------------------------------------
 
   private renderReforge(): void {
-    const ladder = this.items.filter((i) => nextRarity(i.rarity) !== null);
+    const ladder = this.items.filter((i) => nextRarityFor(itemBase(i.baseId), i.rarity) !== null);
     this.section("one step up the ladder");
     if (ladder.length === 0) {
-      this.note("Nothing to reforge. Everything you own is already Enchanted, or you own nothing.");
+      this.note("Nothing to reforge. Everything you own is as far up as its kind goes, or you own nothing.");
       return;
+    }
+    // The ones the fire will not take any further, named. Without this the
+    // forge simply omits them, and "my sword is missing from the list" reads as
+    // a bug rather than as the rule — which is the one place the ceiling has to
+    // be legible, because the forge is where a player goes to route around it.
+    const capped = this.items.filter(
+      (i) => nextRarity(i.rarity) !== null && nextRarityFor(itemBase(i.baseId), i.rarity) === null,
+    );
+    if (capped.length) {
+      const names = [...new Set(capped.map((i) => itemShortName(i)))];
+      const shown = names.slice(0, 3).join(", ");
+      const rest = names.length > 3 ? `, and ${names.length - 3} more` : "";
+      this.note(`${shown}${rest} — already as good as ${names.length === 1 ? "it gets" : "they get"}. Only fabled things climb the whole ladder.`);
     }
     for (const item of ladder) {
       const base = itemBase(item.baseId);
-      const to = nextRarity(item.rarity)!;
+      const to = nextRarityFor(itemBase(item.baseId), item.rarity)!;
       const cost = reforgeCost(base, item.rarity);
       if (!cost) continue;
 

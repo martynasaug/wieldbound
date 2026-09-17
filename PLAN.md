@@ -27379,3 +27379,89 @@ silently. The exceptions live in one place, the family icon is still the
 default, and the guard covers the gap.
 
 Suite green. Client typechecks. 121 icons for 182 items.
+
+**Phase 70 M70.375 — items are hard to get, and some of them do something.**
+Asked for: items should be very hard to get; simpler ones more common but with
+a limit on how far they can be enchanted; rare ones very hard to get with no
+limit, and possibly a unique trait; and every off-hand should carry an effect of
+its own rather than only stats.
+
+THE CATALOGUE HAD ONE AXIS OF QUALITY AND IT WAS DOING TWO JOBS BADLY. Every
+base in a band was equally likely, so a Notched Dirk and a Bloodclaim Claymore
+were the same roll of the dice; and every base could climb the whole seven-step
+ladder, so the difference between the best sword in the game and the first one
+was a multiplier. `Scarcity` is the second axis: **common** (weight 40, stops at
+Tempered), **scarce** (12, stops at Forged), **fabled** (1, no cap, and a trait
+nothing else has). Derived from the band — 180 rows each spelling out "common"
+is 180 chances to typo it and no information — so only the rows that DISAGREE
+with their band say so, which is the 18 fabled ones.
+
+THE CEILING IS ENFORCED IN THREE PLACES, and it has to be. At the drop
+(`rollRarityFor`), at the boss floor (`rollRarityForWithFloor` — the ceiling
+beats the floor, or the boss becomes the way around the rule, which is the first
+place a player would look), and at the forge (`nextRarityFor` returns null, the
+same thing the panel already handles at the top of the ladder). Clamped rather
+than re-rolled: a ceiling should make a common item reliably decent, not rarer.
+How OFTEN a thing drops stays the drop table's job, and that moved too —
+`LOOT_DROP_CHANCE` 0.3 → 0.12, because a bag that fills on its own is a bag you
+stop looking in.
+
+A TRAIT IS A RULE, NOT A NUMBER. Affixes are numbers and the whole catalogue is
+numbers, which is a fine spine and not a reason to pick one item over another
+that already has the stats you want. 33 items carry one: all 15 off-hands,
+because the slot had nothing to say beyond armour-or-power, and the 18 fabled
+bases. The vocabulary is deliberately small and every verb in it already
+existed — `passive` is a `PassiveBonus`, which talents, affixes, sets and
+statuses all already total, and the four triggers each apply a STATUS. Fifteen
+effects cost five call sites.
+
+FIVE, NOT FOUR, AND A HARNESS IS WHY. `tools/soak/traitfire.mjs` buys the one
+trait-carrying item the shop stocks, wears it, and stands in a monster. It found
+three things no table could:
+
+  The player's statuses are not synced by `applyStatus`. A monster's ride out on
+  its own snapshot; a player's have to be pushed. The buff was applied, it
+  mitigated, `passivesOf` totalled it — and from the player's side it had simply
+  never happened, because the only evidence a buff exists is the icon.
+
+  `applySkillDamage` is not "the single funnel every blow goes through". It is
+  the funnel every SKILL goes through. Traits hooked only there fired on a
+  firebolt and never on a sword swing: 116 swings with an onCrit trait equipped
+  and not one status landed.
+
+  And the auto-attack path never called `onPlayerKill` at all — so the warrior's
+  Second Wind has silently never fired on a basic attack, under a comment saying
+  it sits where it does "so both auto-attacks and skills trigger it
+  identically". Found because the `onKill` traits would have inherited the hole.
+
+A DOT TICK IS NOT A BLOW. `incomingDamage` takes a `blow` flag now, because a
+burn ticking five times would fire `onStruck` five times and make a shield
+strongest exactly while you are already on fire.
+
+THE RULES HAVE TO BE LEGIBLE OR THEY ARE NOT RULES. The tooltip gained a
+scarcity line in the tier's own colour — said as the ceiling, because that is
+the part that changes what you do at the forge — and a trait block with its
+sentence and its numbers, because a trait's passive half is otherwise applied
+and never mentioned. The forge NAMES the items it will not take any further: a
+capped item simply vanishes from the reforge list, and a missing row reads as a
+bug rather than as the rule.
+
+`tools/test/drops.mjs` holds all of it: that the ceiling survives 400 rolls, a
+top-of-ladder boss floor, and a full walk up the forge for every one of 182
+bases; that every off-hand and every fabled item has a trait, that no two share
+one, that every trait names a real status the target can actually hold, and that
+no chance is above a third. Then it rolls the real drop table 100,000 times per
+band. It also replaced the LCG the other tests use — `seed * 1103515245` leaves
+what a double can hold on the first multiply, so a weighted table measured
+through it looks unweighted.
+
+Band 5 now: 96.4% scarce, 3.6% fabled; by quality 14/30/26/16/13.6/0.13/0.03.
+An Enchanted item is about one drop in three thousand at the outermost ring, and
+only a fabled base can be one at all.
+
+FOUR STALE ASSUMPTIONS IN `items.mjs`, all the same shape: it walked the ladder
+on a longsword, which is scarce and stops at Forged. Fixed by walking a fabled
+base and keeping the longsword as the ceiling case, which is a better test than
+either was.
+
+Suite green. Client and server typecheck. 182 items, 33 with a rule of their own.

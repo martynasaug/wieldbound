@@ -1301,7 +1301,12 @@ export const COMBAT_LOCKOUT_MS = 6000;
 export const DEATH_XP_LOSS_FRACTION = 0.15;
 export const WEAKENED_DURATION_MS = 20000;
 export const WEAKENED_DAMAGE_PENALTY = 0.25;
-export const LOOT_DROP_CHANCE = 0.3;
+// Three kills in ten used to produce an item, which over an evening is a bag
+// that fills faster than you can read it — and a bag that fills on its own is a
+// bag you stop looking in. At a little over one in ten, a drop is an event you
+// walk over to, and the two axes under it (which base, and how well made) get
+// room to mean something. The floor on that is the boss, which always drops.
+export const LOOT_DROP_CHANCE = 0.12;
 
 // Thirteen kinds, laid out in the world as five difficulty bands radiating from
 // spawn (see the server's monster layout). Adding one is still a single

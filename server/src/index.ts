@@ -163,8 +163,10 @@ import {
   reforgeItem,
   rollBase,
   rollItem,
-  rollRarity,
-  rollRarityWithFloor,
+  rollRarityFor,
+  rollRarityForWithFloor,
+  gearTraits,
+  type TraitDef,
   AFFIXES_BY_ID,
   canEtch,
   etchAffix,
@@ -1136,7 +1138,7 @@ function applyDotTick(
       killMonster(monster, now);
       if (by) {
         const attrs = attributes.get(by) ?? EMPTY_ATTRS;
-        onPlayerKill(by, attrs);
+        onPlayerKill(by, attrs, now);
       }
     }
     return;
@@ -1146,7 +1148,7 @@ function applyDotTick(
   if (!player) return;
   const attrs = attributes.get(entityId) ?? EMPTY_ATTRS;
   const resist = playerResist(entityId, dot.school);
-  const damage = incomingDamage(entityId, applyResist(dot.damage, resist), now);
+  const damage = incomingDamage(entityId, applyResist(dot.damage, resist), now, false);
   const maxHp = maxHpOf(entityId, attrs);
   markInCombat(entityId, now);
   const result = applyDamage(entityId, damage, maxHp);
@@ -1395,7 +1397,20 @@ function clearThreat(monsterId: string): void {
  * armour is a barrier in front of the blow and a multiplier scales whatever got
  * through it — the same order `resolveHit` applies resistance and armour in.
  */
-function incomingDamage(playerId: string, afterArmour: number, now: number): number {
+function incomingDamage(
+  playerId: string,
+  afterArmour: number,
+  now: number,
+  /** Whether this is a BLOW rather than a tick of something already on you.
+   *  The `onStruck` traits are written as "a blow that lands on you", and a
+   *  burn ticking five times would otherwise fire them five times — which
+   *  would make a shield strongest exactly while you are already on fire. */
+  blow = true,
+): number {
+  // Every blow that lands on a player passes through here, which is why the
+  // `onStruck` traits hang off it rather than off the three callers: a shield
+  // that braces you when you are hit should not care what hit you.
+  if (blow) fireStruckTraits(playerId, now);
   return Math.max(1, Math.round(afterArmour * statusDamageTaken(statusesOf(playerId, now))));
 }
 
@@ -1639,18 +1654,83 @@ function applySkillDamage(
   monster.hp = Math.max(0, monster.hp - result.damage);
   addThreat(monster.id, playerId, result.damage, now, school);
   markInCombat(playerId, now);
+  // Before the death check, so a blow that kills still lights the corpse's
+  // neighbours' worth of statuses — and so the burn a trait applies is on the
+  // monster when the burn would have mattered.
+  fireStrikeTraits(playerId, monster.id, result.crit, now);
   if (monster.hp > 0) {
     return { hit: true, crit: result.crit, damage: result.damage, killed: false, school, resisted };
   }
 
   killMonster(monster, now);
-  onPlayerKill(playerId, attrs);
+  onPlayerKill(playerId, attrs, now);
   return { hit: true, crit: result.crit, damage: result.damage, killed: true, school, resisted };
+}
+
+/**
+ * The triggered rules on what this player is wearing.
+ *
+ * Reads the live equipment every time rather than caching: gear changes
+ * mid-fight, and a cache of this would be a fifth thing to invalidate on every
+ * equip, unequip, reforge and etch. It is a walk of six slots.
+ */
+function traitsOf(playerId: string): TraitDef[] {
+  return gearTraits(equippedItems.get(playerId));
+}
+
+/**
+ * `onHit` and `onCrit`: what the thing you just hit catches from your gear.
+ *
+ * One place for both, called from the single funnel every player-to-monster
+ * blow already goes through — so a trait works on an auto-attack and on a
+ * firebolt without either learning it exists.
+ */
+function fireStrikeTraits(playerId: string, monsterId: string, crit: boolean, now: number): void {
+  for (const trait of traitsOf(playerId)) {
+    if (trait.onHit && Math.random() < trait.onHit.chance) {
+      applyStatus(monsterId, trait.onHit.status, "monster", now, playerId);
+    }
+    // No roll on a crit: the crit WAS the roll, and a chance on top of a
+    // chance is an effect nobody can feel happening.
+    if (crit && trait.onCrit) {
+      applyStatus(monsterId, trait.onCrit.status, "monster", now, playerId);
+    }
+  }
+}
+
+/**
+ * `onStruck`: what a blow landing on you sets off. Applies to you.
+ *
+ * AND TELLS THE CLIENT. A status on a monster syncs itself out of
+ * `applyStatus`; one on a player does not, and has to be pushed. Leaving that
+ * out is invisible from the server's side — the buff is applied, it mitigates,
+ * `passivesOf` totals it — and from the player's side it simply never happened,
+ * because the only evidence a buff exists is the icon on the bar. It cost a
+ * harness run and fifty blows to find, which is the whole argument for having
+ * driven it in a browser rather than reasoning about the call sites.
+ */
+function fireStruckTraits(playerId: string, now: number): void {
+  let changed = false;
+  for (const trait of traitsOf(playerId)) {
+    if (trait.onStruck && Math.random() < trait.onStruck.chance) {
+      changed = applyStatus(playerId, trait.onStruck.status, "player", now, playerId) || changed;
+    }
+  }
+  if (changed) sendStatuses(sockets.get(playerId), playerId, now);
 }
 
 // Passive payoff for landing a killing blow (the warrior's Second Wind).
 // Sits here so both auto-attacks and skills trigger it identically.
-function onPlayerKill(playerId: string, attrs: Attributes): void {
+function onPlayerKill(playerId: string, attrs: Attributes, now: number = Date.now()): void {
+  // `onKill` traits, which land on YOU — a kill is the one trigger with nothing
+  // left alive to put a status on. Pushed for the same reason as `onStruck`.
+  let gained = false;
+  for (const trait of traitsOf(playerId)) {
+    if (trait.onKill) {
+      gained = applyStatus(playerId, trait.onKill.status, "player", now, playerId) || gained;
+    }
+  }
+  if (gained) sendStatuses(sockets.get(playerId), playerId, now);
   const heal = passivesOf(playerId).healOnKill;
   if (heal <= 0) return;
   const maxHp = maxHpOf(playerId, attrs);
@@ -2396,9 +2476,22 @@ function resolvePlayerAttack(
       // player is credited with having killed it WITH.
       addThreat(monster.id, playerId, playerAttack.damage, now, school);
       markInCombat(playerId, now);
+      // THE AUTO-ATTACK IS ITS OWN PATH. `applySkillDamage` is not "the single
+      // funnel every blow goes through" — it is the funnel every SKILL goes
+      // through, and hooking only it gave a set of traits that fired on a
+      // firebolt and never on a sword swing. A harness caught it: a hundred and
+      // sixteen swings with an onCrit trait equipped and not one status landed.
+      fireStrikeTraits(playerId, monster.id, playerAttack.crit, now);
       if (monster.hp <= 0) {
         monsterDefeated = true;
         killMonster(monster, now);
+        // AND THE KILL PAYOFF, which this path has never had. The comment on
+        // `onPlayerKill` says it sits where it does "so both auto-attacks and
+        // skills trigger it identically" — and only the skill path ever called
+        // it, so the warrior's Second Wind has silently never fired on a sword
+        // swing. Found while wiring `onKill` traits through the same function:
+        // the trait would have inherited exactly the same hole.
+        onPlayerKill(playerId, attrs, now);
       }
     }
 
@@ -2706,9 +2799,18 @@ function maybeDropLoot(playerId: string, socket: WebSocket, monster: MonsterStat
   // rather than the dead loot it used to be under the old equip restriction.
   // The kind, not just its band: what a thing is made of decides what it is
   // carrying, and a boss has one item it is known for.
+  //
+  // HOW WELL MADE is now a property of the base as well as the roll. A common
+  // base cannot come out better than Tempered however lucky the roll, and a
+  // boss's floor does not get to argue with that — otherwise the boss becomes
+  // the way around the rule, which is the first place a player would look. The
+  // roll is clamped rather than re-rolled, so a ceiling makes an item reliably
+  // decent, not rarer; how OFTEN a thing drops stays the drop table's job.
   const band = MONSTER_STATS[monster.kind].band;
   const base = rollBase(band, monster.kind);
-  const quality = guaranteed ? rollRarityWithFloor(BOSS_MIN_RARITY) : rollRarity();
+  const quality = guaranteed
+    ? rollRarityForWithFloor(base, BOSS_MIN_RARITY)
+    : rollRarityFor(base);
   const rolled = rollItem(base, quality);
   // On the ground, not in the bag. It is reserved for the player the threat
   // table credited with the kill — the same answer the experience split uses —
