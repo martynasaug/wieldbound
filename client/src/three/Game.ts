@@ -174,7 +174,7 @@ function onGround(x: number, z: number): [number, number, number] {
 }
 import { nightAmount } from "./daynight";
 import { Town } from "./town";
-import { EMBERHOLD } from "../../../shared/town";
+import { SETTLEMENTS } from "../../../shared/town";
 import { buildNpcs, updateNpcs, type NpcVisual } from "./npcs";
 import { profiler } from "./profiler";
 import { FramePacer } from "./pacer";
@@ -775,7 +775,18 @@ export class Game {
   private readonly questTracker = new QuestTracker();
 
   /** Emberhold: the buildings, the palisade, the cobbles and every lantern. */
-  private readonly town = new Town(EMBERHOLD);
+  /**
+   * One per settlement.
+   *
+   * `town` stays the name for Emberhold because a great deal of this file talks
+   * about it specifically — the camera's colliders, the occluder sweep, the
+   * ambience — and renaming all of that to `towns[0]` would be a worse file for
+   * no gain. What is new is that it is no longer the only one.
+   */
+  private readonly towns: Town[] = SETTLEMENTS.map((s) => new Town(s));
+  private get town(): Town {
+    return this.towns[0];
+  }
   /** The five people standing in it. Keyed by NPC id, and deliberately a map of
    *  its own — an NPC in `players` or `monsters` would be selectable as an ally
    *  or attackable as an enemy, and both are wrong. */
@@ -1812,13 +1823,16 @@ export class Game {
     // the awaits for exactly that reason: spawn is inside it, and a player who
     // materialises on bare grass and watches a town assemble around them has
     // seen the seams.
-    this.town.build(this.world.scene);
+    for (const t of this.towns) t.build(this.world.scene);
     // The one thing in the world the camera may not sit behind. See
     // World.clearDistance — walls move the camera, trees are faded instead.
     // The houses AND the town wall. The wall is a ring of invisible boxes that
     // is never rendered (Town.wallColliders); the real palisade is far too
     // expensive to raycast, which M70.241 measured at 71% of a frame.
-    this.world.setCameraColliders([...this.town.buildings, this.town.wallColliders]);
+    this.world.setCameraColliders([
+      ...this.towns.flatMap((t) => t.buildings),
+      ...this.towns.map((t) => t.wallColliders),
+    ]);
 
     // The waystones, for the same reason and at the same moment: they are boxes
     // in the town's own palette, they cost a millisecond, and one of them is
@@ -5478,11 +5492,20 @@ export class Game {
     // `performance.now`, because the field is derived and two players in the
     // same grass have to see the same gust.
     updateWind();
-    this.town.update(
-      nightAmount(hour.clock),
-      Math.hypot(this.playerX - TOWN_CENTER.x, this.playerY - TOWN_CENTER.y) / PX_PER_UNIT,
-      performance.now() / 1000,
-    );
+    // EACH TOWN GETS ITS OWN DISTANCE. The argument is how far the player is
+    // from that settlement's middle, and it drives the lantern fade and the
+    // square's fill light — so handing Coldharrow Emberhold's distance would
+    // leave the north lit by how close you are standing to somewhere else.
+    const nowSec = performance.now() / 1000;
+    const night = nightAmount(hour.clock);
+    for (let i = 0; i < this.towns.length; i++) {
+      const c = SETTLEMENTS[i].center;
+      this.towns[i].update(
+        night,
+        Math.hypot(this.playerX - c.x, this.playerY - c.y) / PX_PER_UNIT,
+        nowSec,
+      );
+    }
     this.profiler.end("world");
     this.profiler.begin("hud");
     this.hud.setPortrait(classForWeapon(this.appearance.weaponType));
@@ -5846,10 +5869,10 @@ export class Game {
     };
     for (const n of this.nodes.values()) consider(n);
     for (const d of this.world.decor.children) consider(d);
-    for (const b of this.town.buildings) consider(b);
+    for (const t of this.towns) for (const b of t.buildings) consider(b);
     // The statue, which is in neither list and stands in the middle of the
     // square. See Town.ornaments.
-    for (const o of this.town.ornaments) consider(o);
+    for (const t of this.towns) for (const o of t.ornaments) consider(o);
   }
 
   /**
@@ -5933,12 +5956,12 @@ export class Game {
       });
     };
     for (const d of this.world.decor.children) collect(d);
-    for (const b of this.town.buildings) collect(b);
+    for (const t of this.towns) for (const b of t.buildings) collect(b);
     for (const n of this.nodes.values()) collect(n);
     // And the ornaments, or the first time the statue fades it compiles its
     // see-through variant inside a frame — the failure class M70.144 checked
     // the wider fade against.
-    for (const o of this.town.ornaments) collect(o);
+    for (const t of this.towns) for (const o of t.ornaments) collect(o);
     if (mats.size === 0) return;
 
     const was: [THREE.Material, boolean, boolean][] = [];

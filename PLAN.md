@@ -28109,3 +28109,57 @@ ONE THING BIT: `wallColliders` was a field initialiser calling
 constructor parameter property is assigned. Moved into the constructor body.
 
 Suite green, 25 tests. Client and server typecheck. Emberhold unchanged.
+
+**Phase 71 C2a — Coldharrow stands up.** The first settlement in this game that
+is not Emberhold: 39 buildings, 3 gates, radius 2600, centred 8,400px north.
+
+TEN NEW BUILDING KINDS, because a northern port is not a bigger village.
+Emberhold's six are what a farming settlement has, and none of them is a thing a
+harbour needs — placing sixty of those round a larger circle would have produced
+Emberhold with more sheds, which is precisely the outcome the user ruled out.
+The new ones are what the place is FOR: warehouse, guildhall, bathhouse, stall,
+tower, pier, granary, barracks, boathouse, ruin.
+
+`Record<BuildingKind, KindStyle>` being exhaustive is the compiler insisting
+that if a kind can exist then every town must have an answer for it, so
+Emberhold has entries for all ten in its OWN materials — thatch and plaster —
+rather than importing the north's. If one is ever placed there it will look like
+the village.
+
+AND THE TWO STYLE TABLES SHARE NO VALUES, which is the whole of "it must not
+look like Emberhold" made mechanical. Emberhold is plaster, shingle and thatch:
+warm, soft, low. Coldharrow is granite, cold slate and tar, with taller storeys,
+steeper pitches and plinths deep enough to read as buildings that expect
+weather. Shingle and thatch appear nowhere in it — a roof is the largest single
+surface a building shows at this camera, and it is what the eye reads a place
+by. Three new materials were added for it, the existing greys pulled toward blue
+and down in value: cold light on wet rock.
+
+A CURTAIN WALL IS NOT A PALISADE WITH BETTER MATERIALS. A palisade is sharpened
+posts and reads as a boundary somebody put up; a curtain wall is a continuous
+solid with drum towers every thirty degrees and reads as a thing that was BUILT,
+at cost, by people who expected to be attacked. There is no parameter that turns
+one into the other, which is why `SettlementLook.wall` is a function rather than
+a flag.
+
+BUILT ROUND A FROZEN HARBOUR RATHER THAN A SQUARE, and every other decision
+follows from that. Emberhold is six fronts looking at an anvil — a place where
+everybody can see everybody. A port has a waterfront edge and a landward edge,
+so Coldharrow has a DIRECTION: quays facing the ice at 270, the Kingsway
+arriving at 90, seven districts laid along that axis instead of around a middle.
+
+THE LAYOUT TEST EARNED ITS KEEP IMMEDIATELY. The first draft put the barracks at
+bearing 90 — which is not a place, it is the street, because the road runs
+through the Landward Gate to the middle of the city. `road.mjs` reported the
+road running through a building at eight points, a road torch standing inside
+one, and the full width blocked at 24 samples.
+
+Suite green, 25 tests. Client and server typecheck.
+
+STILL OWED: the photographs. C2a is the one part of this plan no test can check,
+and the first walk-in crashed because `shared/town.ts` was edited while the
+harness was running — the documented HMR failure, caused by me. Two frames
+survived and show the wall, the Landward Gate's signpost and the city on the
+minimap. A clean run is in flight. What those two frames also show, and what
+wants looking at, is the camera sitting INSIDE the curtain wall at the gate,
+with the player drawn as a through-walls silhouette.

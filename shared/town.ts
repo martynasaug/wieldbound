@@ -163,7 +163,31 @@ function at(radiusPx: number, angleDeg: number): { x: number; y: number } {
  * called. Otherwise every tweak to a roof line would be a change to a file the
  * server imports.
  */
-export type BuildingKind = "inn" | "shop" | "watchpost" | "chapel" | "cottage" | "stable";
+export type BuildingKind =
+  // --- Emberhold's six ------------------------------------------------------
+  | "inn"
+  | "shop"
+  | "watchpost"
+  | "chapel"
+  | "cottage"
+  | "stable"
+  // --- Coldharrow's -----------------------------------------------------------
+  // A NORTHERN PORT IS NOT A BIGGER VILLAGE. Emberhold's six are the buildings a
+  // farming settlement has; none of them is a thing a harbour needs, and placing
+  // sixty of them round a bigger circle would have produced Emberhold with more
+  // sheds. These are what the place is FOR: storing what comes off a ship,
+  // working metal at a scale one smith cannot, housing a garrison, and standing
+  // watch over water.
+  | "warehouse"
+  | "guildhall"
+  | "bathhouse"
+  | "stall"
+  | "tower"
+  | "pier"
+  | "granary"
+  | "barracks"
+  | "boathouse"
+  | "ruin";
 
 export interface TownBuilding {
   id: string;
@@ -1595,12 +1619,13 @@ export const EMBERHOLD: Settlement = {
 /**
  * Every settlement in the world.
  *
- * One entry today. It exists now rather than when the second one lands because
- * the whole point of the refactor is that nothing downstream should have to
- * change on that day — the resolver already asks "which town", the answer is
- * simply always the same one for the moment.
+ * ASSEMBLED AT THE VERY BOTTOM OF THIS FILE, below both of them, for the same
+ * reason `EMBERHOLD` is: these are `const` bindings and a list that named one of
+ * them before it existed would be read during module evaluation. A1 wrote this
+ * with one entry and predicted that nothing downstream would have to change on
+ * the day a second arrived. Nothing did — the resolver already asked "which
+ * town", and now there are two answers.
  */
-export const SETTLEMENTS: readonly Settlement[] = [EMBERHOLD];
 
 /**
  * How far outside the wall still counts as being at a settlement.
@@ -1639,3 +1664,166 @@ export function settlementAt(x: number, y: number): Settlement | null {
 export function settlementById(id: string): Settlement | null {
   return SETTLEMENTS.find((s) => s.id === id) ?? null;
 }
+
+// --- Coldharrow -------------------------------------------------------------
+//
+// The city in the north, and the first settlement in this game that is not
+// Emberhold. See PLAN.md Phase 71 for the whole of it; what matters here is the
+// shape.
+//
+// BUILT ROUND A FROZEN HARBOUR RATHER THAN A SQUARE, which is the decision every
+// other one follows from. Emberhold is a ring of six fronts looking at an anvil,
+// and reading its layout tells you what it is: a place where everybody can see
+// everybody. A port has a WATERFRONT EDGE and a LANDWARD EDGE, so Coldharrow has
+// a direction — the quays face the ice at 270 and the road arrives at 90 — and
+// the districts between them are laid out along that axis instead of around a
+// middle.
+//
+// Its seaward wall sits exactly on the world's north edge. That started as an
+// awkward number in the layout arithmetic and is the best thing in it: the ice
+// IS the edge of the world, so there is nothing to build past the quays because
+// there is nothing past them.
+const COLD_CENTRE = { x: PLAYER_SPAWN.x, y: PLAYER_SPAWN.y - 8400 };
+
+/** Polar from Coldharrow's own middle, the way `at` is from Emberhold's. */
+function atCold(radiusPx: number, angleDeg: number): { x: number; y: number } {
+  const a = (angleDeg * Math.PI) / 180;
+  return {
+    x: Math.round(COLD_CENTRE.x + Math.cos(a) * radiusPx),
+    y: Math.round(COLD_CENTRE.y + Math.sin(a) * radiusPx),
+  };
+}
+
+/**
+ * One building, placed and turned to face the middle.
+ *
+ * Every front looks inward for the same reason Emberhold's do — a town whose
+ * houses face outward reads as a row of sheds — but here "inward" means toward
+ * the harbour basin rather than toward a square, which is what makes the quays
+ * the room everything else is arranged around.
+ */
+function cold(
+  id: string,
+  kind: BuildingKind,
+  name: string | undefined,
+  radiusPx: number,
+  angleDeg: number,
+  widthPx: number,
+  depthPx: number,
+  storeys: 1 | 2,
+): TownBuilding {
+  return {
+    id,
+    kind,
+    ...(name ? { name } : {}),
+    ...atCold(radiusPx, angleDeg),
+    widthPx,
+    depthPx,
+    facingDeg: angleDeg + 180,
+    storeys,
+  };
+}
+
+export const COLDHARROW_RADIUS_PX = 2600;
+
+/**
+ * The four gates.
+ *
+ * The Landward Gate at 90 is where the Kingsway arrives, and it is not a choice:
+ * the road runs due north up the spawn meridian and the gate is the hole cut
+ * where it already crossed the wall. The others are narrower — a port lets
+ * people out along the shore and up onto the cliff, and neither of those is a
+ * road.
+ */
+export const COLDHARROW_GATES: readonly TownGate[] = [
+  { angleDeg: 90, halfDeg: 13, name: "The Landward Gate" },
+  { angleDeg: 200, halfDeg: 8, name: "The Shore Postern" },
+  { angleDeg: 340, halfDeg: 8, name: "The Cliff Stair" },
+];
+
+export const COLDHARROW_BUILDINGS: TownBuilding[] = [
+  // --- The Landward Gate, 60..120 -------------------------------------------
+  // What you meet first, and it is a garrison rather than a welcome.
+  cold("cold-gatetower-w", "tower", "The Landward Gate", 2380, 78, 190, 190, 2),
+  cold("cold-gatetower-e", "tower", undefined, 2380, 102, 190, 190, 2),
+  // OFF THE AXIS, and 90 is why. The Kingsway runs due north up the spawn
+  // meridian and continues through the Landward Gate to the middle of the city,
+  // so bearing 90 from this centre is not a place, it is the STREET. The first
+  // draft put the barracks squarely on it and `road.mjs` reported the road
+  // running through a building at eight points and a road torch standing inside
+  // one — which is the layout test doing exactly the job it exists for.
+  cold("cold-barracks", "barracks", "The Cold Watch", 1900, 108, 420, 260, 2),
+  cold("cold-stable", "stable", "The Gate Stables", 2050, 62, 300, 200, 1),
+  cold("cold-granary", "granary", "The Long Store", 2100, 134, 300, 230, 2),
+
+  // --- The Works, 120..185 --------------------------------------------------
+  // Metal at a scale one smith cannot manage, which is the difference between a
+  // village forge and a city's.
+  cold("cold-foundry", "guildhall", "The Grey Foundry", 1520, 140, 460, 320, 2),
+  cold("cold-works-a", "warehouse", "Ore Stores", 1980, 152, 340, 240, 2),
+  cold("cold-works-b", "warehouse", undefined, 1980, 168, 300, 240, 2),
+  cold("cold-vault", "guildhall", "The Vault", 1180, 158, 320, 300, 2),
+  cold("cold-works-c", "cottage", undefined, 2280, 146, 210, 170, 1),
+  cold("cold-works-d", "cottage", undefined, 2280, 162, 210, 170, 1),
+
+  // --- The Terraces, 185..245 -----------------------------------------------
+  // Where people live, stacked up the slope away from the water.
+  cold("cold-terrace-a", "cottage", undefined, 1420, 196, 230, 180, 2),
+  cold("cold-terrace-b", "cottage", undefined, 1420, 210, 230, 180, 2),
+  cold("cold-terrace-c", "cottage", undefined, 1420, 224, 230, 180, 2),
+  cold("cold-terrace-d", "cottage", undefined, 1860, 190, 230, 180, 1),
+  cold("cold-terrace-e", "cottage", undefined, 1860, 204, 230, 180, 2),
+  cold("cold-terrace-f", "cottage", undefined, 1860, 218, 230, 180, 1),
+  cold("cold-terrace-g", "cottage", undefined, 1860, 232, 230, 180, 2),
+  cold("cold-chapel", "chapel", "The Cold Chapel", 2300, 212, 280, 340, 1),
+
+  // --- The Wharf, 245..300 --------------------------------------------------
+  // The reason the city is here. Everything on this arc faces the ice.
+  cold("cold-pier-w", "pier", "The Long Quay", 2260, 256, 620, 200, 1),
+  cold("cold-pier-e", "pier", "The Short Quay", 2260, 284, 480, 200, 1),
+  cold("cold-boathouse-a", "boathouse", undefined, 1840, 250, 300, 260, 1),
+  cold("cold-boathouse-b", "boathouse", undefined, 1840, 290, 300, 260, 1),
+  cold("cold-fishmarket", "stall", "The Fishmarket", 1400, 270, 520, 240, 1),
+  cold("cold-wharf-store-a", "warehouse", "The Ice House", 1840, 264, 340, 260, 2),
+  cold("cold-wharf-store-b", "warehouse", undefined, 1840, 276, 340, 260, 2),
+
+  // --- Highwatch, 300..350 --------------------------------------------------
+  // The seaward wall and the beacon, looking out over the ice.
+  cold("cold-beacon", "tower", "The Beacon", 2320, 320, 240, 240, 2),
+  cold("cold-watch-a", "tower", undefined, 2380, 302, 180, 180, 2),
+  cold("cold-watch-b", "tower", undefined, 2380, 338, 180, 180, 2),
+  cold("cold-highhall", "guildhall", "The Navigators", 1760, 320, 380, 300, 2),
+
+  // --- The Commons, 350..60 -------------------------------------------------
+  // Where people are when they are not working. The inn faces the basin.
+  cold("cold-inn", "inn", "The Frozen Bell", 1480, 20, 480, 300, 2),
+  cold("cold-bathhouse", "bathhouse", "The Steam Hall", 1480, 44, 380, 300, 1),
+  cold("cold-shop", "shop", "The Cold Ledger", 1820, 8, 320, 240, 2),
+  cold("cold-hall-of-names", "guildhall", "The Hall of Names", 1120, 30, 340, 300, 2),
+  cold("cold-commons-a", "cottage", undefined, 2200, 30, 220, 180, 2),
+  cold("cold-commons-b", "cottage", undefined, 2200, 48, 220, 180, 1),
+
+  // --- The Cold Quarter, 180..195 inner ------------------------------------
+  // Half-abandoned, and the only part of the city that is older than the city.
+  cold("cold-ruin-a", "ruin", undefined, 900, 180, 300, 240, 1),
+  cold("cold-ruin-b", "ruin", undefined, 900, 200, 260, 220, 1),
+  cold("cold-ruin-c", "ruin", "The Old Custom House", 1240, 188, 320, 260, 2),
+];
+
+export const COLDHARROW: Settlement = {
+  id: "coldharrow",
+  name: "Coldharrow",
+  center: COLD_CENTRE,
+  radiusPx: COLDHARROW_RADIUS_PX,
+  // A far smaller PAVED fraction than Emberhold's two thirds. A port is quays
+  // and yards, not one big floor.
+  pavedRadiusPx: Math.round(COLDHARROW_RADIUS_PX * 0.34),
+  gates: COLDHARROW_GATES,
+  buildings: COLDHARROW_BUILDINGS,
+  // Phase 71 C2b.
+  props: [],
+  npcs: [],
+  arrival: atCold(2200, 90),
+};
+
+export const SETTLEMENTS: readonly Settlement[] = [EMBERHOLD, COLDHARROW];

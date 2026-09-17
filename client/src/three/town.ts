@@ -28,6 +28,7 @@ import { seededRandom } from "../../../shared/rng";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   TOWN_BUILDINGS,
+  inGatewayAmong,
   type Settlement,
   TOWN_CENTER,
   TOWN_GATE_ANGLES,
@@ -58,6 +59,20 @@ import { PX_PER_UNIT, toWorldX, toWorldZ } from "./World";
 // beautiful on a grey background is a town that glows radioactively on grass.
 
 const PALETTE = {
+  // --- Coldharrow ----------------------------------------------------------
+  // THE NORTH IS A DIFFERENT TEMPERATURE, and that is most of what makes it
+  // read as somewhere else. Emberhold's stone (0x8d887b) is a warm grey that
+  // sits happily beside plaster and thatch; used in a northern port it would
+  // make Coldharrow look like Emberhold built larger, which is the one thing
+  // it must not look like. These are the same values pulled toward blue and
+  // down in value — cold light on wet rock.
+  granite: 0x79808a,
+  graniteDark: 0x565c66,
+  slateCold: 0x3d4752,
+  /** Tarred timber: boathouses, piles, quay edges. */
+  pitch: 0x2f2b28,
+  /** Frost on the north face of everything. */
+  rime: 0xc3d2da,
   plaster: 0xe4d3b2,
   plasterCool: 0xd6c8ae,
   timber: 0x4a3524,
@@ -1995,11 +2010,69 @@ const EMBERHOLD_STYLES: Record<BuildingKind, KindStyle> = {
   chapel: { wall: "stone", roof: "slate", plinth: 0.35, storeyHeight: 3.0, roofPitch: 0.7 },
   cottage: { wall: "plaster", roof: "thatch", plinth: 0.28, storeyHeight: 2.2, roofPitch: 0.56 },
   stable: { wall: "timberLight", roof: "thatch", plinth: 0.2, storeyHeight: 2.1, roofPitch: 0.5 },
+  // Emberhold has none of these and never will — it is a farming village with
+  // six buildings. They are here because `Record<BuildingKind, KindStyle>` is
+  // exhaustive, which is the compiler insisting that if a kind can exist then
+  // every town must have an answer for it. Given in Emberhold's own materials,
+  // so that if one ever IS placed here it looks like the rest of the village
+  // rather than like a piece of the north dropped in.
+  warehouse: { wall: "timberLight", roof: "thatch", plinth: 0.3, storeyHeight: 2.2, roofPitch: 0.5 },
+  guildhall: { wall: "plaster", roof: "shingle", plinth: 0.4, storeyHeight: 2.4, roofPitch: 0.52 },
+  bathhouse: { wall: "plaster", roof: "shingle", plinth: 0.35, storeyHeight: 2.3, roofPitch: 0.45 },
+  stall: { wall: "timberLight", roof: "thatch", plinth: 0.12, storeyHeight: 1.9, roofPitch: 0.4 },
+  tower: { wall: "stone", roof: "slate", plinth: 1.6, storeyHeight: 2.4, roofPitch: 0.75 },
+  pier: { wall: "timberLight", roof: "thatch", plinth: 0.1, storeyHeight: 1.8, roofPitch: 0.3 },
+  granary: { wall: "timberLight", roof: "thatch", plinth: 0.5, storeyHeight: 2.2, roofPitch: 0.58 },
+  barracks: { wall: "plasterCool", roof: "slate", plinth: 0.9, storeyHeight: 2.2, roofPitch: 0.48 },
+  boathouse: { wall: "timber", roof: "thatch", plinth: 0.15, storeyHeight: 2.0, roofPitch: 0.44 },
+  ruin: { wall: "stoneDark", roof: "slate", plinth: 0.5, storeyHeight: 2.0, roofPitch: 0.3 },
+};
+
+/**
+ * Coldharrow: stone and slate, and not one thatched roof.
+ *
+ * THE WHOLE POINT IS THAT THIS TABLE SHARES NO VALUES WITH THE ONE ABOVE.
+ * Emberhold is plaster, shingle and thatch — warm, soft, low. This is granite,
+ * cold slate and tar: taller storeys, steeper pitches, and plinths deep enough
+ * to read as buildings that expect weather. A city made of the same materials
+ * as the village would be the village at a larger scale however the streets
+ * were arranged, which is the failure this is written to avoid.
+ *
+ * Shingle and thatch appear nowhere. Where Emberhold would reach for them this
+ * reaches for slate, because a roof is the largest single surface a building
+ * shows at this camera and it is what the eye reads the place by.
+ */
+const COLDHARROW_STYLES: Record<BuildingKind, KindStyle> = {
+  // The six it inherits, rebuilt in northern materials rather than imported.
+  inn: { wall: "granite", roof: "slateCold", plinth: 0.8, storeyHeight: 2.4, roofPitch: 0.62, awning: "awningAlt" },
+  shop: { wall: "granite", roof: "slateCold", plinth: 0.7, storeyHeight: 2.35, roofPitch: 0.6, awning: "awningAlt" },
+  watchpost: { wall: "graniteDark", roof: "slateCold", plinth: 1.8, storeyHeight: 2.4, roofPitch: 0.6 },
+  chapel: { wall: "granite", roof: "slateCold", plinth: 0.6, storeyHeight: 3.2, roofPitch: 0.85 },
+  cottage: { wall: "granite", roof: "slateCold", plinth: 0.55, storeyHeight: 2.25, roofPitch: 0.64 },
+  stable: { wall: "pitch", roof: "slateCold", plinth: 0.3, storeyHeight: 2.1, roofPitch: 0.5 },
+
+  // And its own.
+  warehouse: { wall: "graniteDark", roof: "slateCold", plinth: 0.9, storeyHeight: 2.6, roofPitch: 0.42 },
+  guildhall: { wall: "granite", roof: "slateCold", plinth: 1.1, storeyHeight: 2.8, roofPitch: 0.66 },
+  bathhouse: { wall: "granite", roof: "slateCold", plinth: 0.7, storeyHeight: 2.6, roofPitch: 0.38 },
+  // Low, open and awninged: the one warm-coloured thing on the waterfront.
+  stall: { wall: "pitch", roof: "slateCold", plinth: 0.15, storeyHeight: 1.9, roofPitch: 0.32, awning: "awningAlt" },
+  tower: { wall: "graniteDark", roof: "slateCold", plinth: 2.4, storeyHeight: 2.7, roofPitch: 0.9 },
+  // Barely a building: a deck on piles, which is why the plinth is nothing and
+  // the roof is almost flat.
+  pier: { wall: "pitch", roof: "slateCold", plinth: 0.08, storeyHeight: 1.6, roofPitch: 0.16 },
+  granary: { wall: "granite", roof: "slateCold", plinth: 1.2, storeyHeight: 2.5, roofPitch: 0.7 },
+  barracks: { wall: "graniteDark", roof: "slateCold", plinth: 1.3, storeyHeight: 2.3, roofPitch: 0.5 },
+  boathouse: { wall: "pitch", roof: "slateCold", plinth: 0.2, storeyHeight: 2.2, roofPitch: 0.5 },
+  // Roofless. A pitch this shallow on a stump of a storey reads as a wall with
+  // the sky above it, which is what a ruin is.
+  ruin: { wall: "graniteDark", roof: "slateCold", plinth: 0.9, storeyHeight: 1.5, roofPitch: 0.12 },
 };
 
 /** Keyed by settlement id. One entry today; the second is Phase 71 C. */
 const LOOKS: Record<string, SettlementLook> = {
   emberhold: { styles: EMBERHOLD_STYLES, wall: palisade },
+  coldharrow: { styles: COLDHARROW_STYLES, wall: curtainWall },
 };
 
 function lookFor(s: Settlement): SettlementLook {
@@ -2547,6 +2620,122 @@ function wallColliderRing(s: Settlement): THREE.Group {
   // world matrix computed is a collider a ray passes straight through.
   group.updateMatrixWorld(true);
   return group;
+}
+
+/**
+ * Coldharrow's curtain wall.
+ *
+ * NOT A PALISADE WITH BETTER MATERIALS. A palisade is a line of sharpened posts
+ * and it reads as a boundary somebody put up; a curtain wall is a continuous
+ * solid with towers on it and it reads as a thing that was BUILT, at cost, by
+ * people who expected to be attacked. That difference is most of what separates
+ * a village from a city at this camera, and it is why the wall is a function on
+ * `SettlementLook` rather than a flag on one shared builder — there is no
+ * parameter that turns one of these into the other.
+ *
+ * Three parts, and each is doing work the others cannot:
+ *
+ *   The CURTAIN is chord boxes, not posts. A solid face takes the light as one
+ *   surface, which is what makes it read as masonry rather than as fence.
+ *   The MERLONS are what say "defence" at a distance, the way the palisade's
+ *   sharpened tips do — a flat-topped wall reads as a retaining wall.
+ *   The TOWERS are the silhouette. A ring of plain wall is a circle; a ring
+ *   with drums standing proud of it every thirty degrees has a shape you can
+ *   recognise across the ice, which is the whole job of the seaward side.
+ */
+function curtainWall(b: Builder, group: THREE.Group, lanterns: Lantern[], s: Settlement): void {
+  const radius = s.radiusPx / PX_PER_UNIT;
+  const cx = toWorldX(s.center.x);
+  const cz = toWorldZ(s.center.y);
+  const open = (deg: number) => inGatewayAmong(s.gates, deg);
+
+  const HEIGHT = 4.6;
+  const THICK = 0.62;
+  const at = (deg: number, r = radius) => {
+    const a = (deg * Math.PI) / 180;
+    return { x: cx + Math.cos(a) * r, z: cz + Math.sin(a) * r };
+  };
+
+  // --- the curtain ---------------------------------------------------------
+  // Two degrees a segment: at this radius that is a chord of about 2.3 units,
+  // short enough that the ring does not read as a polygon and long enough that
+  // the whole wall is a hundred and eighty boxes rather than a thousand.
+  const STEP = 2;
+  for (let deg = 0; deg < 360; deg += STEP) {
+    if (open(deg) || open(deg + STEP)) continue;
+    const p0 = at(deg);
+    const p1 = at(deg + STEP);
+    const len = Math.hypot(p1.x - p0.x, p1.z - p0.z);
+    const midX = (p0.x + p1.x) / 2;
+    const midZ = (p0.z + p1.z) / 2;
+    const rot = -Math.atan2(p1.z - p0.z, p1.x - p0.x);
+    b.box("granite", len + 0.06, HEIGHT, THICK, midX, HEIGHT / 2, midZ, rot);
+    // A darker course at the foot, so the wall has a base instead of growing
+    // out of the grass.
+    b.box("graniteDark", len + 0.12, 0.5, THICK + 0.16, midX, 0.25, midZ, rot);
+  }
+
+  // --- merlons -------------------------------------------------------------
+  for (let deg = 0; deg < 360; deg += STEP) {
+    if (open(deg)) continue;
+    const p = at(deg);
+    const a = (deg * Math.PI) / 180;
+    b.box("granite", 1.1, 0.72, THICK, p.x, HEIGHT + 0.36, p.z, -a + Math.PI / 2);
+  }
+
+  // --- towers --------------------------------------------------------------
+  // Every thirty degrees, standing proud of the face and taller than it.
+  for (let deg = 0; deg < 360; deg += 30) {
+    if (open(deg)) continue;
+    const p = at(deg, radius + 0.3);
+    const h = HEIGHT + 2.6;
+    b.cyl("graniteDark", 1.35, h, p.x, 0, p.z, 10);
+    // A crown a little wider than the drum, which is what reads as a tower
+    // rather than as a pillar.
+    b.cyl("granite", 1.55, 0.5, p.x, h, p.z, 10);
+    b.add(
+      "slateCold",
+      new THREE.ConeGeometry(1.62, 2.1, 10),
+      p.x,
+      h + 0.25 + 1.05,
+      p.z,
+    );
+  }
+
+  // --- gatehouses ----------------------------------------------------------
+  // Square towers flanking each opening, and a lintel across it. A gate is the
+  // one part of a wall people look at from close up.
+  for (const gate of s.gates) {
+    const half = gate.halfDeg;
+    for (const side of [-1, 1]) {
+      const p = at(gate.angleDeg + side * (half + 1.4), radius + 0.2);
+      const a = ((gate.angleDeg + side * (half + 1.4)) * Math.PI) / 180;
+      const h = HEIGHT + 3.4;
+      b.box("graniteDark", 3.0, h, 3.0, p.x, h / 2, p.z, -a + Math.PI / 2);
+      b.box("granite", 3.4, 0.55, 3.4, p.x, h + 0.28, p.z, -a + Math.PI / 2);
+      // A lamp on the inner face of each gate tower. Through the shared helper
+      // rather than pushed onto the list directly: every warm source in a town
+      // is on one flicker clock, and a hand-made entry would sit dead still
+      // beside them.
+      const lamp = at(gate.angleDeg + side * (half + 1.4), radius - 2.2);
+      lantern(b, group, lamp.x, lamp.z, h - 1.2, lanterns, 0.85);
+    }
+    // The lintel: one beam across the opening at the top of the curtain.
+    const p0 = at(gate.angleDeg - half, radius);
+    const p1 = at(gate.angleDeg + half, radius);
+    const len = Math.hypot(p1.x - p0.x, p1.z - p0.z);
+    const rot = -Math.atan2(p1.z - p0.z, p1.x - p0.x);
+    b.box(
+      "granite",
+      len,
+      1.0,
+      THICK + 0.2,
+      (p0.x + p1.x) / 2,
+      HEIGHT - 0.2,
+      (p0.z + p1.z) / 2,
+      rot,
+    );
+  }
 }
 
 function palisade(b: Builder, group: THREE.Group, lanterns: Lantern[], s: Settlement): void {
