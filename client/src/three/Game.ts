@@ -174,6 +174,7 @@ function onGround(x: number, z: number): [number, number, number] {
 }
 import { nightAmount } from "./daynight";
 import { Town } from "./town";
+import { EMBERHOLD } from "../../../shared/town";
 import { buildNpcs, updateNpcs, type NpcVisual } from "./npcs";
 import { profiler } from "./profiler";
 import { FramePacer } from "./pacer";
@@ -774,7 +775,7 @@ export class Game {
   private readonly questTracker = new QuestTracker();
 
   /** Emberhold: the buildings, the palisade, the cobbles and every lantern. */
-  private readonly town = new Town();
+  private readonly town = new Town(EMBERHOLD);
   /** The five people standing in it. Keyed by NPC id, and deliberately a map of
    *  its own — an NPC in `players` or `monsters` would be selectable as an ally
    *  or attackable as an enemy, and both are wrong. */

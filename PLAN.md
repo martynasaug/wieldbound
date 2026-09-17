@@ -28078,3 +28078,34 @@ answers continuously, and when the two disagree the harness is the one that is
 wrong. It asks the panel now, which is the server's answer.
 
 Suite green, 25 tests. Client and server typecheck.
+
+**Phase 71 C1 — the renderer learns there can be two towns.** Done.
+
+A1 generalised the DATA and the collision; the renderer was still a singleton.
+`client/src/three/town.ts` read `TOWN_CENTER`, `TOWN_RADIUS_PX`,
+`TOWN_BUILDINGS` and `TOWN_PROPS` straight out of module scope in five places —
+the palisade, the wall colliders, the square dressing, the ground and the class
+itself — so there could be exactly one town and it was always Emberhold.
+
+`Town` takes a `Settlement` now, and the same rule as A1 applies: Emberhold's
+data did not change, so Emberhold coming out pixel-identical is the whole proof.
+Six buildings, fifty-six wall colliders, one ornament, no console errors, and
+the screenshot matches the one A1 was verified against.
+
+AND A LOOK TABLE, which is where the user's "it must not look like Emberhold"
+becomes a thing the code can hold. `SettlementLook` is a styles table plus a
+wall builder, keyed by settlement id, and it lives in the RENDERER rather than
+on `Settlement` — a `MatKey` is a material in a palette in that file, and
+`shared/` is not allowed to know such a thing exists, the same rule that keeps
+FBX filenames out of the NPC table. What shared owns is the shape of a town;
+what the renderer owns is what it is made of.
+
+The wall is a function on that table rather than a branch, because a palisade is
+timber posts in a ring and a curtain wall is not a variation on that. Emberhold
+keeps `palisade`; Coldharrow gets its own.
+
+ONE THING BIT: `wallColliders` was a field initialiser calling
+`wallColliderRing(this.settlement)`, and field initialisers run BEFORE a
+constructor parameter property is assigned. Moved into the constructor body.
+
+Suite green, 25 tests. Client and server typecheck. Emberhold unchanged.

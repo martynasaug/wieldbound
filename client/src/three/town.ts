@@ -28,6 +28,7 @@ import { seededRandom } from "../../../shared/rng";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   TOWN_BUILDINGS,
+  type Settlement,
   TOWN_CENTER,
   TOWN_GATE_ANGLES,
   TOWN_GATE_HALF_DEG,
@@ -1962,7 +1963,28 @@ interface KindStyle {
  * The floor is the doorway. A storey may not be shorter than a door plus its
  * lintel, or the front door punches through into the room above it.
  */
-const STYLES: Record<BuildingKind, KindStyle> = {
+/**
+ * How a settlement is BUILT, as opposed to where.
+ *
+ * KEPT IN THE RENDERER RATHER THAN ON `Settlement`, because a `MatKey` is a
+ * material in a palette in this file and `shared/` is not allowed to know that
+ * such a thing exists — the same rule that keeps FBX filenames out of the NPC
+ * table. What shared owns is the shape of a town; what this owns is what it is
+ * made of.
+ *
+ * There will be two of these and they must not resemble each other. Emberhold
+ * is warm plaster, shingle and thatch because it is an inland village; the
+ * north is to be stone and slate because it is a cold port, and giving it extra
+ * rows in Emberhold's table would produce a bigger Emberhold rather than a
+ * different place.
+ */
+export interface SettlementLook {
+  styles: Record<BuildingKind, KindStyle>;
+  /** What stands round it. A palisade is timber and a curtain wall is not. */
+  wall: (b: Builder, group: THREE.Group, lanterns: Lantern[], s: Settlement) => void;
+}
+
+const EMBERHOLD_STYLES: Record<BuildingKind, KindStyle> = {
   // The inn is the biggest and the warmest: shingles, a jetty and an awning
   // over the door.
   inn: { wall: "plaster", roof: "shingle", plinth: 0.32, storeyHeight: 2.25, roofPitch: 0.5, awning: "awning" },
@@ -1975,6 +1997,15 @@ const STYLES: Record<BuildingKind, KindStyle> = {
   stable: { wall: "timberLight", roof: "thatch", plinth: 0.2, storeyHeight: 2.1, roofPitch: 0.5 },
 };
 
+/** Keyed by settlement id. One entry today; the second is Phase 71 C. */
+const LOOKS: Record<string, SettlementLook> = {
+  emberhold: { styles: EMBERHOLD_STYLES, wall: palisade },
+};
+
+function lookFor(s: Settlement): SettlementLook {
+  return LOOKS[s.id] ?? LOOKS.emberhold;
+}
+
 /**
  * One building.
  *
@@ -1984,7 +2015,11 @@ const STYLES: Record<BuildingKind, KindStyle> = {
  * every building faced the same way — which is the only reason the openings and
  * the timbering are legible at all.
  */
-function makeBuilding(b: TownBuilding, lanterns: Lantern[]): THREE.Group {
+function makeBuilding(
+  b: TownBuilding,
+  lanterns: Lantern[],
+  styles: Record<BuildingKind, KindStyle>,
+): THREE.Group {
   const group = new THREE.Group();
   // Stamped so a test can find one building among the merged meshes without
   // being handed a second copy of the layout to compare against — the whole
@@ -1995,7 +2030,7 @@ function makeBuilding(b: TownBuilding, lanterns: Lantern[]): THREE.Group {
   // south too, so a bearing maps to a Y rotation by negating and quarter-turning.
   group.rotation.y = -((b.facingDeg * Math.PI) / 180) + Math.PI / 2;
 
-  const style = STYLES[b.kind];
+  const style = styles[b.kind];
   const w = b.widthPx / PX_PER_UNIT;
   const d = b.depthPx / PX_PER_UNIT;
   const hw = w / 2;
@@ -2488,11 +2523,11 @@ function islandTexture(): THREE.Texture {
  * directly, so a collider needs a world matrix and nothing else. No draw calls,
  * no material, nothing to render — it exists only to be hit.
  */
-function wallColliderRing(): THREE.Group {
+function wallColliderRing(s: Settlement): THREE.Group {
   const group = new THREE.Group();
-  const radius = TOWN_RADIUS_PX / PX_PER_UNIT;
-  const cx = toWorldX(TOWN_CENTER.x);
-  const cz = toWorldZ(TOWN_CENTER.y);
+  const radius = s.radiusPx / PX_PER_UNIT;
+  const cx = toWorldX(s.center.x);
+  const cz = toWorldZ(s.center.y);
   const step = 5; // degrees per box
   // Tall enough to cover the posts and their tips, which reach about 2.6.
   const geo = new THREE.BoxGeometry(2 * radius * Math.sin((step / 2) * (Math.PI / 180)) * 1.06, 2.7, 0.4);
@@ -2514,10 +2549,10 @@ function wallColliderRing(): THREE.Group {
   return group;
 }
 
-function palisade(b: Builder, group: THREE.Group, lanterns: Lantern[]): void {
-  const radius = TOWN_RADIUS_PX / PX_PER_UNIT;
-  const cx = toWorldX(TOWN_CENTER.x);
-  const cz = toWorldZ(TOWN_CENTER.y);
+function palisade(b: Builder, group: THREE.Group, lanterns: Lantern[], s: Settlement): void {
+  const radius = s.radiusPx / PX_PER_UNIT;
+  const cx = toWorldX(s.center.x);
+  const cz = toWorldZ(s.center.y);
 
   // The same predicate the wall collision uses, so the timber and the thing
   // stopping you walking through it open in the same places.
@@ -2580,9 +2615,9 @@ function palisade(b: Builder, group: THREE.Group, lanterns: Lantern[]): void {
 }
 
 /** The well in the square, plus a market stall, troughs and fences. */
-function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[]): void {
-  const cx = toWorldX(TOWN_CENTER.x);
-  const cz = toWorldZ(TOWN_CENTER.y);
+function squareDressing(b: Builder, group: THREE.Group, lanterns: Lantern[], s: Settlement): void {
+  const cx = toWorldX(s.center.x);
+  const cz = toWorldZ(s.center.y);
   const polar = (radiusPx: number, deg: number) => {
     const a = (deg * Math.PI) / 180;
     return { x: cx + (Math.cos(a) * radiusPx) / PX_PER_UNIT, z: cz + (Math.sin(a) * radiusPx) / PX_PER_UNIT };
@@ -2969,6 +3004,22 @@ const STATUE_PLINTH_TOP = 2.07;
 // --- The town ---------------------------------------------------------------
 
 export class Town {
+  /**
+   * Which settlement this draws.
+   *
+   * WAS IMPLICIT UNTIL PHASE 71 C. Every function below read `TOWN_CENTER`,
+   * `TOWN_RADIUS_PX`, `TOWN_BUILDINGS` and `TOWN_PROPS` out of module scope, so
+   * there could only ever be one town and it was always Emberhold. The data
+   * generalised in A1; this is the renderer catching up, and Emberhold coming
+   * out pixel-identical is the whole proof that it did.
+   */
+  constructor(private readonly settlement: Settlement) {
+    // Assigned HERE rather than as a field initialiser: those run before a
+    // constructor parameter property exists, so `wallColliderRing(this.settlement)`
+    // at the declaration read an undefined settlement.
+    this.wallColliders = wallColliderRing(settlement);
+  }
+
   readonly group = new THREE.Group();
   /**
    * The six buildings, each as its own group.
@@ -2982,7 +3033,7 @@ export class Town {
   readonly buildings: THREE.Group[] = [];
   /** Invisible boxes standing where the palisade stands, so the camera has a
    *  wall to avoid. Never added to the scene — see `wallColliderRing`. */
-  readonly wallColliders = wallColliderRing();
+  readonly wallColliders: THREE.Group;
   /**
    * Things standing in the town that should go translucent when they get
    * between you and the camera.
@@ -3014,26 +3065,27 @@ export class Town {
     // Two entries in `TOWN_PROPS`, so the capacity is a count rather than a
     // guess — the same rule the props table already enforces on collision.
     this.flames = new Flames(
-      TOWN_PROPS.filter((p) => p.id.startsWith("brazier-")).length,
-      "flames:town",
+      this.settlement.props.filter((p) => p.id.startsWith("brazier-")).length,
+      `flames:${this.settlement.id}`,
     );
     townFlames = this.flames;
     this.group.add(this.flames.mesh);
 
-    for (const b of TOWN_BUILDINGS) {
-      const built = makeBuilding(b, this.lanterns);
+    const look = lookFor(this.settlement);
+    for (const b of this.settlement.buildings) {
+      const built = makeBuilding(b, this.lanterns, look.styles);
       this.buildings.push(built);
       this.group.add(built);
     }
 
-    palisade(builder, this.group, this.lanterns);
-    squareDressing(builder, this.group, this.lanterns);
+    look.wall(builder, this.group, this.lanterns, this.settlement);
+    squareDressing(builder, this.group, this.lanterns, this.settlement);
     builder.finish(this.group);
 
     this.buildGround();
 
-    const cx = toWorldX(TOWN_CENTER.x);
-    const cz = toWorldZ(TOWN_CENTER.y);
+    const cx = toWorldX(this.settlement.center.x);
+    const cz = toWorldZ(this.settlement.center.y);
     this.squareGlow.position.set(cx, 7.5, cz);
     this.group.add(this.squareGlow);
     this.group.add(this.townFill);
