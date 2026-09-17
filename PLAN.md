@@ -27305,3 +27305,39 @@ tool that knows the encoding.
 
 1344 of 1344 outfits clean. 25 fitted, 0 not. 178 base items, 25 styles.
 Suite green — one flake in `throwers.mjs`, which passes on three re-runs.
+
+**Phase 70 M70.373 — the back slot, and the end of the thin shelves.**
+Asked: "are we done with items?" The honest answer was a count, so
+`tools/soak/tally.mjs` now prints one — not how many rows exist, but how thin
+the thinnest shelf is and how many items share a picture in the bag.
+
+It found exactly one shelf left with a single item on it: **cape, band 1**. The
+back was also the one slot never extended in this run — four styles against
+eight chests, seven helms and six boots.
+
+    halfcape   a fall that hangs off ONE shoulder, strapped across to the other
+    furcloak   a deep roll of fur across both shoulders over a heavy fall
+
+Four rows wear them: Shoulder Cape, Rider's Half-Cape, Wolf Mantle, Winter
+Warden. `families with only one item in a band: none`.
+
+THE ASYMMETRY NEEDED ONE LINE IN `hanging`. Every back piece in this file is a
+sheet lofted from -w to +w about the spine, so the one silhouette none of them
+could make is a lopsided one — and lopsided reads instantly, from any angle. A
+`shift` slides the whole fall sideways, and the HINGE moves with it: hinged at
+x = 0 the cloth would swing about a point out in the middle of the chest.
+
+The fur roll is built the way the fur boot's cuff is — a wide band broken into
+tufts round its lower edge — because that is the one treatment in this file that
+has been photographed reading as fur rather than as pale metal.
+
+2016 of 2016 outfits clean. 27 fitted, 0 not. 182 base items, 27 styles.
+Suite green. Client typechecks.
+
+WHAT THE TALLY SAYS IS STILL UNDONE, and it is not more items: **35 distinct
+icons for 182 items**. All twelve swords share one picture, all ten daggers
+share another. On the body the catalogue is now varied; in the BAG — the one
+place a player reads items as a list — a Notched Dirk and a Stormneedle are the
+same drawing. That is the same complaint as "armours look pretty similar", one
+level up, and it is a different medium: the icons are hand-authored SVG paths in
+`client/src/ui/icons.ts`, not models.

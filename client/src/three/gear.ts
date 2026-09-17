@@ -1458,6 +1458,7 @@ const MODELLED_ARMOUR = new Set<string>([
   "boots:low", "boots:tall", "boots:plated", "boots:wrapped",
   "boots:fur", "boots:strapped",
   "cape:cape", "cape:cloak", "cape:mantle", "cape:tabard",
+  "cape:halfcape", "cape:furcloak",
 ]);
 
 export function hasArmourModel(slot: ItemSlot, style: GearStyle): boolean {

@@ -971,6 +971,18 @@ const BOOTS_BASES: ItemBase[] = [
 
 // --- Back -------------------------------------------------------------------
 const CAPE_BASES: ItemBase[] = [
+  // TWO NEW BACK STYLES, and the slot needed them for two different reasons.
+  // Band 1 held exactly one cape in the whole game — the thinnest shelf in the
+  // catalogue — and none of the four existing styles could be LOPSIDED, which
+  // is the one silhouette a sheet centred on the spine cannot make.
+  g("shouldercape", "Shoulder Cape", "cape", 1, "halfcape", "cape-cape", "wood",
+    "Covers one shoulder. The other one is your problem."),
+  g("ridersmantle", "Rider's Half-Cape", "cape", 3, "halfcape", "cape-cape", "crimson",
+    "Thrown back over the sword arm before it is needed, not after."),
+  g("wolfmantle", "Wolf Mantle", "cape", 4, "furcloak", "cape-cloak", "bone",
+    "The head is still on it, and it still has opinions."),
+  g("winterwarden", "Winter Warden", "cape", 5, "furcloak", "cape-cloak", "frost",
+    "Frost forms on the outside of it, never the in."),
   g("torncloak", "Torn Cloak", "cape", 1, "cape", "cape-cape", "wood",
     "It was somebody's, and then it was weather's."),
   g("woolcloak", "Wool Cloak", "cape", 2, "cloak", "cape-cloak", "bronze",

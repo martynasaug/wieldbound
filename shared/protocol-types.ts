@@ -3586,7 +3586,7 @@ export const GEAR_STYLES = [
   // feet
   "low", "tall", "plated", "wrapped", "fur", "strapped",
   // back
-  "cape", "cloak", "mantle", "tabard",
+  "cape", "cloak", "mantle", "tabard", "halfcape", "furcloak",
 ] as const;
 export type GearStyle = (typeof GEAR_STYLES)[number];
 

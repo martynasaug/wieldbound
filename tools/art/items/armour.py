@@ -310,7 +310,8 @@ class Armour:
         self.shell(bone, [(half_width, y - tube), (half_width + tube * 0.4, y), (half_width, y + tube)],
                    mat, squash=depth, sides=sides, cap=False, z=z, x=x, hug=lift, step=step, keep=keep)
 
-    def hanging(self, stations, mat, lining=None, thickness=4.0, segments=3, pleats=6, fold=0.18):
+    def hanging(self, stations, mat, lining=None, thickness=4.0, segments=3, pleats=6,
+                fold=0.18, shift=0.0):
         """
         A cape, cut into segments that hang from one another.
 
@@ -342,7 +343,10 @@ class Armour:
             name = f"Cape{i}"
             model = self.part(name)
             # The hinge: the middle of this segment's top edge.
-            model.pivot = mesh(0.0, top[1], top[2])
+            # THE HINGE MOVES WITH THE CLOTH. `shift` slides the whole fall
+            # sideways so a cape can hang off one shoulder; hinged at x = 0 it
+            # would swing about a point out in the middle of the chest.
+            model.pivot = mesh(shift, top[1], top[2])
             # FLAT, AND SEAMLESS ACROSS THE CUTS. The curled eight-point section
             # this replaces gave the fall its own side faces, and photographed
             # running they lit up as bright rails down both edges with a hard
@@ -466,7 +470,7 @@ class Armour:
                 ring_front, ring_back = [], []
                 for c in range(COLUMNS + 1):
                     t = c / COLUMNS
-                    x = -w + 2 * w * t
+                    x = shift - w + 2 * w * t
                     lobe = abs(math.sin(math.pi * t * LOBES))
                     crease = lobe * fold_depth
                     yy = y - lobe * w * dip
@@ -491,7 +495,7 @@ class Armour:
                 lip_top, lip_low = [], []
                 for c in range(COLUMNS + 1):
                     t = c / COLUMNS
-                    x = -w + 2 * w * t
+                    x = shift - w + 2 * w * t
                     lobe = abs(math.sin(math.pi * t * LOBES))
                     crease = lobe * fold_depth
                     yy = y - lobe * w * HEM_DIP
@@ -2107,7 +2111,57 @@ def tabard_back(a):
     collar(a, "Gold", r=20.0, tube=2.5)
 
 
+def halfcape_back(a):
+    """A half cape: one shoulder, pinned at the other, and short enough to fight in."""
+    # THE ASYMMETRY IS THE STYLE. Every other back piece in this slot is a sheet
+    # centred on the spine, so the one thing none of them can be is lopsided —
+    # which reads instantly, from any angle, and costs nothing but an offset.
+    a.hanging([(17.0, BODY["chest_y1"] + 4.0, -24.0),
+               (19.0, BODY["chest_y0"] + 8.0, -28.0),
+               (22.0, BODY["waist_y1"] - 10.0, -33.0),
+               (24.0, BODY["waist_y0"] - 18.0, -38.0)],
+              CLOTH, thickness=4.5, segments=2, pleats=4, fold=0.15, shift=19.0)
+    # The strap that carries it, from the shoulder it hangs on to the opposite hip.
+    a.plate(BONE_CHEST, [(-6.0, BODY["chest_y0"] - 2.0), (4.0, BODY["chest_y0"] - 4.0),
+                         (22.0, BODY["chest_y1"] - 2.0), (14.0, BODY["chest_y1"] + 3.0)],
+            LEATHER_TRIM, z=CHEST_FACE + CLEAR_PLATE, thickness=4.0)
+    # And the clasp, which is the only part of it seen from the front.
+    a.box(BONE_CHEST, (19.0, BODY["chest_y1"] - 2.0, CHEST_FACE + CLEAR_PLATE + 1.0),
+          (11.0, 11.0, 5.0), "Gold")
+    for side in (1, -1):
+        a.shell(BONE_ARM_L if side > 0 else BONE_ARM_R,
+                [(16.0, BODY["shoulder_y"] + 7.0), (18.0, BODY["shoulder_y"] - 4.0)],
+                CLOTH if side > 0 else LEATHER_TRIM, squash=(1.0, 1.0), sides=LIMB_SIDES,
+                x=side * (BODY["shoulder_x"] + 1.0), z=-2.0)
+
+
+def furcloak_back(a):
+    """A heavy cloak under a deep roll of fur across both shoulders."""
+    a.hanging([(29.0, BODY["chest_y1"] + 4.0, -26.0),
+               (26.0, BODY["chest_y0"] + 10.0, -28.0),
+               (36.0, BODY["waist_y0"] - 10.0, -39.0),
+               (48.0, BODY["waist_y0"] - 46.0, -48.0),
+               (52.0, BODY["waist_y0"] - 70.0, -53.0)], GARMENT, thickness=5.0)
+    # THE ROLL IS THE SILHOUETTE. A cloak with a collar is `cloak`; what makes
+    # this one different from across the square is the mass sitting on both
+    # shoulders, so it is built wide and broken into tufts the way the fur
+    # boot's cuff is — the one treatment in this file that reads as fur.
+    a.shell(BONE_CHEST, [(24.0, BODY["chest_y1"] - 8.0), (29.0, BODY["chest_y1"] + 1.0),
+                         (27.0, BODY["chest_y1"] + 11.0)],
+            "White", squash=(1.0, 1.1), z=-3.0, hug=CLEAR_PLATE + LAYER * 2.0,
+            sides=LIMB_SIDES)
+    for k in range(11):
+        angle = -math.pi + k * (2 * math.pi / 11) + 0.2
+        at, out = a.skin(BONE_CHEST, BODY["chest_y1"] - 2.0, angle,
+                         CLEAR_PLATE + LAYER * 2.4, z=-3.0)
+        a.stud(BONE_CHEST, at, (out[0] * 0.3, -1.0, out[2] * 0.3),
+               11.0 + (k % 3) * 4.0, 5.0, "White", sides=4)
+    collar(a, LEATHER_TRIM, r=19.0, tube=2.6)
+
+
 CAPE = {
+    "halfcape": halfcape_back,
+    "furcloak": furcloak_back,
     "cape": cape_back,
     "cloak": cloak_back,
     "mantle": mantle_back,

@@ -27,7 +27,7 @@ mkdirSync(OUT, { recursive: true });
 const ARMOR = ["leather", "chain", "plate", "robe", "scale", "brigandine", "lamellar", "carapace"];
 const HELM = ["cap", "hood", "full", "horned", "circlet", "barbute", "crested"];
 const BOOTS = ["low", "tall", "plated", "wrapped", "fur", "strapped"];
-const CAPE = ["cape", "cloak", "mantle", "tabard"];
+const CAPE = ["cape", "cloak", "mantle", "tabard", "halfcape", "furcloak"];
 
 const SLOTS = {
   bare: [null],
