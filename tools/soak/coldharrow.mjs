@@ -59,21 +59,54 @@ const goTo = async (to, label, budget = 420) => {
   return false;
 };
 
-// Straight to the last stone before the wall, then in on foot.
-await goTo(landmarkPosition(PINEWARD), PINEWARD.name, 900);
+// TRAVEL to the last stone before the wall, then in on foot. The comment above
+// claimed this already and the code walked: five thousand three hundred pixels
+// at level one, which spent twenty-two minutes failing to reach the first
+// waypoint. `tools/seed.mjs` marks every waystone reached, so run it for this
+// character first and the journey is one message.
+const travelled = await page.evaluate(() => {
+  const g = window.__wieldbound;
+  if (!g.travelPanel?.knows?.("pinewardstone")) return false;
+  g.socket.sendTravelTo("pinewardstone");
+  return true;
+});
+if (travelled) {
+  await page.waitForTimeout(1400);
+  console.log(`  travelled to ${PINEWARD.name}`);
+} else {
+  console.log(`  ${PINEWARD.name} not known — walking (seed the character to skip this)`);
+  await goTo(landmarkPosition(PINEWARD), PINEWARD.name, 900);
+}
 await page.waitForTimeout(600);
 
+// OFF THE ROAD AXIS, every one of them. The first pass put the camera on
+// bearing 90 outside the wall and reported empty grass — because bearing 90 IS
+// the Landward Gate, twenty-six degrees of opening, so the shot was looking
+// straight THROUGH the gap with the masonry off both edges of the frame. And
+// every interior point was a building's own centre, where collision pushes you
+// out and the camera ends up in the gap between two walls.
+//
+// These stand where a person would stand to look at the thing being
+// photographed: off the axis outside, and in the open spaces inside.
 const shots = [
-  ["approach", at(COLDHARROW.radiusPx + 900, 90), "from the road, outside the wall"],
-  ["gate", at(COLDHARROW.radiusPx - 120, 90), "in the Landward Gate"],
-  ["works", at(1520, 140), "the Grey Foundry"],
-  ["wharf", at(1400, 270), "the Fishmarket, facing the ice"],
-  ["commons", at(1480, 20), "the Frozen Bell"],
+  ["wall", at(COLDHARROW.radiusPx + 620, 62), "the curtain wall from outside"],
+  ["towers", at(COLDHARROW.radiusPx + 520, 130), "the west towers"],
+  ["gate", at(COLDHARROW.radiusPx + 260, 90), "the Landward Gate from the road"],
+  ["works", at(1760, 146), "between the Foundry and the ore stores"],
+  ["wharf", at(1120, 270), "the harbour, looking north at the quays"],
+  ["commons", at(1240, 24), "the Commons"],
 ];
 
 let n = 0;
 for (const [id, to, what] of shots) {
   if (!(await goTo(to, what))) continue;
+  // FACE THE THING. The camera follows the player's heading, and `approach`
+  // leaves them pointing wherever the last step went — which for a shot taken
+  // on arrival is away from the subject as often as not. Three photographs of
+  // "the curtain wall from outside" came back as empty grass for exactly this
+  // reason, with the city behind the camera. A short step toward the middle
+  // turns them round.
+  await approach(page, { x: centre.x, y: centre.y }, 240);
   await page.waitForTimeout(700);
   writeFileSync(`${OUT}/coldharrow-${id}.png`, await page.screenshot());
   const me = await posOf();

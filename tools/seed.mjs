@@ -31,6 +31,7 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { ITEM_BASES, PALETTE_SCHOOL, rollItem, itemName } from "../shared/items.ts";
+import { LANDMARKS } from "../shared/landmarks.ts";
 import {
   ITEM_SLOTS,
   MAX_WEAPON_LEVEL,
@@ -345,6 +346,29 @@ db.prepare(
   classForWeapon(equippedWeapon),
   character.id,
 );
+
+// --- Every waystone, so the seeded character can travel ----------------------
+//
+// EXACTLY WHAT THIS FILE IS FOR: "testing things a fresh character cannot
+// reach". Fast travel only offers stones you have STOOD at, which is the right
+// rule and makes any harness about the far north begin with an 8,400px walk —
+// the Coldharrow architecture harness spent twenty-two minutes failing to reach
+// its first waypoint before this existed. Granting the record is not a way past
+// the rule, it is a fixture: the same shortcut the item kit above is.
+{
+  const stones = db.prepare("SELECT landmarkId FROM character_landmarks WHERE characterId = ?").all(character.id);
+  const known = new Set(stones.map((r) => r.landmarkId));
+  const add = db.prepare(
+    "INSERT OR IGNORE INTO character_landmarks (characterId, landmarkId, reachedAt) VALUES (?, ?, ?)",
+  );
+  let granted = 0;
+  for (const l of LANDMARKS) {
+    if (known.has(l.id)) continue;
+    add.run(character.id, l.id, Date.now());
+    granted++;
+  }
+  console.log(`  ${granted} waystone(s) marked reached (${LANDMARKS.length} total)`);
+}
 
 // Every weapon tree at the cap, so all eight are spendable immediately. XP is
 // the total the curve asks for rather than a big round number, because the

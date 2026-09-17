@@ -28163,3 +28163,49 @@ survived and show the wall, the Landward Gate's signpost and the city on the
 minimap. A clean run is in flight. What those two frames also show, and what
 wants looking at, is the camera sitting INSIDE the curtain wall at the gate,
 with the player drawn as a through-walls silhouette.
+
+**Phase 71 C2b — three singletons the second town found.** Coldharrow standing
+up was the test A1 and C1 could not be: every place the renderer still assumed
+Emberhold showed itself the moment a different settlement asked.
+
+THE CAMERA COLLIDERS USED EMBERHOLD'S GATES AND EMBERHOLD'S HEIGHT.
+`wallColliderRing` took the settlement for its centre and radius and then asked
+`bearingInGateway` — which is Emberhold's `inGateway`, closed over `TOWN_GATES`
+— so Coldharrow got a solid collider across its Landward Gate and three
+openings at bearings where its wall stands. The box height was 2.7, written in
+as a constant because that is how tall a palisade is; Coldharrow's curtain is
+4.6 before its merlons, so the camera rode straight over the colliders and sat
+INSIDE the masonry. The first photograph of the gate is a grey band filling the
+frame with the player drawn as a through-walls silhouette. `wallHeight` is on
+`SettlementLook` now, beside the wall builder that knows it.
+
+`squareDressing` PLACED EMBERHOLD'S FURNITURE. It reads `BENCH_ANGLES`,
+`LANTERN_RING_PX` and the rest, which are that village's layout constants —
+threading a settlement into it moved the benches, lanterns and bunting to
+Coldharrow's centre rather than giving Coldharrow any. It is on the look table
+too, and the north's is empty until it has quays and crates of its own. A
+village's bunting round a harbour basin is worse than bare ground.
+
+AND THE LIGHTING FADED FROM THE WRONG RADIUS — `TOWN_RADIUS_PX` again, so the
+fill light and the square glow were gone four fifths of the way in from a wall
+2,600px out, and most of the city was lit as though the player were outside it.
+
+WHAT THE PHOTOGRAPHS COST, AND IT IS WORTH RECORDING. Three runs came back as
+empty grass and none of them was the city's fault:
+
+  The approach shot stood on bearing 90, which IS the Landward Gate — twenty-six
+  degrees of opening — so it photographed straight through the gap with the
+  masonry off both edges of the frame.
+
+  Every interior point was a building's own centre, where collision pushes you
+  out and the camera ends up in the gap between two walls.
+
+  And the harness never turned the camera toward its subject. `approach` leaves
+  the player facing wherever the last step went, and the camera follows that
+  heading, so a shot taken on arrival points away from the thing as often as
+  not. A step toward the middle before the shutter fixed it.
+
+A probe settled it rather than another guess: 523 meshes within 120 units of
+Coldharrow's centre, 521 of them visible. The city was there for all three.
+
+Suite green, 25 tests. Client and server typecheck.

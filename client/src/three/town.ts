@@ -1997,6 +1997,31 @@ export interface SettlementLook {
   styles: Record<BuildingKind, KindStyle>;
   /** What stands round it. A palisade is timber and a curtain wall is not. */
   wall: (b: Builder, group: THREE.Group, lanterns: Lantern[], s: Settlement) => void;
+  /**
+   * How tall that wall is, for the CAMERA COLLIDERS.
+   *
+   * The ring of invisible boxes has to cover the thing it is standing in for,
+   * and 2.7 was the palisade's height written into the collider builder as a
+   * constant. Coldharrow's curtain is 4.6 before its merlons, so at 2.7 the
+   * camera rose straight over the colliders and sat INSIDE the masonry — the
+   * first photograph of the Landward Gate is a grey band filling the frame with
+   * the player drawn as a through-walls silhouette.
+   *
+   * Here rather than measured off the geometry, because the geometry is a few
+   * hundred merged boxes by the time it exists and the builder is the only
+   * thing that ever knew the number.
+   */
+  wallHeight: number;
+  /**
+   * The furniture in the middle.
+   *
+   * ALSO PER-LOOK, and for a sharper reason than taste: `squareDressing` places
+   * benches, lanterns and bunting from `BENCH_ANGLES`, `LANTERN_RING_PX` and the
+   * rest — which are EMBERHOLD's layout constants. Threading a settlement into
+   * it moved the village's own furniture to Coldharrow's centre rather than
+   * giving Coldharrow furniture.
+   */
+  dressing: (b: Builder, group: THREE.Group, lanterns: Lantern[], s: Settlement) => void;
 }
 
 const EMBERHOLD_STYLES: Record<BuildingKind, KindStyle> = {
@@ -2071,8 +2096,23 @@ const COLDHARROW_STYLES: Record<BuildingKind, KindStyle> = {
 
 /** Keyed by settlement id. One entry today; the second is Phase 71 C. */
 const LOOKS: Record<string, SettlementLook> = {
-  emberhold: { styles: EMBERHOLD_STYLES, wall: palisade },
-  coldharrow: { styles: COLDHARROW_STYLES, wall: curtainWall },
+  emberhold: {
+    styles: EMBERHOLD_STYLES,
+    wall: palisade,
+    // Posts stand about 2.45 and their sharpened tips reach 2.6.
+    wallHeight: 2.7,
+    dressing: squareDressing,
+  },
+  coldharrow: {
+    styles: COLDHARROW_STYLES,
+    wall: curtainWall,
+    // Curtain 4.6, merlons to 5.3; a little over so the camera cannot ride the
+    // parapet either.
+    wallHeight: 6.2,
+    // Phase 71 C2b. Emberhold's `squareDressing` is not a stand-in: it would
+    // put a village's benches and bunting round a harbour basin.
+    dressing: () => {},
+  },
 };
 
 function lookFor(s: Settlement): SettlementLook {
@@ -2596,21 +2636,21 @@ function islandTexture(): THREE.Texture {
  * directly, so a collider needs a world matrix and nothing else. No draw calls,
  * no material, nothing to render — it exists only to be hit.
  */
-function wallColliderRing(s: Settlement): THREE.Group {
+function wallColliderRing(s: Settlement, height: number): THREE.Group {
   const group = new THREE.Group();
   const radius = s.radiusPx / PX_PER_UNIT;
   const cx = toWorldX(s.center.x);
   const cz = toWorldZ(s.center.y);
   const step = 5; // degrees per box
-  // Tall enough to cover the posts and their tips, which reach about 2.6.
-  const geo = new THREE.BoxGeometry(2 * radius * Math.sin((step / 2) * (Math.PI / 180)) * 1.06, 2.7, 0.4);
+  const geo = new THREE.BoxGeometry(2 * radius * Math.sin((step / 2) * (Math.PI / 180)) * 1.06, height, 0.4);
   for (let deg = 0; deg < 360; deg += step) {
-    // The same gap predicate the timber and the wall collision both use, so the
-    // camera stops being pushed at exactly the places you can walk through.
-    if (bearingInGateway(deg) || bearingInGateway(deg + step)) continue;
+    // THIS SETTLEMENT'S OWN GATES. It used to ask Emberhold's, which for
+    // Coldharrow meant a solid collider across its Landward Gate and openings
+    // at three bearings with wall standing in them.
+    if (inGatewayAmong(s.gates, deg) || inGatewayAmong(s.gates, deg + step)) continue;
     const a = ((deg + step / 2) * Math.PI) / 180;
     const m = new THREE.Mesh(geo);
-    m.position.set(cx + Math.cos(a) * radius, 1.35, cz + Math.sin(a) * radius);
+    m.position.set(cx + Math.cos(a) * radius, height / 2, cz + Math.sin(a) * radius);
     // Long axis along the tangent. Rotating local +X by -(a + 90 degrees) puts
     // it there; check it at a = 0, where the tangent is +z.
     m.rotation.y = -(a + Math.PI / 2);
@@ -2745,7 +2785,7 @@ function palisade(b: Builder, group: THREE.Group, lanterns: Lantern[], s: Settle
 
   // The same predicate the wall collision uses, so the timber and the thing
   // stopping you walking through it open in the same places.
-  const inGateway = bearingInGateway;
+  const inGateway = (deg: number) => inGatewayAmong(s.gates, deg);
 
   const rand = seededRandom(991);
 
@@ -3206,7 +3246,7 @@ export class Town {
     // Assigned HERE rather than as a field initialiser: those run before a
     // constructor parameter property exists, so `wallColliderRing(this.settlement)`
     // at the declaration read an undefined settlement.
-    this.wallColliders = wallColliderRing(settlement);
+    this.wallColliders = wallColliderRing(settlement, lookFor(settlement).wallHeight);
   }
 
   readonly group = new THREE.Group();
@@ -3268,7 +3308,7 @@ export class Town {
     }
 
     look.wall(builder, this.group, this.lanterns, this.settlement);
-    squareDressing(builder, this.group, this.lanterns, this.settlement);
+    look.dressing(builder, this.group, this.lanterns, this.settlement);
     builder.finish(this.group);
 
     this.buildGround();
@@ -3619,7 +3659,11 @@ export class Town {
    *      into the field with them.
    */
   update(night: number, distanceFromCentre: number, timeSeconds: number): void {
-    const radius = TOWN_RADIUS_PX / PX_PER_UNIT;
+    // ITS OWN RADIUS. This read `TOWN_RADIUS_PX` — Emberhold's 800 — which for
+    // a city of 2,600 meant the fill light and the square glow faded out four
+    // fifths of the way in from the wall, so most of Coldharrow was lit as
+    // though the player were standing outside it.
+    const radius = this.settlement.radiusPx / PX_PER_UNIT;
     // Full strength inside the wall, gone by half a radius past it.
     const nearness = Math.max(0, Math.min(1, 1 - (distanceFromCentre - radius) / (radius * 0.5)));
     const eased = nearness * nearness * (3 - 2 * nearness);
